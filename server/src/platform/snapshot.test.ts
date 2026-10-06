@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import type { ImportPlan } from '@kraftverk/api-contract';
 import { readConfig } from '@kraftverk/home-file';
 import { changesConfiguration, createHub, installedFrom, openKept, passphraseSealing, type Hub } from '@kraftverk/hub';
-import { LAMP, lampProtocol, lampType, MACHINE_NODE, testIntegration } from '@kraftverk/hub/testing';
+import { LAMP, lampType, MACHINE_NODE, testIntegration } from '@kraftverk/hub/testing';
 import { AuditLog, type SecretsAtRest } from '@kraftverk/store';
 
 import { openDatabase } from './database.ts';
@@ -37,7 +37,7 @@ beforeAll(() => {
     audit,
     secrets,
     sealing: passphraseSealing,
-    installed: installedFrom({ integrations: [testIntegration({ type: lampType })], protocols: [lampProtocol], transports: [] }, { platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } }),
+    installed: installedFrom({ integrations: [testIntegration({ type: lampType })], transports: [] }, { platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } }),
     node: MACHINE_NODE,
     readOnly: () => true,
     http: () => Promise.reject(new Error('no network in these tests')),

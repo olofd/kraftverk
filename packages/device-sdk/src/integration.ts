@@ -39,6 +39,12 @@ export type IntegrationManifest = {
   readonly id: string;
   /** How people call the platform: "Acme Cloud". */
   readonly name: string;
+  /**
+   * The modules whose default exports are its protocols: how it speaks to
+   * the service, pure, in the package (`./src/protocol/index.ts`). Each
+   * protocol's id is the integration's, or begins with it and a dash.
+   */
+  readonly protocols?: readonly string[];
   /** The platform's own types — accounts, gateways, services, the generic one. There may be none. */
   readonly types: readonly PackageTypeEntry[];
   /** The module whose default export is its file migrations (`FileMigration[]`), when its entries in a configuration file ever changed. */
@@ -91,6 +97,12 @@ export type TypeSource = {
 /** Whether a type's id is in an integration's own namespace: `acme.plug` is Acme's, `acmeplug.x` is not. */
 export const inNamespace = (typeId: string, integrationId: string): boolean => typeId.startsWith(`${integrationId}.`);
 
+/** Why a protocol cannot be an integration's: its id is the integration's, or begins with it (`acme-cloud` is Acme's). Null when it can. */
+export function protocolProblem(protocolId: string, integrationId: string): string | null {
+  if (protocolId === integrationId || protocolId.startsWith(`${integrationId}-`)) return null;
+  return `protocol "${protocolId}" is the integration's, so its id must be "${integrationId}" or begin with "${integrationId}-"`;
+}
+
 /** Why a type cannot come from where it says it does, or null when it can: the platform's own types are in its namespace. */
 export function sourceProblem(typeId: string, source: TypeSource): string | null {
   if (source.product || inNamespace(typeId, source.integration.id)) return null;
@@ -136,6 +148,7 @@ export function integrationManifestProblems(raw: unknown): string[] {
   if (!valid) problems.push(`id "${String(id)}" must be lowercase words joined by dashes, like "acme-cloud"`);
   if (typeof manifest.name !== 'string' || !manifest.name.trim()) problems.push('name is required');
   typeEntryProblems(manifest.types, problems, valid ? (id as string) : null);
+  if (manifest.protocols !== undefined && (!Array.isArray(manifest.protocols) || !manifest.protocols.every(isPath))) problems.push('protocols must be paths in the package, like "./src/protocol/index.ts"');
   if (manifest.migrations !== undefined && !isPath(manifest.migrations)) problems.push('migrations must be a path in the package, like "./src/migrations.ts"');
   return problems;
 }

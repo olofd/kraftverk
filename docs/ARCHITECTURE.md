@@ -70,11 +70,11 @@ One word for each thing, in code, in docs and on screen.
 | Term | Meaning | Example |
 |---|---|---|
 | **Category** | What a person would call a thing, from a fixed list in the SDK. For finding things on the add screen, never for behaviour. | Power stations, Smart plugs, Weather |
-| **Integration** | A package that knows one platform: its ways in and their setup, its accounts, gateways and services, the builder its products are made with, the generic type a product nobody described falls back to. Names no product. | `@kraftverk/integration-tuya` |
-| **Device package** | A package that knows one product or product family on a platform: what its values mean. Built on its integration. What contributors mostly write. | `@kraftverk/device-aferiy-p280` |
+| **Integration** | The one place kraftverk meets a service or a vendor's system: its protocol (how it is spoken to), its ways in and their setup, its accounts, gateways and services, its own screens, the builder and typed API its devices are built with, the generic type a device nobody described falls back to. Names no product (PLAN-INTEGRATIONS.md §1.1). | `@kraftverk/integration-tuya` |
+| **Device package** | A package that knows one kind of device on an integration — a product, a product family — what its values mean, its screens. Built on its integration and importing nothing else. What contributors mostly write. | `@kraftverk/device-aferiy-p280` |
 | **Device type** | One kind of thing: a product, declared by a device package; or the platform's own — a service, the generic type — declared by its integration. Models of a family are profiles, as data. | `aferiy.p280`, `tuya.plug` |
 | **Transport** | A package that moves bytes or messages and finds devices, with one implementation for each place it can run. Knows nothing of what it carries. | `@kraftverk/transport-mqtt`, `-ble`, `-lan`, `-https` |
-| **Protocol** | A package that knows a wire format and how it rides each transport it supports. Pure code, no I/O and no product meaning. | `@kraftverk/protocol-sydpower`, `-tuya-local` |
+| **Protocol** | How an integration speaks to its service: a wire format and how it rides each transport, part of the integration (`src/protocol/`). Pure code, no I/O, importing only the SDK; its id is its integration's or begins with it. | `sydpower`, `tuya-local`, `niu-cloud` |
 | **Connection method** | One protocol over one transport, declared by a device type, with the setup steps the layers supply. It says nothing about where it runs. | the P280's `wifi` (sydpower over mqtt) and `bluetooth` (sydpower over ble) |
 | **Node** | A kraftverk node: the hub running somewhere — a machine on the network, a phone, a browser — holding the connections it reaches there. It declares what it is (`NodeTraits`): **always on**, **reachable** by others, **trusted** with what must stay put. It offers a method wherever it has the transport and is what the method `needs`. Known by its own id in every database that knows it. The node holding a connection is its *holder*. | "Garage NAS", "Chrome on the laptop" |
 | **Master** | The node whose database is the home's, and the only one that writes it (`home.master_id`): the one fittest for it — always on, then reached by others. | your server; the app alone, with none |
@@ -83,10 +83,10 @@ One word for each thing, in code, in docs and on screen.
 | **Device** | One thing the user added: an instance of a device type, with its own name, config and identity. | "Garage P280", "Heater plug" |
 | **Identity** | A device's own permanent id, read from the device. What makes one station found two ways a single device. | `sydpower:AABBCC001122` |
 | **Connection** | One way a device is reached: a method, the node that holds it — or the bridge it goes through — and an address, with its own secrets, kept on that node. A device may have several; one is in use at a time. | Garage P280 over Wi-Fi, held by the NAS |
-| **Bridge** | A device through which others are reached — its members: a role, not a kind. A member's way goes through it, over its open session, and is held wherever it is (PLAN-INTEGRATIONS.md §4.3). | A NIU account and its scooters; a Zigbee gateway and its plugs |
+| **Bridge** | A device through which others are reached — its members: a role, not a kind. A member's way goes through it: its session hands the member a **link**, an object of plain calls its integration declares, and it is held wherever the bridge is (PLAN-INTEGRATIONS.md §4.3). | A NIU account and its scooters; a Zigbee gateway and its plugs |
 | **Sighting** | Something a transport can see that no connection claims. Live state, never stored. | "A power station is connected to this server" |
 | **Service** | A device type with `kind: 'service'`: no hardware. Added and shown the same way, in its own section. | "Weather (Open-Meteo)" |
-| **Account** | A device type with `kind: 'account'`: a sign-in to someone's cloud, usually a bridge to the devices on it. Not a person's account in kraftverk. | "Family iCloud", "NIU account" |
+| **Account** | A device type with `kind: 'account'`, always an integration's own: a sign-in to someone's cloud, usually a bridge to the devices on it. Held as a device is, managed on its integration's page. Not a person's account in kraftverk. | "Family iCloud", "NIU account" |
 | **Description** | What a device is, as data: its parts, their attributes, and its events. Declared by its type, or reported by the device. | — |
 | **Part** | The device itself (`main`), or one of what it has several of, as a Matter endpoint is. | `main`, `outlet.ac`, `pack.1` |
 | **Attribute** | A value a part reports, with a stable key, a type and — where one applies — a standard meaning. | `soc` meaning `charge` |
@@ -123,25 +123,20 @@ packages/
                                                          a native entry needs a socket library, a reviewed dependency
   transports/https/      @kraftverk/transport-https      the internet, address-scoped (plus the origins a protocol
                                                          declares beside it: a sign-in host); everywhere
-  protocols/sydpower/    @kraftverk/protocol-sydpower    MODBUS-style frames, CRC, register blocks, the register-68 rule;
-                                                         bindings for mqtt (topics, broker policy) and ble (service, framing)
-  protocols/tuya-local/  @kraftverk/protocol-tuya-local  frames, crypto, handshake, discovery packets, the local key;
-                                                         a binding for lan
-  protocols/open-meteo/  @kraftverk/protocol-open-meteo  the Open-Meteo API's requests and answers; a binding for https
-  protocols/elprisetjustnu/ @kraftverk/protocol-elprisetjustnu the elprisetjustnu.se price API; a binding for https
-  protocols/niu-cloud/   @kraftverk/protocol-niu-cloud   the NIU cloud as the NIU app speaks it: sign-in, tokens, the
-                                                         state; a binding for https reaching NIU's two hosts
-  integrations/sydpower/ @kraftverk/integration-sydpower the Sydpower stations' platform: its ways in, Wi-Fi through
-                                                         the broker and Bluetooth
-  integrations/tuya/     @kraftverk/integration-tuya     Tuya's sockets: the socket builder, and the generic plug, with profiles
-  integrations/niu/      @kraftverk/integration-niu      NIU's scooters through NIU's cloud: the builder, the generic scooter
-  integrations/open-meteo/ @kraftverk/integration-open-meteo the weather, a service
-  integrations/elprisetjustnu/ @kraftverk/integration-elprisetjustnu Sweden's electricity prices, a service
-  devices/aferiy-p280/   @kraftverk/device-aferiy-p280   a product on sydpower: power-station
-  devices/atorch-s1w/    @kraftverk/device-atorch-s1w    a product on tuya: smart-plug
-  devices/tuya-zigbee-plug/ @kraftverk/device-tuya-zigbee-plug a product on tuya: smart-plug, a Zigbee socket behind a Tuya
+  integrations/sydpower/ @kraftverk/integration-sydpower the Sydpower stations' platform: its protocol (MODBUS-style frames,
+                                                         CRC, register blocks, the register-68 rule; bindings for mqtt and
+                                                         ble) and its ways in, Wi-Fi through the broker and Bluetooth
+  integrations/tuya/     @kraftverk/integration-tuya     Tuya: its local protocol (frames, crypto, handshake, discovery, the
+                                                         local key), the socket builder, and the generic plug, with profiles
+  integrations/niu/      @kraftverk/integration-niu      NIU: its cloud's protocol (sign-in, tokens, the state), the NIU
+                                                         account — a bridge — the scooter builder and the generic scooter
+  integrations/open-meteo/ @kraftverk/integration-open-meteo the weather, a service, and its API
+  integrations/elprisetjustnu/ @kraftverk/integration-elprisetjustnu Sweden's electricity prices, a service, and its API
+  devices/aferiy-p280/   @kraftverk/device-aferiy-p280   a device on sydpower: power-station
+  devices/atorch-s1w/    @kraftverk/device-atorch-s1w    a device on tuya: smart-plug
+  devices/tuya-zigbee-plug/ @kraftverk/device-tuya-zigbee-plug a device on tuya: smart-plug, a Zigbee socket behind a Tuya
                                                          gateway (`ip#zigbee-address` on the lan transport)
-  devices/niu-uqi-gt/    @kraftverk/device-niu-uqi-gt    a product on niu: vehicle, the UQi GT
+  devices/niu-uqi-gt/    @kraftverk/device-niu-uqi-gt    a device on niu: vehicle, the UQi GT, through the account
   automation/            @kraftverk/automation           the automation language: rules, checking, describing, evaluating, editing, its
                                                          text form, the standard recipes, what a package contributes; pure (its README)
   home-file/             @kraftverk/home-file            a home, in one file: YAML, its JSON Schema, migrations; pure
@@ -159,7 +154,7 @@ packages/
   api-contract/          @kraftverk/api-contract         the HTTP API's shapes, types only: declared once, imported by the server and the app
   holder/                @kraftverk/holder               what every holder does with a device: open, watch, fail over, judge a check; pure
   api-client/  ui/       shared by the app; know no device type
-server/  client/         the core; know no transport, protocol, integration or device package by name
+server/  client/         the core; know no transport, integration or device package by name
 ```
 
 **The core runs anywhere** (decision 22). Whatever is kraftverk's logic
@@ -174,37 +169,44 @@ The rule, checked in CI by `npm run check:architecture` (§7):
 
 - **The core** — `server/src`, `client/src`, `client/app`,
   `packages/api-client`, `packages/ui`, `packages/gateway`, the SDK — never imports an
-  integration, a device package, a protocol or a transport package. The
+  integration, a device package or a transport package. The
   server finds them at runtime and loads them by path, and starts only the
   transports its installed device types need. The app cannot — Metro bundles
   what is imported, and a store build must not download code — so `npm run
   gen:devices` writes `client/src/generated/` from the installed packages:
-  what a hub installs (integrations, with their own types and the products on
-  them and what those bring to automations, protocols, transport definitions
-  — no React), each transport's entry for a phone and for a
+  what a hub installs (integrations, with their protocols, their own types
+  and the products on them and what those bring to automations; transport
+  definitions — no React), each transport's entry for a phone and for a
   browser's page, and the screens and pictures. Those files are the app's
   exception. CI checks they are current.
 - **A transport** imports the SDK only. It is the one place for platform code
   — sockets, radios, the broker — with a separate entry for each place it runs
   (`system`, `web`, `native`), so the app never bundles server code.
-- **A protocol** imports the SDK and other protocols. It is pure: bytes and
-  messages in, bytes and messages out, with no I/O and no Node or Bun
-  built-ins. It has no idea what a P280 is.
 - **An integration** imports the SDK, the automation language (to declare the
   recipes and functions its types contribute, an entry of its own beside each
-  type) and protocols, and — in its `ui/` folder only — `@kraftverk/ui`,
+  type), and — in its `ui/` folder only — `@kraftverk/ui`,
   `@kraftverk/api-client`, React and Tamagui (peer dependencies). It names no
-  product: never a device package, nor another integration.
+  product: never a device package, nor another integration. **Its protocol**,
+  in `src/protocol/`, imports the SDK and its own files only: bytes and
+  messages in, bytes and messages out, with no I/O and no Node or Bun
+  built-ins. It has no idea what a P280 is.
 - **A device package** imports the same, and the one integration it is built
-  on — by its name, never by a path — and only the protocols that integration
-  is built on: the ATORCH S1W is `@kraftverk/integration-tuya`'s socket with a
-  profile of its own. Never another device package.
+  on — by its name, never by a path, its protocol as
+  `@kraftverk/integration-<id>/protocol` — and nothing else: the ATORCH S1W
+  is `@kraftverk/integration-tuya`'s socket with a profile of its own. Never
+  another device package, another integration, or a protocol of its own.
+- **Calls, not messages** (PLAN-INTEGRATIONS.md §1.1). Packages, the core
+  and a bridge's members talk by typed function calls on interfaces the SDK
+  or an integration declares. Publish/subscribe is a wire some devices speak
+  (MQTT), kept inside the transport and the integration that speaks it; the
+  live stream (`LiveBus`) tells what happened and is never asked or
+  commanded through.
 - **Both** keep `src/` from their own `ui/`: the server loads `src/`, and
   what both need lives there. Never a transport, the server or the app: each
   is handed an open connection. Both are pure, because they run in whichever
   holder has the connection — a server, a browser, a phone.
 - **No third-party runtime dependencies** in an integration, a device
-  package, a protocol or a transport without a review: they run inside the server with everything it
+  package or a transport without a review: they run inside the server with everything it
   can do (§5), and the server image installs its own dependencies, not every
   package's.
 
@@ -213,10 +215,14 @@ The rule, checked in CI by `npm run check:architecture` (§7):
 ```
 packages/integrations/tuya/
   package.json          "kraftverk": { "integration": { "id": "tuya", "name": "Tuya",
+                                         "protocols": ["./src/protocol/index.ts"],
                                          "types": [{ "id": "tuya.plug", "entry": "./src/plug.ts" }] } }:
-                        the platform's own types — accounts, gateways, services, the generic
-                        one — which may be none; every entry listed in "exports"
-  src/index.ts          what its products are made with: a builder, its ways in
+                        its protocols, and the platform's own types — accounts, gateways,
+                        services, the generic one — which may be none; every entry listed
+                        in "exports", its protocol as "./protocol"
+  src/protocol/         how Tuya is spoken to: pure, the SDK and its own files only
+  src/index.ts          what its devices are made with: a builder, its ways in, the link a
+                        device behind its gateway reads
 
 packages/devices/atorch-s1w/
   package.json          "kraftverk": { "device": { "integration": "tuya", "types": [{ "id": "atorch.s1w",
@@ -650,7 +656,7 @@ through the gateway; the next exception has to argue against this paragraph.
    ┌──────────────────────────┬──────────────────────────┬──────────────────────────┐
    │ device-aferiy-p280       │ device-atorch-s1w        │ integration-open-meteo   │
    │  integration-sydpower    │  integration-tuya        │  its weather service     │
-   │  protocol-sydpower       │  protocol-tuya-local     │  its own API             │
+   │   its protocol           │   its protocol           │   its own API            │
    │  transport-mqtt, -ble    │  transport-lan           │  transport-https         │
    └────────────┬─────────────┴────────────┬─────────────┴────────────┬─────────────┘
                 ▼                          ▼                          ▼
@@ -666,7 +672,7 @@ follower: the same registry, SessionManager and gateway rules for the ways it ho
 
 The MQTT broker stays a separate process, because stations must stay connected
 while the server restarts. It belongs to `transport-mqtt` and knows no
-protocol: each protocol's binding supplies its topics and its guard, which the
+protocol: each integration's protocol binding supplies its topics and its guard, which the
 broker applies to every publish, so the register-68 refusal stays at the broker.
 
 ---
@@ -712,7 +718,7 @@ package decides what its device is); YAML; one integration owning many
 devices through one config entry (connections already do better); unit
 conversion and translations — later, when users need them.
 
-**Matter and Thread, when they come.** Matter is a protocol package over IP,
+**Matter and Thread, when they come.** Matter is an integration over IP,
 with Bluetooth only for commissioning; [matter.js](https://github.com/project-chip/matter.js)
 is a TypeScript controller that fits the package model. A Matter device
 describes itself — endpoints and clusters — so it arrives as one generic type
@@ -830,12 +836,12 @@ What it found is in the data model.
 - **the dependency rule** (§3) is broken by a new import;
 - **the leak count** rises: the number of words that mean one product in
   shipped files where that product is not. The words are derived from what is
-  installed: every device, service and protocol package's folder name, the
+  installed: every integration and device package's folder name, the
   `brand` it declares, and the words it lists in its package.json
   (`kraftverk.words`: the P280 lists `p280`, `StationStatus`, `gridRelay`…;
-  the Sydpower protocol the brands it speaks for). They are counted in the
+  the Sydpower integration the brands it speaks for). They are counted in the
   core, and in a package that neither depends on that product nor shares the
-  word (the Tuya protocol may say Tuya). Transports are technologies, not
+  word (the Tuya integration may say Tuya). Transports are technologies, not
   products, and the core may name them. Tests are held to the dependency rule
   but not counted: a test that drives a real device type through a core route
   moves with that route. Nor is a pointer to a document such as

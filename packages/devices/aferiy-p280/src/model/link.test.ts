@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { chunkForWrite, crc16, FrameAssembler, parseFrame, type ParsedFrame } from '@kraftverk/protocol-sydpower';
+import { chunkForWrite, crc16, FrameAssembler, parseFrame, type ParsedFrame } from '@kraftverk/integration-sydpower/protocol';
 
 import { StationClient, type StationLink } from './client.ts';
 import { HOLDING, HOLDING_REGISTER_COUNT, INPUT, INPUT_REGISTER_COUNT } from './registers.ts';

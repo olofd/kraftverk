@@ -8,7 +8,7 @@ import {
   type ToolRun,
   type Value,
 } from '@kraftverk/device-sdk';
-import { commandRefusal, describeCommand, fromHex, parseCommand, toHex, type SydpowerLink } from '@kraftverk/protocol-sydpower';
+import { commandRefusal, describeCommand, fromHex, parseCommand, toHex, type SydpowerLink } from '@kraftverk/integration-sydpower/protocol';
 
 import { describeStation, infoOf, portOf, readings, SETTINGS_SCHEMA, settingsToValues, valuesToSettings } from './index.ts';
 import type { StationClient } from './model/client.ts';

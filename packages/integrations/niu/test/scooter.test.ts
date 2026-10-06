@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { isCurrent, type HttpChannel } from '@kraftverk/device-sdk';
 import { checkDeviceTypeContract, fakeConnection, simulatorContext } from '@kraftverk/device-sdk/testing';
-import { md5Hex, NIU_ACCOUNT, NIU_API, parseState } from '@kraftverk/protocol-niu-cloud';
+import { md5Hex, NIU_ACCOUNT, NIU_API, parseState } from '../src/protocol/index.ts';
 
 import account from '../src/account.ts';
 import scooter, { chargingEventOf, confirmedSince, isParked, readingsOf, withoutPlace } from '../src/scooter.ts';

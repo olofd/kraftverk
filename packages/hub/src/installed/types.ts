@@ -1,9 +1,9 @@
 import { checkContribution, type AutomationContribution } from '@kraftverk/automation';
-import { connectionProblems, methodsOf, sourceProblem, validateDeviceType, type DeviceType, type FileMigration, type FileTypes, type IntegrationInfo, type Protocol, type TransportDefinition, type TypeSource } from '@kraftverk/device-sdk';
+import { connectionProblems, isBridged, methodsOf, sourceProblem, validateDeviceType, type DeviceType, type FileMigration, type FileTypes, type IntegrationInfo, type TransportDefinition, type TypeSource } from '@kraftverk/device-sdk';
 
 import type { Contributed } from '@kraftverk/automation-engine';
 
-import type { Refused } from './protocols.ts';
+import type { ProtocolRegistry, Refused } from './protocols.ts';
 
 /**
  * The integrations installed where the home runs, and the device types they
@@ -102,11 +102,18 @@ export class DeviceTypeRegistry {
   }
 
   /** Checks every type's methods against what is installed, and keeps what does not fit. */
-  checkConnections(installed: { protocol(id: string): Protocol | null; transport(id: string): TransportDefinition | null }): void {
+  checkConnections(installed: { protocols: Pick<ProtocolRegistry, 'get' | 'integrationOf'>; transport(id: string): TransportDefinition | null }): void {
     this.#warnings.clear();
     for (const type of this.#types.values()) {
       // A way through a bridge goes through an installed type that is one.
-      const problems = connectionProblems(type, { ...installed, type: (id) => this.get(id) });
+      const problems = connectionProblems(type, { protocol: (id) => installed.protocols.get(id), transport: installed.transport, type: (id) => this.get(id) });
+      // A way speaks its own integration's protocol: a device is reached through its integration, not another's.
+      const own = this.#sources.get(type.id)?.integration.id;
+      for (const method of type.connections) {
+        if (isBridged(method)) continue;
+        const of = installed.protocols.integrationOf(method.protocol);
+        if (own && of && of !== own) problems.push(`connection method "${method.id}" speaks "${method.protocol}", which is the ${of} integration's, not ${own}'s`);
+      }
       if (!problems.length) continue;
       this.#warnings.set(type.id, problems);
       console.warn(`[devices] ${type.id}:\n  - ${problems.join('\n  - ')}`);

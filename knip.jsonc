@@ -24,8 +24,8 @@
       // The broker runs as a process of its own: its CLI, and what the supervisor launches.
       "entry": ["src/broker/cli.ts", "src/broker/main.ts", "src/broker/launcher.ts"]
     },
-    "packages/protocols/tuya-local": {
-      "entry": ["tools/scan.ts", "tools/keys.ts"]
+    "packages/integrations/tuya": {
+      "entry": ["tools/scan.ts", "tools/keys.ts", "tools/listen.ts"]
     }
   }
 }

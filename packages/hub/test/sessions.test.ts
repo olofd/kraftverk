@@ -32,7 +32,7 @@ let identified: [string, string][];
 
 const build = (options: { readOnly?: boolean; bus?: LiveBus } = {}) => {
   const protocols = new ProtocolRegistry();
-  expect(protocols.install(lampProtocol)).toEqual([]);
+  expect(protocols.install(lampProtocol, 'test')).toEqual([]);
   const transports = new TransportHost({ platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } });
   expect(transports.install(busDefinition, { create: () => bus })).toEqual([]);
   const types = new DeviceTypeRegistry();
@@ -293,11 +293,11 @@ describe('who a device is', () => {
     await sessions.sync(catalog.list());
     await settle();
     await sessions.check();
-    expect(identified).toEqual([[record.id, 'lampish:LAMP-1']]);
+    expect(identified).toEqual([[record.id, 'test-lamp:LAMP-1']]);
   });
 
   test('a connection that now reaches a different device is refused, and recorded', async () => {
-    const { record } = addLamp('Hall', 'lamp-1', { room: 'Hall' }, 'lampish:SOMEONE-ELSE');
+    const { record } = addLamp('Hall', 'lamp-1', { room: 'Hall' }, 'test-lamp:SOMEONE-ELSE');
     await sessions.sync(catalog.list());
     await settle();
     await sessions.check();

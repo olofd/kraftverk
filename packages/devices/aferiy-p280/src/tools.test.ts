@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { SydpowerLink } from '@kraftverk/protocol-sydpower';
+import type { SydpowerLink } from '@kraftverk/integration-sydpower/protocol';
 
 import type { StationClient } from './model/client.ts';
 import { registerTools } from './station.ts';

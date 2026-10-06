@@ -37,8 +37,8 @@ const samples = (device: SavedDeviceId) => t.database.query<{ n: number }, [stri
 describe('a connection a browser holds', () => {
   test('is saved from what the app learnt, held by it, with no secret in the home', async () => {
     const client = await browser();
-    const started = await heldSetup(client.id, { identity: 'lampish:DESK', model: 'L1', summary: 'It is on.' }, { connection: { pin: 'never-here' } });
-    expect(started).toMatchObject({ heldBy: client.id, checked: { outcome: 'new', identity: 'lampish:DESK' } });
+    const started = await heldSetup(client.id, { identity: 'test-lamp:DESK', model: 'L1', summary: 'It is on.' }, { connection: { pin: 'never-here' } });
+    expect(started).toMatchObject({ heldBy: client.id, checked: { outcome: 'new', identity: 'test-lamp:DESK' } });
 
     const saved = await t.home.setup.save(started.id, { name: 'Desk lamp' });
     expect(saved.connections).toEqual([expect.objectContaining({ heldBy: { kind: 'node', id: client.id, name: 'Olof’s laptop' }, secrets: [] })]);
@@ -58,7 +58,7 @@ describe('a connection a browser holds', () => {
 
   test('sends its readings: live ones are the device’s state, queued ones become history', async () => {
     const client = await browser();
-    const started = await heldSetup(client.id, { identity: 'lampish:DESK', model: 'L1', summary: 'On.' });
+    const started = await heldSetup(client.id, { identity: 'test-lamp:DESK', model: 'L1', summary: 'On.' });
     const device = await t.home.setup.save(started.id, { name: 'Desk lamp' });
     const connectionId = device.connections[0]!.id;
 
@@ -84,7 +84,7 @@ describe('a connection a browser holds', () => {
 
   test('a node whose clock is off: what it read is moved onto the home’s clock, not refused for being in the future', async () => {
     const client = await browser();
-    const started = await heldSetup(client.id, { identity: 'lampish:DESK', model: 'L1', summary: 'On.' });
+    const started = await heldSetup(client.id, { identity: 'test-lamp:DESK', model: 'L1', summary: 'On.' });
     const device = await t.home.setup.save(started.id, { name: 'Desk lamp' });
     const connectionId = device.connections[0]!.id;
     // A phone five minutes fast: it read the lamp just now, by its own clock.
@@ -97,7 +97,7 @@ describe('a connection a browser holds', () => {
 
   test('sends what the device said happened: kept as the home’s own are, at the level its description declares, and a problem across devices', async () => {
     const client = await browser();
-    const started = await heldSetup(client.id, { identity: 'lampish:HALL', model: 'L1', summary: 'On.' });
+    const started = await heldSetup(client.id, { identity: 'test-lamp:HALL', model: 'L1', summary: 'On.' });
     const device = await t.home.setup.save(started.id, { name: 'Hall lamp' });
     const at = new Date().toISOString();
 
@@ -125,11 +125,11 @@ describe('a connection a browser holds', () => {
     const send = (said: string) => t.home.held.readings(device.id, { nodeId: client.id, connectionId, identity: said, readings: [reading(true)] });
     expect(identity()).toBeNull();
 
-    await send('lampish:DESK');
-    expect(identity()).toBe('lampish:DESK');
+    await send('test-lamp:DESK');
+    expect(identity()).toBe('test-lamp:DESK');
 
-    expect((await refusal(send('lampish:ELSEWHERE'))).kind).toBe('conflict');
-    expect(identity()).toBe('lampish:DESK');
+    expect((await refusal(send('test-lamp:ELSEWHERE'))).kind).toBe('conflict');
+    expect(identity()).toBe('test-lamp:DESK');
   });
 
   test('speaks only for its own connections, and only for its own account', async () => {
@@ -185,7 +185,7 @@ describe('a connection a browser holds', () => {
 
   test('keeps the device’s store in the home, and its audit entries under the account', async () => {
     const client = await browser();
-    const started = await heldSetup(client.id, { identity: 'lampish:DESK', model: 'L1', summary: 'On.' });
+    const started = await heldSetup(client.id, { identity: 'test-lamp:DESK', model: 'L1', summary: 'On.' });
     const device = await t.home.setup.save(started.id, { name: 'Desk lamp' });
     const connectionId = device.connections[0]!.id;
 

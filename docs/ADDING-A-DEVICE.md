@@ -5,20 +5,19 @@ follows is [`ARCHITECTURE.md`](ARCHITECTURE.md); the data model and the add
 flow a person walks through are [`DATA-MODEL.md`](DATA-MODEL.md). This is the
 practical part.
 
-A device is supported by up to four packages, one per layer
-([PLAN-INTEGRATIONS.md](PLAN-INTEGRATIONS.md) §1):
+A device is supported by up to three packages, one per layer
+([PLAN-INTEGRATIONS.md](PLAN-INTEGRATIONS.md) §1.1):
 
 | Layer | Folder | What it knows | Example |
 | --- | --- | --- | --- |
 | **Transport** | `packages/transports/` | How to move bytes or messages to a device, and find devices. One implementation per place it runs: `server`, `web`, `native` | `ble`, `lan`, `mqtt`, `https` |
-| **Protocol** | `packages/protocols/` | What the bytes mean: framing, crypto, discovery packets, credentials, the one guard nobody may get around. Pure: no I/O | `sydpower`, `tuya-local` |
-| **Integration** | `packages/integrations/` | A platform: how things on it are reached — its protocol over a transport, ready to use — and set up; the builder its products are made with; its services, and the generic type a product nobody described falls back to. Names no product | `sydpower`, `tuya`, `niu`, `open-meteo` |
-| **Device package** | `packages/devices/` | A product on a platform: its category, its description — parts, attributes, events — its models, pictures and screens. Built on its integration | `aferiy-p280`, `atorch-s1w` |
+| **Integration** | `packages/integrations/` | The one place kraftverk meets a service or platform: **its protocol** in `src/protocol/` — what the bytes mean: framing, crypto, discovery packets, credentials, the one guard nobody may get around; pure, the SDK only — how things on it are reached and set up; its accounts and gateways and their screens; the builder and typed API its devices are made with; its services, and the generic type a device nobody described falls back to. Names no product | `sydpower`, `tuya`, `niu`, `open-meteo` |
+| **Device package** | `packages/devices/` | A kind of device on an integration: its category, its description — parts, attributes, events — its models, pictures and device screens. Imports its integration and the SDK, nothing else | `aferiy-p280`, `atorch-s1w`, `niu-uqi-gt` |
 
 Most new products need only a device package: a Tuya plug with a different
 data layout is a profile on Tuya's socket, a new Sydpower station a product
-reached the Sydpower ways. A new platform comes with an integration — and
-often a protocol — and a new transport is rare. A service with no product
+reached the Sydpower ways. A new platform or service comes with an
+integration, its protocol inside it, and a new transport is rare. A service with no product
 behind it, such as a weather forecast, is its integration's own type.
 
 ## Start
@@ -34,7 +33,6 @@ npm test --workspace @kraftverk/device-acme-plug
 A product on a platform it does not, from the bottom:
 
 ```bash
-npm run new:protocol -- acme
 npm run new:integration -- acme
 npm run new:device -- acme-plug acme
 npm install

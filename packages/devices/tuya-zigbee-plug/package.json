@@ -26,8 +26,7 @@
   },
   "dependencies": {
     "@kraftverk/device-sdk": "*",
-    "@kraftverk/integration-tuya": "*",
-    "@kraftverk/protocol-tuya-local": "*"
+    "@kraftverk/integration-tuya": "*"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

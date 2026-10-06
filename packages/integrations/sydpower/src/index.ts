@@ -1,10 +1,10 @@
 import type { ConnectionMethod } from '@kraftverk/device-sdk';
-import sydpower from '@kraftverk/protocol-sydpower';
+import sydpower from './protocol/index.ts';
 
 /**
  * Sydpower as a platform: how a power station on its stack is reached,
  * whichever brand sells it. Every one speaks the Sydpower protocol
- * (`@kraftverk/protocol-sydpower`) two ways — over Wi-Fi to an MQTT broker,
+ * (`./protocol/`) two ways — over Wi-Fi to an MQTT broker,
  * and over Bluetooth — so the ways in are the platform's, and each station's
  * device package is reached by them. A platform names no product.
  */

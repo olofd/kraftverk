@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { checkDeviceTypeContract, fakeByteChannel, fakeConnection } from '@kraftverk/device-sdk/testing';
-import { CMD, encodeFrame, FrameReader } from '@kraftverk/protocol-tuya-local';
+import { CMD, encodeFrame, FrameReader } from '@kraftverk/integration-tuya/protocol';
 
 import atorch, { ATORCH_S1 } from '../src/type.ts';
 

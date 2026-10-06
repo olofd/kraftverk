@@ -20,11 +20,11 @@ import { DeviceTypeRegistry, installIntegration, ProtocolRegistry, type Installe
 /**
  * Finding installed packages, rather than listing them (docs/ARCHITECTURE.md §3).
  *
- * An integration, a device package, a protocol or a transport is a package
- * that says so in its package.json — `"kraftverk": { "protocol":
- * "./src/index.ts" }` — under the folder for its kind. Adding one is adding
- * the package: nothing here names a product, a platform, a protocol or a
- * transport, and nothing needs editing.
+ * An integration, a device package or a transport is a package that says
+ * so in its package.json — `"kraftverk": { "integration": { … } }` — under
+ * the folder for its kind; an integration names its protocols there. Adding
+ * one is adding the package: nothing here names a product, a platform, a
+ * protocol or a transport, and nothing needs editing.
  */
 
 const REPOSITORY = resolve(import.meta.dirname, '../../..');
@@ -32,7 +32,6 @@ const REPOSITORY = resolve(import.meta.dirname, '../../..');
 const ROOTS = {
   integrations: [resolve(REPOSITORY, 'packages/integrations')],
   devices: [resolve(REPOSITORY, 'packages/devices')],
-  protocols: [resolve(REPOSITORY, 'packages/protocols')],
   transports: [resolve(REPOSITORY, 'packages/transports')],
 } as const;
 
@@ -86,18 +85,6 @@ async function load<T>(pkg: FoundPackage, path: string): Promise<T> {
   why, and the others still load.
 */
 
-export async function discoverProtocols(protocols: ProtocolRegistry, roots: readonly string[] = ROOTS.protocols): Promise<void> {
-  const { found, problems } = await findPackages(roots, 'protocol');
-  for (const problem of problems) protocols.refuse(problem.source, problem.problems);
-  for (const pkg of found) {
-    try {
-      protocols.install(await load<Protocol>(pkg, String(pkg.kraftverk.protocol)), pkg.name);
-    } catch (error) {
-      protocols.refuse(pkg.folder, [(error as Error).message]);
-    }
-  }
-}
-
 /** Every transport's definition, and its server entry when it has one: loaded only when it starts. */
 export async function discoverTransports(transports: TransportHost, roots: readonly string[] = ROOTS.transports): Promise<void> {
   const { found, problems } = await findPackages(roots, 'transport');
@@ -126,14 +113,14 @@ async function loadTypes(pkg: FoundPackage, entries: readonly PackageTypeEntry[]
 }
 
 /**
- * Every integration, with its own types and the products the device
- * packages built on it declare (docs/PLAN-INTEGRATIONS.md §1), each with
+ * Every integration, with its protocols, its own types and the products the
+ * device packages built on it declare (docs/PLAN-INTEGRATIONS.md §1), each with
  * what it brings to automations. A device package whose integration is not
  * installed is refused, saying so: a product is reached only through its
  * platform.
  */
 export async function discoverIntegrations(
-  types: DeviceTypeRegistry,
+  { types, protocols }: { types: DeviceTypeRegistry; protocols: ProtocolRegistry },
   roots: { integrations: readonly string[]; devices: readonly string[] } = ROOTS
 ): Promise<void> {
   const platforms = await findPackages(roots.integrations, 'integration');
@@ -164,11 +151,12 @@ export async function discoverIntegrations(
     }
     const manifest = pkg.kraftverk.integration as IntegrationManifest;
     try {
+      const spoken = await Promise.all((manifest.protocols ?? []).map((path) => load<Protocol>(pkg, path)));
       const own = await loadTypes(pkg, manifest.types);
       const built = onPlatform.get(manifest.id) ?? [];
       onPlatform.delete(manifest.id);
       const migrations = manifest.migrations ? await load<FileMigration[]>(pkg, manifest.migrations) : [];
-      installIntegration(types, { id: manifest.id, name: manifest.name, types: own, products: built.flatMap((product) => product.types), migrations }, pkg.name);
+      installIntegration({ types, protocols }, { id: manifest.id, name: manifest.name, protocols: spoken, types: own, products: built.flatMap((product) => product.types), migrations }, pkg.name);
     } catch (error) {
       types.refuse(pkg.folder, [(error as Error).message]);
     }
@@ -180,8 +168,8 @@ export async function discoverIntegrations(
 }
 
 /**
- * What is installed: protocols, transports, integrations and the device
- * packages on them, each found in its folder under `packages/` rather than
+ * What is installed: transports, integrations with their protocols, and the
+ * device packages on them, each found in its folder under `packages/` rather than
  * listed (docs/ARCHITECTURE.md §3),
  * and each type's ways checked against what is there. The transports are
  * found into the host that will start them.
@@ -189,8 +177,8 @@ export async function discoverIntegrations(
 export async function installedFromDisk(transports: TransportHost): Promise<{ types: DeviceTypeRegistry; protocols: ProtocolRegistry; transports: TransportHost }> {
   const protocols = new ProtocolRegistry();
   const types = new DeviceTypeRegistry();
-  await Promise.all([discoverProtocols(protocols), discoverTransports(transports), discoverIntegrations(types)]);
-  types.checkConnections({ protocol: (id) => protocols.get(id), transport: (id) => transports.definition(id) });
+  await Promise.all([discoverTransports(transports), discoverIntegrations({ types, protocols })]);
+  types.checkConnections({ protocols, transport: (id) => transports.definition(id) });
   console.log(
     `[devices] Installed: integrations ${types.integrations().map((integration) => integration.id).join(', ') || 'none'}; ` +
       `device types ${types.all().map((type) => type.id).join(', ') || 'none'}; ` +

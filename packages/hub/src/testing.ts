@@ -99,7 +99,7 @@ export class FakeBus implements Transport {
 }
 
 export const lampProtocol: Protocol = {
-  id: 'lampish',
+  id: 'test-lamp',
   label: 'Lampish',
   bindings: {
     bus: {
@@ -177,7 +177,7 @@ const lampSession = (ctx: DeviceContext<LampConfig>, channel: ByteChannel | null
       } else state = { serial: 'SIM', on, at: new Date().toISOString() };
       return { accepted: true };
     },
-    identity: () => ({ id: state && channel ? `lampish:${state.serial}` : null, name: null }),
+    identity: () => ({ id: state && channel ? `test-lamp:${state.serial}` : null, name: null }),
     tools: {
       ping: async () => ({ pong: true, room: ctx.config.room ?? null }),
       blink: async (input) => {
@@ -222,13 +222,13 @@ export function makeLampType(): { type: ReturnType<typeof defineDeviceType<LampC
       },
     },
     connections: [
-      { id: 'bus', label: 'Test bus', protocol: 'lampish', transport: 'bus', reach: 'local', recommended: true },
-      { id: 'backup', label: 'Test bus, second port', protocol: 'lampish', transport: 'bus', reach: 'local' },
+      { id: 'bus', label: 'Test bus', protocol: 'test-lamp', transport: 'bus', reach: 'local', recommended: true },
+      { id: 'backup', label: 'Test bus, second port', protocol: 'test-lamp', transport: 'bus', reach: 'local' },
     ],
     setup: { saveAnyway: 'A lamp that is switched off at the wall cannot answer.' },
     async identify(connection, ctx) {
       const said = await ask(connection.channel as ByteChannel, 'who', 300);
-      return { identity: `lampish:${said.serial}`, model: said.model, summary: `It is ${said.on ? 'on' : 'off'}.`, config: ctx.config.room ? {} : { room: 'Hall' } };
+      return { identity: `test-lamp:${said.serial}`, model: said.model, summary: `It is ${said.on ? 'on' : 'off'}.`, config: ctx.config.room ? {} : { room: 'Hall' } };
     },
     async createSession(ctx) {
       if (watch.failOpen) throw new Error('The lamp refused the connection');
@@ -249,8 +249,8 @@ export const TEST_INTEGRATION = { id: 'test', name: 'Test' } as const;
 /** Where a test's type comes from: the test platform's own. */
 export const TEST_SOURCE: TypeSource = { integration: TEST_INTEGRATION, product: false };
 
-/** A test's types, as one integration's own: what `installedFrom` is given. */
-export const testIntegration = (...types: InstalledType[]): InstalledIntegration => ({ ...TEST_INTEGRATION, types, products: [] });
+/** A test's types, as one integration's own, speaking the lamp's protocol: what `installedFrom` is given. */
+export const testIntegration = (...types: InstalledType[]): InstalledIntegration => ({ ...TEST_INTEGRATION, protocols: [lampProtocol], types, products: [] });
 
 /** A node that is always on, reachable and trusted, as a machine on the network is: what a test's home runs as. */
 export const MACHINE_NODE = { id: nodeId('n-00000000000000a1'), name: 'Test machine', alwaysOn: true, reachable: true, trusted: true };

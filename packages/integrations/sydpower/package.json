@@ -9,19 +9,30 @@
     "integration": {
       "id": "sydpower",
       "name": "Sydpower",
+      "protocols": [
+        "./src/protocol/index.ts"
+      ],
       "types": []
-    }
+    },
+    "words": [
+      "Sydpower",
+      "AFERIY",
+      "FOSSiBOT",
+      "ABOK",
+      "Eco Play",
+      "BrightEMS"
+    ]
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./protocol": "./src/protocol/index.ts"
   },
   "scripts": {
     "test": "node ../../../scripts/run-bun.mjs test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@kraftverk/device-sdk": "*",
-    "@kraftverk/protocol-sydpower": "*"
+    "@kraftverk/device-sdk": "*"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

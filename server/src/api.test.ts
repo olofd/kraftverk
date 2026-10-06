@@ -48,7 +48,7 @@ beforeAll(async () => {
   ({ database } = openDatabase(join(dir, 'test.db')));
   accounts = new Accounts(database);
   const protocols = new ProtocolRegistry();
-  protocols.install(lampProtocol);
+  protocols.install(lampProtocol, 'test');
   const transports = new TransportHost({ platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } });
   transports.install(busDefinition, { create: () => bus });
   const types = new DeviceTypeRegistry();

@@ -4,7 +4,7 @@
 
 ATORCH's Tuya energy sockets, a product on the Tuya integration: a relay, a meter, an LCD, and
 the protection and timer logic the plug runs itself. Spoken to directly on the
-home network with the Tuya local protocol (`@kraftverk/protocol-tuya-local`),
+home network with the Tuya local protocol (`@kraftverk/integration-tuya`),
 **no cloud** after the local key is fetched once.
 
 > **Unofficial.** Not affiliated with, endorsed by, or supported by ATORCH or
@@ -24,8 +24,8 @@ says so.
 - **Does:** the plug's data layout on the Tuya socket type — its relay,
   meter, display, protections and timers — its settings in plain words, and
   its own screens.
-- **Does not:** speak Tuya (`@kraftverk/protocol-tuya-local`) or hold the
-  socket's session (`@kraftverk/integration-tuya`, which it builds on).
+- **Does not:** speak Tuya or hold the socket's session: its integration,
+  `@kraftverk/integration-tuya`, which it builds on, does both.
 
 ## Where it fits
 

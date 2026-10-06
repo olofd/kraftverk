@@ -24,14 +24,13 @@ Support is `experimental` until a model has been mapped.
   models reuse; and how a configuration file kept before the account was a
   device of its own comes back with one (`src/migrations.ts`).
 - **Does not:** know a model — each is a device package that names this
-  integration — control the scooter (it is read only), speak NIU's API
-  (`@kraftverk/protocol-niu-cloud`), or charge it — a plug in front of its
+  integration — control the scooter (it is read only), or charge it — a plug in front of its
   charger and an automation do.
 
 ## Where it fits
 
-An integration (docs/PLAN-INTEGRATIONS.md §1), over the internet: the HTTPS
-transport, NIU's hosts only. It imports the SDK and NIU's protocol; device
+An integration (docs/PLAN-INTEGRATIONS.md §1.1), over the internet: the HTTPS
+transport, NIU's hosts only. It imports the SDK, and speaks NIU's cloud itself; device
 packages for NIU's models import it — for one, `@kraftverk/device-niu-uqi-gt`.
 
 ## Why a package of its own
@@ -49,7 +48,9 @@ newer mopeds with "NIU Link".
 
 **The account** (`niu.account`):
 
-- Protocol: `niu-cloud` (`packages/protocols/niu-cloud`), over `https`.
+- Protocol: `niu-cloud` (`src/protocol/`), over `https`: signing in,
+  tokens, the scooters on an account and what each last reported. Pure, the
+  SDK only.
 - Two hosts, outside China: `app-api-fk.niu.com` (everything) and
   `account-fk.niu.com` (signing in). The channel reaches those two and nothing
   else (`OpenOptions.alsoOrigins`).

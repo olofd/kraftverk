@@ -1,6 +1,6 @@
 import { createSocket, type Socket } from 'node:dgram';
 
-import { decodeBroadcast, DISCOVERY_PORTS, type DiscoveredTuyaDevice } from '../src/discovery.ts';
+import { decodeBroadcast, DISCOVERY_PORTS, type DiscoveredTuyaDevice } from '../src/protocol/discovery.ts';
 
 /**
  * Listens for Tuya broadcasts for a while, for the command-line tools.

@@ -1,4 +1,4 @@
-import type { NiuBatteryHealth, NiuState, NiuTotals } from '@kraftverk/protocol-niu-cloud';
+import type { NiuBatteryHealth, NiuState, NiuTotals } from './protocol/index.ts';
 
 /**
  * A NIU scooter that is not there: it charges from 30 % to 90 % at about 1 %

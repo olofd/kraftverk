@@ -142,12 +142,11 @@ Ways to reach a device today: Bluetooth LE, the home network, an MQTT broker kra
 ## Add your own device
 
 ```bash
-npm run new:protocol -- acme
 npm run new:integration -- acme
 npm run new:device -- acme-plug acme
 ```
 
-That is a protocol, a platform that speaks it, and a product on that platform — working packages with a simulator that already keeps the contract, which the server finds at start. A product on a platform kraftverk already knows is the last line alone, naming that integration. Then make it true:
+That is an integration — a platform, and the protocol it is spoken to in — and a product on it — working packages with a simulator that already keeps the contract, which the server finds at start. A product on a platform kraftverk already knows is the last line alone, naming that integration. Then make it true:
 
 ```ts
 export default defineDeviceType<Config>({
@@ -176,7 +175,7 @@ export default defineDeviceType<Config>({
 
 From that declaration the app gives it a card, a section for each part, controls from the commands its parts take, settings from what it can be told, history charts and a place in automations, with no screen code. Standard meanings such as `charge` and `power` are what charts, automations and the Home Assistant bridge work from, so a device written tomorrow fits everything that exists today.
 
-**Writing one with a coding agent works well, on purpose.** The contract, the simulator, the contract test and the architecture check tell the agent, and you, exactly where it is wrong. [ADDING-A-DEVICE.md](docs/ADDING-A-DEVICE.md) is the guide, and [AGENTS.md](AGENTS.md) is what an agent reads first. A protocol or transport of its own is `npm run new:protocol` or `npm run new:transport`.
+**Writing one with a coding agent works well, on purpose.** The contract, the simulator, the contract test and the architecture check tell the agent, and you, exactly where it is wrong. [ADDING-A-DEVICE.md](docs/ADDING-A-DEVICE.md) is the guide, and [AGENTS.md](AGENTS.md) is what an agent reads first. An integration of its own — a service, and its protocol — is `npm run new:integration`; a transport, `npm run new:transport`.
 
 ## Safe with hardware that can break
 

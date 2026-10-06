@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { zonedInstant } from '@kraftverk/device-sdk';
-import { parsePrices, pricesPath, PRICE_TIME_ZONE, type PricePeriod } from '@kraftverk/protocol-elprisetjustnu';
+import { parsePrices, pricesPath, PRICE_TIME_ZONE, type PricePeriod } from '../src/protocol/index.ts';
 
 import { hoursIn, periodAt, rankAt, simulatedDay } from '../src/prices.ts';
 

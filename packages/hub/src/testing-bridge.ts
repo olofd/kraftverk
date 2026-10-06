@@ -18,7 +18,7 @@ export type HubWatch = { lamps: Map<string, { name: string; on: boolean }>; open
 
 /** The relay: a lamp's state on "state", and "set" to switch it — over a bridge, and only there. */
 export const relayProtocol: Protocol = {
-  id: 'lampish-relay',
+  id: 'test-relay',
   label: 'Lampish relay',
   bindings: { bridge: { open: () => ({}), recognise: () => null } },
 };
@@ -93,7 +93,7 @@ export function makeHubType(): { type: ReturnType<typeof defineDeviceType>; watc
     }),
     config: { fields: {} },
     bridge: { fallback: 'test.relayed-lamp' },
-    connections: [{ id: 'bus', label: 'Test bus', protocol: 'lampish', transport: 'bus', reach: 'local' }],
+    connections: [{ id: 'bus', label: 'Test bus', protocol: 'test-lamp', transport: 'bus', reach: 'local' }],
     async identify() {
       return { identity: 'hub:1', model: null, summary: 'A hub.' };
     },
@@ -140,7 +140,7 @@ export const relayedLampType = defineDeviceType({
   meta: { name: 'Relayed lamp', category: 'smart-plug', support: 'experimental', icon: 'sun', models: ['R1'] },
   describe: () => LAMP,
   config: { fields: {} },
-  connections: [{ id: 'hub', label: 'Through the hub', protocol: 'lampish-relay', transport: 'bridge', through: ['test.hub'], reach: 'local' }],
+  connections: [{ id: 'hub', label: 'Through the hub', protocol: 'test-relay', transport: 'bridge', through: ['test.hub'], reach: 'local' }],
   async identify() {
     return { identity: null, model: 'R1', summary: 'A lamp behind the hub.' };
   },

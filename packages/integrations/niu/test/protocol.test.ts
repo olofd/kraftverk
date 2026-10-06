@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import protocol, { md5Hex, NIU_ACCOUNT, NIU_API, NIU_APP_ID, NiuClient, parseScooters, parseState, signIn, timeOf, type NiuHttp } from '../src/index.ts';
+import protocol, { md5Hex, NIU_ACCOUNT, NIU_API, NIU_APP_ID, NiuClient, parseScooters, parseState, signIn, timeOf, type NiuHttp } from '../src/protocol/index.ts';
 
 /**
  * The NIU cloud as those before us found it (README.md): a sign-in that takes

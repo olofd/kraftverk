@@ -2,14 +2,14 @@
  * Writes the app's registry of installed packages: client/src/generated/.
  * See docs/ARCHITECTURE.md §3.
  *
- * The server finds device types, protocols and transports at runtime. The app
+ * The server finds integrations, device types and transports at runtime. The app
  * cannot: Metro bundles what is imported, and an app store build must not
  * download code. So this finds every installed package and writes the files
  * importing them, each for where it runs (docs/PLAN-SHARED-CORE.md, phase 6):
  *
- *   installed.ts       what a hub installs: integrations, with their own types
- *                      and the products the device packages on them declare,
- *                      and what those bring to automations; protocols;
+ *   installed.ts       what a hub installs: integrations, with their protocols,
+ *                      their own types and the products the device packages
+ *                      on them declare, and what those bring to automations;
  *                      transport definitions — no React, so a browser's
  *                      worker builds a hub from it
  *   transports.ts      each transport's entry for a phone
@@ -17,8 +17,7 @@
  *   registry.ts        the screens and pictures device types ship
  *
  * The app runs the same code the server does, and these are the only files
- * in it that import an integration, a device package, a protocol or a
- * transport.
+ * in it that import an integration, a device package or a transport.
  *
  *   npm run gen:devices              write them
  *   npm run gen:devices -- --check   fail if one is out of date (CI)
@@ -39,7 +38,6 @@ type Manifest = {
   kraftverk?: {
     integration?: IntegrationManifest;
     device?: DeviceManifest;
-    protocol?: string;
     transport?: { definition?: string; system?: string; web?: string; native?: string };
   };
 };
@@ -128,7 +126,7 @@ const platforms: string[] = [];
 let typeCount = 0;
 const uis: string[] = [];
 const pictures: string[] = [];
-const protocols: string[] = [];
+let protocolCount = 0;
 const definitions: string[] = [];
 const entries = { native: [] as string[], web: [] as string[] };
 
@@ -174,19 +172,19 @@ for (const { dir, manifest } of packages('packages/integrations')) {
     for (const entry of product.device.types) products.push(await typeLine(product.dir, product.manifest, entry));
   }
   productsOn.delete(integration.id);
+  // How it speaks to its service: each protocol, by its module.
+  const spoken = (integration.protocols ?? []).map((entry, index) => {
+    const name = local(integration.id, `Protocol${index ? index + 1 : ''}`);
+    installed.imports.push(`import ${name} from '${exported(manifest, entry)}';`);
+    protocolCount += 1;
+    return name;
+  });
   // How its entries in a file changed: what reading a file kept before brings it to now.
   const migrations = integration.migrations ? local(integration.id, 'Migrations') : null;
   if (migrations) installed.imports.push(`import ${migrations} from '${exported(manifest, integration.migrations!)}';`);
-  platforms.push(`  { id: '${integration.id}', name: '${integration.name.replace(/[\\']/g, '\\$&')}', types: [${own.join(', ')}], products: [${products.join(', ')}]${migrations ? `, migrations: ${migrations}` : ''} },`);
+  platforms.push(`  { id: '${integration.id}', name: '${integration.name.replace(/[\\']/g, '\\$&')}', protocols: [${spoken.join(', ')}], types: [${own.join(', ')}], products: [${products.join(', ')}]${migrations ? `, migrations: ${migrations}` : ''} },`);
 }
 for (const [id, products] of productsOn) fail(`${products.map((product) => product.manifest.name).join(', ')}: built on "${id}", which is not installed`);
-
-for (const { manifest } of packages('packages/protocols')) {
-  const entry = manifest.kraftverk?.protocol;
-  if (!entry) continue;
-  installed.imports.push(`import ${local(manifest.name)} from '${exported(manifest, entry)}';`);
-  protocols.push(`  ${local(manifest.name)},`);
-}
 
 for (const { dir, manifest } of packages('packages/transports')) {
   const entry = manifest.kraftverk?.transport;
@@ -205,18 +203,14 @@ for (const { dir, manifest } of packages('packages/transports')) {
 }
 
 installed.body = [
-  "import type { Protocol, TransportDefinition } from '@kraftverk/device-sdk';",
+  "import type { TransportDefinition } from '@kraftverk/device-sdk';",
   "import type { InstalledIntegration } from '@kraftverk/hub';",
   '',
   ...installed.imports,
   '',
-  '/** Every installed integration, its own types and the products on it, each with what it brings to automations: the same code the server runs. */',
+  '/** Every installed integration, its protocols, its own types and the products on it, each with what it brings to automations: the same code the server runs. */',
   'export const INTEGRATIONS: readonly InstalledIntegration[] = [',
   ...platforms,
-  '];',
-  '',
-  'export const PROTOCOLS: readonly Protocol[] = [',
-  ...protocols,
   '];',
   '',
   "/** Every transport, as data: what the hub knows of it wherever it runs. Its entry for a place is that place's file. */",
@@ -258,7 +252,7 @@ for (const [platform, written] of [['native', onPhone], ['web', onPage]] as cons
 }
 
 const files = [installed, screens, onPhone, onPage].map((written) => ({ path: resolve(GENERATED, written.file), source: [...HEADER(written.what), ...written.body].join('\n'), file: written.file }));
-const summary = `${platforms.length} integration(s), ${typeCount} device type(s), ${uis.length} with screens, ${pictures.length} with a picture, ${protocols.length} protocol(s), ${definitions.length} transport(s)`;
+const summary = `${platforms.length} integration(s), ${typeCount} device type(s), ${uis.length} with screens, ${pictures.length} with a picture, ${protocolCount} protocol(s), ${definitions.length} transport(s)`;
 
 if (process.argv.includes('--check')) {
   const stale = files.filter(({ path, source }) => {

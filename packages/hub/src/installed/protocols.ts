@@ -1,9 +1,9 @@
 import type { Refused } from '@kraftverk/api-contract';
-import { validateProtocol, type Protocol } from '@kraftverk/device-sdk';
+import { protocolProblem, validateProtocol, type Protocol } from '@kraftverk/device-sdk';
 
 /**
- * The protocols installed in this home: found by the place it runs — the
- * server on its disk, the app in its generated registry — and installed here.
+ * The protocols installed in this home, each part of the integration that
+ * brought it (docs/PLAN-INTEGRATIONS.md §1.1) and installed with it.
  *
  * A protocol is pure code the core uses for three things: its bindings say what
  * to ask a transport for when opening a connection, and what discovery should
@@ -15,22 +15,35 @@ export type { Refused };
 
 export class ProtocolRegistry {
   #protocols = new Map<string, Protocol>();
+  #integrations = new Map<string, string>();
   #refused: Refused[] = [];
 
-  /** Accepts one protocol, if it keeps the contract. What finding one does, and how a test brings its own. */
-  install(protocol: Protocol, source = protocol.id): string[] {
+  /**
+   * Accepts one protocol of an integration's, if it keeps the contract and
+   * is named as that integration's (`acme-cloud` is Acme's). What installing
+   * an integration does.
+   */
+  install(protocol: Protocol, integration: string, source = protocol.id): string[] {
     const problems = validateProtocol(protocol);
+    const named = protocolProblem(protocol.id, integration);
+    if (named) problems.push(named);
     if (!problems.length && this.#protocols.has(protocol.id)) problems.push(`another package already provides ${protocol.id}`);
     if (problems.length) {
       this.refuse(source, problems);
       return problems;
     }
     this.#protocols.set(protocol.id, protocol);
+    this.#integrations.set(protocol.id, integration);
     return [];
   }
 
   get(id: string): Protocol | null {
     return this.#protocols.get(id) ?? null;
+  }
+
+  /** The integration a protocol is part of: a way of reaching a device speaks only its own integration's. */
+  integrationOf(id: string): string | null {
+    return this.#integrations.get(id) ?? null;
   }
 
   all(): Protocol[] {

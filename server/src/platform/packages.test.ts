@@ -4,7 +4,7 @@ import { checkDeviceTypeContract } from '@kraftverk/device-sdk/testing';
 
 import { DeviceTypeRegistry, ProtocolRegistry, TransportHost } from '@kraftverk/hub';
 
-import { discoverIntegrations, discoverProtocols, discoverTransports } from './packages.ts';
+import { discoverIntegrations, discoverTransports } from './packages.ts';
 
 /*
   Every installed package keeps its contract (docs/ARCHITECTURE.md, step 15).
@@ -20,8 +20,8 @@ import { discoverIntegrations, discoverProtocols, discoverTransports } from './p
 const protocols = new ProtocolRegistry();
 const transports = new TransportHost({ platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } });
 const types = new DeviceTypeRegistry();
-await Promise.all([discoverProtocols(protocols), discoverTransports(transports), discoverIntegrations(types)]);
-types.checkConnections({ protocol: (id) => protocols.get(id), transport: (id) => transports.definition(id) });
+await Promise.all([discoverTransports(transports), discoverIntegrations({ types, protocols })]);
+types.checkConnections({ protocols, transport: (id) => transports.definition(id) });
 
 describe('installed packages', () => {
   test('every protocol is valid', () => {

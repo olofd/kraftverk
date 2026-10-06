@@ -22,13 +22,15 @@ export type Installed = {
 export type InstalledType = { type: DeviceType<any>; automation?: AutomationContribution | null };
 
 /**
- * One integration as installed (docs/PLAN-INTEGRATIONS.md §1): the platform,
- * its own types — accounts, gateways, services, the generic one — and the
+ * One integration as installed (docs/PLAN-INTEGRATIONS.md §1.1): the platform,
+ * the protocols it speaks to its service in, its own types — accounts, gateways, services, the generic one — and the
  * products the device packages built on it declare.
  */
 export type InstalledIntegration = {
   id: string;
   name: string;
+  /** How it speaks to its service: each protocol's id is its own, or begins with it. */
+  protocols: readonly Protocol[];
   types: readonly InstalledType[];
   products: readonly InstalledType[];
   /** How its entries in a configuration file changed, version by version: a home kept before comes back after. */
@@ -40,9 +42,8 @@ export type InstalledIntegration = {
  * test's own — rather than found on a disk as the server finds it.
  */
 export type InstalledLists = {
-  /** Each integration, with its own types and the products on it. */
+  /** Each integration, with its protocols, its own types and the products on it. */
   integrations: readonly InstalledIntegration[];
-  protocols: readonly Protocol[];
   /**
    * Each transport's definition, and how it is made where the hub runs: its
    * entry for this place, or one that reaches it in another realm — a
@@ -58,24 +59,28 @@ export type InstalledLists = {
  */
 export function installedFrom(lists: InstalledLists, host: TransportHostOptions): Installed {
   const protocols = new ProtocolRegistry();
-  for (const protocol of lists.protocols) protocols.install(protocol);
   const transports = new TransportHost(host);
   for (const { definition, create } of lists.transports) transports.install(definition, create ? { create } : null);
   const types = new DeviceTypeRegistry();
-  for (const integration of lists.integrations) installIntegration(types, integration);
-  types.checkConnections({ protocol: (id) => protocols.get(id), transport: (id) => transports.definition(id) });
+  for (const integration of lists.integrations) installIntegration({ types, protocols }, integration);
+  types.checkConnections({ protocols, transport: (id) => transports.definition(id) });
   return { types, protocols, transports };
 }
 
 /**
- * One integration into a registry: the platform, the products on it, then
- * its own types, each with what it brings to automations. Products come
+ * One integration into the registries: its protocols, the products on it,
+ * then its own types, each with what it brings to automations. Products come
  * first because that is the order a person is offered them in: the
  * platform's generic type is the one to take when no product is yours.
  */
-export function installIntegration(types: DeviceTypeRegistry, integration: InstalledIntegration, source = integration.id): void {
+export function installIntegration(
+  { types, protocols }: Pick<Installed, 'types' | 'protocols'>,
+  integration: InstalledIntegration,
+  source = integration.id
+): void {
   const info = { id: integration.id, name: integration.name };
   if (types.installIntegration(info, source, integration.migrations ?? []).length) return;
+  for (const protocol of integration.protocols) protocols.install(protocol, integration.id, `${source} (${protocol.id ?? 'a protocol'})`);
   for (const [entries, product] of [[integration.products, true], [integration.types, false]] as const) {
     for (const { type, automation } of entries) {
       if (types.install(type, { integration: info, product }, `${source} (${type.id ?? 'a type'})`).length) continue;

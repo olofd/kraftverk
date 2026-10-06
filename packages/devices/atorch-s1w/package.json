@@ -32,8 +32,7 @@
   },
   "dependencies": {
     "@kraftverk/device-sdk": "*",
-    "@kraftverk/integration-tuya": "*",
-    "@kraftverk/protocol-tuya-local": "*"
+    "@kraftverk/integration-tuya": "*"
   },
   "peerDependencies": {
     "@kraftverk/api-client": "*",

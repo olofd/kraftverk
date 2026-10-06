@@ -1,5 +1,5 @@
 import { localTime, zonedInstant } from '@kraftverk/device-sdk';
-import { PRICE_TIME_ZONE, type PriceDay, type PricePeriod } from '@kraftverk/protocol-elprisetjustnu';
+import { PRICE_TIME_ZONE, type PriceDay, type PricePeriod } from './protocol/index.ts';
 
 /**
  * What a list of price periods says now: the price of the period now, and

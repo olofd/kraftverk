@@ -26,7 +26,7 @@ import {
   type NiuState,
   type NiuTotals,
   type NiuVehicle,
-} from '@kraftverk/protocol-niu-cloud';
+} from './protocol/index.ts';
 
 import { SimulatedScooter } from './simulation.ts';
 

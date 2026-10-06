@@ -1,6 +1,6 @@
 import { defineDeviceType, type OpenConnection } from '@kraftverk/device-sdk';
 import { SYDPOWER_WAYS } from '@kraftverk/integration-sydpower';
-import { linkOver, parseMac, readInputRegisters, stationIdentity } from '@kraftverk/protocol-sydpower';
+import { linkOver, parseMac, readInputRegisters, stationIdentity } from '@kraftverk/integration-sydpower/protocol';
 
 import { mainsWatcher } from './automation.ts';
 import { describeStation } from './index.ts';

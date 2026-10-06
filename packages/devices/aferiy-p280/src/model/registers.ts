@@ -12,7 +12,7 @@
  * hardware before trusting any value marked `unverified`.
  */
 
-import { SLEEP_VALUES } from '@kraftverk/protocol-sydpower';
+import { SLEEP_VALUES } from '@kraftverk/integration-sydpower/protocol';
 
 /** Input registers (function 0x04) — read-only telemetry. */
 export const INPUT = {
@@ -385,7 +385,7 @@ export function assertWritable(register: number, value: number): void {
 
 /**
  * The guard for frames only *carried* — raw frames, and what a broker forwards
- * — is the protocol's: `commandRefusal` in `@kraftverk/protocol-sydpower`,
+ * — is the protocol's: `commandRefusal` in `@kraftverk/integration-sydpower/protocol`,
  * because register 68 is a fact about the whole Sydpower family. This whitelist
  * guards the writes this model's code composes, and agrees with it: 68 takes
  * the protocol's `SLEEP_VALUES` and nothing else.

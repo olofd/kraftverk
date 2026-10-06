@@ -9,14 +9,15 @@ its prices.
 
 ## What it does — and does not
 
-- **Does:** a price area as a service: the price now and the hour's rank
-  among the day's, which automations can use.
-- **Does not:** speak the price API (`@kraftverk/protocol-elprisetjustnu`),
-  or decide when to charge — automations do.
+- **Does:** speak the price API (`src/protocol/`): the request for a day's
+  prices in a price area, and how to read the answer, over HTTPS. A price
+  area as a service: the price now and the hour's rank among the day's,
+  which automations can use.
+- **Does not:** decide when to charge — automations do.
 
 ## Where it fits
 
-An integration (docs/PLAN-INTEGRATIONS.md §1) whose one type is a service:
+An integration (docs/PLAN-INTEGRATIONS.md §1.1) whose one type is a service:
 a device type of kind `service`, over the HTTPS transport. Prices are the
 platform's, not a product, so no device package builds on it.
 

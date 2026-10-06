@@ -21,7 +21,7 @@ const session = (extra: Partial<DeviceSession> = {}): DeviceSession => ({
 });
 
 /** A protocol that refuses frames starting with zero, as a real guard refuses a dangerous write. */
-const protocol: Protocol = { id: 'lampish', label: 'Lampish', bindings: { bus: { open: () => ({}), recognise: () => null } }, guard: (bytes) => (bytes[0] === 0 ? 'Refused: zero' : null) };
+const protocol: Protocol = { id: 'test-lamp', label: 'Lampish', bindings: { bus: { open: () => ({}), recognise: () => null } }, guard: (bytes) => (bytes[0] === 0 ? 'Refused: zero' : null) };
 
 function lampType(overrides: Partial<DeviceType<any>> = {}): DeviceType<any> {
   return {
@@ -33,7 +33,7 @@ function lampType(overrides: Partial<DeviceType<any>> = {}): DeviceType<any> {
       events: [{ id: 'bulb.failed', label: 'Bulb failed', level: 'warn', data: { hours: { type: 'number' } } }],
     }),
     config: { fields: { room: { type: 'string', title: 'Room', required: true } } },
-    connections: [{ id: 'bus', label: 'Bus', protocol: 'lampish', transport: 'bus' }],
+    connections: [{ id: 'bus', label: 'Bus', protocol: 'test-lamp', transport: 'bus' }],
     identify: async () => ({ identity: null, model: null, summary: '' }),
     createSession: async () => session(),
     createSimulator: async () => session(),
@@ -46,7 +46,7 @@ const baseInput = (type: DeviceType<any>, channel = fakeByteChannel(() => null))
   device: { id: savedDeviceId('d-1'), name: 'Hall lamp', config: { room: 'Hall' } },
   connection: { method: 'bus', transport: 'bus', address: 'lamp-1', config: {} },
   secret: () => null,
-  protocols: { get: (id: string) => (id === 'lampish' ? protocol : null) },
+  protocols: { get: (id: string) => (id === 'test-lamp' ? protocol : null) },
   transports: { start: async () => ({ open: async () => channel }) as unknown as Transport, available: () => ({ ok: true as const }) },
   store: { get: () => null, set: () => {}, delete: () => {} },
   platform: 'system' as const,
@@ -211,8 +211,8 @@ describe('judging the check', () => {
   });
 
   test('new, yours, yours before, and another model', () => {
-    const said = { identity: 'lampish:A', model: 'L1', summary: 'On.' };
-    expect(judgeCheck(said, { type, types: [type], known: known(false) })).toEqual({ outcome: 'new', summary: 'On.', identity: 'lampish:A' });
+    const said = { identity: 'test-lamp:A', model: 'L1', summary: 'On.' };
+    expect(judgeCheck(said, { type, types: [type], known: known(false) })).toEqual({ outcome: 'new', summary: 'On.', identity: 'test-lamp:A' });
     expect(judgeCheck(said, { type, types: [type], known: known(true) })).toMatchObject({ outcome: 'yours', device: { name: 'Hall lamp' } });
     expect(judgeCheck(said, { type, types: [type], known: known(false, true) })).toMatchObject({ outcome: 'removed', devices: [{ name: 'Old lamp' }] });
     const other = lampType({ id: 'test.big', meta: { name: 'Big lamp', category: 'smart-plug', support: 'experimental', icon: 'sun', models: ['L9'] } });
@@ -220,7 +220,7 @@ describe('judging the check', () => {
   });
 
   test('a model reported with its finish after it is still that model; the closest name wins elsewhere', () => {
-    const said = { identity: 'lampish:A', model: 'L1 Black (Matte)', summary: 'On.' };
+    const said = { identity: 'test-lamp:A', model: 'L1 Black (Matte)', summary: 'On.' };
     expect(judgeCheck(said, { type, types: [type], known: known(false) })).toMatchObject({ outcome: 'new' });
     // A longer name is not a finish.
     expect(judgeCheck({ ...said, model: 'L10' }, { type, types: [type], known: known(false) })).toMatchObject({ outcome: 'other-model', type: null });
@@ -230,6 +230,6 @@ describe('judging the check', () => {
   });
 
   test('an identity from the sighting stands in when the device does not say', () => {
-    expect(judgeCheck({ identity: null, model: null, summary: 'On.' }, { type, types: [type], known: known(false), identityHint: 'lampish:B' })).toMatchObject({ outcome: 'new', identity: 'lampish:B' });
+    expect(judgeCheck({ identity: null, model: null, summary: 'On.' }, { type, types: [type], known: known(false), identityHint: 'test-lamp:B' })).toMatchObject({ outcome: 'new', identity: 'test-lamp:B' });
   });
 });

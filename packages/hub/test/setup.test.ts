@@ -72,7 +72,7 @@ describe('adding a device', () => {
     expect(await t.home.setup.sightings(started.id)).toEqual([expect.objectContaining({ address: 'lamp-1', name: 'Lamp lamp-1', claimedBy: null })]);
 
     const lamp = await t.added('Hall lamp');
-    expect(lamp.identity).toBe('lampish:LAMP-1');
+    expect(lamp.identity).toBe('test-lamp:LAMP-1');
     const view = await t.home.devices.get(lamp.id);
     expect(view.config).toEqual({ room: 'Hall' });
     expect(view.connections[0]).toMatchObject({ method: 'bus', address: 'lamp-1', heldBy: { kind: 'master', id: MACHINE_NODE.id, name: MACHINE_NODE.name } });
@@ -94,7 +94,7 @@ describe('adding a device', () => {
     await t.home.devices.remove(lamp.id);
 
     const { id, check } = await t.checked();
-    expect(check).toMatchObject({ outcome: 'removed', identity: 'lampish:LAMP-1', devices: [expect.objectContaining({ id: lamp.id, name: 'Hall lamp' })] });
+    expect(check).toMatchObject({ outcome: 'removed', identity: 'test-lamp:LAMP-1', devices: [expect.objectContaining({ id: lamp.id, name: 'Hall lamp' })] });
     const back = await t.home.setup.save(id, { name: 'Hall lamp', mode: 'restore', deviceId: lamp.id });
     expect(back.id).toBe(lamp.id);
     expect(back.removedAt).toBeNull();

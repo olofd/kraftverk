@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { fromHex, parseFrame } from '@kraftverk/protocol-sydpower';
+import { fromHex, parseFrame } from '@kraftverk/integration-sydpower/protocol';
 import { assertWritable, decodeTelemetry, HOLDING, UnsafeWriteError } from './registers.ts';
 
 // prettier-ignore

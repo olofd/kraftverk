@@ -10,7 +10,7 @@ frames mean — and which commands must be refused, such as a write of 0 to
 register 68 — belongs to the Sydpower **protocol**, which supplies them to the
 broker (ARCHITECTURE.md §4.7). The broker lives in
 `packages/transports/mqtt/src/broker/` and loads every installed protocol's
-policy from `packages/protocols` at start — it refuses to start if one fails
+policy from the integrations' protocols (`packages/integrations/*`, `kraftverk.integration.protocols`) at start — it refuses to start if one fails
 to load, rather than run without a guard. A device's presence and messages are
 filed under its protocol; nothing below changes for the station.
 

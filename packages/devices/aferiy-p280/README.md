@@ -18,8 +18,8 @@ broker) or Bluetooth LE, **without the vendor cloud**.
   registers).
 - **Does not:** say how a Sydpower station is reached — over kraftverk's
   MQTT broker and over Bluetooth, its integration's ways
-  (`@kraftverk/integration-sydpower`) — speak its protocol
-  (`@kraftverk/protocol-sydpower`), open a connection (the holder and the
+  (`@kraftverk/integration-sydpower`) — speak its protocol (the
+  integration's too, `@kraftverk/integration-sydpower/protocol`), open a connection (the holder and the
   transports), or decide when to switch (the gateway and automations).
 
 ## Where it fits
@@ -163,7 +163,7 @@ The station is a **MODBUS RTU slave at address `0x11`**, reachable two ways:
 Every one of them carries byte-identical frames, so a single codec, a single
 register map and a single write whitelist serve all four. The framing, and the
 guard on register 68 that holds for the whole family, are the Sydpower
-protocol's (`packages/protocols/sydpower`); the register map and this model's
+protocol's, in its integration (`packages/integrations/sydpower/src/protocol`); the register map and this model's
 write whitelist are this package's (`src/model/registers.ts`). The server and the
 app both import them — the app is not a thin client that trusts the server's
 decoding, it contains the same decoder.

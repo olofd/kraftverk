@@ -76,17 +76,18 @@ export function refusalFor(policies: Policies, topic: string, payload: Uint8Arra
   return command.policy.refuse(payload);
 }
 
-/** Where the protocol packages are, from this file: packages/transports/mqtt/src/broker. */
-const PROTOCOLS_DIR = resolve(import.meta.dirname, '../../../../protocols');
+/** Where the integrations are, from this file: packages/transports/mqtt/src/broker. */
+const INTEGRATIONS_DIR = resolve(import.meta.dirname, '../../../../integrations');
 
 /**
  * Finds every installed protocol and the broker policy of its MQTT binding.
  *
- * Found rather than listed, like device types: a protocol is a package that
- * says `"kraftverk": { "protocol": "./src/index.ts" }`. Throws when none is
- * found, so a broker never runs without knowing what a command is.
+ * Found rather than listed, like device types: an integration names its
+ * protocols in its package.json — `"kraftverk": { "integration": {
+ * "protocols": ["./src/protocol/index.ts"] } }`. Throws when none is found,
+ * so a broker never runs without knowing what a command is.
  */
-export async function loadPolicies(dir: string = process.env.KRAFTVERK_PROTOCOLS_DIR || PROTOCOLS_DIR): Promise<MessageBrokerPolicy[]> {
+export async function loadPolicies(dir: string = process.env.KRAFTVERK_INTEGRATIONS_DIR || INTEGRATIONS_DIR): Promise<MessageBrokerPolicy[]> {
   const policies: MessageBrokerPolicy[] = [];
   const problems: string[] = [];
   let entries: string[] = [];
@@ -99,13 +100,13 @@ export async function loadPolicies(dir: string = process.env.KRAFTVERK_PROTOCOLS
   for (const entry of entries) {
     try {
       const manifest = JSON.parse(await readFile(resolve(dir, entry, 'package.json'), 'utf8')) as {
-        kraftverk?: { protocol?: string };
+        kraftverk?: { integration?: { protocols?: string[] } };
       };
-      const path = manifest.kraftverk?.protocol;
-      if (!path) continue;
-      const loaded = (await import(pathToFileURL(resolve(dir, entry, path)).href)) as { default?: Protocol };
-      const policy = loaded.default?.bindings.mqtt?.broker;
-      if (policy) policies.push(policy);
+      for (const path of manifest.kraftverk?.integration?.protocols ?? []) {
+        const loaded = (await import(pathToFileURL(resolve(dir, entry, path)).href)) as { default?: Protocol };
+        const policy = loaded.default?.bindings.mqtt?.broker;
+        if (policy) policies.push(policy);
+      }
     } catch (error) {
       problems.push(`${entry}: ${(error as Error).message}`);
     }

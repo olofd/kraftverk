@@ -41,8 +41,8 @@ COPY --from=sources /manifests ./
 
 FROM manifests AS deps
 
-# The server, and every package it finds at startup: protocols, transports,
-# integrations and device packages each bring their own dependencies — the MQTT
+# The server, and every package it finds at startup: transports,
+# integrations (with their protocols) and device packages each bring their own dependencies — the MQTT
 # transport its broker (aedes). A parent folder selects every workspace in it,
 # so a package added there is installed with no change here.
 #
@@ -66,7 +66,7 @@ FROM manifests AS deps
 # layer that changes only with the lockfile.)
 RUN npm ci --omit=dev --omit=optional --ignore-scripts \
       --workspace server --workspace packages/device-sdk \
-      --workspace packages/protocols --workspace packages/transports \
+      --workspace packages/transports \
       --workspace packages/integrations --workspace packages/devices \
       --include-workspace-root \
  && mkdir -p server/node_modules \
@@ -142,7 +142,7 @@ ENV NODE_ENV=production \
 # Dependencies first — a large layer that changes only with the lockfile — then
 # the sources, which change with every commit. Both node_modules: see the deps
 # stage. npm links workspaces as relative symlinks (node_modules/@kraftverk/
-# protocol-sydpower → ../../packages/protocols/sydpower), which resolve because
+# integration-sydpower → ../../packages/integrations/sydpower), which resolve because
 # both stages build in /app and packages/ is copied alongside.
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/server/node_modules ./server/node_modules
@@ -150,7 +150,7 @@ COPY package.json ./
 COPY packages ./packages
 COPY server ./server
 
-# The server finds its protocols, transports and device types in packages/ at
+# The server finds its integrations, transports and device types in packages/ at
 # startup rather than importing a fixed list, so that directory is not
 # optional: without it the container starts able to reach nothing.
 # Only /data is writable, and only it is chowned — a recursive chown of /app

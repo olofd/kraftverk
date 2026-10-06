@@ -1,11 +1,10 @@
 /**
- * Starts a new integration, device package, protocol or transport: a package
- * that works, keeps its contract and passes the architecture check on the
- * first run, for you to make true. See docs/ADDING-A-DEVICE.md.
+ * Starts a new integration, device package or transport: a package that
+ * works, keeps its contract and passes the architecture check on the first
+ * run, for you to make true. See docs/ADDING-A-DEVICE.md.
  *
- *   npm run new:integration -- acme           packages/integrations/acme      a platform
- *   npm run new:device -- acme-plug acme      packages/devices/acme-plug      a product on it
- *   npm run new:protocol -- acme              packages/protocols/acme
+ *   npm run new:integration -- acme           packages/integrations/acme      a service or platform, and its protocol
+ *   npm run new:device -- acme-plug acme      packages/devices/acme-plug      a kind of device on it
  *   npm run new:transport -- zigbee           packages/transports/zigbee
  *
  * Nothing else needs editing: the server finds the package at start, and
@@ -19,8 +18,8 @@ const ROOT = resolve(import.meta.dirname, '..');
 const [kind, name, platform] = process.argv.slice(2);
 const NAME = /^[a-z][a-z0-9-]{1,40}$/;
 
-if (!kind || !['integration', 'device', 'protocol', 'transport'].includes(kind) || !name || !NAME.test(name) || (kind === 'device' && !(platform && NAME.test(platform)))) {
-  console.error('Usage: npm run new:integration|new:protocol|new:transport -- <name>');
+if (!kind || !['integration', 'device', 'transport'].includes(kind) || !name || !NAME.test(name) || (kind === 'device' && !(platform && NAME.test(platform)))) {
+  console.error('Usage: npm run new:integration|new:transport -- <name>');
   console.error('       npm run new:device -- <name> <the integration it is built on>');
   console.error('Names are lower-case with dashes.');
   process.exit(1);
@@ -30,7 +29,7 @@ if (kind === 'device' && !existsSync(resolve(ROOT, 'packages/integrations', plat
   process.exit(1);
 }
 
-const folder = { integration: 'integrations', device: 'devices', protocol: 'protocols', transport: 'transports' }[kind]!;
+const folder = { integration: 'integrations', device: 'devices', transport: 'transports' }[kind]!;
 const dir = resolve(ROOT, 'packages', folder, name);
 if (existsSync(dir)) {
   console.error(`packages/${folder}/${name} already exists`);
@@ -90,23 +89,59 @@ if (kind === 'integration') {
   files['package.json'] = manifest(
     `@kraftverk/integration-${name}`,
     `${title} as a platform: how things on it are reached, signed into and found. Describe it.`,
-    { integration: { id: name, name: title, types: [] } },
-    { '.': './src/index.ts' }
+    { integration: { id: name, name: title, protocols: ['./src/protocol/index.ts'], types: [] } },
+    { '.': './src/index.ts', './protocol': './src/protocol/index.ts' }
   );
   files['src/index.ts'] = `import type { ConnectionMethod } from '@kraftverk/device-sdk';
+
+import protocol from './protocol/index.ts';
 
 /**
  * ${title} as a platform. See docs/ADDING-A-DEVICE.md.
  *
- * What every product on it shares: the ways it is reached — its protocol over
- * a transport — and, as they come, their setup, its accounts and gateways,
- * the builder its products are made with, and a generic type for a product
- * nobody has described. It names no product: each is a device package built on
- * this one.
+ * The one place kraftverk meets ${title} (docs/PLAN-INTEGRATIONS.md §1.1):
+ * how it is spoken to (\`./protocol/\`), the ways a thing on it is reached
+ * and, as they come, their setup, its accounts and gateways, its screens, the
+ * builder its devices are made with, and a generic type for a device nobody
+ * has described. It names no product: each is a device package built on this.
  */
 
-/** Every way a thing on ${title} is reached. Its protocol is \`@kraftverk/protocol-${name}\` (npm run new:protocol -- ${name}). */
-export const ${waysOf(name)}: readonly ConnectionMethod[] = [{ id: 'lan', label: 'Home network', protocol: '${name}', transport: 'lan', reach: 'local' }];
+/** Every way a thing on ${title} is reached: its protocol over a transport. */
+export const ${waysOf(name)}: readonly ConnectionMethod[] = [{ id: 'lan', label: 'Home network', protocol: protocol.id, transport: 'lan', reach: 'local' }];
+`;
+  files['src/protocol/index.ts'] = `import type { Protocol, Sighting } from '@kraftverk/device-sdk';
+
+/**
+ * How ${title} is spoken to. Pure: bytes and messages in, bytes and messages
+ * out, no I/O and no Node or Bun built-in, because it runs in the app as well
+ * as on a server — and the SDK is all it imports. A binding for each
+ * transport it rides.
+ */
+const protocol: Protocol = {
+  id: '${name}',
+  label: '${title}',
+  bindings: {
+    lan: {
+      open: () => ({ port: 6668 }),
+      // Whether something the transport saw is one of ${title}'s.
+      recognise: (sighting: Sighting) => (sighting.facts.protocol === '${name}' ? { name: sighting.name ?? sighting.address } : null),
+      parseAddress: (input) => (/^\\d{1,3}(\\.\\d{1,3}){3}$/.test(input.trim()) ? input.trim() : null),
+      addressLabel: 'IP address',
+    },
+  },
+};
+
+export default protocol;
+`;
+  files['test/protocol.test.ts'] = `import { expect, test } from 'bun:test';
+
+import { validateProtocol } from '@kraftverk/device-sdk';
+
+import protocol from '../src/protocol/index.ts';
+
+test('${title} is spoken to by a valid protocol', () => {
+  expect(validateProtocol(protocol)).toEqual([]);
+});
 `;
   files['test/ways.test.ts'] = `import { expect, test } from 'bun:test';
 
@@ -121,28 +156,25 @@ test('a thing on ${title} is reached at least one way', () => {
 if (kind === 'device') {
   const ways = waysOf(platform!);
   const offersWays = readFileSync(resolve(ROOT, 'packages/integrations', platform!, 'src/index.ts'), 'utf8').includes(`export const ${ways}`);
-  // Without ways to take, a way of its own over the protocol its platform is built on: to be made true.
-  const platformManifest = JSON.parse(readFileSync(resolve(ROOT, 'packages/integrations', platform!, 'package.json'), 'utf8')) as { dependencies?: Record<string, string> };
-  const spoken = Object.keys(platformManifest.dependencies ?? {}).find((dependency) => dependency.startsWith('@kraftverk/protocol-'))?.slice('@kraftverk/protocol-'.length) ?? platform!;
   files['package.json'] = manifest(
     `@kraftverk/device-${name}`,
-    `The ${title}, a product on ${platform}. Describe what it is.`,
+    `The ${title}, a device on ${platform}. Describe what it is.`,
     { device: { integration: platform, types: [{ id: `community.${id}`, entry: './src/type.ts' }] } },
     { '.': './src/type.ts', './type': './src/type.ts' },
-    // The protocol it speaks itself, when it takes no ways from its platform: one its platform is built on.
-    { [`@kraftverk/integration-${platform}`]: '*', ...(!offersWays && spoken !== platform ? { [`@kraftverk/protocol-${spoken}`]: '*' } : {}) }
+    // Its integration, and nothing else: what it needs of the service, the integration gives it.
+    { [`@kraftverk/integration-${platform}`]: '*' }
   );
   files['src/type.ts'] = `import { defineDeviceType, MAIN_PART, type DeviceContext, type DeviceDescription, type DeviceSession, type Reading } from '@kraftverk/device-sdk';
 ${offersWays ? `import { ${ways} } from '@kraftverk/integration-${platform}';\n` : ''}
 /**
- * The ${title}, a product on ${platform}. See docs/ADDING-A-DEVICE.md.
+ * The ${title}, a device on ${platform}. See docs/ADDING-A-DEVICE.md.
  *
  * Start from the simulator: it keeps the contract with no hardware, and it is
  * what the tests and "try without hardware" use. It is reached the ways its
  * integration offers; what is its own is what it is — its parts, what each
  * reports and takes, its models and pictures.
  */`;
-  files['src/type.ts'] += DEVICE_BODY(offersWays ? `  // Reached the ways every product on ${platform} is: its integration's.\n  connections: ${ways},` : `  // A way of its own, over the protocol ${platform} is built on — or its integration's ways, once it exports them as ${ways}.\n  connections: [{ id: 'lan', label: 'Home network', protocol: '${spoken}', transport: 'lan', reach: 'local' }],`);
+  files['src/type.ts'] += DEVICE_BODY(offersWays ? `  // Reached the ways every product on ${platform} is: its integration's.\n  connections: ${ways},` : `  // Its integration's ways, once it exports them as ${ways}: a way is the integration's protocol over a transport.\n  connections: [],`);
 
 function DEVICE_BODY(connections: string): string {
   return `
@@ -217,50 +249,6 @@ test('the ${title} keeps the device-type contract', async () => {
 `;
 }
 
-if (kind === 'protocol') {
-  files['package.json'] = manifest(
-    `@kraftverk/protocol-${name}`,
-    `The ${title} protocol: framing and meaning of its bytes. Pure code, over whatever transport it rides.`,
-    { protocol: './src/index.ts' },
-    { '.': './src/index.ts' }
-  );
-  files['src/index.ts'] = `import type { Protocol, Sighting } from '@kraftverk/device-sdk';
-
-/**
- * The ${title} protocol. See docs/ADDING-A-DEVICE.md.
- *
- * Pure: bytes and messages in, bytes and messages out, no I/O and no Node or
- * Bun built-ins, because it runs in the app as well as on the server. It has
- * a binding for each transport it rides, and no idea what product it serves.
- */
-const protocol: Protocol = {
-  id: '${name}',
-  label: '${title}',
-  bindings: {
-    lan: {
-      open: () => ({ port: 6668 }),
-      // Whether something the transport saw is one of this protocol's devices.
-      recognise: (sighting: Sighting) => (sighting.facts.protocol === '${name}' ? { name: sighting.name ?? sighting.address } : null),
-      parseAddress: (input) => (/^\\d{1,3}(\\.\\d{1,3}){3}$/.test(input.trim()) ? input.trim() : null),
-      addressLabel: 'IP address',
-    },
-  },
-};
-
-export default protocol;
-`;
-  files['test/protocol.test.ts'] = `import { expect, test } from 'bun:test';
-
-import { validateProtocol } from '@kraftverk/device-sdk';
-
-import protocol from '../src/index.ts';
-
-test('the ${title} protocol is a valid protocol', () => {
-  expect(validateProtocol(protocol)).toEqual([]);
-});
-`;
-}
-
 if (kind === 'transport') {
   files['package.json'] = manifest(
     `@kraftverk/transport-${name}`,
@@ -322,23 +310,18 @@ files['tsconfig.json'] = TSCONFIG;
 /** What every package's README says, under the headings the architecture check asks for: to be written as the package is. */
 const SAYS = {
   integration: {
-    is: `${title} as a platform: how things on it are reached, signed into and found, apart from any one product.`,
-    fits: 'An integration (docs/PLAN-INTEGRATIONS.md §1): it imports the SDK, the language and its protocols, and names no product; device packages build on it; the server finds it by its package.json, the app through the generated registry.',
-    why: 'Because what every product on a platform shares is written once, and each product is then a small package of its own.',
+    is: `${title} as a platform: how it is spoken to, and how things on it are reached, signed into and found, apart from any one product.`,
+    fits: 'An integration (docs/PLAN-INTEGRATIONS.md §1.1): the one place kraftverk meets this service. It imports the SDK and the language, its protocol in src/protocol/ the SDK alone, and names no product; device packages build on it; the server finds it by its package.json, the app through the generated registry.',
+    why: 'Because what every device on a platform shares, and how the service is spoken to, is written once, and each device is then a small package of its own.',
   },
   device: {
-    is: `The ${title}, a product on ${platform}: what it measures, what it can do, its settings, its models and pictures.`,
-    fits: `A device package (docs/PLAN-INTEGRATIONS.md §1): built on the ${platform} integration, importing it, the SDK and its protocols; the server finds it by its package.json, the app through the generated registry.`,
+    is: `The ${title}, a device on ${platform}: what it measures, what it can do, its settings, its models, pictures and screens.`,
+    fits: `A device package (docs/PLAN-INTEGRATIONS.md §1.1): built on the ${platform} integration, importing it and the SDK and nothing else; the server finds it by its package.json, the app through the generated registry.`,
     why: 'Because device-specific code stays in its package and the core names no product (AGENTS.md).',
-  },
-  protocol: {
-    is: `The ${title} protocol: what goes over a channel, and how to read what comes back.`,
-    fits: 'A protocol (docs/ARCHITECTURE.md §3): pure, importing only the SDK. Device types use it; transports carry its bytes.',
-    why: 'Because a protocol is shared by every device that speaks it, and tested on its frames alone.',
   },
   transport: {
     is: `${title}: a way kraftverk reaches devices, with an entry for each place it runs.`,
-    fits: 'A transport (docs/ARCHITECTURE.md §3): the platform layer, importing only the SDK. Holders open its channels; protocols speak over them.',
+    fits: "A transport (docs/ARCHITECTURE.md §3): the platform layer, importing only the SDK. Holders open its channels; integrations' protocols speak over them.",
     why: 'Because platform code lives in transports, and nothing else touches a platform API.',
   },
 }[kind]!;
@@ -371,6 +354,5 @@ for (const [path, content] of Object.entries(files)) {
 console.log(`Created packages/${folder}/${name}. Next:`);
 console.log('  npm install                 link it into the workspace');
 console.log(`  npm test --workspace @kraftverk/${kind}-${name}`);
-if (kind === 'integration') console.log(`  npm run new:protocol -- ${name}   the protocol its ways speak, if it is new`);
 if (kind === 'integration' || kind === 'device') console.log('  npm run gen:devices         bind it into the app');
 console.log('  docs/ADDING-A-DEVICE.md     what to make true next');

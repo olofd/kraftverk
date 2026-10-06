@@ -14,9 +14,9 @@
  */
 import { toQR } from 'toqr';
 
-import { isRegion, REGIONS, TuyaCloud, TuyaCloudError, type CloudDevice, type Region } from '../src/cloud.ts';
-import type { DiscoveredTuyaDevice } from '../src/discovery.ts';
-import { pollLogin, qrLoginContent, requestQrToken, smartLifeDevices, SmartLifeError } from '../src/smartlife.ts';
+import { isRegion, REGIONS, TuyaCloud, TuyaCloudError, type CloudDevice, type Region } from '../src/protocol/cloud.ts';
+import type { DiscoveredTuyaDevice } from '../src/protocol/discovery.ts';
+import { pollLogin, qrLoginContent, requestQrToken, smartLifeDevices, SmartLifeError } from '../src/protocol/smartlife.ts';
 import { listen } from './listen.ts';
 
 const flag = (name: string): string | undefined =>

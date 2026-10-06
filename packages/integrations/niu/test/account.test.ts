@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { platformsOf, type HttpChannel } from '@kraftverk/device-sdk';
 import { checkDeviceTypeContract, fakeConnection } from '@kraftverk/device-sdk/testing';
-import { md5Hex, NIU_ACCOUNT, NIU_API } from '@kraftverk/protocol-niu-cloud';
+import { md5Hex, NIU_ACCOUNT, NIU_API } from '../src/protocol/index.ts';
 
 import account from '../src/account.ts';
 import migrations from '../src/migrations.ts';

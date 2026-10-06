@@ -44,8 +44,7 @@
   },
   "dependencies": {
     "@kraftverk/device-sdk": "*",
-    "@kraftverk/integration-sydpower": "*",
-    "@kraftverk/protocol-sydpower": "*"
+    "@kraftverk/integration-sydpower": "*"
   },
   "peerDependencies": {
     "@kraftverk/api-client": "*",

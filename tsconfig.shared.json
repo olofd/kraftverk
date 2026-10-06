@@ -5,7 +5,6 @@
   "include": [
     "packages/device-sdk/everywhere.d.ts",
     "packages/*/src/**/*.ts",
-    "packages/protocols/*/src/**/*.ts",
     "packages/integrations/*/src/**/*.ts",
     "packages/devices/*/src/**/*.ts"
   ],

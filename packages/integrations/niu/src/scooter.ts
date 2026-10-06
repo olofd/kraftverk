@@ -15,7 +15,7 @@ import {
   type ToolSpec,
   type Value,
 } from '@kraftverk/device-sdk';
-import { ASK, decodeMessage, encodeMessage, SAID, type MemberSaid, type NiuBatteryHealth, type NiuVehicle, type NiuState, type NiuTotals } from '@kraftverk/protocol-niu-cloud';
+import { ASK, decodeMessage, encodeMessage, SAID, type MemberSaid, type NiuBatteryHealth, type NiuVehicle, type NiuState, type NiuTotals } from './protocol/index.ts';
 
 import { ago, REPORT_TRUSTED_MS } from './report.ts';
 import { SimulatedScooter } from './simulation.ts';

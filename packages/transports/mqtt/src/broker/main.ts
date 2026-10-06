@@ -15,7 +15,7 @@ import { brokerBuild, brokerDir, brokerToken, DEFAULTS, paths } from './shared.t
  *
  * Environment:
  *   MQTT_HOST / MQTT_PORT                 where devices connect (0.0.0.0:1883)
- *   KRAFTVERK_PROTOCOLS_DIR               where the protocol packages are (found beside this package)
+ *   KRAFTVERK_INTEGRATIONS_DIR            where the integrations and their protocols are (found beside this package)
  *   BROKER_ADMIN_HOST / BROKER_ADMIN_PORT the admin API (127.0.0.1:3883)
  *   KRAFTVERK_BROKER_DIR                  token, state and logs (server/data/broker)
  *   KRAFTVERK_BROKER_TOKEN                the server's secret, instead of the token file

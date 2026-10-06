@@ -8,7 +8,7 @@ import {
   WRITE_DEADLINE_MS,
   type StationLink,
 } from './client.ts';
-import { parseCommand, type ParsedFrame } from '@kraftverk/protocol-sydpower';
+import { parseCommand, type ParsedFrame } from '@kraftverk/integration-sydpower/protocol';
 import { HOLDING, INPUT, INPUT_REGISTER_COUNT, STATUS, UnsafeWriteError } from './registers.ts';
 
 /**

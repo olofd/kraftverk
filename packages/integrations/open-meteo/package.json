@@ -9,6 +9,9 @@
     "integration": {
       "id": "open-meteo",
       "name": "Open-Meteo",
+      "protocols": [
+        "./src/protocol/index.ts"
+      ],
       "types": [
         {
           "id": "open-meteo.weather",
@@ -20,7 +23,8 @@
   },
   "exports": {
     ".": "./src/type.ts",
-    "./automation": "./src/automation.ts"
+    "./automation": "./src/automation.ts",
+    "./protocol": "./src/protocol/index.ts"
   },
   "scripts": {
     "test": "node ../../../scripts/run-bun.mjs test",
@@ -28,8 +32,7 @@
   },
   "dependencies": {
     "@kraftverk/automation": "*",
-    "@kraftverk/device-sdk": "*",
-    "@kraftverk/protocol-open-meteo": "*"
+    "@kraftverk/device-sdk": "*"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

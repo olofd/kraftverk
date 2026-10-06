@@ -4,7 +4,6 @@
   "private": true,
   "workspaces": [
     "packages/*",
-    "packages/protocols/*",
     "packages/transports/*",
     "packages/integrations/*",
     "packages/devices/*",
@@ -52,18 +51,17 @@
     "check:architecture": "node scripts/architecture.mjs && node scripts/run-bun.mjs scripts/gen-devices.ts --check && node scripts/run-bun.mjs scripts/gen-reference.ts --check",
     "//knip": "Files, exports and dependencies nothing uses, and dependencies used but not declared (knip.jsonc says what runs and why).",
     "knip": "knip",
-    "//gen:devices": "Writes the app's registry of device types, protocols, transports and screens from the installed packages (client/src/generated/registry.ts). Run it after adding a package; CI checks it is current.",
+    "//gen:devices": "Writes the app's registry of integrations, device types, their protocols, transports and screens from the installed packages (client/src/generated/registry.ts). Run it after adding a package; CI checks it is current.",
     "gen:devices": "node scripts/run-bun.mjs scripts/gen-devices.ts",
     "gen:reference": "node scripts/run-bun.mjs scripts/gen-reference.ts",
     "//config": "Checks a configuration file against what is installed, or prints its JSON Schema: npm run config -- check kraftverk.yaml. See docs/CONFIG.md.",
     "config": "node scripts/run-bun.mjs scripts/config.ts",
-    "//new": "Starts an integration (a platform), a device package (a product on one), a protocol or a transport that already keeps its contract. See docs/ADDING-A-DEVICE.md.",
+    "//new": "Starts an integration (a service or platform, with its protocol), a device package (a kind of device on one) or a transport that already keeps its contract. See docs/ADDING-A-DEVICE.md.",
     "new:integration": "node scripts/run-bun.mjs scripts/new-package.ts integration",
     "new:device": "node scripts/run-bun.mjs scripts/new-package.ts device",
-    "new:protocol": "node scripts/run-bun.mjs scripts/new-package.ts protocol",
     "new:transport": "node scripts/run-bun.mjs scripts/new-package.ts transport",
-    "scan:tuya": "node scripts/run-bun.mjs packages/protocols/tuya-local/tools/scan.ts",
-    "keys:tuya": "node scripts/run-bun.mjs packages/protocols/tuya-local/tools/keys.ts"
+    "scan:tuya": "node scripts/run-bun.mjs packages/integrations/tuya/tools/scan.ts",
+    "keys:tuya": "node scripts/run-bun.mjs packages/integrations/tuya/tools/keys.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

@@ -1,4 +1,4 @@
-import { GENERIC_SOCKET } from '@kraftverk/protocol-tuya-local';
+import { GENERIC_SOCKET } from './protocol/index.ts';
 
 import { defineTuyaSocket } from './socket-type.ts';
 

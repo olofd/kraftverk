@@ -39,7 +39,7 @@ function simulator(state: State, options: { description?: DeviceDescription; inf
 }
 
 /** A way to reach each over the lamp's bus: every type needs one of its own, and these are only ever simulated. */
-const overTheBus = [{ id: 'bus', label: 'Test bus', protocol: 'lampish', transport: 'bus', reach: 'local' as const }];
+const overTheBus = [{ id: 'bus', label: 'Test bus', protocol: 'test-lamp', transport: 'bus', reach: 'local' as const }];
 const neverOverTheBus = {
   async identify(): Promise<never> {
     throw new Error('Only simulated in these tests');
@@ -161,7 +161,7 @@ export const forecastType = defineDeviceType({
   meta: { name: 'Test forecast', category: 'weather', support: 'experimental', icon: 'cloud' },
   describe: () => FORECAST,
   config: { fields: {} },
-  connections: [...overTheBus, { id: 'cloud', label: 'Its cloud', protocol: 'lampish', transport: 'bus', reach: 'cloud', needs: { trusted: 'your account password stays at home' } }],
+  connections: [...overTheBus, { id: 'cloud', label: 'Its cloud', protocol: 'test-lamp', transport: 'bus', reach: 'cloud', needs: { trusted: 'your account password stays at home' } }],
   ...neverOverTheBus,
   async createSimulator() {
     return simulator(

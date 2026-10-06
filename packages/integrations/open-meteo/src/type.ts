@@ -6,7 +6,7 @@ import {
   type DeviceSession,
   type Reading,
 } from '@kraftverk/device-sdk';
-import { fetchForecast, OPEN_METEO, type WeatherHour } from '@kraftverk/protocol-open-meteo';
+import { fetchForecast, OPEN_METEO, type WeatherHour } from './protocol/index.ts';
 
 
 /**

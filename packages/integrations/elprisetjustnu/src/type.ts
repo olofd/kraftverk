@@ -1,5 +1,5 @@
 import { defineDeviceType, MAIN_PART, type DeviceContext, type DeviceDescription, type DeviceSession, type Reading } from '@kraftverk/device-sdk';
-import { CURRENCIES, ELPRISET, fetchDay, PRICE_AREAS, type Currency, type PriceArea, type PricePeriod } from '@kraftverk/protocol-elprisetjustnu';
+import { CURRENCIES, ELPRISET, fetchDay, PRICE_AREAS, type Currency, type PriceArea, type PricePeriod } from './protocol/index.ts';
 
 import { dayOf, nextDay, periodAt, rankAt, simulatedDay } from './prices.ts';
 

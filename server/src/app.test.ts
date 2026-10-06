@@ -61,7 +61,7 @@ async function build(options: { readOnly?: boolean; file: string }): Promise<Ser
   const protocols = new ProtocolRegistry();
   const transports = new TransportHost({ platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } });
   const types = new DeviceTypeRegistry();
-  protocols.install(lampProtocol);
+  protocols.install(lampProtocol, 'test');
   transports.install(busDefinition, { create: () => bus });
   types.installIntegration(TEST_INTEGRATION);
   types.install(lampType, TEST_SOURCE);

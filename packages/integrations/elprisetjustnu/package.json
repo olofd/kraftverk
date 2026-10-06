@@ -9,6 +9,9 @@
     "integration": {
       "id": "elprisetjustnu",
       "name": "Elpriset just nu",
+      "protocols": [
+        "./src/protocol/index.ts"
+      ],
       "types": [
         {
           "id": "elprisetjustnu.prices",
@@ -18,15 +21,15 @@
     }
   },
   "exports": {
-    ".": "./src/type.ts"
+    ".": "./src/type.ts",
+    "./protocol": "./src/protocol/index.ts"
   },
   "scripts": {
     "test": "node ../../../scripts/run-bun.mjs test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@kraftverk/device-sdk": "*",
-    "@kraftverk/protocol-elprisetjustnu": "*"
+    "@kraftverk/device-sdk": "*"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

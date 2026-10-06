@@ -25,8 +25,8 @@ let managers: SessionManager[] = [];
 
 const build = (node: { id: NodeId; name: string }) => {
   const protocols = new ProtocolRegistry();
-  protocols.install(lampProtocol);
-  protocols.install(relayProtocol);
+  protocols.install(lampProtocol, 'test');
+  protocols.install(relayProtocol, 'test');
   const transports = new TransportHost({ platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } });
   const types = new DeviceTypeRegistry();
   const hub = makeHubType();

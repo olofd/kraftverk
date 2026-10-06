@@ -60,7 +60,7 @@ beforeEach(() => {
   types.installIntegration(TEST_INTEGRATION);
   types.install(lampType, TEST_SOURCE);
   const protocols = new ProtocolRegistry();
-  protocols.install(lampProtocol);
+  protocols.install(lampProtocol, 'test');
   const catalog = new DeviceCatalog(db);
   const automations = new AutomationStore(db);
   const library = new AutomationLibrary([], () => {});
@@ -102,7 +102,7 @@ const lampRule: Rule = {
 
 /** A home: two lamps — one with its PIN — and an automation that acts, on the home page. */
 function aHome() {
-  const hall = deps.catalog.add({ typeId: 'test.lamp', name: 'Hall lamp', identity: 'lampish:HALL', config: { room: 'Hall' }, description: LAMP });
+  const hall = deps.catalog.add({ typeId: 'test.lamp', name: 'Hall lamp', identity: 'test-lamp:HALL', config: { room: 'Hall' }, description: LAMP });
   const way = deps.connections.add({ deviceId: hall.id, method: 'bus', transport: 'bus', heldBy: MACHINE_NODE.id, address: 'lamp-hall' });
   deps.connections.setSecrets(way.id, { pin: 'pin-of-a-test' });
   const porch = deps.catalog.add({ typeId: 'test.lamp', name: 'Porch lamp', description: LAMP });
@@ -136,7 +136,7 @@ describe('a server’s own export, into a database wiped', () => {
     const applied = await applyImport(deps, plan.id!, 'olof', {});
     expect(applied.devices.added).toEqual(['hall-lamp', 'porch-lamp']);
     const hall = deps.catalog.byKey('hall-lamp')!;
-    expect(hall).toMatchObject({ name: 'Hall lamp', identity: 'lampish:HALL', config: { room: 'Hall' } });
+    expect(hall).toMatchObject({ name: 'Hall lamp', identity: 'test-lamp:HALL', config: { room: 'Hall' } });
     const way = deps.connections.forDevice(hall.id)[0]!;
     expect(way).toMatchObject({ method: 'bus', address: 'lamp-hall' });
     expect(deps.connections.secret(way.id, 'pin')).toBe('pin-of-a-test');
@@ -297,7 +297,7 @@ automations:
           ],
         }),
         config: { fields: {} },
-        connections: [{ id: 'bus', label: 'Test bus', protocol: 'lampish', transport: 'bus', reach: 'local' }],
+        connections: [{ id: 'bus', label: 'Test bus', protocol: 'test-lamp', transport: 'bus', reach: 'local' }],
         async identify() {
           return { identity: null, model: null, summary: 'A meter.' };
         },
@@ -404,7 +404,7 @@ devices:
   hall-lamp:
     type: test.lamp
     name: Hall lamp
-    identity: lampish:HALL
+    identity: test-lamp:HALL
     settings: { room: Hall }
     connect:
       - via: bus

@@ -29,7 +29,7 @@ import {
   type ProfileDatapoint,
   type SocketProfile,
   type SocketReading,
-} from '@kraftverk/protocol-tuya-local';
+} from './protocol/index.ts';
 
 /**
  * A Tuya energy socket, as a device type: a relay and a meter, and whatever

@@ -148,26 +148,27 @@ export function sameSecret(given: string | Buffer | undefined, expected: string)
 export function brokerBuild(): string {
   const here = import.meta.dirname;
   /*
-    The broker's own files, and every installed protocol's sources: a policy is
-    code the broker runs, so a changed protocol is a changed broker.
+    The broker's own files, and every installed integration's protocol
+    sources: a policy is code the broker runs, so a changed protocol is a
+    changed broker.
   */
-  const protocols = resolve(here, '../../../../protocols');
+  const integrations = resolve(here, '../../../../integrations');
   let protocolFiles: string[] = [];
   try {
-    protocolFiles = readdirSync(protocols)
+    protocolFiles = readdirSync(integrations)
       .sort()
       .flatMap((entry) => {
         try {
-          return readdirSync(join(protocols, entry, 'src'))
+          return readdirSync(join(integrations, entry, 'src', 'protocol'))
             .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
             .sort()
-            .map((name) => join(protocols, entry, 'src', name));
+            .map((name) => join(integrations, entry, 'src', 'protocol', name));
         } catch {
           return [];
         }
       });
   } catch {
-    // No protocols directory: the broker will say so when it starts.
+    // No integrations directory: the broker will say so when it starts.
   }
   const files = ['shared.ts', 'policy.ts', 'journal.ts', 'broker.ts', 'admin.ts', 'main.ts'].map((name) => join(here, name)).concat(protocolFiles);
   const hash = createHash('sha256');

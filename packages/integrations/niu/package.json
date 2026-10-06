@@ -9,6 +9,9 @@
     "integration": {
       "id": "niu",
       "name": "NIU",
+      "protocols": [
+        "./src/protocol/index.ts"
+      ],
       "types": [
         {
           "id": "niu.account",
@@ -28,15 +31,15 @@
     "./account": "./src/account.ts",
     "./scooter": "./src/scooter.ts",
     "./migrations": "./src/migrations.ts",
-    "./ui": "./ui/index.ts"
+    "./ui": "./ui/index.ts",
+    "./protocol": "./src/protocol/index.ts"
   },
   "scripts": {
     "test": "node ../../../scripts/run-bun.mjs test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@kraftverk/device-sdk": "*",
-    "@kraftverk/protocol-niu-cloud": "*"
+    "@kraftverk/device-sdk": "*"
   },
   "peerDependencies": {
     "@kraftverk/api-client": "*",

@@ -19,8 +19,8 @@ for a while.
 - **Does:** the Zigbee plug's data layout on the Tuya socket type, reached
   through its Tuya gateway on the home network — and what was found mapping
   it, below.
-- **Does not:** speak Tuya (`@kraftverk/protocol-tuya-local`) or hold the
-  socket's session (`@kraftverk/integration-tuya`).
+- **Does not:** speak Tuya or hold the socket's session: its integration,
+  `@kraftverk/integration-tuya`, does both.
 
 ## Where it fits
 

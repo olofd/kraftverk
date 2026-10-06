@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { capabilitiesOf, readingOf } from '@kraftverk/device-sdk';
 import { checkDeviceTypeContract, fakeByteChannel, fakeConnection, fakeMessageChannel, simulatorContext } from '@kraftverk/device-sdk/testing';
-import { crc16 } from '@kraftverk/protocol-sydpower';
+import { crc16 } from '@kraftverk/integration-sydpower/protocol';
 
 import p280 from '../src/type.ts';
 import { stationSession, type StationSource } from '../src/station.ts';

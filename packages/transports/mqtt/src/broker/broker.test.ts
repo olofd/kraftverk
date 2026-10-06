@@ -24,7 +24,7 @@ import { sameSecret, SERVER_USERNAME } from './shared.ts';
  *
  * The broker knows no protocol of its own, so these tests load the installed
  * ones exactly as the broker does at start-up — and build their frames from
- * bytes, because a transport's tests may not reach into a protocol package.
+ * bytes, because a transport's tests may not reach into an integration.
  */
 
 const STATION = 'AABBCC001122';
@@ -71,7 +71,7 @@ describe('the protocols the broker applies', () => {
   test('a protocol that cannot be loaded stops the broker starting', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'kraftverk-protocols-'));
     const broken = join(dir, 'broken');
-    await Bun.write(join(broken, 'package.json'), JSON.stringify({ kraftverk: { protocol: './missing.ts' } }));
+    await Bun.write(join(broken, 'package.json'), JSON.stringify({ kraftverk: { integration: { protocols: ['./missing.ts'] } } }));
     await expect(loadPolicies(dir)).rejects.toThrow('could not be loaded');
     rmSync(dir, { recursive: true, force: true });
   });

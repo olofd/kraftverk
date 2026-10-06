@@ -62,8 +62,8 @@ export async function aHome(options: { readOnly?: boolean; bridges?: boolean } =
   const bridging = options.bridges ? [{ type: hubType.type }, { type: relayedLampType }] : [];
   const installed = installedFrom(
     {
-      integrations: [testIntegration({ type: lampType }, { type: stationType }, { type: plugType }, { type: forecastType, automation: forecastContribution }, ...bridging)],
-      protocols: options.bridges ? [lampProtocol, relayProtocol] : [lampProtocol],
+      integrations: [{ ...testIntegration({ type: lampType }, { type: stationType }, { type: plugType }, { type: forecastType, automation: forecastContribution }, ...bridging), protocols: options.bridges ? [lampProtocol, relayProtocol] : [lampProtocol] }],
+
       transports: [{ definition: busDefinition, create: () => bus }],
     },
     { platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } }

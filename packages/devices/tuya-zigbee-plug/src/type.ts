@@ -1,4 +1,4 @@
-import type { SocketProfile } from '@kraftverk/protocol-tuya-local';
+import type { SocketProfile } from '@kraftverk/integration-tuya/protocol';
 import { defineTuyaSocket } from '@kraftverk/integration-tuya';
 
 /**

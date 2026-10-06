@@ -5,45 +5,37 @@
   What a hub installs, with no screens: the app keeps its own home from this.
 */
 
-import type { Protocol, TransportDefinition } from '@kraftverk/device-sdk';
+import type { TransportDefinition } from '@kraftverk/device-sdk';
 import type { InstalledIntegration } from '@kraftverk/hub';
 
 import elprisetjustnuPricesType from '@kraftverk/integration-elprisetjustnu';
+import elprisetjustnuProtocol from '@kraftverk/integration-elprisetjustnu/protocol';
 import niuAccountType from '@kraftverk/integration-niu/account';
 import niuScooterType from '@kraftverk/integration-niu/scooter';
 import niuUqiGtType from '@kraftverk/device-niu-uqi-gt';
+import niuProtocol from '@kraftverk/integration-niu/protocol';
 import niuMigrations from '@kraftverk/integration-niu/migrations';
 import openMeteoWeatherType from '@kraftverk/integration-open-meteo';
 import openMeteoWeatherAutomation from '@kraftverk/integration-open-meteo/automation';
+import openMeteoProtocol from '@kraftverk/integration-open-meteo/protocol';
 import aferiyP280Type from '@kraftverk/device-aferiy-p280/type';
+import sydpowerProtocol from '@kraftverk/integration-sydpower/protocol';
 import tuyaPlugType from '@kraftverk/integration-tuya/plug';
 import atorchS1wType from '@kraftverk/device-atorch-s1w';
 import tuyaZigbeePlugType from '@kraftverk/device-tuya-zigbee-plug';
-import protocolElprisetjustnu from '@kraftverk/protocol-elprisetjustnu';
-import protocolNiuCloud from '@kraftverk/protocol-niu-cloud';
-import protocolOpenMeteo from '@kraftverk/protocol-open-meteo';
-import protocolSydpower from '@kraftverk/protocol-sydpower';
-import protocolTuyaLocal from '@kraftverk/protocol-tuya-local';
+import tuyaProtocol from '@kraftverk/integration-tuya/protocol';
 import transportBle from '@kraftverk/transport-ble';
 import transportHttps from '@kraftverk/transport-https';
 import transportLan from '@kraftverk/transport-lan';
 import transportMqtt from '@kraftverk/transport-mqtt';
 
-/** Every installed integration, its own types and the products on it, each with what it brings to automations: the same code the server runs. */
+/** Every installed integration, its protocols, its own types and the products on it, each with what it brings to automations: the same code the server runs. */
 export const INTEGRATIONS: readonly InstalledIntegration[] = [
-  { id: 'elprisetjustnu', name: 'Elpriset just nu', types: [{ type: elprisetjustnuPricesType, automation: null }], products: [] },
-  { id: 'niu', name: 'NIU', types: [{ type: niuAccountType, automation: null }, { type: niuScooterType, automation: null }], products: [{ type: niuUqiGtType, automation: null }], migrations: niuMigrations },
-  { id: 'open-meteo', name: 'Open-Meteo', types: [{ type: openMeteoWeatherType, automation: openMeteoWeatherAutomation }], products: [] },
-  { id: 'sydpower', name: 'Sydpower', types: [], products: [{ type: aferiyP280Type, automation: null }] },
-  { id: 'tuya', name: 'Tuya', types: [{ type: tuyaPlugType, automation: null }], products: [{ type: atorchS1wType, automation: null }, { type: tuyaZigbeePlugType, automation: null }] },
-];
-
-export const PROTOCOLS: readonly Protocol[] = [
-  protocolElprisetjustnu,
-  protocolNiuCloud,
-  protocolOpenMeteo,
-  protocolSydpower,
-  protocolTuyaLocal,
+  { id: 'elprisetjustnu', name: 'Elpriset just nu', protocols: [elprisetjustnuProtocol], types: [{ type: elprisetjustnuPricesType, automation: null }], products: [] },
+  { id: 'niu', name: 'NIU', protocols: [niuProtocol], types: [{ type: niuAccountType, automation: null }, { type: niuScooterType, automation: null }], products: [{ type: niuUqiGtType, automation: null }], migrations: niuMigrations },
+  { id: 'open-meteo', name: 'Open-Meteo', protocols: [openMeteoProtocol], types: [{ type: openMeteoWeatherType, automation: openMeteoWeatherAutomation }], products: [] },
+  { id: 'sydpower', name: 'Sydpower', protocols: [sydpowerProtocol], types: [], products: [{ type: aferiyP280Type, automation: null }] },
+  { id: 'tuya', name: 'Tuya', protocols: [tuyaProtocol], types: [{ type: tuyaPlugType, automation: null }], products: [{ type: atorchS1wType, automation: null }, { type: tuyaZigbeePlugType, automation: null }] },
 ];
 
 /** Every transport, as data: what the hub knows of it wherever it runs. Its entry for a place is that place's file. */

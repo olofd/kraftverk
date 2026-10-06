@@ -7,10 +7,19 @@ running them. It ends with the order of work and the decisions left to the
 owner.
 
 It builds on what is there ([ARCHITECTURE.md](ARCHITECTURE.md) §1–§4,
-[DATA-MODEL.md](DATA-MODEL.md)) and changes it where this says so. Nothing
-here is built yet.
+[DATA-MODEL.md](DATA-MODEL.md)) and changes it where this says so. Steps 1–5
+are built (§12); §1.1 is the model they were simplified to, at the owner's
+word, before anything new is added.
 
-**In one screen:**
+**The model, simplified (§1.1):** an **integration** is the one place
+kraftverk meets a service or a vendor's system — its protocol, its accounts,
+its own screens — and a **device package** is one kind of device built on
+an integration. Parts talk by **calls, not messages**: a device behind an
+account reads it through a typed link of plain function calls. Accounts
+belong to their integration, and are managed on its page, not among the
+devices.
+
+**In one screen** (as first written; §1.1 says what changed):
 
 - **An integration is code; a service is something you add.** They are not
   the same thing, and kraftverk should keep both words: an *integration* is
@@ -213,6 +222,89 @@ alternative (decision D2, §13).
 **Retired words stay retired:** no *plugin*, *extension*, *adapter*,
 *driver* or *provider* (ARCHITECTURE.md §2). *Integration* is not retired;
 it is the word everyone who knows Home Assistant already has.
+
+### 1.1 The model, simplified
+
+Built as first written, steps 1–5 showed where the design was more than it
+needed to be: a protocol package beside every integration, used by nothing
+else; a scooter that heard its account through topics and JSON on a
+pretend transport; an account shown among the devices. The owner's word,
+2026-10-06: integrations are the one point where kraftverk meets a service
+or third-party code; devices build on them; no publish/subscribe between
+parts. So:
+
+**Three kinds of package**, each talking only to the one beside it:
+
+| Package | Is | Holds | Never knows |
+|---|---|---|---|
+| **Transport** — `packages/transports/<id>` | How this machine reaches anything: a radio, a socket, HTTPS, the broker. One implementation per platform | A channel to an address; finding what is there | What anything means |
+| **Integration** — `packages/integrations/<id>` | The one place kraftverk meets a service or a vendor's system | The code that speaks to it — its **protocol**, in `src/protocol/`: framing, encryption, API calls, pure; its ways in and their setup; its **accounts** and **gateways**; its services; the generic type a device nobody described falls back to; its file migrations; **its own screens** — its page, an account's; and the **typed API** its devices are built with: builders, and the link a device behind an account reads | Any one product |
+| **Device package** — `packages/devices/<id>` | One kind of device, on one integration | What it is: models, layout, pictures, **its device screens**, words, recipes, what only it does | How the service is reached or signed into |
+
+**The rules:**
+
+- A device package imports its integration and the SDK — nothing else, no
+  protocol, no other integration. What it needs of the wire, its
+  integration exports (`@kraftverk/integration-sydpower/protocol`).
+- An integration imports the SDK, and the transports' contract only through
+  it. Its protocols are declared in its manifest, each with an id that is
+  the integration's or begins with it (`niu-cloud` is NIU's): what a
+  connection and a device's identity name.
+- When two integrations need the same wire code — Modbus, say — it becomes a
+  library both import, which is not an integration. None does yet, so there
+  is none.
+- An **account** and a **gateway** are an integration's own types, never a
+  device package's.
+
+**Calls, not messages.** Between packages, between the core and an
+integration, and between a bridge and the devices behind it, everything is a
+typed function call on an interface the SDK or an integration declares:
+
+- **A device behind a bridge reads it through a link** — an object of the
+  integration's own, with plain methods (`report()`, `raw()`), handed to the
+  device's session when it opens. When what the link reads has moved, the
+  bridge calls the one function it was given; the session reads again and
+  tells its holder, as any session does. No topics, no in-process value
+  turned into bytes and back, no request faked as two messages (§4.3).
+- **Where a device's own wire is publish/subscribe** — the P280 talks MQTT
+  to the broker — it stays inside the transport and the integration that
+  speaks it, behind calls: the station's link reads registers; nobody above
+  it sees a topic.
+- **Notification is one thing, with one shape:** the live stream — readings
+  moved, health, a device's events, what changed — that the app and
+  automations listen to. It tells; nothing asks or commands through it, and
+  nothing waits on who else listens. The timeline is the log.
+
+**Accounts belong to their integration.** Underneath, an account is held as
+a device is — a record, a way in, its secrets, a node that holds it — so
+§0's rules apply to it unchanged, and a device behind it is held wherever
+it is. But a person meets it on its **integration's page**, not among the
+devices: Integrations → NIU → "Olof's NIU account": sign in again, change
+the password, the scooters on it. An integration may bring screens of its
+own for that page (`kraftverk.integration.ui`). A device's page stays the
+device's — the scooter's says "Through Olof's NIU account" and links there.
+When the app has tabs — devices, the home, people, integrations — this is
+already the division.
+
+**Worked: iCloud, and a family member's phone on it.**
+
+```
+packages/integrations/icloud/          the integration
+  src/protocol/      Apple's sign-in (SRP, two-factor) and the Find My service: pure, over https
+  src/account.ts     icloud.account: kind account, a bridge — one fetch for every device on it
+  src/link.ts        export interface FindMyLink extends MemberLink {
+                       device(): FoundDevice;               // what Find My says of it now
+                       playSound(): Promise<void>;
+                     }
+  src/device.ts      icloud.device: the generic device Find My knows
+  ui/                its page: the account, signing in again, two-factor
+packages/devices/icloud-family-phone/  a device on it
+  src/type.ts        a family member's phone through icloud.account: where it is, its battery; play a sound
+  ui/                its device screens
+```
+
+The device package writes `linkOf<FindMyLink>(ctx.connection)` and calls
+it; it never sees a password, a token or an HTTP request.
 
 ---
 
@@ -471,8 +563,8 @@ installed.
 
 Two folders: `packages/integrations/<platform>/` and
 `packages/devices/<product>/`. `packages/services/` goes: a service is the
-platform's own type, so it is its integration's. Protocols and transports
-stay where they are.
+platform's own type, so it is its integration's. Transports stay where they
+are; a protocol is part of its integration (§1.1).
 
 ```
 packages/integrations/niu/            the platform
@@ -481,9 +573,11 @@ packages/integrations/niu/            the platform
   NOTICE              where anything was ported from, and those licences
   src/
     index.ts          the builder (defineNiuScooter), the ways in, setup
+    protocol/         how NIU's cloud is spoken to: sign-in, the calls, pure
+    link.ts           ScooterLink: what a scooter reads through its account
     account.ts        niu.account: kind account, a bridge (step 5)
     scooter.ts        niu.scooter: the generic scooter, the floor
-  ui/                 the generic scooter's screens, which products reuse
+  ui/                 the generic scooter's screens, which products reuse; the integration's page
   test/
 
 packages/devices/niu-uqi-gt/          a product on it
@@ -575,59 +669,50 @@ an identity read at check time (the account's own id — never the email, which
 can change), and a description like any device: what it reports about
 itself (last fetched, how many members, quota) and what it can do.
 
-**A bridge** is any type that declares `bridge`:
+**A bridge** is any type that declares `bridge` (as built, §1.1):
 
 ```ts
 // device-sdk
 export type BridgeSpec = {
-  /** What its members are spoken to in: a protocol package's id. */
-  protocol: string;
-  /** Which member types it can bring, for the add screen. */
-  members: readonly string[];
-  /** Whether new members are added without asking, unless a person chose otherwise. Default: ask. */
-  addNew?: 'ask' | 'automatically';
+  /** The type a member nobody claims becomes: the integration's generic one. */
+  fallback?: string;
 };
 
-export type BridgeSession = DeviceSession & {
-  /** Who is behind it, now: live, never stored. Each becomes a sighting until a device claims it. */
+/** What a bridge's session offers the devices behind it. */
+export interface Bridge<Link extends MemberLink = MemberLink> {
+  /** Who is behind it now: live, never stored — each a sighting until a device claims it. Read again whenever its session says it changed. */
   members(): readonly Member[];
-  watchMembers(listener: (members: readonly Member[]) => void): () => void;
-  /** A channel to one member, for its session. */
-  open(member: string): MessageChannel;
-};
+  /** A link to one member, for its session and its check: `changed` is called whenever what it reads has moved. */
+  link(member: string, changed: () => void): Promise<Link>;
+}
 
-export type Member = {
-  /** Its key within this bridge: stable as long as the bridge says it is. */
-  key: string;
-  /** The type it should be added as, when the bridge knows. */
-  type: string;
-  name?: string;
-  /** Its permanent id, when the bridge knows it: what makes it one device with another way to it. */
-  identity?: string;
-  detail?: string;
-};
+/** What every link has; the rest is the integration's own interface. */
+export type MemberLink = { close(): void };
+
+export type Member = { key: string; name: string | null; model: string | null; identity: string | null; typeId: string | null };
 ```
 
-**A member's method** names a bridge instead of a transport:
+**A member's method** names a bridge instead of a transport and a protocol:
 
 ```ts
 connections: [
-  { id: 'icloud', label: 'Through iCloud', protocol: 'icloud-findmy', through: ['icloud.account'], reach: 'cloud' },
+  { id: 'account', label: 'Through your NIU account', through: ['niu.account'], reach: 'cloud' },
 ]
 ```
 
-`ConnectionMethod` becomes a union — reached by a transport, or reached
-through a bridge — and every place that opens a connection handles both
-(the compiler makes sure).
+`ConnectionMethod` is a union — over a transport with a protocol, or
+through a bridge — and so is `OpenConnection`: a channel, or a link. The
+compiler makes every place that opens one handle both; `channelOf` and
+`linkOf` narrow it for a type, with a sentence when it is the wrong one.
 
 **How a member is held.** The holder that holds a bridge's active
-connection opens the bridge's session, then each member's session over
-`bridge.open(member.key)`. If the bridge moves to another node, its members
+connection opens the bridge's session, then each member's session with
+`bridge.link(member.key, changed)`. If the bridge moves to another node, its members
 move with it. If the bridge is down, its members are offline, and say why
 ("iCloud needs you to sign in again").
 
-**One fetch for many.** A bridge session fetches once and sends each member
-its part: Home Assistant's coordinator, without a class to inherit. iCloud's
+**One fetch for many.** A bridge session fetches once and each member reads
+its part through its link: Home Assistant's coordinator, without a class to inherit. iCloud's
 account fetches every device's location in one call, on an interval the
 account works out (shorter while someone is moving, longer at home — the
 logic of Home Assistant's `_determine_interval`, ported).
@@ -819,8 +904,11 @@ marks its devices `failed` and starts it again with backoff.
 - **Add:** the catalogue, not only installed types; brands first. "Found on
   your network" at the top: discovered devices, and members of your
   bridges not yet added.
-- **Accounts** on Home: each account with its members ("Family iCloud — 5
-  devices") and its state.
+- **An integration's page** (§1.1): reached from Integrations; its
+  accounts, each with its state and what is on it ("Family iCloud — 5
+  devices"), signing in again and changing a password there; its gateways;
+  where it runs; the devices you have on it; and its own screens. Accounts
+  are not listed among the devices on Home.
 - **Needs you:** one list of what needs a person — sign in again, pair
   again, a found device, an update — each with the button that fixes it. The
   phone's notifications (ntfy, push) send the same items when they come.
@@ -844,7 +932,7 @@ TypeScript, as a kraftverk integration, in one sitting.
 | a table of models or product keys inside the integration | device packages, each claiming its models |
 | `integration_type: device / hub / service` | a type of kind hardware / an account or hardware type with `bridge` / a type of kind service |
 | `iot_class` | `reach` + `updates` |
-| `requirements` (a PyPI library) | a **protocol package** (`packages/protocols/<id>`), ported from the library: pure, over a channel. Or a maintained MIT TypeScript library, vendored, when one exists |
+| `requirements` (a PyPI library) | the integration's **protocol** (`src/protocol/`), ported from the library: pure, over a channel. Or a maintained MIT TypeScript library, vendored, when one exists |
 | discovery keys (`zeroconf`, `dhcp`, …) | `discovery` matchers + the protocol's `recognise` |
 | `config_flow.py` `async_step_user` | the setup plan: the protocol's credentials, the method's steps |
 | a two-factor or PIN step | an action that returns `ask` |
@@ -879,7 +967,7 @@ TypeScript, as a kraftverk integration, in one sitting.
    file and `services.yaml`; and the library's client. Write down: what is
    signed into, what is found, what is fetched how often, every value and
    its unit, every command and what it changes.
-2. **Protocol:** port the library's calls into a pure protocol package over
+2. **Protocol:** port the library's calls into the integration's pure protocol over
    the channel its transport gives (HTTPS for a cloud; TCP for a LAN
    device). No I/O of its own; secrets in, typed values out.
 3. **Integration:** the platform's ways in, their setup, its accounts and
@@ -946,8 +1034,8 @@ copyright; the README says so where it applies.
 - **Protocols:** Companion (power, apps, keyboard), MRP tunnelled in AirPlay 2
   (now playing, playback), pairing by HAP (SRP with the PIN shown on the TV,
   then Ed25519/X25519 and ChaCha20-Poly1305). `node-appletv-remote` (MIT,
-  TypeScript, no native code) already speaks these; it is vendored behind a
-  protocol package rather than ported line by line from pyatv.
+  TypeScript, no native code) already speaks these; it is vendored behind the
+  integration's protocol rather than ported line by line from pyatv.
 - **Transport:** `lan` with TCP and mDNS discovery (step 13).
 - **The integration `apple-media`:** Apple's Companion, MRP and AirPlay
   ways in and their pairing — the platform an Apple TV and a HomePod share.
@@ -1181,6 +1269,13 @@ browser" left the trust reason. And a way through a bridge carries no
 credentials of its own: its setup has none, the file names none. One rule
 now matches a reported model to a type, for the check and for members alike
 (`coversModel`).
+
+**Step 5½ · The model, simplified (§1.1).** Before anything new: each
+protocol package moved into its integration, and device packages import
+only their integration; bridges hand their members a typed link of calls,
+and the NIU account's topics go; an integration's page in the app, with its
+accounts — signed into again and changed there — and its own screens, and
+accounts no longer listed among the devices.
 
 **Step 6 · The Tuya gateway as a bridge.**
 `tuya.gateway`, the Tuya integration's: hardware, a bridge, reached by `tuya-local` over `lan` with

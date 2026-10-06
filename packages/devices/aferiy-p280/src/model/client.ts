@@ -4,7 +4,7 @@ import {
   writeRegister,
   type ParsedFrame,
   type SydpowerLink,
-} from '@kraftverk/protocol-sydpower';
+} from '@kraftverk/integration-sydpower/protocol';
 import {
   assertWritable,
   decodeFirmware,
