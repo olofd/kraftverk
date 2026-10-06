@@ -95,6 +95,8 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
   const problems: string[] = [];
   const roles = rule.roles ?? {};
   const params = rule.params?.fields ?? {};
+  /** What it remembers: what `memory.x` reads and a `remember` step sets. */
+  const memory = rule.memory?.fields ?? {};
   /** The ids its triggers carry: what `startedBy` may name. */
   const triggerIds = new Set((rule.when ?? []).flatMap((trigger) => (trigger.id ? [trigger.id] : [])));
   /** The events it waits for: what `run.event` may be. */
@@ -104,6 +106,7 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
     if (!CAMEL_NAME.test(role)) problems.push(`roles.${role}: a role is named in camelCase`);
     if (role === 'run') problems.push('roles.run: "run" is what the run knows of itself — name the role otherwise');
     if (role === 'setting') problems.push('roles.setting: "setting" is how the rule names its settings — name the role otherwise');
+    if (role === 'memory') problems.push('roles.memory: "memory" is how the rule names what it remembers — name the role otherwise');
     if (!spec.label?.trim()) problems.push(`roles.${role}: it has no label`);
     if (isAutomationRole(spec)) continue;
     const named = [...(spec.capabilities ?? []), ...(spec.oneOf ?? [])];
@@ -154,6 +157,14 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       const field = params[expr.param];
       if (!field) {
         problems.push(`${where}: there is no setting "${expr.param}"`);
+        return { type: 'unknown' };
+      }
+      return shapeOf(valueTypeOf(field));
+    }
+    if ('memory' in expr) {
+      const field = memory[expr.memory];
+      if (!field) {
+        problems.push(`${where}: it remembers nothing called "${expr.memory}"`);
         return { type: 'unknown' };
       }
       return shapeOf(valueTypeOf(field));
@@ -357,8 +368,8 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
     }
   });
 
-  /** One field of a construct, held to what it holds (kinds/spec.ts). */
-  function checkField(field: FieldSpec, value: unknown, at: string, where: { inTrigger: boolean; sure: boolean; depth: number }): void {
+  /** One field of a construct, held to what it holds (kinds/spec.ts) - and, a value, what it was found to be, for its kind to hold to more. */
+  function checkField(field: FieldSpec, value: unknown, at: string, where: { inTrigger: boolean; sure: boolean; depth: number }): Shape | undefined {
     const type = field.type;
     switch (type.type) {
       case 'condition': {
@@ -369,7 +380,7 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       case 'value': {
         const got = shape(value as Expr, at, { calls: true, trigger: where.inTrigger });
         if (got.type === 'structure') problems.push(`${at}: a setting is set to a value, not a list or an object`);
-        return;
+        return got;
       }
       case 'timeOfDay': {
         const expr = value as Expr;
@@ -381,7 +392,10 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       case 'duration': {
         const expr = value as Expr;
         // A fixed one — a step's wait — is a number or a setting held to its range, so how long a run may take is known before it runs.
-        if (type.fixed) return bounded(expr, at, 's', type.min, type.max);
+        if (type.fixed) {
+          bounded(expr, at, 's', type.min, type.max);
+          return;
+        }
         const got = shape(expr, at, { calls: false, trigger: where.inTrigger });
         if (!isTime(expr, got)) problems.push(`${at}: expected a length of time, got ${said(got)}`);
         const seconds = secondsOfLiteral(expr, at);
@@ -401,7 +415,8 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         return;
       }
       case 'count':
-        return bounded(value as Expr, at, null, 1, type.max);
+        bounded(value as Expr, at, null, 1, type.max);
+        return;
       case 'role':
         role(String(value), at);
         return;
@@ -426,10 +441,15 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         steps(list, at, type.sure === false ? false : where.sure, where.depth + 1);
         return;
       }
-      // A command's capability, command and arguments, and a setting's key or meaning: their kind's own check, below.
+      // A command's capability, command and arguments, a setting's key or meaning, and what a step remembers: their kind's own check, below.
       case 'name':
       case 'args':
+      case 'memory':
         return;
+      default: {
+        const unknown: never = type;
+        throw new Error(`No check for a field of type ${JSON.stringify(unknown)}`);
+      }
     }
   }
 
@@ -497,6 +517,8 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       }
       const spec = STEP_KINDS[kind];
       if (spec.waits && !sure) problems.push(`${at}: nothing here may wait for a condition that might not come: it would fail again`);
+      /** What each of its values was found to be, by its key. */
+      const shapes: Record<string, Shape> = {};
       for (const field of spec.fields) {
         const value = fieldValue(step, field);
         const fieldAt = `${at}.${field.data.join('.')}`;
@@ -504,7 +526,8 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
           if (field.required && field.type.type !== 'name') problems.push(`${fieldAt}: it needs ${field.label.toLowerCase()}`);
           continue;
         }
-        checkField(field, value, fieldAt, { inTrigger: false, sure, depth });
+        const got = checkField(field, value, fieldAt, { inTrigger: false, sure, depth });
+        if (got) shapes[field.key] = got;
       }
       if ('command' in step) command(step.command, `${at}.command`);
       else if ('write' in step) {
@@ -514,6 +537,17 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         else if (means !== undefined) {
           if (typeof means !== 'string' || !standardMeaning(means)) problems.push(`${at}.write.means: "${String(means)}" is not a standard meaning`);
         } else if (typeof key !== 'string' || !key.trim()) problems.push(`${at}.write.key: which setting?`);
+      } else if ('remember' in step) {
+        // What it remembers is held to what it is: its kind, and a unit of its dimension.
+        const field = memory[step.remember.name];
+        if (!step.remember.name) problems.push(`${at}.remember.name: what does it remember?`);
+        else if (!field) problems.push(`${at}.remember.name: it remembers nothing called "${step.remember.name}" — say it under memory`);
+        else {
+          const got = shapes.as ?? { type: 'unknown' };
+          const wanted = shapeOf(valueTypeOf(field));
+          if (!fits(wanted, got)) problems.push(`${at}.remember.value: ${field.title} is ${said(wanted)}, not ${said(got)}`);
+          else literalFits(step.remember.value, valueTypeOf(field), `${at}.remember.value`);
+        }
       } else if ('start' in step) {
         if (step.start.andWait !== undefined && !sure) problems.push(`${at}.start: nothing here may wait for what might not come: it is started, not waited for`);
       } else if ('choose' in step || 'watch' in step) {
@@ -524,6 +558,15 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
   }
 
   // Whatever starts it does something: its own steps, or the automation's.
+  // What it remembers starts from a value its field takes.
+  for (const [key, field] of Object.entries(memory)) {
+    const value = 'default' in field ? field.default : undefined;
+    if (value === undefined || value === null) problems.push(`memory.${key}: it starts from no value`);
+    else {
+      const checked = checkValue(valueTypeOf(field), value);
+      if (!checked.ok) problems.push(`memory.${key}: ${field.title} ${checked.problem}`);
+    }
+  }
   // Each setting holds a value its field takes: what the rule runs with.
   for (const [key, field] of Object.entries(params)) {
     const value = 'default' in field ? field.default : undefined;

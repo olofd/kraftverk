@@ -26,7 +26,7 @@ import {
   type StepKind,
   type Write,
 } from '@kraftverk/automation';
-import { capabilitiesOf, capabilityIn, isScalarType, MAIN_PART, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
+import { capabilitiesOf, capabilityIn, isScalarType, MAIN_PART, valueTypeOf, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
 import { Chips, haptic, Icon, IconLabel } from '@kraftverk/ui';
 
 import { Picker } from '../../../components/Picker';
@@ -162,6 +162,7 @@ function StepFields({ path, step, set }: { path: ListPath; step: Step; set: (ste
   if ('command' in step) return <CommandFields command={step.command} set={(command) => set({ command })} />;
   if ('write' in step) return <WriteFields write={step.write} set={(write) => set({ write })} />;
   if ('start' in step) return <StartFields start={step.start} waits={mayWait(path)} set={(start) => set({ start })} />;
+  if ('remember' in step) return <RememberFields remember={step.remember} set={(remember) => set({ remember })} />;
   return <Fields fields={stepSpec(step).fields} construct={step} set={set} />;
 }
 
@@ -313,6 +314,39 @@ function WriteFields({ write, set }: { write: Write; set: (write: Write) => void
         <YStack gap="$1">
           <Label>Set it to</Label>
           <ArgField label="Set it to" type={chosen.value} expr={write.value} onChange={(next) => set({ ...write, value: next })} />
+        </YStack>
+      ) : null}
+    </YStack>
+  );
+}
+
+/** A value remembered: which of what the automation remembers, and what it is to be — a value of its kind, in its unit. */
+function RememberFields({ remember, set }: { remember: Extract<Step, { remember: unknown }>['remember']; set: (remember: Extract<Step, { remember: unknown }>['remember']) => void }) {
+  const editor = useEditor();
+  const fields = editor.draft.rule.memory?.fields ?? {};
+  const field = fields[remember.name];
+  if (!Object.keys(fields).length)
+    return (
+      <Text fontSize={13} color="$muted" lineHeight={19}>
+        It remembers nothing yet: say what it remembers under memory, in YAML.
+      </Text>
+    );
+  return (
+    <YStack gap="$2.5">
+      <YStack gap="$1">
+        <Label>What it remembers</Label>
+        <Picker
+          label="What it remembers"
+          chosen={field?.title ?? null}
+          placeholder="Choose what it remembers"
+          options={Object.entries(fields).map(([name, each]) => ({ key: name, title: each.title, subtitle: each.description, value: name, selected: name === remember.name }))}
+          onPick={(name) => set({ name, value: { value: startValue(valueTypeOf(fields[name]!)) } })}
+        />
+      </YStack>
+      {field ? (
+        <YStack gap="$1">
+          <Label>As</Label>
+          <ArgField label="As" type={valueTypeOf(field)} expr={remember.value} onChange={(value) => set({ ...remember, value })} />
         </YStack>
       ) : null}
     </YStack>

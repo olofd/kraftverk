@@ -23,7 +23,7 @@ import { RUN_FACTS, type CompareOp, type Expr, type MathOp, type RunFact } from 
     * /                       a product
     -x                        the opposite
     an atom                   a value, a reading, `role reachable`,
-                              `run.trigger`, `setting.low`,
+                              `run.trigger`, `setting.low`, `memory.count`,
                               `time between 23:00 and 05:00`,
                               `min(a, b)` and the language's other functions,
                               `acme.weather.sunny(forecast, day = "tomorrow")`,
@@ -48,7 +48,7 @@ type Token =
   | { kind: 'end'; at: number };
 
 /** The language's own words: never a role's name. */
-const KEYWORDS = new Set(['and', 'or', 'not', 'in', 'true', 'false', 'null', 'reachable', 'time', 'between', 'run', 'setting']);
+const KEYWORDS = new Set(['and', 'or', 'not', 'in', 'true', 'false', 'null', 'reachable', 'time', 'between', 'run', 'setting', 'memory']);
 const COMPARE: Record<string, CompareOp> = { '<': 'lt', '<=': 'le', '>': 'gt', '>=': 'ge', '==': 'eq', '!=': 'ne' };
 const COMPARE_TEXT: Record<CompareOp, string> = { lt: '<', le: '<=', gt: '>', ge: '>=', eq: '==', ne: '!=' };
 const MATH_TEXT: Record<MathOp, string> = { add: '+', subtract: '-', multiply: '*', divide: '/' };
@@ -297,6 +297,13 @@ export function parseExpr(text: string): Parsed {
         if (name.kind !== 'name' || !PARAM.test(name.value)) throw new Failure('Expected a setting\'s name after "setting."', name.at);
         return { param: name.value };
       }
+      case 'memory': {
+        // What the rule remembers: "memory.timesCharged".
+        expect('.', '"." and what it remembers: memory.timesCharged');
+        const name = next();
+        if (name.kind !== 'name' || !PARAM.test(name.value)) throw new Failure('Expected what it remembers after "memory."', name.at);
+        return { memory: name.value };
+      }
     }
     if (KEYWORDS.has(token.value)) throw new Failure(`"${token.value}" cannot start a value`, token.at);
     // One of the language's own functions: "min(a, b)".
@@ -418,6 +425,10 @@ function print(expr: Expr, need: number): string {
   if ('param' in expr) {
     if (!PARAM.test(expr.param)) throw new Unprintable();
     return `setting.${expr.param}`;
+  }
+  if ('memory' in expr) {
+    if (!PARAM.test(expr.memory)) throw new Unprintable();
+    return `memory.${expr.memory}`;
   }
   if ('read' in expr) {
     if (!MEANING.test(expr.read.means)) throw new Unprintable();

@@ -102,6 +102,7 @@ A rule has:
 |---|---|---|
 | `roles` | `uses:` | What it works on, by role: a part of a device that offers some capabilities, or another automation. Filled when the rule becomes an automation. |
 | `params` | `settings:` | Its settings: each a field of a form — title, unit, range — whose `default` is the value the rule runs with, read as `setting.name`. A recipe's are what each copy starts from; an automation keeps them (`withSettings`), its owner's to set in one place. `inlineParams` writes them into the blocks, for a rule read with its values in place. |
+| `memory` | `memory:` | What it remembers: written as its settings are, each the value it starts from (`timesCharged: 0`, `lastPower: 0 W`), read as `memory.name` and set by a `remember` step. Kept by where it runs, in its field's unit, across runs, restarts and changes to it; a value its field no longer takes is read as the one it starts from. None: it remembers nothing. |
 | `when` | `when:` | What starts a run: any one trigger — each with steps of its own, if it has them (`do:` under it). Empty: it runs only when a person plays it or another automation starts it. |
 | `if` | `only if:` | Must be true for a run to act. Unknown is not true: nothing is done, and the run says why. |
 | `then` | `do:` | What it does, step by step — when what started it has no steps of its own. |
@@ -174,6 +175,7 @@ Lengths of time are in seconds, named as a file says them: `wait.for`,
 | `choose` | `if: <condition>` with `then: [steps]` and `else: [steps]` | one way or the other, as the condition is now; unknown is not true |
 | `watch` | `watch: <condition>` with `for: 5 s`, `if it stays so: [steps]` and `if not: [steps]` | watch the condition for a while: the first steps if it stays true all that time, the others the moment it is not, or cannot be told |
 | `start` | `start: role` with `and wait: 10 min` | start the automation filling the role, as a person's play would; with a wait, until its run ends |
+| `remember` | `remember: timesCharged` with `as: memory.timesCharged + 1` | remember a value for later steps and later runs: one of what the automation declares under `memory:`, converted to its unit and held to its range |
 
 Every command and every setting goes through the gateway, under its rules,
 and is audited as the automation's. A step that waits always has a limit,
@@ -196,6 +198,7 @@ charge is below 15 %".
 |---|---|---|
 | `value` | `50 W`, `15 %`, `07:00`, `"text"`, `true` | a value; a number keeps the unit it is written in (`{ value: 50, unit: 'W' }`) — with none, it is in the unit of what it is compared with |
 | `param` | `setting.cloudMax` | one of a recipe's settings |
+| `memory` | `memory.timesCharged` | what it remembers, as a run last left it, in its unit, or before any did, as it starts |
 | `read` | `charger.power` | what the part filling a role reports now, by meaning (`charge`) or by its type's own (`acme.minutesToFull`) |
 | `call` | `acme.weather.sunny(forecast, day = "tomorrow")` | a function a package contributes, over the part filling a role: its whole id, then the role it reads and its arguments by name |
 | `apply` | `min(a, b)`, `clamp(x, 0 W, 2 kW)`, `round(x, 1)` | one of the language's own functions (`src/kinds/builtins.ts`: min, max, clamp, round, floor, ceil, abs) — numbers in, a number in the first one's unit out |
@@ -234,7 +237,7 @@ is a problem before it runs.
 
 Precedence, loosest first: `c ? a : b`, `a ?? b`, `or`, `and`, `not`, a
 comparison or `in [ … ]`, `+ -`, `* /`, `-x`, then a value, a reading,
-`role reachable`, `run.trigger`, `setting.name`, `time between … and …`, one
+`role reachable`, `run.trigger`, `setting.name`, `memory.name`, `time between … and …`, one
 of the language's functions — `min(…)` — or a package's — `acme.weather.sunny(…)`
 — or parentheses.
 

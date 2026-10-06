@@ -1,6 +1,6 @@
 import { STANDARD_MEANINGS } from '@kraftverk/device-sdk';
 
-import { ROLE_FIELDS, RUN_FACTS } from '../rule.ts';
+import { ROLE_FIELDS, RUN_FACTS, type Rule } from '../rule.ts';
 import { EXPR_KIND_ORDER } from './exprs.ts';
 import type { FieldSpec } from './spec.ts';
 import { STEP_KIND_ORDER, STEP_KINDS } from './steps.ts';
@@ -17,6 +17,9 @@ import { TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './triggers.ts
   rules that no longer say what they did.
 */
 
+/** What a rule holds, each part: one more, or one fewer, is another shape. */
+const RULE_PARTS = { roles: true, params: true, memory: true, when: true, if: true, then: true, otherwise: true } as const satisfies Record<keyof Rule, true>;
+
 const fieldShape = (field: FieldSpec): string => `${field.data.join('.')}:${field.type.type}${field.required ? '!' : ''}`;
 
 const kindsShape = <K extends string>(order: readonly K[], table: { readonly [k in K]: { fields: readonly FieldSpec[] } }): string =>
@@ -24,4 +27,4 @@ const kindsShape = <K extends string>(order: readonly K[], table: { readonly [k 
 
 /** How a rule is kept, as text: what a database's fingerprint carries beside its SQL. */
 export const ruleShape = (): string =>
-  [`when ${kindsShape(TRIGGER_KIND_ORDER, TRIGGER_KINDS)} any(${TRIGGER_FIELDS.map(fieldShape).join(',')})`, `do ${kindsShape(STEP_KIND_ORDER, STEP_KINDS)}`, `expr ${[...EXPR_KIND_ORDER].sort().join(',')} value(value,unit)`, `run ${RUN_FACTS.join(',')}`, `means ${Object.keys(STANDARD_MEANINGS).sort().join(',')}`, `roles part(${ROLE_FIELDS.part.join(',')}) automation(${ROLE_FIELDS.automation.join(',')})`].join('; ');
+  [`rule ${Object.keys(RULE_PARTS).join(',')}`, `when ${kindsShape(TRIGGER_KIND_ORDER, TRIGGER_KINDS)} any(${TRIGGER_FIELDS.map(fieldShape).join(',')})`, `do ${kindsShape(STEP_KIND_ORDER, STEP_KINDS)}`, `expr ${[...EXPR_KIND_ORDER].sort().join(',')} value(value,unit)`, `run ${RUN_FACTS.join(',')}`, `means ${Object.keys(STANDARD_MEANINGS).sort().join(',')}`, `roles part(${ROLE_FIELDS.part.join(',')}) automation(${ROLE_FIELDS.automation.join(',')})`].join('; ');

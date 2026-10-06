@@ -1,4 +1,5 @@
 import type { RunLog } from '@kraftverk/api-contract';
+import type { Value } from '@kraftverk/device-sdk';
 
 import type { AutomationRun } from '@kraftverk/api-contract';
 
@@ -26,6 +27,11 @@ export interface AutomationStorage {
   startAfresh(id: string, at: string): void;
   /** It looked again, to keep things so. */
   looked(id: string, at: string): void;
+
+  /** What it remembers, by name: each value as a run last left it — kept across runs, restarts and changes to it. */
+  memory(id: string): Record<string, Value>;
+  /** A run remembered a value: kept until one remembers another. */
+  remember(id: string, name: string, value: Value): void;
 
   /** A run that takes steps, begun: its id, written again at every step. */
   beginRun(automationId: string, run: AutomationRun): string;

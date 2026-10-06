@@ -40,6 +40,8 @@ export function fieldSchema(field: FieldSpec): JsonSchema {
       return { type: 'string', minLength: 1, ...described };
     case 'id':
       return { type: 'string', pattern: TRIGGER_ID.source, ...described };
+    case 'memory':
+      return { type: 'string', minLength: 1, ...described };
     case 'steps':
       return { type: 'array', items: { $ref: '#/$defs/step' }, ...described };
     case 'args':

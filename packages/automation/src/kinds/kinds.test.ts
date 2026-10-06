@@ -72,6 +72,8 @@ const STEPS = Object.keys(STEP_KINDS) as StepKind[];
 /** An automation's entry around one step, its roles filled by made-up parts and an automation. */
 const doing = (step: unknown) => ({
   uses: { charger: 'charger-plug', station: 'garage-station', plug: 'smart-plug', supply: 'garage-station.outlet.ac', chargeTheScooter: { automation: 'charge-the-scooter' } },
+  // What the examples remember: a count, and a reading.
+  memory: { timesCharged: 0, lastPower: '0 W' },
   do: [step],
 });
 

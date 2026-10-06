@@ -11,7 +11,7 @@ import type { KindDocs } from './spec.ts';
   one left out.
 */
 
-export type ExprKind = 'value' | 'param' | 'read' | 'call' | 'apply' | 'compare' | 'math' | 'negate' | 'if' | 'either' | 'in' | 'all' | 'any' | 'not' | 'reachable' | 'within' | 'run';
+export type ExprKind = 'value' | 'param' | 'memory' | 'read' | 'call' | 'apply' | 'compare' | 'math' | 'negate' | 'if' | 'either' | 'in' | 'all' | 'any' | 'not' | 'reachable' | 'within' | 'run';
 
 /** An expression of one kind. */
 export type ExprOf<K extends ExprKind> = K extends ExprKind ? Extract<Expr, Record<K, unknown>> : never;
@@ -41,6 +41,7 @@ const two = <K extends 'compare' | 'math'>(kind: K, label: string, docs: KindDoc
 export const EXPR_KINDS: { readonly [K in ExprKind]: ExprSpec<K> } = {
   value: leaf('value', 'A value', { summary: 'A number — with its unit beside a reading, `50 W`, `15 %` — a time of day, `07:00`, text in quotes, `true` or `false`.', examples: ['50 W', '"eco"', '07:00'] }),
   param: leaf('param', 'A setting', { summary: 'One of the rule’s settings, by its name: a recipe’s, before it is copied into an automation.', examples: ['setting.low'] }),
+  memory: leaf('memory', 'What it remembers', { summary: 'A value it remembers, as a run last left it — or, before any did, as it starts: kept across runs and restarts.', examples: ['memory.timesCharged'] }),
   read: leaf('read', 'A reading', { summary: 'What the part filling a role reports now, by what it means: a standard meaning, or a type’s own. Unknown when it has not said, or said too long ago.', examples: ['station.charge', 'charger.power'] }),
   call: {
     kind: 'call',
@@ -120,7 +121,7 @@ export const EXPR_KINDS: { readonly [K in ExprKind]: ExprSpec<K> } = {
 };
 
 /** The order the reference lists them in. */
-export const EXPR_KIND_ORDER: readonly ExprKind[] = ['value', 'param', 'read', 'reachable', 'run', 'within', 'call', 'apply', 'compare', 'in', 'math', 'negate', 'if', 'either', 'all', 'any', 'not'];
+export const EXPR_KIND_ORDER: readonly ExprKind[] = ['value', 'param', 'memory', 'read', 'reachable', 'run', 'within', 'call', 'apply', 'compare', 'in', 'math', 'negate', 'if', 'either', 'all', 'any', 'not'];
 
 /** Which kind an expression is — by its key; one of no kind is an error, never taken for another. */
 export function exprKind(expr: Expr): ExprKind {

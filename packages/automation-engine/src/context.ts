@@ -1,6 +1,6 @@
 import type { ConditionState } from '@kraftverk/api-contract';
-import { capitalise, settingOf, checkBinding, describeExpr, describeSteps, evaluateNow, measure, numberIn, secondsNow, isAutomationRole, partRoles, secondsText, triggerKey, triggerOf, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type RuleSteps, type Step, type Write } from '@kraftverk/automation';
-import { attributeMeaning, capabilityIn, clockTime, isCurrent, isScalar, readingOf, REAL_CLOCK, standardMeaning, unitIn, type CapabilityName, type Clock, type Value } from '@kraftverk/device-sdk';
+import { capitalise, memoryOf, settingOf, checkBinding, describeExpr, describeSteps, evaluateNow, measure, numberIn, secondsNow, isAutomationRole, partRoles, secondsText, triggerKey, triggerOf, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type RuleSteps, type Step, type Write } from '@kraftverk/automation';
+import { attributeMeaning, capabilityIn, clockTime, MAIN_PART, isCurrent, isScalar, readingOf, REAL_CLOCK, standardMeaning, unitIn, type CapabilityName, type Clock, type Value } from '@kraftverk/device-sdk';
 
 import type { AutomationEngineDeps, AutomationRecord, EngineDevice } from './model.ts';
 import { quoted } from './words.ts';
@@ -56,13 +56,20 @@ export class RuleContext {
       clock: () => clockTime(now, automation.timeZone),
       // No trigger with an id started it: that is known, and said as no id at all.
       run: (fact, field) => {
-        if (fact === 'trigger') return triggerOf(rule, trigger)?.id ?? '';
+        if (fact === 'trigger') return { value: triggerOf(rule, trigger)?.id ?? '', unit: null };
         // The event that started it, and what it carried; unknown when none did.
-        if (!event) return null;
-        return field === undefined ? event.id : (event.data?.[field] ?? null);
+        if (!event) return { value: null, unit: null };
+        if (field === undefined) return { value: event.id, unit: null };
+        // What it carried, in the unit its device declares for it: a voltage in V is never taken for kV.
+        const started = triggerOf(rule, trigger);
+        const from = started && 'event' in started ? part(started.event.role) : null;
+        const declared = from?.description.events?.find((each) => each.id === event.id && (each.part ?? MAIN_PART) === from.part)?.data?.[field];
+        return { value: event.data?.[field] ?? null, unit: declared?.type === 'number' ? (declared.unit ?? null) : null };
       },
       // Its settings, as it runs with them: each its value, in its unit.
       param: (name) => settingOf(rule.params, name),
+      // What it remembers: as a run last left it, or as it starts.
+      memory: (name) => memoryOf(rule.memory ?? { fields: {} }, name, this.deps.store.memory(automation.id)[name]),
       read: (role, means) => {
         const device = part(role);
         const attribute = device ? attributeMeaning(device.description, device.part, means) : null;
@@ -108,7 +115,8 @@ export class RuleContext {
   /** Its settings as a sentence reads them: each one's value, or its default. */
   settled(automation: AutomationRecord, rule: Rule): Record<string, Value> {
     const scope = this.scope(automation, rule);
-    return Object.fromEntries(Object.keys(rule.params.fields).map((key) => [key, scope.param(key)]));
+    // Each its value alone: the words say it in its setting's unit, a choice decides by it.
+    return Object.fromEntries(Object.keys(rule.params.fields).map((key) => [key, scope.param(key).value]));
   }
 
   /** A condition in words, its settings filled in: "Garage station's charge is at least 50 %". */

@@ -121,7 +121,7 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
     },
     name,
     // The trigger that started the run it rehearses, by its key: its id, or "" for none with one.
-    run: (fact) => (fact === 'trigger' ? (triggerOf(recipe, trigger)?.id ?? '') : null),
+    run: (fact) => ({ value: fact === 'trigger' ? (triggerOf(recipe, trigger)?.id ?? '') : null, unit: null }),
   });
 
   // The moments anything could have changed: every sample, every time of day, every event.

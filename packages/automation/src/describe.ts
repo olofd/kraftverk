@@ -33,6 +33,12 @@ const holdText = (held: Expr, text: (expr: Expr) => string): string => {
 };
 
 /** A setting as it reads in a sentence: an option's label, a number with its unit, seconds as a duration. */
+/** One of what a rule remembers, as a sentence calls it: its title, mid-sentence — "times charged". */
+const memoryWords = (rule: Pick<Rule, 'memory'>, key: string): string => {
+  const title = rule.memory?.fields[key]?.title ?? key;
+  return /^[A-Z][a-z]/.test(title) ? title.charAt(0).toLowerCase() + title.slice(1) : title;
+};
+
 /** A setting's value as the rule runs with it: the one given — a form's, as it is set — or the rule's own. */
 const settingValue = (rule: Pick<Rule, 'params'>, params: Readonly<Record<string, Value>>, key: string): Value => {
   const field = rule.params.fields[key];
@@ -195,6 +201,8 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
         return (expr as ExprOf<'any'>).any.map((part) => text(part)).join(' or ');
       case 'not':
         return `it is not so that ${text((expr as ExprOf<'not'>).not)}`;
+      case 'memory':
+        return memoryWords(rule, (expr as ExprOf<'memory'>).memory);
       default: {
         const unknown: never = kind;
         throw new Error(`No words for an expression of kind ${String(unknown)}`);
@@ -323,7 +331,7 @@ function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (rol
       return chosen ? steps(chosen, each) : [each(step)];
     });
   // What each kind's words are handed (kinds/steps.ts): how the parts of a step read.
-  const say: StepSay = { expr: text, seconds, count, name, command, write, briefs: (list) => briefs(list) };
+  const say: StepSay = { expr: text, seconds, count, name, command, write, briefs: (list) => briefs(list), memory: (key) => memoryWords(rule, key) };
   const lines = (list: readonly Step[] | undefined): StepLine[] => steps(list, line);
   /** A step as its kind says it, and its branches — its lists of steps — each under its field's label. */
   const line = (step: Step): StepLine => {

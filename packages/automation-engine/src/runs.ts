@@ -1,5 +1,5 @@
 import type { AutomationRun, RunLog, RunStep } from '@kraftverk/api-contract';
-import { branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, secondsNow, fieldValue, negation, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepsOf, stepSpec, takesSteps, type Command, type Expr, type Rule, type RoleBinding, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
+import { branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, measure, paramText, toRemember, secondsNow, fieldValue, negation, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepsOf, stepSpec, takesSteps, type Command, type Expr, type Rule, type RoleBinding, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
 import { attributeMeaning, readingOf, type AutomationId } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
@@ -484,6 +484,7 @@ export class Runs {
       else if ('command' in step) walked = await this.#command(live, step.command, depth, within, mode === 'otherwise');
       else if ('write' in step) walked = await this.#write(live, step.write, depth, within, what());
       else if ('start' in step) walked = await this.#startStep(live, step.start, depth, within, what(), mode);
+      else if ('remember' in step) walked = await this.#remember(live, step.remember, depth, within, what());
       else if ('wait' in step) {
         const seconds = this.#seconds(step.wait.for, scope(), SEQUENCE_LIMITS.waitSeconds) ?? 1;
         const entry = this.#add(live, { kind, depth, within, what: what(), outcome: 'waiting', detail: `For ${secondsText(seconds)}`, until: this.#after(seconds) });
@@ -562,6 +563,20 @@ export class Runs {
       return walked;
     }
     return result;
+  }
+
+  /** A value remembered — in its field's unit, one its field takes — for this run's later steps and later runs. */
+  async #remember(live: LiveRun, remember: { name: string; value: Expr }, depth: number, within: string | null, what: string): Promise<Walked> {
+    const schema = live.rule.memory ?? { fields: {} };
+    const measured = await measure(remember.value, this.#context.scope(live.automation, live.rule, undefined, live.trigger, live.event)).catch(() => ({ value: null, unit: null }));
+    const kept = toRemember(schema, remember.name, measured);
+    if ('problem' in kept) {
+      this.#add(live, { kind: 'remember', depth, within, what, outcome: 'failed', detail: `Not remembered: ${kept.problem}`, until: null });
+      return 'failed';
+    }
+    this.deps.store.remember(live.automation.id, remember.name, kept.value);
+    this.#add(live, { kind: 'remember', depth, within, what, outcome: 'done', detail: `Remembered ${paramText(schema, remember.name, kept.value)}`, until: null });
+    return 'ok';
   }
 
   /** A command, through the gateway, with the run's allowance: one step. */

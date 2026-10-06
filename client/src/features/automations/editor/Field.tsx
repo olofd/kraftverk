@@ -141,6 +141,7 @@ function FieldEditor<T extends object>({ field, fields, construct, set }: { fiel
     case 'value':
     case 'automation':
     case 'name':
+    case 'memory':
     case 'args':
     case 'steps':
       return null;

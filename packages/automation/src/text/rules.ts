@@ -172,6 +172,7 @@ class Reader {
       case 'automation':
       case 'event':
       case 'name':
+      case 'memory':
         return this.name(data, path, field.label.toLowerCase());
       case 'id':
         if (typeof data !== 'string' || !TRIGGER_ID.test(data)) return this.fail('A name of its own is letters and digits, starting with a lowercase letter: "low"', path);
@@ -291,6 +292,7 @@ export type RuleEntry = {
   do?: unknown;
   'if a step fails'?: unknown;
   settings?: unknown;
+  memory?: unknown;
 };
 
 /**
@@ -304,6 +306,8 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
   const then = tryRead(reader, () => reader.steps(entry.do, [...path, 'do'])) ?? [];
   const otherwise = 'if a step fails' in entry ? tryRead(reader, () => reader.steps(entry['if a step fails'], [...path, 'if a step fails'])) : undefined;
   const params = tryRead(reader, () => settingsFromConfig(entry.settings, [...path, 'settings'], (message, at) => reader.fail(message, at))) ?? { fields: {} };
+  // What it remembers: written as its settings are, each the value it starts from.
+  const memory = 'memory' in entry ? tryRead(reader, () => settingsFromConfig(entry.memory, [...path, 'memory'], (message, at) => reader.fail(message, at), 'memory')) : null;
 
   const steps: RuleBody = { when, ...(condition !== undefined && condition !== null ? { if: condition } : {}), then, ...(otherwise !== undefined && otherwise !== null ? { otherwise } : {}) };
   const roles: Record<string, RoleSpec> = {};
@@ -349,7 +353,15 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
   }
 
   if (reader.issues.length) return { rule: null, uses, issues: reader.issues };
-  const rule: Rule = { roles, params, when, ...(condition !== undefined && condition !== null ? { if: condition } : {}), then, ...(otherwise !== undefined && otherwise !== null ? { otherwise } : {}) };
+  const rule: Rule = {
+    roles,
+    params,
+    ...(memory && Object.keys(memory.fields).length ? { memory } : {}),
+    when,
+    ...(condition !== undefined && condition !== null ? { if: condition } : {}),
+    then,
+    ...(otherwise !== undefined && otherwise !== null ? { otherwise } : {}),
+  };
   return { rule, uses, issues: [] };
 }
 
@@ -405,6 +417,7 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
       case 'event':
       case 'name':
       case 'id':
+      case 'memory':
         return value;
       case 'steps':
         return (value as readonly Step[]).map(step);
@@ -434,6 +447,7 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
   return {
     uses: usesOut,
     ...(Object.keys(rule.params.fields).length ? { settings: settingsToConfig(rule.params) } : {}),
+    ...(rule.memory && Object.keys(rule.memory.fields).length ? { memory: settingsToConfig(rule.memory) } : {}),
     ...(rule.when.length ? { when: rule.when.map(trigger) } : {}),
     ...(rule.if !== undefined ? { 'only if': expr(rule.if) } : {}),
     do: rule.then.map(step),

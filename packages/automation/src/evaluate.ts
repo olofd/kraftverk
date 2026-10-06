@@ -1,4 +1,4 @@
-import { isScalar, type ConfigSchema, type ScalarValue, type Unit, type Value } from '@kraftverk/device-sdk';
+import { checkValue, isScalar, valueTypeOf, type ConfigSchema, type ScalarValue, type Unit, type Value } from '@kraftverk/device-sdk';
 
 import { inWindow, minutesOf } from './clock.ts';
 import type { Evaluation } from './functions.ts';
@@ -45,6 +45,35 @@ export function settingOf(schema: ConfigSchema, name: string, given?: Value): Me
   return { value, unit: field?.type === 'number' && typeof value === 'number' ? (field.unit ?? null) : null };
 }
 
+/**
+ * What a rule remembers, as a run reads it: the value kept — while it is
+ * still one its field takes, the field unchanged in kind and range — or the
+ * value it starts from.
+ */
+export function memoryOf(schema: ConfigSchema, name: string, kept: Value | undefined): Measured {
+  const field = schema.fields[name];
+  const fits = field !== undefined && kept !== undefined && checkValue(valueTypeOf(field), kept).ok;
+  return settingOf(schema, name, fits ? kept : undefined);
+}
+
+/**
+ * A value to remember, as it is kept: in its field's unit, and one its field
+ * takes — or why it cannot be, in words: "Times charged must be at most 10".
+ */
+export function toRemember(schema: ConfigSchema, name: string, measured: Measured): { value: Value } | { problem: string } {
+  const field = schema.fields[name];
+  if (!field) return { problem: `it remembers nothing called "${name}"` };
+  let value = measured.value;
+  if (field.type === 'number' && typeof value === 'number') {
+    const inUnit = field.unit ? numberIn(measured, field.unit) : value;
+    if (inUnit === null) return { problem: `${field.title} is not in ${measured.unit}` };
+    value = tidy(inUnit);
+  }
+  if (value === null) return { problem: `${field.title} cannot be told now` };
+  const checked = checkValue(valueTypeOf(field), value);
+  return checked.ok ? { value } : { problem: `${field.title} ${checked.problem}` };
+}
+
 /** A number worked out without the float's dust: 0.1 + 0.2 is 0.3. */
 const tidy = (value: number): number => Math.round(value * 1e9) / 1e9;
 
@@ -58,6 +87,8 @@ export function numberIn(measured: Measured, unit: Unit): number | null {
 export type RuleScope = {
   /** One of the rule's settings, as it runs with it: a number in the setting's unit. */
   param(name: string): Measured;
+  /** What it remembers, as a run last left it — or as it starts; absent where nothing is kept: its starting value. */
+  memory?(name: string): Measured;
   /** What the part filling a role reports now for a meaning — a number in its unit, if it has one — or null when it cannot be known. */
   read(role: string, means: string): { value: ScalarValue; label: string; unit: Unit | null } | null;
   /** A function's answer; not given where calls are not allowed. */
@@ -69,7 +100,7 @@ export type RuleScope = {
   /** The time of day on the owner's clock, as "HH:MM"; null where there is none. */
   clock(): string | null;
   /** A fact of the run being evaluated (`run.trigger`); null — or absent — where there is no run, or it is not known. */
-  run?(fact: RunFact, field?: string): Value;
+  run?(fact: RunFact, field?: string): Measured;
 };
 
 const compare = (op: CompareOp, left: Value, right: Value): Value => {
@@ -175,6 +206,8 @@ export function measureNow(expr: Expr, scope: RuleScope, trace: string[] = [], a
     }
     case 'param':
       return scope.param((expr as ExprOf<'param'>).param);
+    case 'memory':
+      return scope.memory?.((expr as ExprOf<'memory'>).memory) ?? plain(null);
     case 'read': {
       const { role, means } = (expr as ExprOf<'read'>).read;
       const read = scope.read(role, means);
@@ -189,7 +222,7 @@ export function measureNow(expr: Expr, scope: RuleScope, trace: string[] = [], a
     }
     case 'run': {
       const { run: fact, field } = expr as ExprOf<'run'>;
-      return plain(scope.run?.(fact, field) ?? null);
+      return scope.run?.(fact, field) ?? plain(null);
     }
     case 'within': {
       const { from, to } = (expr as ExprOf<'within'>).within;
@@ -281,6 +314,8 @@ export function measureNow(expr: Expr, scope: RuleScope, trace: string[] = [], a
 export function settledScope(rule: Rule, params: Readonly<Record<string, Value>>, name: (role: string) => string = (role) => role): RuleScope {
   return {
     param: (key) => settingOf(rule.params, key, params[key]),
+    // Before any run: what it starts from.
+    memory: (key) => settingOf(rule.memory ?? NO_SETTINGS, key),
     read: () => null,
     reachable: () => ({ reachable: null, detail: 'not known until it runs' }),
     name,
@@ -392,6 +427,7 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
       case 'reachable':
       case 'within':
       case 'run':
+      case 'memory':
         return settled;
       default: {
         const unknown: never = kind;
@@ -439,5 +475,5 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
   // An "only if" its settings make always true is no condition at all.
   const only = rule.if ? expr(rule.if) : null;
   const keptIf = only && !('value' in only && only.value === true) ? { if: only } : {};
-  return { roles: automationRoles(rule.roles), params: NO_SETTINGS, when, ...keptIf, then: steps(rule.then), ...(otherwise ? { otherwise } : {}) };
+  return { roles: automationRoles(rule.roles), params: NO_SETTINGS, ...(rule.memory ? { memory: rule.memory } : {}), when, ...keptIf, then: steps(rule.then), ...(otherwise ? { otherwise } : {}) };
 }

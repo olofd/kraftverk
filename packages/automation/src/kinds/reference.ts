@@ -41,6 +41,8 @@ function holds(field: FieldSpec, fields: readonly FieldSpec[]): string {
       return 'a name its part declares';
     case 'id':
       return 'a name of its own, unique in the automation: letters and digits, from a lowercase letter';
+    case 'memory':
+      return 'one of what it remembers, by its name: under `memory`';
     case 'args':
       return 'each argument by its name: a value, or an expression';
     case 'steps':

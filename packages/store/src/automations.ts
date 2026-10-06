@@ -295,6 +295,19 @@ export class AutomationStore implements AutomationStorage {
     this.#db.query('UPDATE automation SET looked_at = ? WHERE id = ?').run(at, id);
   }
 
+  // --- what it remembers ------------------------------------------------------------------
+
+  memory(id: string): Record<string, Value> {
+    const rows = this.#db.query<{ name: string; value: string }, [string]>('SELECT name, value FROM automation_memory WHERE automation_id = ?').all(id);
+    return Object.fromEntries(rows.map((row) => [row.name, JSON.parse(row.value) as Value]));
+  }
+
+  remember(id: string, name: string, value: Value): void {
+    this.#db
+      .query('INSERT INTO automation_memory (automation_id, name, value) VALUES (?, ?, ?) ON CONFLICT (automation_id, name) DO UPDATE SET value = excluded.value')
+      .run(id, name, JSON.stringify(value));
+  }
+
   // --- runs ---------------------------------------------------------------------------
 
   /** A run that takes steps, begun: its row, written again at every step. Throws if one of the automation's already runs. */

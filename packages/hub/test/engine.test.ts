@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { checkRule, defineFunction, defineRecipe, inlineParams, type Rule } from '@kraftverk/automation';
+import { checkRule, defineFunction, defineRecipe, inlineParams, withSettings, type Rule } from '@kraftverk/automation';
 import { MAIN_PART, REAL_CLOCK, savedDeviceId, zonedInstant, type AuditRecord, type DeviceDescription, type DeviceReader, type Value } from '@kraftverk/device-sdk';
 import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
@@ -832,6 +832,53 @@ describe('when a device says something happened', () => {
     }
   });
 
+  test('what it remembers is kept across runs, in its own unit — and read by the steps after', async () => {
+    const context = setup();
+    const { engine, bus, sent, store } = context;
+    const rule: Rule = {
+      roles: { station: { label: 'Mains', capabilities: ['acInput'] }, plug: { label: 'Plug', capabilities: ['switch'] } },
+      params: { fields: {} },
+      memory: {
+        fields: {
+          timesLost: { type: 'number', title: 'Times lost', integer: true, min: 0, max: 2, default: 0 },
+          lastVoltage: { type: 'number', title: 'Last voltage', unit: 'kV', default: 0 },
+        },
+      },
+      when: [{ event: { role: 'station', event: 'mains.lost' } }],
+      then: [
+        { remember: { name: 'timesLost', value: { math: 'add', left: { memory: 'timesLost' }, right: { value: 1 } } } },
+        { remember: { name: 'lastVoltage', value: { run: 'event', field: 'voltage' } } },
+        // The second time, and after: what it remembered just now is what it reads.
+        { command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { compare: 'ge', left: { memory: 'timesLost' }, right: { value: 2 } } } } },
+      ],
+    };
+    expect(checkRule(rule, { fn: () => null })).toEqual([]);
+    const made = store.create({ name: 'Count the outages', rule, madeFrom: null, roles: { station: { device: STATION, part: 'input.ac' }, plug: { device: PLUG, part: 'main' } }, starts: {}, timeZone: ZONE, recheckMinutes: null });
+    store.update(made.id, { mode: 'act' });
+    engine.start();
+    try {
+      const lost = (voltage: number) => bus.publish({ kind: 'event', deviceId: STATION, event: { id: 'mains.lost', level: 'warn', part: 'input.ac', data: { voltage }, at: new Date().toISOString() } });
+      lost(230);
+      await settle();
+      expect(store.memory(made.id)).toEqual({ timesLost: 1, lastVoltage: 0.23 });
+      expect(sent.map((intent) => intent.args.on)).toEqual([false]);
+
+      lost(215);
+      await settle();
+      expect(store.memory(made.id)).toEqual({ timesLost: 2, lastVoltage: 0.215 });
+      expect(sent.map((intent) => intent.args.on)).toEqual([false, true]);
+
+      // Past what it may be: not remembered, and the run says why — what it remembered stays.
+      lost(220);
+      await settle();
+      expect(store.memory(made.id)).toEqual({ timesLost: 2, lastVoltage: 0.215 });
+      const last = store.runs(made.id)[0]!;
+      expect(last.steps.find((step) => step.kind === 'remember')).toEqual(expect.objectContaining({ outcome: 'failed', detail: 'Not remembered: Times lost must be at most 2' }));
+    } finally {
+      engine.stop();
+    }
+  });
+
   test('a part that never raises that event cannot fill the role', async () => {
     const { engine, make } = setup();
     const automation = make('test.kit.mains', { station: { device: STATION, part: 'main' }, switch: { device: PLUG, part: 'main' } });
@@ -1003,6 +1050,24 @@ describe('a battery kept between two levels', () => {
     await step(80, 31);
     await step(82, 31.2);
     expect(switched()).toEqual([false, true, false, true, false]);
+    engine.stop();
+  });
+
+  test('its settings kept in it, not written into its blocks: what it says and sends reads their values', async () => {
+    const context = setup();
+    const { engine, station, plug, sent, store } = context;
+    plug.on = false;
+    const { id: _id, label: _label, description: _description, sentence: _sentence, ...recipe } = new AutomationLibrary([], () => {}).recipe('standard.charge-between')!;
+    const made = store.create({ name: 'Kept levels', rule: withSettings(recipe, levels), madeFrom: 'standard.charge-between', roles, starts: {}, timeZone: ZONE, recheckMinutes: null });
+    const window = store.update(made.id, { mode: 'act' })!;
+    station.soc = 4;
+    const run = await engine.run(window, { askedBy: { actor: 'person', name: 'olof' } });
+    expect(run.outcome).toBe('acted');
+    expect(sent.map((intent) => intent.args.on)).toEqual([true]);
+    expect(run.conditions).toEqual([
+      { text: 'Garage P280’s charge is below 5 % for 2 min', holds: true },
+      { text: 'Garage P280’s charge is at least 30 % for 2 min', holds: false },
+    ]);
     engine.stop();
   });
 

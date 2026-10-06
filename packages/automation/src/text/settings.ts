@@ -57,15 +57,27 @@ function numberOf(data: unknown, at: Path, fail: Fail): { value: number; unit: U
   return 'value' in expr && typeof expr.value === 'number' ? { value: expr.value, unit: expr.unit ?? null } : fail('Expected a number with its unit: "20 %", "2 min"', at);
 }
 
-/** The settings of a rule, from a file's `settings:`. */
-export function settingsFromConfig(data: unknown, path: Path, fail: Fail): ConfigSchema {
+/**
+ * The two sections written so: its settings, and what it remembers — the
+ * same fields, the value one a setting's or the one it starts from — each
+ * named in what is said of it.
+ */
+export type FormSection = 'settings' | 'memory';
+const SECTION_WORDS: Record<FormSection, { each: string; name: string; part: string }> = {
+  settings: { each: 'each setting by its name: "low: 20 %"', name: "a setting's name", part: 'a setting' },
+  memory: { each: 'what it remembers, each by its name: "timesCharged: 0"', name: 'a name for what it remembers', part: 'what it remembers' },
+};
+
+/** The settings of a rule, from a file's `settings:` — or what it remembers, from its `memory:`. */
+export function settingsFromConfig(data: unknown, path: Path, fail: Fail, section: FormSection = 'settings'): ConfigSchema {
+  const words = SECTION_WORDS[section];
   if (data === undefined || data === null) return { fields: {} };
-  if (!isRecord(data)) return fail('Expected each setting by its name: "low: 20 %"', path);
+  if (!isRecord(data)) return fail(`Expected ${words.each}`, path);
   const fields: Record<string, ConfigField> = {};
   for (const [key, given] of Object.entries(data)) {
     const at = [...path, key];
-    if (!SETTING_KEY.test(key)) fail(`"${key}" is not a setting's name: letters, digits, _ and -`, at);
-    fields[key] = isRecord(given) ? longSetting(key, given, at, fail) : shortSetting(key, given, at, fail);
+    if (!SETTING_KEY.test(key)) fail(`"${key}" is not ${words.name}: letters, digits, _ and -`, at);
+    fields[key] = isRecord(given) ? longSetting(key, given, at, fail, words.part) : shortSetting(key, given, at, fail);
   }
   return { fields };
 }
@@ -80,8 +92,8 @@ function shortSetting(key: string, given: unknown, at: Path, fail: Fail): Config
   return fail('Expected its value: a number with its unit, on or off, or a text', at);
 }
 
-function longSetting(key: string, given: Record<string, unknown>, at: Path, fail: Fail): ConfigField {
-  for (const name of Object.keys(given)) if (!(LONG_KEYS as readonly string[]).includes(name)) fail(`"${name}" is not part of a setting: it takes ${LONG_KEYS.map((each) => `"${each}"`).join(', ')}`, [...at, name]);
+function longSetting(key: string, given: Record<string, unknown>, at: Path, fail: Fail, part: string): ConfigField {
+  for (const name of Object.keys(given)) if (!(LONG_KEYS as readonly string[]).includes(name)) fail(`"${name}" is not part of ${part}: it takes ${LONG_KEYS.map((each) => `"${each}"`).join(', ')}`, [...at, name]);
   if (!('value' in given)) fail('Expected its value: "value: 20 %"', at);
   const title = typeof given.title === 'string' && given.title.trim() ? given.title.trim() : titleOf(key);
   const described = typeof given.description === 'string' && given.description.trim() ? { description: given.description.trim() } : {};

@@ -53,7 +53,7 @@ describe('charging between two levels', () => {
     reachable: () => ({ reachable: true, detail: 'connected' }),
     name: (role) => (role === 'battery' ? 'Garage P280' : 'ATORCH plug'),
     clock: () => '12:00',
-    run: () => '',
+    run: () => ({ value: '', unit: null }),
   });
   const [falls, reaches] = chargeBetween.when.map((trigger) => (trigger as { becomes: Expr }).becomes) as [Expr, Expr];
   /** What a run started by the trigger at this place turns the charger to. */

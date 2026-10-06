@@ -10,7 +10,7 @@ import type { FieldSpec, KindDocs, KindIcon } from './spec.ts';
   seconds.
 */
 
-export type StepKind = 'command' | 'write' | 'wait' | 'waitUntil' | 'ensure' | 'choose' | 'watch' | 'start';
+export type StepKind = 'command' | 'write' | 'wait' | 'waitUntil' | 'ensure' | 'choose' | 'watch' | 'start' | 'remember';
 
 /** A step of one kind. */
 export type StepOf<K extends StepKind> = K extends StepKind ? Extract<Step, Record<K, unknown>> : never;
@@ -31,6 +31,8 @@ export type StepSay = {
   write(write: Write): string;
   /** Steps within, each briefly. */
   briefs(steps: readonly Step[] | undefined): string[];
+  /** What it remembers, by what it is called: "Times charged". */
+  memory(name: string): string;
 };
 
 /** What a kind's own text form reads with: the file reader's tools. */
@@ -325,11 +327,31 @@ const START: StepSpec<'start'> = {
   },
 };
 
+// --- memory ------------------------------------------------------------------------------------
+
+const REMEMBER: StepSpec<'remember'> = {
+  kind: 'remember',
+  label: 'Remember',
+  icon: 'save',
+  says: 'Remember a value for later runs: a count, when something last happened, a reading.',
+  fields: [
+    { data: ['remember', 'name'], key: 'remember', type: { type: 'memory' }, required: true, label: 'What it remembers' },
+    { data: ['remember', 'value'], key: 'as', type: { type: 'value' }, required: true, label: 'As' },
+  ],
+  blank: () => ({ remember: { name: '', value: { value: 0 } } }),
+  line: (step, say) => `Remember ${say.memory(step.remember.name)} as ${say.expr(step.remember.value)}`,
+  brief: (step, say) => `remember ${say.memory(step.remember.name)} as ${say.expr(step.remember.value)}`,
+  docs: {
+    summary: 'Remember a value — kept until a run remembers another, across runs and restarts — read as `memory.<name>`: one of what the automation declares under `memory`, in its kind and unit.',
+    examples: ['remember: timesCharged\nas: memory.timesCharged + 1', 'remember: lastPower\nas: charger.power'],
+  },
+};
+
 /** Every kind of step, by its key: the table everything that handles steps reads. */
-export const STEP_KINDS: { readonly [K in StepKind]: StepSpec<K> } = { command: COMMAND, write: WRITE, wait: WAIT, waitUntil: WAIT_UNTIL, ensure: ENSURE, choose: CHOOSE, watch: WATCH, start: START };
+export const STEP_KINDS: { readonly [K in StepKind]: StepSpec<K> } = { command: COMMAND, write: WRITE, wait: WAIT, waitUntil: WAIT_UNTIL, ensure: ENSURE, choose: CHOOSE, watch: WATCH, start: START, remember: REMEMBER };
 
 /** The order the editor offers them in. */
-export const STEP_KIND_ORDER: readonly StepKind[] = ['command', 'write', 'wait', 'waitUntil', 'ensure', 'choose', 'watch', 'start'];
+export const STEP_KIND_ORDER: readonly StepKind[] = ['command', 'write', 'wait', 'waitUntil', 'ensure', 'choose', 'watch', 'start', 'remember'];
 
 /** Which kind a step is — by its key; one of no kind is an error, never taken for another. */
 export function stepKind(step: Step): StepKind {

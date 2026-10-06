@@ -48,6 +48,8 @@ export type FieldType =
   | { type: 'name' }
   /** A name of its own, unique among its kind in the rule — letters and digits, from a lowercase letter: a trigger's, that `run.trigger` reads back. */
   | { type: 'id' }
+  /** One of what the rule remembers, by its name: what a `remember` step sets. */
+  | { type: 'memory' }
   /** A command's arguments: each its name and an expression. */
   | { type: 'args' }
   /**
@@ -80,7 +82,7 @@ export type FieldSpec = {
 export type KindDocs = { summary: string; examples: readonly string[] };
 
 /** The marks the editor draws a kind with: names in the app's icon set. */
-export type KindIcon = 'clock' | 'repeat' | 'activity' | 'bell' | 'power' | 'sliders' | 'pause' | 'git-branch' | 'eye' | 'play-circle';
+export type KindIcon = 'clock' | 'repeat' | 'activity' | 'bell' | 'power' | 'sliders' | 'pause' | 'git-branch' | 'eye' | 'play-circle' | 'save';
 
 /**
  * How a sentence says the parts of a construct — what the describer hands a

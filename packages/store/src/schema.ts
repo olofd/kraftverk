@@ -319,6 +319,20 @@ export const SCHEMA = `
   );
 
   /*
+    What each automation remembers (its memory), by name: the value a run
+    last left it, as JSON, in its field's unit. Kept across runs, restarts
+    and changes to the automation — a count goes on counting; a value its
+    field no longer takes, or a name it no longer declares, is read as the
+    value it starts from. Gone with the automation.
+  */
+  CREATE TABLE automation_memory (
+    automation_id TEXT NOT NULL REFERENCES automation (id) ON DELETE CASCADE,
+    name          TEXT NOT NULL CHECK (name <> ''),
+    value         TEXT NOT NULL,
+    PRIMARY KEY (automation_id, name)
+  );
+
+  /*
     Each time an automation ran, or runs now (docs/SEQUENCES.md): when it
     started and ended, how it came out, why, and — in detail — what it read,
     how its conditions stood and each step it took. started_by: the person or

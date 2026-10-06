@@ -179,6 +179,29 @@ const STEP: Schema = stepJsonSchema();
 /** What starts an automation: made from the language's own description of each kind (@kraftverk/automation, kinds/). */
 const TRIGGER: Schema = triggerJsonSchema();
 
+/** One of an automation's settings, or of what it remembers: its value alone, or with its title, range and how it is set. */
+const FORM_FIELD: Schema = {
+  anyOf: [
+    { type: ['number', 'boolean', 'string'], description: 'Its value: a number with its unit ("20 %", "2 min"), on or off, or a text.' },
+    {
+      type: 'object',
+      required: ['value'],
+      additionalProperties: false,
+      properties: {
+        title: { type: 'string', description: 'What the app calls it.' },
+        description: { type: 'string' },
+        value: { type: ['number', 'boolean', 'string'], description: 'Its value: a number with its unit, on or off, a text, or one of its options.' },
+        min: { type: ['number', 'string'], description: 'The least it may be, in its unit.' },
+        max: { type: ['number', 'string'], description: 'The most it may be, in its unit.' },
+        step: { type: ['number', 'string'], description: 'What it moves by, in its unit.' },
+        integer: { type: 'boolean', description: 'Whole numbers only.' },
+        slider: { type: 'boolean', description: 'Set with a slider.' },
+        options: { type: 'object', additionalProperties: { type: 'string' }, description: 'Each option by its value, with its words.' },
+      },
+    },
+  ],
+};
+
 function automationSchema(vocabulary: Vocabulary): Schema {
   // The devices the server has, and their parts, offered where a role is filled.
   const parts = vocabulary.devices.flatMap((device) => [device.key, ...device.parts.filter((part) => part !== 'main').map((part) => `${device.key}.${part}`)]);
@@ -198,27 +221,12 @@ function automationSchema(vocabulary: Vocabulary): Schema {
       settings: {
         type: 'object',
         description: 'Its settings, each by its name, read in its rule as setting.name: a value alone ("low: 20 %"), or with its title, range and how it is set.',
-        additionalProperties: {
-          anyOf: [
-            { type: ['number', 'boolean', 'string'], description: 'Its value: a number with its unit ("20 %", "2 min"), on or off, or a text.' },
-            {
-              type: 'object',
-              required: ['value'],
-              additionalProperties: false,
-              properties: {
-                title: { type: 'string', description: 'What the app calls it.' },
-                description: { type: 'string' },
-                value: { type: ['number', 'boolean', 'string'], description: 'Its value: a number with its unit, on or off, a text, or one of its options.' },
-                min: { type: ['number', 'string'], description: 'The least it may be, in its unit.' },
-                max: { type: ['number', 'string'], description: 'The most it may be, in its unit.' },
-                step: { type: ['number', 'string'], description: 'What it moves by, in its unit.' },
-                integer: { type: 'boolean', description: 'Whole numbers only.' },
-                slider: { type: 'boolean', description: 'Set with a slider.' },
-                options: { type: 'object', additionalProperties: { type: 'string' }, description: 'Each option by its value, with its words.' },
-              },
-            },
-          ],
-        },
+        additionalProperties: FORM_FIELD,
+      },
+      memory: {
+        type: 'object',
+        description: 'What it remembers, each by its name, read as memory.name and set by a remember step: the value it starts from ("timesCharged: 0"), or with its title and range. Kept across runs and restarts.',
+        additionalProperties: FORM_FIELD,
       },
       uses: {
         type: 'object',
@@ -249,7 +257,6 @@ function automationSchema(vocabulary: Vocabulary): Schema {
       'only if': { $ref: '#/$defs/expression' },
       do: STEPS,
       'if a step fails': STEPS,
-      params: { type: 'object' },
     },
   };
 }

@@ -292,6 +292,27 @@ do:
     and wait: 10 min
 ```
 
+### `remember` — Remember
+
+Remember a value — kept until a run remembers another, across runs and restarts — read as `memory.<name>`: one of what the automation declares under `memory`, in its kind and unit.
+
+| Word | Holds | |
+|---|---|---|
+| `remember` | one of what it remembers, by its name: under `memory` | needed |
+| `as` | a value, or an expression for one | needed |
+
+```yaml
+do:
+  - remember: timesCharged
+    as: memory.timesCharged + 1
+```
+
+```yaml
+do:
+  - remember: lastPower
+    as: charger.power
+```
+
 ## Conditions and values — expressions
 
 An expression is written as text — `station.charge < 15 %` — wherever
@@ -302,6 +323,7 @@ reached — is never taken for true.
 |---|---|---|
 | A value | `50 W` · `"eco"` · `07:00` | A number — with its unit beside a reading, `50 W`, `15 %` — a time of day, `07:00`, text in quotes, `true` or `false`. |
 | A setting | `setting.low` | One of the rule’s settings, by its name: a recipe’s, before it is copied into an automation. |
+| What it remembers | `memory.timesCharged` | A value it remembers, as a run last left it — or, before any did, as it starts: kept across runs and restarts. |
 | A reading | `station.charge` · `charger.power` | What the part filling a role reports now, by what it means: a standard meaning, or a type’s own. Unknown when it has not said, or said too long ago. |
 | Can be reached | `charger reachable` | Whether the part filling a role can be reached now: its holder says it is connected. Never unknown — not being reachable is the answer. |
 | What the run knows | `run.trigger == "low"` · `run.event.voltage < 200 V` | What the run knows of itself: `run.trigger`, the id of the trigger that started it — `""` when none with an id did; `run.event`, the event a device raised that started it, and `run.event.voltage`, what it carried, as its device declares it — unknown when no event did. |

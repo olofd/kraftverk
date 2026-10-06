@@ -41,6 +41,8 @@ export type Expr =
   | { value: Value; unit?: Unit }
   /** One of the rule's settings: `setting.low`. */
   | { param: string }
+  /** What it remembers, as a run last left it — or as it starts: `memory.timesCharged`. */
+  | { memory: string }
   /** What the part filling a role reports now, by meaning: `charge`, or a type's own `acme.minutesToFull`. */
   | { read: { role: string; means: string } }
   /** A function a package contributes, over the part filling a role: `acme.weather.sunny(forecast, day = "tomorrow")`. */
@@ -209,7 +211,9 @@ export type Step =
    * `andWait`, wait until its run ends: done if it acted, not if it did
    * not, or not within that time.
    */
-  | { start: { role: string; andWait?: Expr } };
+  | { start: { role: string; andWait?: Expr } }
+  /** Remember a value — kept until a run remembers another, across runs and restarts: `remember: timesCharged`, `as: memory.timesCharged + 1`. */
+  | { remember: { name: string; value: Expr } };
 
 /** A role a part of a device fills: what it is called, and what it must offer. */
 export type PartRole = CapabilityNeed & { label: string };
@@ -252,6 +256,13 @@ export const partRoles = (rule: Pick<Rule, 'roles'>): [string, PartRole][] =>
 export type Rule = {
   roles: Readonly<Record<string, RoleSpec>>;
   params: ConfigSchema;
+  /**
+   * What it remembers: each a field of a form — its kind, unit, range —
+   * whose `default` is the value it starts from, before any run remembers
+   * another. Read as `memory.timesCharged`, set by a `remember` step, kept
+   * by where it runs, across runs and restarts. None: it remembers nothing.
+   */
+  memory?: ConfigSchema;
   /** Any one of these starts a run. */
   when: readonly RuleTrigger[];
   /** Must be true for it to act. Unknown is not true: nothing is done, and the run says why. */

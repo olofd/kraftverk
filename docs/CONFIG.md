@@ -170,6 +170,28 @@ describes.
   of some options lists them, `options: { eco: Save power, boost: Charge fast }`.
   An automation copied from a recipe keeps the recipe's settings, at the
   values its owner chose; the app sets them with a slider each.
+- **What it remembers** (`memory:`): written as its settings are, each the
+  value it starts from; read as `memory.timesCharged`, set by a `remember`
+  step:
+
+  ```yaml
+  memory:
+    timesCharged: { value: 0, integer: true, min: 0 }
+    lastPower: 0 W
+  when:
+    - event: mains.lost
+      from: station
+  do:
+    - remember: timesCharged
+      as: memory.timesCharged + 1
+    - remember: lastPower
+      as: charger.power
+  ```
+
+  What a run remembers is converted to its unit and held to its range, and
+  kept by kraftverk, not in this file: across runs, restarts and changes to
+  the automation. A value its field no longer takes reads as the one it
+  starts from. A database set aside starts it afresh.
 
 Anything text cannot say exactly — a list as a value — is kept as the rule's
 own data in its place; a file the server writes always reads back the same.

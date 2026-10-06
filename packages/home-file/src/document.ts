@@ -214,7 +214,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         continue;
       }
       const own = ['name', 'mode', 'clock', 'recheck', 'home page', 'made from'];
-      const rules = ['uses', 'settings', 'when', 'only if', 'do', 'if a step fails'];
+      const rules = ['uses', 'settings', 'memory', 'when', 'only if', 'do', 'if a step fails'];
       for (const field of Object.keys(entry)) if (![...own, ...rules].includes(field)) problem(`"${field}" is not part of an automation: it has ${[...own, ...rules].join(', ')}`, [...path, field]);
       const name = text(entry.name, [...path, 'name'], 'its name');
       const mode = entry.mode === undefined ? 'watch' : AUTOMATION_MODES.includes(entry.mode as AutomationMode) ? (entry.mode as AutomationMode) : (problem('"mode" is off, watch or act', [...path, 'mode']), 'watch');

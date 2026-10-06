@@ -30,10 +30,12 @@ const STEPS: Record<Keys<Step>, string> = {
   choose: 'if:',
   watch: 'watch:',
   start: 'start:',
+  remember: 'remember:',
 };
 const EXPRESSIONS: Record<Exclude<Keys<Expr>, 'role' | 'args' | 'left' | 'right' | 'unit' | 'then' | 'else' | 'item' | 'field'>, string> = {
   value: '50 W',
   param: 'setting.',
+  memory: 'memory.',
   read: 'charger.power',
   call: 'acme.weather.sunny(',
   apply: 'min(',
