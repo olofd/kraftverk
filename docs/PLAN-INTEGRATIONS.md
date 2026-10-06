@@ -23,10 +23,14 @@ here is built yet.
   Today each NIU scooter keeps its own copy of the account's password. The
   design makes an account a device of its own, and lets a device be reached
   **through** another: a *bridge* (§3).
-- **An integration is one package with a manifest that is data.** Thousands
-  can be supported and listed without loading one line of their code;
-  discovery matches their manifests, and code is loaded when it is needed
-  (§4).
+- **Two kinds of package: the platform and the product.** An *integration*
+  teaches kraftverk a platform — NIU's cloud and signing in to it, Tuya's
+  local protocol and its gateways; a *device package* teaches it one product
+  — the UQi GT Sport, the ATORCH plug — built on its integration. Few
+  platforms, thousands of products, each a small package of its own (§1).
+- **Manifests are data.** Thousands can be supported and listed without
+  loading one line of their code; discovery matches the catalogue, and code
+  is loaded when it is needed (§4).
 - **Setup grows the steps Home Assistant's flows have:** asking again (a
   two-factor code), a page elsewhere (OAuth), signing in again when a
   password changes, changing a connection — all as data the app draws (§5).
@@ -123,12 +127,72 @@ Assistant arrived at the same place: a weather service is a device of type
 
 | Word | What it is | Kind of thing | Examples |
 |---|---|---|---|
-| **Integration** | An installed package that teaches kraftverk one product, family, cloud or standard. What contributors write; what the integrations page lists. It declares one or more device types. | Code | `icloud`, `apple-tv`, `tuya`, `aferiy`, `open-meteo`, `home-assistant` |
-| **Device type** | One kind of thing an integration knows, as today. | Code | `icloud.account`, `icloud.device`, `tuya.plug` |
+| **Integration** | A package that teaches kraftverk one **platform**: a vendor's system, a cloud, a standard — how things on it are reached, signed into and found, apart from any one product. | Code | `tuya`, `niu`, `sydpower`, `icloud`, `open-meteo`, `matter` |
+| **Device package** | A package that teaches kraftverk one **product** or product family: what it is. Built on an integration. | Code | `aferiy-p280`, `atorch-s1w`, `niu-uqi-gt` |
+| **Device type** | One kind of thing, declared by either: a product by a device package; the platform's own things — an account, a gateway, a service, the generic type for products nobody has described — by its integration. | Code | `aferiy.p280`, `niu.uqi-gt`; `niu.account`, `tuya.plug` |
 | **Device** | One thing a person added, of a type. Kind *hardware*. | Instance | "Garage P280", "Living room Apple TV" |
 | **Service** | A device without hardware, as today. Kind *service*. | Instance | "Weather here", "Electricity prices", "Phone notifications" |
 | **Account** | A device that is a sign-in to someone's cloud. Kind *account*. New. | Instance | "Family iCloud", "NIU account" |
 | **Bridge** | Not a kind: a role. A device through which other devices are reached — its *members*. Hardware, a service or an account may be one. | Role | A Hue bridge (hardware), an iCloud account, a Home Assistant (service) |
+
+### Two kinds of package: the platform, and the product
+
+The owner's distinction, and the right one: **logging in with NIU is the
+integration; the UQi GT Sport is a device, in a package of its own, that
+depends on the NIU integration.** A platform and a product change for
+different reasons, are written by different people, and come in very
+different numbers — a few hundred platforms, tens of thousands of products.
+
+The layers, each talking only to the one beside it:
+
+| Layer | Knows | Never knows | Examples |
+|---|---|---|---|
+| **Transport** | Moving bytes or messages, finding what is there | What they mean | `mqtt`, `ble`, `lan`, `https` |
+| **Protocol** | A wire format: framing, encryption, message shapes. Pure | Any product or meaning | `sydpower`, `tuya-local`, `niu-cloud` |
+| **Integration** | A platform: its ways in (connection methods, ready to use), their setup — signing in, fetching a key, pairing, instructions — its accounts and gateways, its services, the builder its products are made with, the generic type for a product nobody described, and how a thing found on it is matched to a product | Any one product | `sydpower`, `tuya`, `niu`, `open-meteo` |
+| **Device package** | A product: its name and models, its layout (datapoints, registers, limits), its pictures, its screens, its own words and recipes, its quirks | How its platform is reached or signed into | `aferiy-p280`, `atorch-s1w`, `tuya-zigbee-plug`, `niu-uqi-gt` |
+
+**The rules:**
+
+- An integration names no product. A device package names the integration
+  it is built on, and uses its builder and its ways in.
+- The platform's own things are the integration's types: an **account**
+  (`niu.account`), a **gateway** (`tuya.gateway`), a **service**
+  (`open-meteo.weather` — a weather forecast is the platform's, not a
+  product), and the **generic** type a product falls back to when no device
+  package describes it (`tuya.plug`, `niu.scooter`): the floor. None of these
+  is a product.
+- A product is a device package's type: `aferiy.p280`, `niu.uqi-gt`,
+  `atorch.s1w`. Mostly data on its integration's builder — the UQi GT is a
+  name, its models and pictures over `defineNiuScooter`; the Zigbee plug a
+  datapoint layout over `defineTuyaSocket`.
+- When an account or a gateway finds something — a scooter on the account,
+  a plug behind the gateway — its model is matched to the device package
+  that claims it; with none, the integration's generic type takes it.
+- Nothing about this is stored. The database knows devices and their types,
+  wherever a type was declared; an account is a device (D3). Integrations
+  and device packages are code.
+
+**The code already splits this way.** Today's packages mix the two, but
+their insides do not: `defineTuyaSocket` and `defineNiuScooter` are
+platform builders that the product packages already use; the P280's two
+ways in — Wi-Fi through the broker, Bluetooth — are how any Sydpower station
+is reached. The division follows the seam that is there.
+
+**Better than Home Assistant here.** Home Assistant has no product package:
+everything a product is lives inside its integration, so its Tuya
+integration carries every Tuya category's mapping, and adding a product
+means changing the integration. Its Zigbee integration had to split product
+knowledge out into a separate library of "quirks" for exactly this reason;
+Homey's apps and drivers, and openHAB's bindings and thing types, are the
+same split. Kraftverk has it from the start: a product is a small package,
+mostly data, added without touching its platform — which is how a catalogue
+grows to thousands.
+
+**What a product reached two ways is.** A product a person can reach through
+two platforms (a plug both by its vendor's local protocol and by Matter)
+is one device package naming two integrations, one per way, and one device
+with two connections. Not needed yet; the rules leave room for it.
 
 Why not call integrations "services": a service is already something you
 *add* — the weather here, the prices in your area — and notifications will be
@@ -277,8 +341,11 @@ What is missing, found in this review:
    modelled at all.
 2. **No bridge.** The Tuya Zigbee plug is reached through a Tuya gateway by
    writing both into one address (`ip#cid`): two facts in one string.
-3. **No unit above the type.** A product family is several packages
-   (`niu-scooter`, `niu-uqi-gt`); devices and services sit in two folders
+3. **No platform apart from its products.** What every NIU scooter or Tuya
+   socket shares — the builder, the generic type, the ways in — lives in one
+   product's package that the others depend on (`niu-uqi-gt` on
+   `niu-scooter`, `atorch-s1w` on `tuya-plug`); the P280's ways in are
+   Sydpower's, written into the P280; services sit in a folder of their own
    for no reason the code needs.
 4. **Setup cannot ask again.** No two-factor code after a password, no page
    elsewhere (OAuth), no "sign in again" for a device already added, no
@@ -400,44 +467,64 @@ sessions on every start); sightings and members not yet added (live).
 Integrations in the repository need no row: being in the image is being
 installed.
 
-### 4.2 The integration package
+### 4.2 Integration packages and device packages
 
-One folder, `packages/integrations/<id>/`, replacing `packages/devices/*`
-and `packages/services/*`. Protocols and transports stay where they are:
-they are shared by many integrations.
+Two folders: `packages/integrations/<platform>/` and
+`packages/devices/<product>/`. `packages/services/` goes: a service is the
+platform's own type, so it is its integration's. Protocols and transports
+stay where they are.
 
 ```
-packages/integrations/icloud/
+packages/integrations/niu/            the platform
   package.json        the manifest: data only (below)
-  README.md           the four headings, then what it supports and how
-  NOTICE              where it was ported from, and those licences
+  README.md           the four headings; how NIU is reached and signed into
+  NOTICE              where anything was ported from, and those licences
   src/
-    account.ts        defineDeviceType: icloud.account (kind account, a bridge)
-    device.ts         defineDeviceType: icloud.device (kind hardware, a member)
-  ui/                 pictures; screens of its own, rarely
+    index.ts          the builder (defineNiuScooter), the ways in, setup
+    account.ts        niu.account: kind account, a bridge (step 5)
+    scooter.ts        niu.scooter: the generic scooter, the floor
+  ui/                 the generic scooter's screens, which products reuse
   test/
-    fixtures/         recorded exchanges, replayed in tests
+
+packages/devices/niu-uqi-gt/          a product on it
+  package.json        "kraftverk": { "device": { "integration": "niu", … } }
+  README.md           what this model is, what is mapped of it
+  src/type.ts         defineNiuScooter({ id: 'niu.uqi-gt', models, … })
+  assets/             its pictures
+  test/
 ```
 
-**The manifest** is the `kraftverk.integration` section of `package.json`:
-**data**, saying only what finding the code needs — the integration, and
-where each of its types' entries, screens and pictures are:
+**Manifests** are data, saying only what finding the code needs.
+An integration's:
 
 ```jsonc
 {
-  "name": "@kraftverk/integration-icloud",
+  "name": "@kraftverk/integration-niu",
   "kraftverk": {
     "integration": {
-      "id": "icloud",                       // the namespace: every type id begins with "icloud."
-      "name": "iCloud",
-      "brands": ["apple"],
+      "id": "niu",
+      "name": "NIU",
+      "types": [                                  // the platform's own: may be none
+        { "id": "niu.account", "entry": "./src/account.ts" },
+        { "id": "niu.scooter", "entry": "./src/scooter.ts", "ui": "./ui/index.ts" }
+      ]
+    }
+  }
+}
+```
+
+A device package's:
+
+```jsonc
+{
+  "name": "@kraftverk/device-niu-uqi-gt",
+  "kraftverk": {
+    "device": {
+      "integration": "niu",                       // the platform it is built on: a dependency by name
       "types": [
-        { "id": "icloud.account", "entry": "./src/account.ts" },
-        { "id": "icloud.device", "entry": "./src/device.ts", "ui": "./ui/device.ts", "images": ["./assets/iphone.png"] }
-      ],
-      "portedFrom": { "homeAssistant": "icloud", "at": "2026.10", "library": "pyicloud 2.6.5" }
-    },
-    "words": ["icloud"]
+        { "id": "niu.uqi-gt", "entry": "./src/type.ts", "ui": "@kraftverk/integration-niu/ui", "images": ["./assets/image-1.png"] }
+      ]
+    }
   }
 }
 ```
@@ -456,16 +543,29 @@ Matter, Zigbee). The add screen searches brands and products, so a person
 looking for "Apple" finds iCloud, Apple TV and "Apple products that speak
 Matter".
 
-**Several types, one integration.** `tuya` holds `tuya.plug`,
-`tuya.zigbee-plug` and `tuya.gateway`; `niu` holds `niu.account` and
-`niu.scooter` with the UQi GT as a profile; `aferiy` holds `aferiy.p280`.
-An integration may refine another's type (ARCHITECTURE.md step 30's `refines`), so `atorch`
-stays an integration of its own that refines `tuya.plug`.
+**Each type's entry** default-exports its `defineDeviceType` (or what its
+integration's builder makes), as a type package's does today; what a type
+brings to automations stays an entry beside it (`automation`). A type's id is
+the manifest's — a check refuses a package where they differ — and is unique
+among everything installed. An integration's own types begin with its id
+(`niu.account`); a product's with its brand (`aferiy.p280`, `atorch.s1w`),
+which may be the platform's when the vendor makes both (`niu.uqi-gt`).
 
-**Each type's entry** default-exports its `defineDeviceType`, as a type
-package's does today; what a type brings to automations stays an entry
-beside it (`automation`). The type's id must be the manifest's, and begin
-with the integration's: a check refuses a package where they differ.
+**Today's packages, divided:**
+
+| Today | Integration (the platform) | Device package (the product) |
+|---|---|---|
+| `devices/aferiy-p280` | `sydpower`: the Wi-Fi-through-the-broker and Bluetooth ways in, their setup | `aferiy-p280`: the P280 |
+| `devices/tuya-plug` | `tuya`: the socket builder, the generic plug (`tuya.plug`), later the gateway | — |
+| `devices/tuya-zigbee-plug` | — | `tuya-zigbee-plug`: the 16 A Zigbee plug, on `tuya` |
+| `devices/atorch-s1w` | — | `atorch-s1w`, on `tuya` |
+| `devices/niu-scooter` | `niu`: the scooter builder, the generic scooter and its screens, later the account | — |
+| `devices/niu-uqi-gt` | — | `niu-uqi-gt`, on `niu` |
+| `services/open-meteo` | `open-meteo`: the weather service and its recipes | — |
+| `services/elprisetjustnu` | `elprisetjustnu`: the price service | — |
+
+Every type id stays as it is, so no device, database row or configuration
+file changes with the division.
 
 ### 4.3 The contract: accounts and bridges
 
@@ -739,8 +839,9 @@ TypeScript, as a kraftverk integration, in one sitting.
 
 | Home Assistant | Kraftverk |
 |---|---|
-| `components/<domain>/` | `packages/integrations/<id>/` |
+| `components/<domain>/` | `packages/integrations/<id>/`, and a device package per product it knows by name |
 | `manifest.json` | `package.json` → `kraftverk.integration` |
+| a table of models or product keys inside the integration | device packages, each claiming its models |
 | `integration_type: device / hub / service` | a type of kind hardware / an account or hardware type with `bridge` / a type of kind service |
 | `iot_class` | `reach` + `updates` |
 | `requirements` (a PyPI library) | a **protocol package** (`packages/protocols/<id>`), ported from the library: pure, over a channel. Or a maintained MIT TypeScript library, vendored, when one exists |
@@ -781,16 +882,21 @@ TypeScript, as a kraftverk integration, in one sitting.
 2. **Protocol:** port the library's calls into a pure protocol package over
    the channel its transport gives (HTTPS for a cloud; TCP for a LAN
    device). No I/O of its own; secrets in, typed values out.
-3. **Types:** one per kind of thing. Values become attributes with standard
-   meanings; controls become capabilities; anything that changes something
-   physical declares its consequence; actions become commands or queries.
-4. **Setup:** the flow's steps become the plan; two-factor and PIN steps
+3. **Integration:** the platform's ways in, their setup, its accounts and
+   gateways, its services, a builder for its products and the generic type
+   for a product nobody described.
+4. **Device packages:** one per product the Home Assistant integration knows
+   by name or model, each mostly data on the builder. Values become
+   attributes with standard meanings; controls become capabilities; anything
+   that changes something physical declares its consequence; actions become
+   commands or queries.
+5. **Setup:** the flow's steps become the plan; two-factor and PIN steps
    become `ask`; the `unique_id` becomes the identity.
-5. **Simulator** that behaves like the device, and **fixtures** recorded or
+6. **Simulator** that behaves like the device, and **fixtures** recorded or
    written from the library's own tests.
-6. **README** with the four headings, the device table, and what is not
+7. **README** with the four headings, the device table, and what is not
    supported; **NOTICE** with the origin and licences.
-7. **Checks:** typecheck, tests, the architecture check, the quality
+8. **Checks:** typecheck, tests, the architecture check, the quality
    checklist.
 
 ### 8.3 Licences
@@ -817,11 +923,15 @@ copyright; the README says so where it applies.
   'session'`), and the `findme` service. `icloudjs` (MIT, TypeScript) is the
   starting point, pyicloud the reference. Apple changes this several times a
   year; pyicloud's issue tracker is the early warning.
-- **Types:** `icloud.account` (account, bridge; needs trusted and always on;
-  identity: Apple's account id); `icloud.device` (hardware, through the
-  account; parts `main`; attributes position, battery charge, charging,
-  owner; commands `alert.playSound`, `findMy.lostMode` — consequential: it
-  locks someone's phone).
+- **The integration `icloud`:** `icloud.account` (account, bridge; needs
+  trusted; identity: Apple's account id) and `icloud.device`, the generic
+  device Find My knows (hardware, through the account; parts `main`;
+  attributes position, battery charge, charging, owner; commands
+  `alert.playSound`, `findMy.lostMode` — consequential: it locks someone's
+  phone). Not `alwaysOn`: on a phone alone it fetches while the app is open
+  (§0).
+- **Device packages, when wanted:** an iPhone, an iPad, AirPods — each its
+  pictures and what only it reports, claiming its model names.
 - **The interval:** shorter while a device moves away from home, longer at
   home or on low battery — ported from Home Assistant's `account.py`.
 - **What it needs first:** bridges (steps 3-5), `ask` and kept tokens (steps 9-10), the
@@ -839,7 +949,9 @@ copyright; the README says so where it applies.
   TypeScript, no native code) already speaks these; it is vendored behind a
   protocol package rather than ported line by line from pyatv.
 - **Transport:** `lan` with TCP and mDNS discovery (step 13).
-- **Type `apple-tv.tv`:** hardware; discovered by `_companion-link._tcp` and
+- **The integration `apple-media`:** Apple's Companion, MRP and AirPlay
+  ways in and their pairing — the platform an Apple TV and a HomePod share.
+- **The device package `apple-tv`:** `apple-tv.tv`, hardware; discovered by `_companion-link._tcp` and
   `_airplay._tcp` with `model=AppleTV*`; capabilities `onOff`,
   `mediaPlayback`, `contentLauncher`, `keypadInput`, `audioOutput`; pairing
   credentials per protocol as connection secrets; push updates.
@@ -974,27 +1086,35 @@ Three rules shape it:
 
 ### Part A — What kraftverk has, on the model
 
-**Step 1 · Integrations as packages.**
-`defineIntegration` and the manifest's type in the SDK. `packages/integrations/`
-holds six integrations made from today's eight packages: `aferiy`
-(`aferiy.p280`), `tuya` (`tuya.plug`, `tuya.zigbee-plug`), `atorch`
-(`atorch.s1w`, on Tuya's socket as today), `niu` (`niu.scooter`,
-`niu.uqi-gt`), `open-meteo` and `elprisetjustnu`. The server's discovery
+**Step 1 · Integrations and devices, two kinds of package.**
+The manifests' types in the SDK (`kraftverk.integration`,
+`kraftverk.device`). Today's eight packages divided as §4.2's table says:
+five integrations — `sydpower`, `tuya`, `niu`, `open-meteo`,
+`elprisetjustnu` — and four device packages — `aferiy-p280`, `atorch-s1w`,
+`tuya-zigbee-plug`, `niu-uqi-gt` — each on its integration. The P280's ways
+in move to `sydpower`; the Tuya and NIU builders and generic types are their
+integrations'; `packages/services` goes. The hub installs integrations, each
+with its own types and the device packages built on it, and knows which
+platform every type is on. The server's discovery
 (`server/src/platform/packages.ts`) and the generated lists read the
-manifest; the architecture check's device area becomes the integration
-area; `new-package` makes an integration; a check holds the manifest's types
-to the code's. ADDING-A-DEVICE.md becomes ADDING-AN-INTEGRATION.md. Type ids,
-protocols, transports, the database and the file do not change.
-*Done when* the same devices run as before and nothing is left under
-`packages/devices` or `packages/services`.
+manifests; the architecture check holds the new rule — an integration names
+no product and imports no device package; a device package imports its
+integration, the SDK and the language — and the product-word ratchet with it;
+`new-package` makes either. ADDING-A-DEVICE.md says how a platform and a
+product get in. Type ids, protocols, transports, the database and the file do
+not change.
+*Done when* the same devices run as before, each of today's packages is on
+one side of the line, and the checks hold the line.
 
 **Step 2 · The catalogue and the integrations page.**
 Brands as records; `gen:catalogue` in place of `gen:devices`, one catalogue
-for the server and the app; `GET /api/integrations`; an *Integrations* page
-in Settings — each integration, its types, its reach, where it runs (this
-phone, a browser, a server: worked out from its methods, §0), the devices
-using it, its README as its page.
-*Done when* the page lists the six, each with the devices that use it.
+for the server and the app, listing platforms and products; `GET
+/api/integrations`; an *Integrations* page in Settings — each platform, the
+products known on it, its reach, where it runs (this phone, a browser, a
+server: worked out from its methods, §0), the devices using it, its README
+as its page.
+*Done when* the page lists the five platforms, each with its products and the
+devices that use them.
 
 **Step 3 · Bridges in the contract and the database.**
 `kind: 'account'`; `BridgeSpec`, `BridgeSession` and `Member`; a connection
@@ -1017,9 +1137,11 @@ members. The file gains `through:` on a connection: version 5, migrated from
 app's tests on the fast clock.
 
 **Step 5 · NIU on an account.**
-`niu.account`: kind account, a bridge; the account and password asked once;
-its session signs in once, lists the scooters as members and fetches each
-one's state. `niu.scooter` and `niu.uqi-gt` are reached through it. The
+`niu.account`, the NIU integration's: kind account, a bridge; the account
+and password asked once; its session signs in once, lists the scooters as
+members and fetches each one's state. A scooter found is matched by its
+model to the device package that claims it — the UQi GT's — or else is the
+generic `niu.scooter`; both are reached through the account. The
 protocol splits into signing in and listing, which the account speaks, and
 a scooter's state and commands, which its members speak. NIU's cloud not
 answering a browser becomes a fact of the method's platforms, apart from
@@ -1030,7 +1152,7 @@ and the configuration kept on the server comes back as an account with its
 scooter.
 
 **Step 6 · The Tuya gateway as a bridge.**
-`tuya.gateway`: hardware, a bridge, reached by `tuya-local` over `lan` with
+`tuya.gateway`, the Tuya integration's: hardware, a bridge, reached by `tuya-local` over `lan` with
 the gateway's own key; one connection to the gateway for all its Zigbee
 plugs; its members are the sub-devices it reports, by their Zigbee address.
 `tuya.zigbee-plug` is reached through it, and the `ip#cid` address goes. The
@@ -1156,8 +1278,10 @@ Before step 1:
   own. Recommended: it gets connections, secrets, holders, health,
   history and automations for free, and Home Assistant's own move to "one
   device, one owner, children for parts, via for hubs" is the same shape.
-- **D4. One folder per integration**, `packages/integrations/<id>`, with
-  several types in it, replacing `devices/` and `services/`. Recommended.
+- **D4. Two kinds of package** (the owner's, §1): an integration per
+  platform in `packages/integrations/<id>`, a device package per product in
+  `packages/devices/<product>` built on one; `services/` folded into the
+  integrations whose services they are. Decided.
 
 Later:
 
