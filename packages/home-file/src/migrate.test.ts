@@ -49,8 +49,35 @@ describe('every version of the document', () => {
     expect(document.home.clock).toBe('Europe/Stockholm');
     expect(document.automations['stop-charging']!.clock).toBe('Europe/Stockholm');
     // Without one, an automation says its own.
-    expect(readConfig('kraftverk: 2\nautomations:\n  a:\n    name: A\n    do: []\n').problems.map((problem) => problem.message)).toEqual([
+    expect(readConfig('kraftverk: 3\nautomations:\n  a:\n    name: A\n    do: []\n').problems.map((problem) => problem.message)).toEqual([
       'Expected its clock: the time zone its times are in ("clock: Europe/Stockholm"), or the home\'s ("home: { clock: … }")',
     ]);
+  });
+
+  test('a role’s description, which version 2 kept from the recipe, is left with the recipe: what fills it, its label and what it needs stay', () => {
+    const text = `kraftverk: 2
+automations:
+  window:
+    name: Window
+    clock: Europe/Stockholm
+    uses:
+      battery:
+        part: station
+        description: "Anything that reports its charge"
+      charger:
+        part: plug
+        label: What charges it
+        description: A plug that feeds it
+    when:
+      - becomes: battery.charge < 20 %
+        do:
+          - turn on: charger
+    do: []
+`;
+    const read = readConfig(text);
+    expect(read.problems).toEqual([]);
+    expect(read.from).toBe(2);
+    expect(read.document!.automations.window!.rule.roles).toEqual({ battery: { label: 'Battery', capabilities: ['battery'] }, charger: { label: 'What charges it', capabilities: ['switch'] } });
+    expect(writeConfig(read.document!)).not.toContain('description');
   });
 });

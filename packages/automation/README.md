@@ -74,8 +74,8 @@ if a step fails:
 // Data form: the same rule.
 const rule: Rule = {
   roles: {
-    supply: { label: "The station's AC outlets", description: '…', capabilities: ['switch'] },
-    charger: { label: "The charger's plug", description: '…', capabilities: ['switch', 'powerMeter'] },
+    supply: { label: "The station's AC outlets", capabilities: ['switch'] },
+    charger: { label: "The charger's plug", capabilities: ['switch', 'powerMeter'] },
   },
   params: { fields: {} },
   when: [],
@@ -284,8 +284,10 @@ export default defineContribution({ functions: [skyLooks], recipes: [forecastSwi
 ```
 
 - A **recipe** is a rule with its roles and settings left open, a label, a
-  description and a sentence (`{role}` and `{setting}` in it). Copying one
-  makes an automation of the owner's own.
+  description and a sentence (`{role}` and `{setting}` in it); each role
+  says what it is for whoever fills it (`RecipeRole`). Copying one makes an
+  automation of the owner's own, whose roles keep their label and what they
+  need — the description stays with the recipe.
 - A **function** answers what a comparison cannot say — "does tomorrow look
   sunny" — with typed arguments and result, the capability it needs, and
   `null` with why when it cannot tell. It is handed a reader of the part

@@ -330,7 +330,7 @@ function usedCapabilities(rule: RuleBody, role: string): string[] {
 /** A role as the file would have it said, when it says only what fills it. */
 export function inferredRole(rule: RuleBody, role: string, automation: boolean): RoleSpec {
   const label = labelOf(role);
-  return automation ? { automation: true, label, description: label } : { label, description: label, capabilities: usedCapabilities(rule, role) as CapabilityName[] };
+  return automation ? { automation: true, label } : { label, capabilities: usedCapabilities(rule, role) as CapabilityName[] };
 }
 
 const sameList = (a: readonly string[] | undefined, b: readonly string[] | undefined) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -393,10 +393,11 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path, conte
         const automation = 'automation' in data;
         const inferred = inferredRole(steps, role, automation);
         const label = typeof data.label === 'string' ? data.label : inferred.label;
-        const description = typeof data.description === 'string' ? data.description : label;
+        const keys = automation ? ROLE_KEYS.automation : ROLE_KEYS.part;
+        for (const key of Object.keys(data)) if (!(keys as readonly string[]).includes(key)) reader.fail(`"${key}" is not part of a role: it takes ${keys.map((each) => `"${each}"`).join(', ')}`, [...at, key]);
         if (automation) {
           if (data.automation !== null) uses[role] = { automation: reader.name(data.automation, [...at, 'automation'], 'the key of the automation it starts') };
-          roles[role] = { automation: true, label, description };
+          roles[role] = { automation: true, label };
           return;
         }
         if (data.part !== null) {
@@ -405,7 +406,7 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path, conte
           uses[role] = use;
         }
         const capabilities = Array.isArray(data.needs) ? (data.needs as CapabilityName[]) : isAutomationRole(inferred) ? [] : inferred.capabilities;
-        roles[role] = { label, description, capabilities, ...(Array.isArray(data['one of']) ? { oneOf: data['one of'] as CapabilityName[] } : {}) };
+        roles[role] = { label, capabilities, ...(Array.isArray(data['one of']) ? { oneOf: data['one of'] as CapabilityName[] } : {}) };
       });
     }
   }
@@ -414,6 +415,9 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path, conte
   const rule: Rule = { roles, params, when, ...(condition !== undefined && condition !== null ? { if: condition } : {}), then, ...(otherwise !== undefined && otherwise !== null ? { otherwise } : {}) };
   return { rule, uses, issues: [] };
 }
+
+/** What a role says of itself in a file, beside what fills it. */
+const ROLE_KEYS = { part: ['part', 'label', 'needs', 'one of'], automation: ['automation', 'label'] } as const satisfies Record<string, readonly string[]>;
 
 /** Days as a file writes them: "weekdays", "weekends", or the list. (In a sentence they are `daysText`'s.) */
 const daysInFile = (days: readonly string[]): string | string[] =>
@@ -480,7 +484,6 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>, context: Pri
     const inferred = inferredRole(rule, role, automation);
     const extra: Record<string, unknown> = {};
     if (spec.label !== inferred.label) extra.label = spec.label;
-    if (spec.description !== spec.label) extra.description = spec.description;
     if (!automation && !isAutomationRole(inferred)) {
       if (!sameList(spec.capabilities, inferred.capabilities)) extra.needs = [...spec.capabilities];
       if (spec.oneOf !== undefined) extra['one of'] = [...spec.oneOf];

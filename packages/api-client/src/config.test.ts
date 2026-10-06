@@ -50,7 +50,7 @@ const VOCABULARY: Vocabulary = {
 };
 
 const rule: Rule = {
-  roles: { charger: { label: 'Charger', description: 'Charger', capabilities: ['switch', 'powerMeter'] } },
+  roles: { charger: { label: 'Charger', capabilities: ['switch', 'powerMeter'] } },
   params: { fields: {} },
   when: [],
   then: [

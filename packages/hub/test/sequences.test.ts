@@ -629,7 +629,7 @@ describe('blocks its owner builds', () => {
     const charge = make('standard.start-charging', QUICK);
     const morning = own(
       'Morning',
-      { roles: { charging: { automation: true, label: 'The charging', description: 'What charges the scooter' } }, when: [], then: [{ start: { role: 'charging', andWait: { value: 60 } } }] },
+      { roles: { charging: { automation: true, label: 'The charging' } }, when: [], then: [{ start: { role: 'charging', andWait: { value: 60 } } }] },
       { starts: { charging: charge.id } }
     );
     await engine.startAsked(morning.id, OLOF);
@@ -648,7 +648,7 @@ describe('blocks its owner builds', () => {
     const charge = make('standard.start-charging', QUICK);
     const morning = own(
       'Morning',
-      { roles: { charging: { automation: true, label: 'The charging', description: 'What charges the scooter' } }, when: [], then: [{ start: { role: 'charging', andWait: { value: 60 } } }] },
+      { roles: { charging: { automation: true, label: 'The charging' } }, when: [], then: [{ start: { role: 'charging', andWait: { value: 60 } } }] },
       { starts: { charging: charge.id } }
     );
     await engine.startAsked(morning.id, OLOF);
@@ -720,7 +720,7 @@ describe('automations that share a part', () => {
     const evening = own(
       'Evening',
       {
-        roles: { charger: { label: 'The charger’s plug', description: 'The plug the charger is in', capabilities: ['switch'] }, charging: { automation: true, label: 'The charging', description: 'What charges the scooter' } },
+        roles: { charger: { label: 'The charger’s plug', capabilities: ['switch'] }, charging: { automation: true, label: 'The charging' } },
         when: [],
         then: [{ start: { role: 'charging', andWait: { value: 60 } } }, { command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: false } } } }],
       },

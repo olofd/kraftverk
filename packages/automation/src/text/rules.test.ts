@@ -66,9 +66,9 @@ describe('a rule, written and read back', () => {
   test('a rule with every kind of step and trigger, and what text cannot say kept as data', () => {
     const rule: Rule = {
       roles: {
-        station: { label: 'Station', description: 'Station', capabilities: [] },
-        plug: { label: 'The charger’s plug', description: 'The plug the charger is in', capabilities: ['switch', 'powerMeter'], oneOf: ['switch'] },
-        other: { automation: true, label: 'Other', description: 'Other' },
+        station: { label: 'Station', capabilities: [] },
+        plug: { label: 'The charger’s plug', capabilities: ['switch', 'powerMeter'], oneOf: ['switch'] },
+        other: { automation: true, label: 'Other' },
       },
       params: { fields: {} },
       when: [{ at: { value: '07:00' }, days: ['mon', 'fri'] }, { every: { value: 900 } }, { event: { role: 'station', event: 'mains-lost' } }, { becomes: { reachable: 'plug' }, heldFor: { value: 120 } }],
@@ -102,7 +102,7 @@ describe('a rule, written and read back', () => {
   test('the owner’s charging pair, in the file’s words, is what the recipes make', () => {
     const start = ruleFromConfig(
       {
-        uses: { supply: { part: 'garage-p280.outlet.ac', label: 'What powers the charger', description: 'What switches power to the charger: a station’s AC outlets, or a plug in front of its charger', needs: ['switch', 'powerMeter'] }, charger: { part: 'smart-plug', label: 'The charger’s plug', description: 'The smart plug the charger is in: it switches the charger and measures what it draws', needs: ['powerMeter', 'switch'] } },
+        uses: { supply: { part: 'garage-p280.outlet.ac', label: 'What powers the charger', needs: ['switch', 'powerMeter'] }, charger: { part: 'smart-plug', label: 'The charger’s plug', needs: ['powerMeter', 'switch'] } },
         do: [
           { 'turn on': 'supply' },
           { 'wait until': 'charger reachable', 'at most': '2 min' },

@@ -180,14 +180,37 @@ export type Step =
    */
   | { start: { role: string; andWait?: Expr } };
 
-/** A role a part of a device fills: what it must offer, and what it is for. */
-export type PartRole = CapabilityNeed & { label: string; description: string };
+/** A role a part of a device fills: what it is called, and what it must offer. */
+export type PartRole = CapabilityNeed & { label: string };
 
 /** A role another automation fills: one a `start` step starts. */
-export type AutomationRole = { automation: true; label: string; description: string };
+export type AutomationRole = { automation: true; label: string };
 
-/** What fills a role — a part, or an automation — and what it is for. */
+/** What fills a role — a part, or an automation — and what it is called. */
 export type RoleSpec = PartRole | AutomationRole;
+
+/**
+ * A recipe's role: what it is, said for whoever fills it — "Anything that
+ * reports its charge: a station, one of its packs". An automation made from
+ * the recipe has its part, and needs no help choosing it: its roles are
+ * `RoleSpec`s (`automationRoles`).
+ */
+export type RecipeRole = RoleSpec & { description: string };
+
+/** What a role of each kind holds: what an automation keeps of one, and what a database's fingerprint carries. */
+export const ROLE_FIELDS = { part: ['label', 'capabilities', 'oneOf'], automation: ['automation', 'label'] } as const satisfies {
+  part: readonly (keyof PartRole)[];
+  automation: readonly (keyof AutomationRole)[];
+};
+
+/** A rule's roles as an automation keeps them: its fields alone — what a recipe said for whoever fills them stays with the recipe. */
+export const automationRoles = (roles: Readonly<Record<string, RoleSpec>>): Record<string, RoleSpec> =>
+  Object.fromEntries(
+    Object.entries(roles).map(([role, spec]) => {
+      const fields: readonly string[] = isAutomationRole(spec) ? ROLE_FIELDS.automation : ROLE_FIELDS.part;
+      return [role, Object.fromEntries(Object.entries(spec).filter(([field]) => fields.includes(field))) as RoleSpec];
+    })
+  );
 
 export const isAutomationRole = (spec: RoleSpec): spec is AutomationRole => 'automation' in spec && spec.automation === true;
 
@@ -233,7 +256,8 @@ export const SEQUENCE_LIMITS = {
  * A rule with its roles and settings left open, shipped by a package: filling
  * it in makes an automation. Namespaced by the type: `acme.weather.forecast-switch`.
  */
-export type Recipe = Rule & {
+export type Recipe = Omit<Rule, 'roles'> & {
+  roles: Readonly<Record<string, RecipeRole>>;
   id: string;
   label: string;
   description: string;

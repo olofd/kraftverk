@@ -183,7 +183,7 @@ function automationSchema(vocabulary: Vocabulary): Schema {
               type: 'object',
               required: ['part'],
               additionalProperties: false,
-              properties: { part: { anyOf: [partRef, { type: 'null' }] }, label: { type: 'string' }, description: { type: 'string' }, needs: { type: 'array', items: { type: 'string' } }, 'one of': { type: 'array', items: { type: 'string' } } },
+              properties: { part: { anyOf: [partRef, { type: 'null' }] }, label: { type: 'string' }, needs: { type: 'array', items: { type: 'string' } }, 'one of': { type: 'array', items: { type: 'string' } } },
             },
             {
               type: 'object',
@@ -192,7 +192,6 @@ function automationSchema(vocabulary: Vocabulary): Schema {
               properties: {
                 automation: { anyOf: [...(vocabulary.automations.length ? [{ enum: vocabulary.automations.map((each) => each.key) }] : []), { type: 'string' }, { type: 'null' }] },
                 label: { type: 'string' },
-                description: { type: 'string' },
               },
             },
           ],

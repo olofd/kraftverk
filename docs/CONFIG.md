@@ -19,7 +19,7 @@ and check a file with the same code.
 
 ```yaml
 # yaml-language-server: $schema=http://<your server>/api/config/schema.json
-kraftverk: 2                      # the document's version: required
+kraftverk: 3                      # the document's version: required
 
 home:
   clock: Europe/Stockholm          # what an automation that says no clock keeps time in
@@ -130,7 +130,7 @@ describes.
   readings read from it (`charge` asks for a battery, `power` a
   power meter), the events it raises (`mains.lost`, an AC input); say them
   only when they differ:
-  `{ part: …, label: …, description: …, needs: [switch, powerMeter] }`. A
+  `{ part: …, label: …, needs: [switch, powerMeter] }`. A
   role the rule only changes a setting of, or asks only whether it can be
   reached, asks for no capability, and the language refuses a role any
   device would do: say its `needs`. (A file kraftverk writes always does.)
@@ -254,6 +254,7 @@ nothing wrong — and write back the same.
 | --- | --- |
 | 1 | The first |
 | 2 | Each standard meaning is one word: `station.battery.soc` is `station.charge`, `charger.power.draw` is `charger.power`, `meaning: battery.chargeLimit` is `meaning: chargeLimit` |
+| 3 | A role under `uses` has no `description`: what a recipe says for whoever fills a role stays with the recipe |
 
 ## Importing
 

@@ -61,7 +61,7 @@ describe('roles', () => {
     const first = partRole(EMPTY_DRAFT, plug, PLUG);
     // Named as a file says it, and its conditions read: switch, not part1.
     expect(first.role).toBe('switch');
-    expect(first.draft.rule.roles.switch).toEqual({ label: 'Switch', description: 'Switch', capabilities: ['powerMeter', 'switch'] });
+    expect(first.draft.rule.roles.switch).toEqual({ label: 'Switch', capabilities: ['powerMeter', 'switch'] });
     // Picked again, for another block: the same role.
     expect(partRole(first.draft, plug, PLUG).role).toBe('switch');
     // Another part of the same kind: switch2.
@@ -78,7 +78,7 @@ describe('roles', () => {
   test('an automation to start fills a role of its own kind, labelled as what it is', () => {
     const { draft, role } = automationRole(EMPTY_DRAFT, 'a-charge' as AutomationId);
     expect(role).toBe('automation');
-    expect(draft.rule.roles.automation).toEqual({ automation: true, label: 'Another automation', description: 'An automation it starts' });
+    expect(draft.rule.roles.automation).toEqual({ automation: true, label: 'Another automation' });
     expect(draft.starts).toEqual({ automation: 'a-charge' as AutomationId });
     expect(automationRole(draft, 'a-other' as AutomationId).role).toBe('automation2');
   });

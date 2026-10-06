@@ -18,7 +18,7 @@ const NO_FUNCTIONS = { fn: () => null };
 const night: Expr = { within: { from: { value: '22:00' }, to: { value: '06:00' } } };
 
 const rule = (condition: Expr, extra: Partial<Rule> = {}): Rule => ({
-  roles: { plug: { label: 'Plug', description: 'A plug', capabilities: ['switch'] } },
+  roles: { plug: { label: 'Plug', capabilities: ['switch'] } },
   params: { fields: {} },
   when: [{ becomes: condition }],
   then: [{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { value: true } } } }],

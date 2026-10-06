@@ -77,9 +77,10 @@ type Step =
   | { wait } | { waitUntil } | { ensure } | { choose } | { watch };   // SEQUENCES.md
 ```
 
-A role is a part — `{ label, description, capabilities }` — or another
-automation, `{ label, description, automation: true }`, filled by one of the
-owner's own.
+A role is a part — `{ label, capabilities }` — or another automation,
+`{ label, automation: true }`, filled by one of the owner's own. A recipe's
+roles also say what each is for, for whoever fills them (`description`),
+which an automation made from it leaves with the recipe.
 
 Every name in a rule is one the device model already has: roles ask for
 **capabilities**, values are read by **meaning** (`charge`, or a type's

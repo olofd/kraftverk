@@ -11,12 +11,35 @@
 */
 
 /** The version this kraftverk writes. */
-export const CURRENT_VERSION = 2;
+export const CURRENT_VERSION = 3;
 
 /** Each version's document, as data, made into the next version's. */
 export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unknown>) => Record<string, unknown>>> = {
   1: (document) => ({ ...document, automations: renamedMeanings(document.automations, MEANINGS_1_TO_2) }),
+  2: (document) => ({ ...document, automations: withoutRoleDescriptions(document.automations) }),
 };
+
+/**
+ * Version 3 keeps no description on an automation's roles: what a recipe
+ * says for whoever fills a role stays with the recipe, and an automation's
+ * role is what fills it, what it is called and what it needs.
+ */
+function withoutRoleDescriptions(automations: unknown): unknown {
+  if (!automations || typeof automations !== 'object') return automations;
+  return Object.fromEntries(
+    Object.entries(automations).map(([key, automation]) => {
+      if (!automation || typeof automation !== 'object' || !('uses' in automation) || !automation.uses || typeof automation.uses !== 'object') return [key, automation];
+      const uses = Object.fromEntries(
+        Object.entries(automation.uses).map(([role, use]) => {
+          if (!use || typeof use !== 'object' || Array.isArray(use)) return [role, use];
+          const { description: _description, ...kept } = use as Record<string, unknown>;
+          return [role, kept];
+        })
+      );
+      return [key, { ...automation, uses }];
+    })
+  );
+}
 
 /**
  * Version 2 names each standard meaning by one word: `battery.soc` is

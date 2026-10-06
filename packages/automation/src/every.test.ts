@@ -14,7 +14,7 @@ import type { Rule, Trigger } from './rule.ts';
 const NO_FUNCTIONS = { fn: () => null };
 
 const rule = (when: Trigger[], extra: Partial<Rule> = {}): Rule => ({
-  roles: { plug: { label: 'Plug', description: 'A plug', capabilities: ['switch'] } },
+  roles: { plug: { label: 'Plug', capabilities: ['switch'] } },
   params: { fields: {} },
   when,
   then: [{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { value: true } } } }],

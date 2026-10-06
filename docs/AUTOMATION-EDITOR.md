@@ -82,8 +82,8 @@ type Step =
   | { start: { role: string; andWait?: Expr } };   // an automation's role; with a wait, until it ends
 
 type RoleSpec =
-  | (CapabilityNeed & { label: string; description: string })   // a part
-  | { automation: true; label: string; description: string };  // an automation, to start
+  | (CapabilityNeed & { label: string })   // a part
+  | { automation: true; label: string };  // an automation, to start
 ```
 
 **Change a setting** (`write`):

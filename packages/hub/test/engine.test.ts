@@ -270,7 +270,7 @@ describe('at a time of day', () => {
         store.create({
           name: `On ${days.join(' ')}`,
           rule: {
-            roles: { switch: { label: 'Switch', description: 'A switch', capabilities: ['switch'] } },
+            roles: { switch: { label: 'Switch', capabilities: ['switch'] } },
             params: { fields: {} },
             when: [{ at: { value: '07:00' }, days }],
             then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
@@ -625,7 +625,7 @@ describe('a setting by what it means', () => {
     const { engine, store, written } = setup();
     const created = store.create({
       name: 'Charge to 80 %',
-      rule: { roles: { station: { label: 'Station', description: 'A station', capabilities: ['battery'] } }, params: { fields: {} }, when: [], then: [{ write: { role: 'station', means: 'chargeLimit', value: { value: 80 } } }] },
+      rule: { roles: { station: { label: 'Station', capabilities: ['battery'] } }, params: { fields: {} }, when: [], then: [{ write: { role: 'station', means: 'chargeLimit', value: { value: 80 } } }] },
       madeFrom: null,
       roles: { station: { device: STATION, part: 'main' } },
       starts: {},
@@ -823,7 +823,7 @@ describe('between two times of day', () => {
     const created = store.create({
       name: 'Night charge',
       rule: {
-        roles: { switch: { label: 'Charger', description: 'What charges it', capabilities: ['switch'] } },
+        roles: { switch: { label: 'Charger', capabilities: ['switch'] } },
         params: { fields: {} },
         when: [{ becomes: { within: { from: { value: '22:00' }, to: { value: '06:00' } } } }],
         then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
@@ -860,7 +860,7 @@ describe('every so many minutes', () => {
     const created = store.create({
       name: 'Every quarter',
       rule: {
-        roles: { switch: { label: 'Plug', description: 'A plug', capabilities: ['switch'] } },
+        roles: { switch: { label: 'Plug', capabilities: ['switch'] } },
         params: { fields: {} },
         when: [{ every: { value: 15 * 60 } }],
         then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
@@ -894,7 +894,7 @@ describe('every so many minutes', () => {
     const created = store.create({
       name: 'Every quarter',
       rule: {
-        roles: { switch: { label: 'Plug', description: 'A plug', capabilities: ['switch'] } },
+        roles: { switch: { label: 'Plug', capabilities: ['switch'] } },
         params: { fields: {} },
         when: [{ every: { value: 15 * 60 } }],
         then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { value: true } } } }],

@@ -21,7 +21,7 @@ const defaults = (rule: Rule) => Object.fromEntries(Object.entries(rule.params.f
 
 /** A rule of one switch, with the steps given. */
 const rule = (then: Step[], extra: Partial<Rule> = {}): Rule => ({
-  roles: { plug: { label: 'Plug', description: 'A plug', capabilities: ['switch', 'powerMeter'] } },
+  roles: { plug: { label: 'Plug', capabilities: ['switch', 'powerMeter'] } },
   params: { fields: { seconds: { type: 'number', title: 'Seconds', unit: 's', min: 1, max: 60, default: 5 } } },
   when: [],
   then,

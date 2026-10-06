@@ -62,7 +62,7 @@ export function partRole<D extends AutomationDraft>(draft: D, binding: RoleBindi
     role,
     draft: {
       ...draft,
-      rule: { ...draft.rule, roles: { ...draft.rule.roles, [role]: { label, description: label, capabilities } } },
+      rule: { ...draft.rule, roles: { ...draft.rule.roles, [role]: { label, capabilities } } },
       roles: { ...draft.roles, [role]: binding },
     },
   };
@@ -77,7 +77,7 @@ export function automationRole<D extends AutomationDraft>(draft: D, automation: 
     role,
     draft: {
       ...draft,
-      rule: { ...draft.rule, roles: { ...draft.rule.roles, [role]: { automation: true, label: 'Another automation', description: 'An automation it starts' } } },
+      rule: { ...draft.rule, roles: { ...draft.rule.roles, [role]: { automation: true, label: 'Another automation' } } },
       starts: { ...draft.starts, [role]: automation },
     },
   };

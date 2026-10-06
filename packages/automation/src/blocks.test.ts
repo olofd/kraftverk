@@ -53,9 +53,9 @@ const names = (role: string) => (role === 'plug' ? 'Scooter plug' : role === 'st
 
 const rule = (then: Step[], extra: Partial<Rule> = {}): Rule => ({
   roles: {
-    plug: { label: 'Plug', description: 'A plug', capabilities: ['switch', 'powerMeter'] },
-    station: { label: 'Station', description: 'A station', capabilities: ['battery'] },
-    charging: { automation: true, label: 'Charging', description: 'The charging sequence' },
+    plug: { label: 'Plug', capabilities: ['switch', 'powerMeter'] },
+    station: { label: 'Station', capabilities: ['battery'] },
+    charging: { automation: true, label: 'Charging' },
   },
   params: { fields: {} },
   when: [],

@@ -71,7 +71,7 @@ describe('a window of the day, rehearsed', () => {
   test('runs as it opens each evening, with no sample to say so', async () => {
     const nightly = inlineParams(
       {
-        roles: { charger: { label: 'Charger plug', description: 'What charges it', capabilities: ['switch'] } },
+        roles: { charger: { label: 'Charger plug', capabilities: ['switch'] } },
         params: { fields: {} },
         when: [{ becomes: { within: { from: { value: '22:00' }, to: { value: '06:00' } } } }],
         then: [{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
@@ -92,7 +92,7 @@ describe('a time of day, rehearsed across a night the clocks change', () => {
   test('every day of the owner’s calendar has its 07:00 — the spring-forward night too', async () => {
     const morning = inlineParams(
       {
-        roles: { charger: { label: 'Charger plug', description: 'What charges it', capabilities: ['switch'] } },
+        roles: { charger: { label: 'Charger plug', capabilities: ['switch'] } },
         params: { fields: {} },
         when: [{ at: { value: '07:00' } }],
         then: [{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
@@ -111,7 +111,7 @@ describe('every so many minutes, rehearsed', () => {
   test('runs at each slot of the window, on the owner’s clock', async () => {
     const quarterly = inlineParams(
       {
-        roles: { charger: { label: 'Charger plug', description: 'What charges it', capabilities: ['switch'] } },
+        roles: { charger: { label: 'Charger plug', capabilities: ['switch'] } },
         params: { fields: {} },
         when: [{ every: { value: 30 * 60 } }],
         then: [{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: true } } } }],

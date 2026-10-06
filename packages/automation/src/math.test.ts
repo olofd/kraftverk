@@ -19,8 +19,8 @@ const draw: Expr = { read: { role: 'plug', means: 'power' } };
 
 const rule = (on: Expr, extra: Partial<Rule> = {}): Rule => ({
   roles: {
-    battery: { label: 'Battery', description: 'A battery', capabilities: ['battery'] },
-    plug: { label: 'Plug', description: 'A plug', capabilities: ['switch', 'powerMeter'] },
+    battery: { label: 'Battery', capabilities: ['battery'] },
+    plug: { label: 'Plug', capabilities: ['switch', 'powerMeter'] },
   },
   params: { fields: {} },
   when: [],

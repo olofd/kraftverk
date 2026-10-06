@@ -6,7 +6,7 @@ import { exprKind, expressionsIn, mapChildren, type ExprOf } from './kinds/exprs
 import { EXPRESSION_FIELDS, fieldValue, withField } from './kinds/spec.ts';
 import { stepSpec } from './kinds/steps.ts';
 import { triggerFields } from './kinds/triggers.ts';
-import { calculate, type CompareOp, type Expr, type RuleTrigger, type Rule, type RunFact, type Step } from './rule.ts';
+import { automationRoles, calculate, type CompareOp, type Expr, type RuleTrigger, type Rule, type RunFact, type Step } from './rule.ts';
 
 /*
   Evaluating a rule's expressions where it runs: against what its parts read
@@ -298,5 +298,5 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
   // An "only if" its settings make always true is no condition at all.
   const only = rule.if ? expr(rule.if) : null;
   const keptIf = only && !('value' in only && only.value === true) ? { if: only } : {};
-  return { roles: rule.roles, params: NO_SETTINGS, when, ...keptIf, then: steps(rule.then), ...(otherwise ? { otherwise } : {}) };
+  return { roles: automationRoles(rule.roles), params: NO_SETTINGS, when, ...keptIf, then: steps(rule.then), ...(otherwise ? { otherwise } : {}) };
 }

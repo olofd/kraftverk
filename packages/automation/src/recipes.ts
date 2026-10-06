@@ -1,4 +1,4 @@
-import { defineRecipe, type Expr, type Recipe, type RoleSpec, type Step } from './rule.ts';
+import { defineRecipe, type Expr, type Recipe, type RecipeRole, type Step } from './rule.ts';
 
 /**
  * Recipes in the shared vocabulary (docs/AUTOMATIONS.md): rules that name only
@@ -20,7 +20,7 @@ const ACTION = {
   ],
 } as const;
 
-const SWITCH: RoleSpec = { label: 'What to switch', description: 'A plug, or one outlet of a station', capabilities: ['switch'] };
+const SWITCH: RecipeRole = { label: 'What to switch', description: 'A plug, or one outlet of a station', capabilities: ['switch'] };
 
 /** `switch.set`, on or off as the automation's "Then turn it" says. */
 const turn: Expr = { compare: 'eq', left: { param: 'action' }, right: { value: 'on' } };
@@ -111,12 +111,12 @@ export const chargeBetween = defineRecipe({
 
 // --- sequences (docs/SEQUENCES.md) ------------------------------------------------------
 
-const SUPPLY: RoleSpec = {
+const SUPPLY: RecipeRole = {
   label: 'What powers the charger',
   description: 'What switches power to the charger’s plug and measures what it gives: a station’s AC output, a plug',
   capabilities: ['switch', 'powerMeter'],
 };
-const CHARGER: RoleSpec = {
+const CHARGER: RecipeRole = {
   label: 'The charger’s plug',
   description: 'The smart plug the charger is in: it switches the charger and measures what it draws',
   capabilities: ['switch', 'powerMeter'],
