@@ -22,8 +22,8 @@ test('Integrations, from Home: each platform, where it runs, and its own page wi
   await press(page, 'Tuya');
   await expect(page.getByText('What it knows', { exact: true })).toBeVisible();
   await expect(page.getByText('ATORCH S1W', { exact: true }).last()).toBeVisible();
-  await expect(page.getByText(/Tuya smart plug/).first()).toBeVisible();
-  await expect(page.getByText(/For one nobody has described yet/).first()).toBeVisible();
+  await expect(page.getByText('Tuya smart plug', { exact: true }).last()).toBeVisible();
+  await expect(page.getByText(/For one nobody has described yet/).last()).toBeVisible();
 
   // A service is the platform's own.
   await page.goto('/integration/open-meteo');
