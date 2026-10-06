@@ -52,7 +52,7 @@ export function paramText(schema: ConfigSchema, name: string, value: Value): str
 }
 
 /** A fact of the run, as a sentence names it. */
-const RUN_FACT_WORDS: Record<RunFact, string> = { trigger: 'what started it' };
+const RUN_FACT_WORDS: Record<RunFact, string> = { trigger: 'what started it', event: 'what the device reported' };
 
 const OP_WORDS: Record<CompareOp, string> ={ lt: 'is below', le: 'is at most', gt: 'is above', ge: 'is at least', eq: 'is', ne: 'is not' };
 
@@ -125,7 +125,9 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
       case 'reachable':
         return `${name((expr as ExprOf<'reachable'>).reachable)} can be reached`;
       case 'run': {
-        const fact = (expr as ExprOf<'run'>).run;
+        const { run: fact, field } = expr as ExprOf<'run'>;
+        // What an event carried, in words: "the voltage it reported".
+        if (fact === 'event' && field) return `the ${field.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()} it reported`;
         return RUN_FACT_WORDS[fact] ?? `the run’s ${fact}`;
       }
       case 'within': {

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { Unit, Value } from '@kraftverk/device-sdk';
 
-import { checkRule } from './check.ts';
+import { checkBinding, checkRule } from './check.ts';
 import { describeExpr } from './describe.ts';
 import { evaluateNow, inlineParams, measureNow, type RuleScope } from './evaluate.ts';
 import type { Expr, Rule } from './rule.ts';
@@ -159,5 +159,47 @@ describe('a recipe’s settings written in', () => {
       then: [{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: parse('charger.power > (setting.fast ? max(setting.low, 1 kW) : setting.low)') } } }],
     };
     expect(inlineParams(recipe, {}).then).toEqual([{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { compare: 'gt', left: { read: { role: 'charger', means: 'power' } }, right: { value: 1000, unit: 'W' } } } } }]);
+  });
+});
+
+describe('what the event that started it carried', () => {
+  const roles: Rule['roles'] = { station: { label: 'Mains', capabilities: ['acInput'] }, plug: { label: 'Plug', capabilities: ['switch'] } };
+  const rule = (on: string, when: Rule['when'] = [{ event: { role: 'station', event: 'mains.lost' } }]): Rule => ({
+    roles,
+    params: { fields: {} },
+    when,
+    then: [{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: parse(on) } } }],
+  });
+
+  test('read as run.event and run.event.voltage, and written back so', () => {
+    expect(parse('run.event.voltage > 200 V')).toEqual({ compare: 'gt', left: { run: 'event', field: 'voltage' }, right: { value: 200, unit: 'V' } });
+    for (const text of ['run.event == "mains.lost"', 'run.event.voltage > 200 V']) expect(printExpr(parse(text))).toBe(text);
+    expect(parseExpr('run.trigger.voltage').ok).toBe(false);
+  });
+
+  test('checked: only where an event may start it, of the events it waits for, and only in what it does', () => {
+    expect(checkRule(rule('run.event.voltage > 200 V'), { fn: () => null })).toEqual([]);
+    expect(checkRule(rule('run.event == "mains.lost"'), { fn: () => null })).toEqual([]);
+    expect(checkRule(rule('run.event == "button.pressed"'), { fn: () => null })).toEqual(['then[0].command.args.on: "button.pressed" is not one of mains.lost']);
+    expect(checkRule(rule('run.event.voltage > 200 V', [{ at: { value: '07:00' } }]), { fn: () => null })).toEqual([
+      'then[0].command.args.on.left: run.event.voltage is what an event that started it says, but nothing it waits for is an event',
+    ]);
+  });
+
+  test('once bound, something the part’s event declares it carries', () => {
+    const station = (data?: Record<string, unknown>) => ({
+      name: 'Garage station',
+      part: 'input.ac',
+      capabilities: ['acInput'],
+      description: { parts: [{ id: 'input.ac', label: 'Mains', kind: 'input', offers: ['acInput'] }], attributes: [], events: [{ id: 'mains.lost', label: 'Mains lost', level: 'warn', part: 'input.ac', ...(data ? { data } : {}) }] },
+    });
+    const plug = { name: 'Plug', part: 'main', capabilities: ['switch'], description: { parts: [{ id: 'main', label: 'Plug', kind: 'outlet', offers: ['switch'] }], attributes: [{ key: 'on', label: 'On', value: { type: 'boolean' }, means: 'on' }] } };
+    const bound = (data?: Record<string, unknown>) => (role: string) => (role === 'station' ? station(data) : plug) as never;
+    expect(checkBinding(rule('run.event.voltage > 200 V'), bound({ voltage: { type: 'number', unit: 'V' } }))).toEqual([]);
+    expect(checkBinding(rule('run.event.voltage > 200 V'), bound())).toEqual(['run.event.voltage: none of the events it waits for carries "voltage"']);
+  });
+
+  test('said as what the device reported', () => {
+    expect(describeExpr(rule('true'), parse('run.event.voltage > 200 V'), {}, (role) => role)).toBe('the voltage it reported is above 200 V');
   });
 });

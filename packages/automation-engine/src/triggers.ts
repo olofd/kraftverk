@@ -179,7 +179,7 @@ export class Triggers {
           if (!matches) continue;
           const device = this.deps.device(binding);
           const label = device?.description.events?.find((event) => event.id === message.event.id)?.label ?? message.event.id;
-          const going = this.#runs.runAndKeep(automation, `${device?.name ?? 'A device'} said: ${label}`, triggerKey(trigger, index));
+          const going = this.#runs.runAndKeep(automation, `${device?.name ?? 'A device'} said: ${label}`, triggerKey(trigger, index), { id: message.event.id, data: message.event.data });
           if (!takesSteps(rule)) await going;
         }
         if (message.kind === 'readings' && 'becomes' in trigger) {

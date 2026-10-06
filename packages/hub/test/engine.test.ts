@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { defineFunction, defineRecipe, inlineParams } from '@kraftverk/automation';
+import { checkRule, defineFunction, defineRecipe, inlineParams, type Rule } from '@kraftverk/automation';
 import { MAIN_PART, REAL_CLOCK, savedDeviceId, zonedInstant, type AuditRecord, type DeviceDescription, type DeviceReader, type Value } from '@kraftverk/device-sdk';
 import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
@@ -135,7 +135,7 @@ const STATION_DESCRIPTION: DeviceDescription = {
     { key: 'input.ac.present', part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'mainsPresent' },
     { key: 'acLimit', label: 'AC charge limit', value: { type: 'number', unit: '%', min: 60, max: 100 }, means: 'chargeLimit', access: 'write', category: 'config' },
   ],
-  events: [{ id: 'mains.lost', label: 'Mains lost', level: 'warn', part: 'input.ac' }],
+  events: [{ id: 'mains.lost', label: 'Mains lost', level: 'warn', part: 'input.ac', data: { voltage: { type: 'number', unit: 'V' } } }],
 };
 const FORECAST_DESCRIPTION: DeviceDescription = { parts: [{ id: MAIN_PART, label: 'Forecast', kind: 'sensor', offers: ['weather.forecast'] }], attributes: [] };
 
@@ -802,6 +802,31 @@ describe('when a device says something happened', () => {
       await settle();
       expect(sent).toEqual([expect.objectContaining({ deviceId: PLUG, args: { on: false } })]);
       expect(sent[0]!.reason).toContain('Garage P280 — Mains said: Mains lost');
+    } finally {
+      engine.stop();
+    }
+  });
+
+  test('what the event that started it carried is read in its steps: run.event, run.event.voltage', async () => {
+    const context = setup();
+    const { engine, bus, sent, store } = context;
+    const rule: Rule = {
+      roles: { station: { label: 'Mains', capabilities: ['acInput'] }, plug: { label: 'Plug', capabilities: ['switch'] } },
+      params: { fields: {} },
+      when: [{ event: { role: 'station', event: 'mains.lost' } }],
+      then: [{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { all: [{ compare: 'eq', left: { run: 'event' }, right: { value: 'mains.lost' } }, { compare: 'gt', left: { run: 'event', field: 'voltage' }, right: { value: 200, unit: 'V' } }] } } } }],
+    };
+    expect(checkRule(rule, { fn: () => null })).toEqual([]);
+    const made = store.create({ name: 'On what it said', rule, madeFrom: null, roles: { station: { device: STATION, part: 'input.ac' }, plug: { device: PLUG, part: 'main' } }, starts: {}, timeZone: ZONE, recheckMinutes: null });
+    store.update(made.id, { mode: 'act' });
+    engine.start();
+    try {
+      const said = (voltage: number) => bus.publish({ kind: 'event', deviceId: STATION, event: { id: 'mains.lost', level: 'warn', part: 'input.ac', data: { voltage }, at: new Date().toISOString() } });
+      said(230);
+      await settle();
+      expect(sent.map((intent) => intent.args.on)).toEqual([true]);
+      // Played by hand, no event started it: unknown, so not sent.
+      expect((await engine.run(store.get(made.id)!, { check: true })).outcome).toBe('unknown');
     } finally {
       engine.stop();
     }

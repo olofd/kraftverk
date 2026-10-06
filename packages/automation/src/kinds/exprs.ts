@@ -112,7 +112,11 @@ export const EXPR_KINDS: { readonly [K in ExprKind]: ExprSpec<K> } = {
     rebuild: (_expr, [from, to]) => ({ within: { from: from!, to: to! } }),
     docs: { summary: 'Whether the owner’s clock is between two times of day, from the first up to the second — across midnight when the second comes first.', examples: ['time between 23:00 and 05:00'] },
   },
-  run: leaf('run', 'What the run knows', { summary: 'What the run knows of itself: `run.trigger`, the id of the trigger that started it — `""` when none with an id did.', examples: ['run.trigger == "low"'] }),
+  run: leaf('run', 'What the run knows', {
+    summary:
+      'What the run knows of itself: `run.trigger`, the id of the trigger that started it — `""` when none with an id did; `run.event`, the event a device raised that started it, and `run.event.voltage`, what it carried, as its device declares it — unknown when no event did.',
+    examples: ['run.trigger == "low"', 'run.event.voltage < 200 V'],
+  }),
 };
 
 /** The order the reference lists them in. */

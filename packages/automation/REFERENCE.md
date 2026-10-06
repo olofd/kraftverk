@@ -304,7 +304,7 @@ reached — is never taken for true.
 | A setting | `setting.low` | One of the rule’s settings, by its name: a recipe’s, before it is copied into an automation. |
 | A reading | `station.charge` · `charger.power` | What the part filling a role reports now, by what it means: a standard meaning, or a type’s own. Unknown when it has not said, or said too long ago. |
 | Can be reached | `charger reachable` | Whether the part filling a role can be reached now: its holder says it is connected. Never unknown — not being reachable is the answer. |
-| What the run knows | `run.trigger == "low"` | What the run knows of itself: `run.trigger`, the id of the trigger that started it — `""` when none with an id did. |
+| What the run knows | `run.trigger == "low"` · `run.event.voltage < 200 V` | What the run knows of itself: `run.trigger`, the id of the trigger that started it — `""` when none with an id did; `run.event`, the event a device raised that started it, and `run.event.voltage`, what it carried, as its device declares it — unknown when no event did. |
 | Time of day | `time between 23:00 and 05:00` | Whether the owner’s clock is between two times of day, from the first up to the second — across midnight when the second comes first. |
 | Ask a package | `acme.weather.sunny(forecast, day = "tomorrow")` | A function a package contributes, over the part filling a role: what the forecast says of tomorrow, the price’s rank. Only where a run may wait for its answer. |
 | A function of the language | `min(station.charge, 80 %)` · `clamp(charger.power, 0 W, 2 kW)` | One of the language’s own functions — min, max, clamp, round, floor, ceil, abs — on numbers, each with its unit; the answer in the first one’s unit. |

@@ -83,9 +83,10 @@ export type Expr =
    * the id of the trigger that started it — so `run.trigger == "low"` turns
    * the plug on when `low` started it, and one automation does one thing
    * when a level is crossed one way and another the other way, each side
-   * with its own level and hold, nothing said twice.
+   * with its own level and hold, nothing said twice. `event`, the event
+   * that started it — and, with `field`, what it carried: `run.event.voltage`.
    */
-  | { run: RunFact };
+  | { run: RunFact; field?: string };
 
 /**
  * What a run knows of itself, as values a rule reads: the language's own
@@ -97,8 +98,11 @@ export type Expr =
  *   or started by another automation, counts as started by the first of its
  *   conditions that holds now — "do what you would do now". The empty text,
  *   `""`, when none with an id did: known, so a rule can tell.
+ * - `event`: the id of the event a device raised that started it —
+ *   `mains.lost` — and `event.<field>`, what it carried, as its device
+ *   declares it: `run.event.voltage`. Unknown when no event started it.
  */
-export const RUN_FACTS = ['trigger'] as const;
+export const RUN_FACTS = ['trigger', 'event'] as const;
 
 export type RunFact = (typeof RUN_FACTS)[number];
 

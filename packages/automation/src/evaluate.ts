@@ -57,7 +57,7 @@ export type RuleScope = {
   /** The time of day on the owner's clock, as "HH:MM"; null where there is none. */
   clock(): string | null;
   /** A fact of the run being evaluated (`run.trigger`); null — or absent — where there is no run, or it is not known. */
-  run?(fact: RunFact): Value;
+  run?(fact: RunFact, field?: string): Value;
 };
 
 const compare = (op: CompareOp, left: Value, right: Value): Value => {
@@ -175,8 +175,10 @@ export function measureNow(expr: Expr, scope: RuleScope, trace: string[] = [], a
       trace.push(`${scope.name(role)}: ${reachable ? 'can be reached' : `cannot be reached (${detail})`}`);
       return plain(reachable);
     }
-    case 'run':
-      return plain(scope.run?.((expr as ExprOf<'run'>).run) ?? null);
+    case 'run': {
+      const { run: fact, field } = expr as ExprOf<'run'>;
+      return plain(scope.run?.(fact, field) ?? null);
+    }
     case 'within': {
       const { from, to } = (expr as ExprOf<'within'>).within;
       const clock = scope.clock();

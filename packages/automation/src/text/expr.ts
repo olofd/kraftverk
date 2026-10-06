@@ -281,6 +281,13 @@ export function parseExpr(text: string): Parsed {
         expect('.', `"." and what of the run: ${RUN_FACTS.map((fact) => `run.${fact}`).join(', ')}`);
         const fact = next();
         if (fact.kind !== 'name' || !(RUN_FACTS as readonly string[]).includes(fact.value)) throw new Failure(`A run knows its ${RUN_FACTS.join(', ')}`, fact.at);
+        // What the event that started it carried: "run.event.voltage".
+        if (fact.value === 'event' && isSymbol('.')) {
+          next();
+          const field = next();
+          if (field.kind !== 'name' || !NAME.test(field.value)) throw new Failure('Expected what the event carried after "run.event."', field.at);
+          return { run: 'event', field: field.value };
+        }
         return { run: fact.value as RunFact };
       }
       case 'setting': {
@@ -419,6 +426,10 @@ function print(expr: Expr, need: number): string {
   if ('reachable' in expr) return `${roleText(expr.reachable)} reachable`;
   if ('run' in expr) {
     if (!RUN_FACTS.includes(expr.run)) throw new Unprintable();
+    if (expr.field !== undefined) {
+      if (expr.run !== 'event' || !NAME.test(expr.field)) throw new Unprintable();
+      return `run.event.${expr.field}`;
+    }
     return `run.${expr.run}`;
   }
   if ('within' in expr) return `time between ${print(expr.within.from, LEVEL.unary)} and ${print(expr.within.to, LEVEL.unary)}`;

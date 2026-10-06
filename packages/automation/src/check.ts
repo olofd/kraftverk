@@ -97,6 +97,8 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
   const params = rule.params?.fields ?? {};
   /** The ids its triggers carry: what `startedBy` may name. */
   const triggerIds = new Set((rule.when ?? []).flatMap((trigger) => (trigger.id ? [trigger.id] : [])));
+  /** The events it waits for: what `run.event` may be. */
+  const eventIds = [...new Set((rule.when ?? []).flatMap((trigger) => ('event' in trigger && trigger.event?.event ? [trigger.event.event] : [])))];
 
   for (const [role, spec] of Object.entries(roles)) {
     if (!CAMEL_NAME.test(role)) problems.push(`roles.${role}: a role is named in camelCase`);
@@ -131,8 +133,20 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         problems.push(`${where}: a run knows its ${RUN_FACTS.join(', ')} — not "${String(expr.run)}"`);
         return { type: 'unknown' };
       }
+      const said = `run.${expr.run}${expr.field !== undefined ? `.${expr.field}` : ''}`;
       // Before a run there is none: what starts it cannot ask what started it.
-      if (options.trigger) problems.push(`${where}: run.${expr.run} is known once it runs — in what it does, not in what starts it`);
+      if (options.trigger) problems.push(`${where}: ${said} is known once it runs — in what it does, not in what starts it`);
+      if (expr.run === 'event') {
+        // Only a rule that waits for an event can be started by one.
+        if (!eventIds.length) problems.push(`${where}: ${said} is what an event that started it says, but nothing it waits for is an event`);
+        if (expr.field !== undefined) {
+          if (typeof expr.field !== 'string' || !CAMEL_NAME.test(expr.field)) problems.push(`${where}: "${String(expr.field)}" is not something an event carries`);
+          // What it carried: its type is the device's to say, once a part fills the role.
+          return { type: 'unknown' };
+        }
+        return { type: 'string', options: eventIds };
+      }
+      if (expr.field !== undefined) problems.push(`${where}: run.${expr.run} carries nothing more`);
       // One of its triggers' ids: compared with any other, the comparison says so.
       return { type: 'string', options: [...triggerIds, ''] };
     }
@@ -635,6 +649,17 @@ export function checkBinding(rule: Rule, bound: (role: string) => BoundPart | nu
     const part = bound(wanted.role);
     const declared = part?.description.events?.find((event) => event.id === wanted.event && (event.part ?? MAIN_PART) === part.part);
     if (part && !declared) problems.push(`${rule.roles[wanted.role]?.label ?? wanted.role}: ${part.name} never says "${wanted.event}"`);
+  }
+  // What an event carried, read as run.event.<field>: something at least one of the events it waits for carries, as its device declares it.
+  const carried = new Set([...ruleExpressions(rule)].flatMap((top) => [...expressionsIn(top)].flatMap((each) => ('run' in each && each.run === 'event' && each.field ? [each.field] : []))));
+  for (const field of carried) {
+    const declaring = events.map((wanted) => {
+      const part = bound(wanted.role);
+      return part ? (part.description.events?.find((event) => event.id === wanted.event && (event.part ?? MAIN_PART) === part.part) ?? null) : undefined;
+    });
+    // A part not bound yet says nothing either way.
+    if (declaring.some((event) => event === undefined)) continue;
+    if (!declaring.some((event) => event?.data && field in event.data)) problems.push(`run.event.${field}: none of the events it waits for carries "${field}"`);
   }
   // A setting changed: the part has it, it can be written, it is not one that can harm the hardware, and the value fits it.
   for (const write of writes) {

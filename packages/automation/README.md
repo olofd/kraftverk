@@ -210,7 +210,7 @@ charge is below 15 %".
 | `not` | `not a` | not true |
 | `reachable` | `charger reachable` | whether the part filling a role can be reached now: its holder says it is connected. Never unknown |
 | `within` | `time between 23:00 and 05:00` | whether the owner's clock is between two times of day, from the first up to the second — across midnight when the second comes first |
-| `run` | `run.trigger` | what the run knows of itself, as a value: `trigger`, the `id` of the trigger that started it — one of its triggers' ids, so comparing it with any other is a problem. `""` when none with an id did — known, not unknown; not in a trigger, where there is no run yet. The language's own namespace: a fact a run gains later is read the same way |
+| `run` | `run.trigger`, `run.event`, `run.event.voltage` | what the run knows of itself, as a value: `trigger`, the `id` of the trigger that started it — `""` when none with an id did; `event`, the event a device raised that started it — and, with a field, what it carried, as the device declares it: unknown when no event started it. Never in a trigger, where there is no run yet. The language's own namespace: a fact a run gains later is read the same way |
 
 Comparisons (`compare`):
 

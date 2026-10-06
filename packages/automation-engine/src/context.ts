@@ -24,6 +24,9 @@ export type Planned = { command: PlannedAction } | { write: PlannedWrite };
 /** What the context reads: the automations, the installed functions, the parts, and the clock. */
 export type ContextDeps = Pick<AutomationEngineDeps, 'store' | 'library' | 'device' | 'clock'>;
 
+/** The event a device raised that started a run: its id, and what it carried. */
+export type StartingEvent = { id: string; data: Readonly<Record<string, Value>> | null };
+
 export class RuleContext {
   constructor(private deps: ContextDeps) {}
 
@@ -43,7 +46,7 @@ export class RuleContext {
    * roles as they are now, and the trigger that started the run, by its
    * key, if one did.
    */
-  scope(automation: AutomationRecord, rule: Rule, now = this.now(), trigger: string | null = null): RuleScope {
+  scope(automation: AutomationRecord, rule: Rule, now = this.now(), trigger: string | null = null, event: StartingEvent | null = null): RuleScope {
     const part = (role: string): EngineDevice | null => {
       const binding = automation.roles[role];
       const device = binding ? this.deps.device(binding) : null;
@@ -52,7 +55,12 @@ export class RuleContext {
     return {
       clock: () => clockTime(now, automation.timeZone),
       // No trigger with an id started it: that is known, and said as no id at all.
-      run: (fact) => (fact === 'trigger' ? (triggerOf(rule, trigger)?.id ?? '') : null),
+      run: (fact, field) => {
+        if (fact === 'trigger') return triggerOf(rule, trigger)?.id ?? '';
+        // The event that started it, and what it carried; unknown when none did.
+        if (!event) return null;
+        return field === undefined ? event.id : (event.data?.[field] ?? null);
+      },
       // An automation's own rule has no settings: its values are in its blocks. A recipe's are its defaults.
       param: (name) => {
         const field = rule.params.fields[name];
