@@ -1,6 +1,7 @@
 import {
   defineDeviceType,
   identityOf,
+  linkOf,
   MAIN_PART,
   type DeviceContext,
   type DeviceDescription,
@@ -9,13 +10,14 @@ import {
   type DeviceType,
   type DeviceTypeMeta,
   type OpenConnection,
-  type MessageChannel,
   type Reading,
   type SessionHealth,
   type ToolSpec,
   type Value,
 } from '@kraftverk/device-sdk';
-import { ASK, decodeMessage, encodeMessage, SAID, type MemberSaid, type NiuBatteryHealth, type NiuVehicle, type NiuState, type NiuTotals } from './protocol/index.ts';
+
+import type { ScooterLink } from './link.ts';
+import type { NiuBatteryHealth, NiuState, NiuTotals } from './protocol/index.ts';
 
 import { ago, REPORT_TRUSTED_MS } from './report.ts';
 import { SimulatedScooter } from './simulation.ts';
@@ -26,8 +28,8 @@ import { SimulatedScooter } from './simulation.ts';
  * One of this age has no way in but NIU's cloud: its control unit reports
  * over the mobile network, and we read that back from NIU with the owner's
  * account — as the NIU app does. That account is a device of its own
- * (`./account.ts`), and the scooter is reached through it: told what is its
- * own as the account asks NIU. So it is only as current as its last report,
+ * (`./account.ts`), and the scooter is reached through it: read through the
+ * link the account hands it (`./link.ts`), as the account asks NIU. So it is only as current as its last report,
  * and every reading carries the time the scooter made it, not when we asked:
  * a scooter asleep reports seldom, and says so by its age.
  *
@@ -46,8 +48,6 @@ type Config = Record<string, never>;
 
 /** Its totals and battery health change slowly: its account asks for them this often. */
 const SLOW_EVERY_MS = 30 * 60_000;
-/** How long a scooter waits for its account to answer what it asked. */
-const ASKED_WAIT_MS = 20_000;
 /**
  * How long a report stays current. Charging or switched on, the scooter
  * reports every few minutes, and a report older than this is not known — so
@@ -189,98 +189,58 @@ const TOOLS: Readonly<Record<string, ToolSpec>> = {
 
 const json = (value: unknown) => JSON.stringify(withoutPlace(value), null, 2);
 
-/** Its channel from its account, which only a scooter reached through one has. */
-function channelOf(connection: OpenConnection | null): MessageChannel {
-  if (connection?.channel.kind !== 'messages') throw new Error('A NIU scooter is reached through its NIU account');
-  return connection.channel;
-}
+const THROUGH_ITS_ACCOUNT = 'A NIU scooter is reached through its NIU account';
 
-/** Asks its account for everything NIU says of it, raw: the raw tool's answer, or why not. */
-function askRaw(channel: MessageChannel): Promise<Extract<MemberSaid, { kind: 'raw' }>> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      stop();
-      reject(new Error('Its NIU account did not answer'));
-    }, ASKED_WAIT_MS);
-    const stop = channel.subscribe(SAID, (message) => {
-      const said = decodeMessage<MemberSaid>(message.payload);
-      if (said.kind !== 'raw' && said.kind !== 'error') return;
-      clearTimeout(timer);
-      stop();
-      if (said.kind === 'raw') resolve(said);
-      else reject(new Error(said.error));
-    });
-    channel.publish(ASK, encodeMessage({ kind: 'raw' })).catch((error: unknown) => {
-      clearTimeout(timer);
-      stop();
-      reject(error as Error);
-    });
-  });
-}
+/** When a report was made: when the scooter made it; NIU not saying, when the account was told. */
+const reportedAt = (report: { state: NiuState; answeredAt: string }): string => report.state.at ?? report.answeredAt;
 
-/** A scooter through its account: what the account is told by NIU, as the account tells it. */
+/** A scooter through its account: what NIU tells the account of it, read through its link. */
 async function memberSession(ctx: DeviceContext<Config>): Promise<DeviceSession> {
-  const channel = channelOf(ctx.connection);
   const serial = ctx.connection!.address;
-
-  let state: NiuState | null = null;
-  /** When the scooter made its last report; and when NIU last gave it to its account. */
-  let stateAt: string | null = null;
-  let answeredAt: string | null = null;
-  let batteries: NiuBatteryHealth[] = [];
-  let totals: NiuTotals | null = null;
-  let slowAt: string | null = null;
-  let scooter: NiuVehicle | null = null;
-  let error: string | null = null;
-
-  const stop = channel.subscribe(SAID, (message) => {
-    const said = decodeMessage<MemberSaid>(message.payload);
-    switch (said.kind) {
-      case 'vehicle':
-        scooter = said.vehicle;
-        break;
-      case 'state': {
-        const event = chargingEventOf(state, said.state);
-        state = said.state;
-        answeredAt = said.answeredAt;
-        // When the scooter reported it; NIU not saying, when the account was told.
-        stateAt = said.state.at ?? said.answeredAt;
-        error = null;
-        if (event) ctx.event(event.id, { soc: event.soc });
-        break;
-      }
-      case 'slow':
-        batteries = said.batteries;
-        totals = said.totals;
-        slowAt = said.at;
-        break;
-      case 'error':
-        error = said.error;
-        break;
-      case 'raw':
-        return;
-    }
-    ctx.changed();
-  });
+  // The report the last charging event was worked out from: a new one that starts or stops charging is an event.
+  let heard: NiuState | null = null;
+  const scooter: ScooterLink = await linkOf<ScooterLink>(
+    ctx.connection,
+    () => {
+      const report = scooter.report();
+      const event = report ? chargingEventOf(heard, report.state) : null;
+      if (report) heard = report.state;
+      if (event) ctx.event(event.id, { soc: event.soc });
+      ctx.changed();
+    },
+    THROUGH_ITS_ACCOUNT
+  );
+  heard = scooter.report()?.state ?? null;
 
   return {
     health(): SessionHealth {
-      if (error) return { status: 'error', detail: error, lastReadingAt: stateAt };
-      if (!state || !stateAt) return { status: 'connecting', detail: 'Asking NIU’s cloud through its account', lastReadingAt: null };
+      const report = scooter.report();
+      const error = scooter.error();
+      if (error) return { status: 'error', detail: error, lastReadingAt: report ? reportedAt(report) : null };
+      if (!report) return { status: 'connecting', detail: 'Asking NIU’s cloud through its account', lastReadingAt: null };
       // No clock time here: the server's time zone need not be its owner's. When it reported is `lastReadingAt`, for the app to say.
-      return { status: 'connected', detail: `${stateWord(state)} · through its NIU account`, lastReadingAt: stateAt };
+      return { status: 'connected', detail: `${stateWord(report.state)} · through its NIU account`, lastReadingAt: reportedAt(report) };
     },
-    readings: () => (state && stateAt && answeredAt ? readingsOf(state, batteries, totals, stateAt, slowAt, confirmedSince(state, stateAt, answeredAt)) : []),
-    info: (): DeviceInfo => ({ manufacturer: 'NIU', serial, ...(scooter?.model ? { model: scooter.model } : {}) }),
-    identity: () => ({ id: identityOf('niu-cloud', serial), name: scooter?.name ?? null }),
+    readings: () => {
+      const report = scooter.report();
+      if (!report) return [];
+      const slow = scooter.slow();
+      const at = reportedAt(report);
+      return readingsOf(report.state, slow?.batteries ?? [], slow?.totals ?? null, at, slow?.at ?? null, confirmedSince(report.state, at, report.answeredAt));
+    },
+    info: (): DeviceInfo => {
+      const model = scooter.vehicle().model;
+      return { manufacturer: 'NIU', serial, ...(model ? { model } : {}) };
+    },
+    identity: () => ({ id: identityOf('niu-cloud', serial), name: scooter.vehicle().name ?? null }),
     command: async () => ({ accepted: false, error: 'It takes no commands here yet: which ones NIU’s cloud takes for this model is still being learnt' }),
     tools: {
       raw: async () => {
-        const raw = await askRaw(channel);
+        const raw = await scooter.raw();
         return { from: raw.from, state: json(raw.state), batteries: json(raw.batteries), totals: json(raw.totals) };
       },
     },
-    close: async () => stop(),
+    close: async () => scooter.close(),
   };
 }
 
@@ -349,8 +309,6 @@ const COMMON = {
       id: 'account',
       label: 'Through your NIU account',
       description: 'Through the NIU account it is on, which asks NIU’s servers for it. Needs the internet: the scooter reports to NIU over the mobile network.',
-      protocol: 'niu-cloud',
-      transport: 'bridge',
       through: ['niu.account'],
       reach: 'cloud',
     },
@@ -358,29 +316,10 @@ const COMMON = {
 
   /** Read once through its account: which scooter, and how it is. */
   async identify(connection: OpenConnection) {
-    const channel = channelOf(connection);
+    const link = await linkOf<ScooterLink>(connection, () => {}, THROUGH_ITS_ACCOUNT);
     const serial = connection.address;
-    const { scooter, state } = await new Promise<{ scooter: NiuVehicle; state: NiuState }>((resolve, reject) => {
-      let scooter: NiuVehicle | null = null;
-      const timer = setTimeout(() => {
-        stop();
-        reject(new Error('Its NIU account did not say how it is'));
-      }, ASKED_WAIT_MS);
-      const stop = channel.subscribe(SAID, (message) => {
-        const said = decodeMessage<MemberSaid>(message.payload);
-        if (said.kind === 'vehicle') scooter = said.vehicle;
-        if (said.kind === 'error') {
-          clearTimeout(timer);
-          stop();
-          reject(new Error(said.error));
-        }
-        if (said.kind === 'state' && scooter) {
-          clearTimeout(timer);
-          stop();
-          resolve({ scooter, state: said.state });
-        }
-      });
-    });
+    const scooter = link.vehicle();
+    const { state } = await link.ask();
     const said = [
       state.soc === null ? 'charge not known' : `${Math.round(state.soc)} % charged`,
       state.charging ? 'charging' : null,

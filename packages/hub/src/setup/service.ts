@@ -1,7 +1,7 @@
 import { ApiError, type CheckOutcome, type DraftView, type HeldSetupInput, type SightingView } from '@kraftverk/api-contract';
 import {
-  BRIDGE_TRANSPORT,
-  isBridged,
+  transportOf,
+  isBridgedMethod,
   nodeId,
   savedDeviceId,
   findStep,
@@ -117,17 +117,15 @@ export class SetupService {
     let through: SavedDeviceId | null = null;
     const unfit = unfitFor(method, this.#traits(this.deps.self));
     if (unfit) throw new ApiError('conflict', `${method.label}: ${unfit}`);
-    if (isBridged(method)) {
-      // Through a bridge: one open here is the transport, and its members are what is found.
-      const protocol = this.deps.protocols.get(method.protocol);
-      if (!protocol?.bindings[BRIDGE_TRANSPORT]) throw new ApiError('conflict', `${platformWords(this.deps.transports.platform).this} cannot reach a ${type.meta.name} by ${method.label}: it needs updating`);
+    if (isBridgedMethod(method)) {
+      // Through a bridge: one open here hands it its link, and its members are what is found.
       const bridges = openBridges(this.deps, method.through).filter((bridge) => !input.through || bridge.id === input.through);
       if (!bridges.length) {
-        const which = (method.through ?? []).map((id) => this.deps.types.get(id)?.meta.name ?? id).join(' or ');
+        const which = method.through.map((id) => this.deps.types.get(id)?.meta.name ?? id).join(' or ');
         throw new ApiError('conflict', `A ${type.meta.name} is reached through ${which}: add that first, or open it here`);
       }
       through = bridges.length === 1 ? bridges[0]!.id : null;
-      reach = throughBridge(protocol, (id) => this.deps.sessions.get(id)?.bridge ?? null, this.deps.transports.platform);
+      reach = throughBridge((id) => this.deps.sessions.get(id)?.bridge ?? null, this.deps.transports.platform);
     } else if (!isSimulated(method)) {
       const protocol = this.deps.protocols.get(method.protocol);
       if (!protocol?.bindings[method.transport]) throw new ApiError('conflict', `${platformWords(this.deps.transports.platform).this} cannot reach a ${type.meta.name} by ${method.label}: it needs updating`);
@@ -149,7 +147,7 @@ export class SetupService {
     });
 
     // What the transport can see, kept current for as long as the draft lives.
-    const binding = reach.protocol?.bindings[method.transport];
+    const binding = method.transport ? reach.protocol?.bindings[method.transport] : undefined;
     if (binding && transport?.watch && !method.address && reach.transport?.discovery[this.deps.transports.platform] === 'list') {
       draft.stopWatching = transport.watch(binding.filter ?? {}, (sightings) => {
         draft.sightings = sightings;
@@ -216,7 +214,7 @@ export class SetupService {
   /** What the transport sees that this device's protocol recognises — or, through a bridge, its members — each marked when it is already yours. */
   sightings(id: string): SightingView[] {
     const draft = this.#draft(id);
-    if (draft.method && isBridged(draft.method)) {
+    if (draft.method && isBridgedMethod(draft.method)) {
       const now = new Date().toISOString();
       return this.#members(draft).map(({ bridge, member, claimedBy }) => ({
         address: member.key,
@@ -229,12 +227,14 @@ export class SetupService {
         through: { id: bridge.id, name: bridge.name },
       }));
     }
-    const binding = draft.reach.protocol?.bindings[draft.method!.transport];
-    if (!binding) return [];
+    const way = draft.method!;
+    const binding = way.transport ? draft.reach.protocol?.bindings[way.transport] : undefined;
+    if (!binding || !way.transport) return [];
+    const transport = way.transport;
     return draft.sightings.flatMap((sighting): SightingView[] => {
       const recognised = binding.recognise(sighting);
       if (!recognised) return [];
-      const claim = draft.reach.exclusive ? this.deps.connections.claimant(draft.method!.transport, sighting.address) : null;
+      const claim = draft.reach.exclusive ? this.deps.connections.claimant(transport, sighting.address) : null;
       const claimed = claim ? this.deps.catalog.get(claim.deviceId) : null;
       return [
         {
@@ -259,7 +259,7 @@ export class SetupService {
    */
   async choose(id: string, input: { address?: string; through?: string; manual?: string; chooser?: { showAll?: boolean } }): Promise<DraftView> {
     const draft = this.#draft(id);
-    if (draft.method && isBridged(draft.method)) {
+    if (draft.method && isBridgedMethod(draft.method)) {
       // A member, from its bridge's own list: never typed, never picked in a chooser.
       const offer = input.address === undefined ? null : (this.#members(draft).find(({ bridge, member }) => member.key === input.address && (!input.through || bridge.id === input.through)) ?? null);
       if (!offer) throw new ApiError('invalid', 'That device is not behind it any more; choose again');
@@ -371,7 +371,7 @@ export class SetupService {
     if (!draft.address) throw new ApiError('invalid', 'Choose the device first');
 
     if (draft.reach.exclusive) {
-      const claim = draft.through ? this.deps.connections.member(draft.through, draft.address) : this.deps.connections.claimant(method.transport, draft.address);
+      const claim = draft.through ? this.deps.connections.member(draft.through, draft.address) : this.deps.connections.claimant(transportOf(method), draft.address);
       const claimed = claim ? this.deps.catalog.active(claim.deviceId) : null;
       if (claimed) return this.#checked(draft, { outcome: 'yours', summary: `This is your ${claimed.name}, already reached this way.`, device: { id: claimed.id, name: claimed.name } });
     }

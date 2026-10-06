@@ -13,7 +13,7 @@ const NEEDED: Record<keyof NodeTraits, string> = {
  * server: your account password stays at home". Null when it can. A simulated
  * way reaches nothing, and needs nothing.
  */
-export function unfitFor(method: Pick<ConnectionMethod, 'needs' | 'transport'>, node: NodeTraits): string | null {
+export function unfitFor(method: Pick<ConnectionMethod, 'needs'> & { readonly transport?: string }, node: NodeTraits): string | null {
   if (isSimulated(method)) return null;
   const unmet = unmetNeed(method, node);
   return unmet ? `It needs ${NEEDED[unmet.trait]}: ${unmet.why}` : null;

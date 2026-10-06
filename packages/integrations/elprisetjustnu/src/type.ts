@@ -1,4 +1,4 @@
-import { defineDeviceType, MAIN_PART, type DeviceContext, type DeviceDescription, type DeviceSession, type Reading } from '@kraftverk/device-sdk';
+import { channelOf, defineDeviceType, MAIN_PART, type DeviceContext, type DeviceDescription, type DeviceSession, type Reading } from '@kraftverk/device-sdk';
 import { CURRENCIES, ELPRISET, fetchDay, PRICE_AREAS, type Currency, type PriceArea, type PricePeriod } from './protocol/index.ts';
 
 import { dayOf, nextDay, periodAt, rankAt, simulatedDay } from './prices.ts';
@@ -79,9 +79,7 @@ function sayEachPeriod(ctx: DeviceContext<PriceConfig>, periods: () => readonly 
 }
 
 async function realSession(ctx: DeviceContext<PriceConfig>): Promise<DeviceSession> {
-  const connection = ctx.connection;
-  if (connection?.channel.kind !== 'http') throw new Error('A price service needs its web API');
-  const channel = connection.channel;
+  const channel = channelOf(ctx.connection, 'http', 'A price service needs its web API');
   let periods: PricePeriod[] = ctx.store.get<PricePeriod[]>('periods') ?? [];
   let fetchedAt: string | null = ctx.store.get<string>('fetchedAt');
   let lastError: string | null = null;
@@ -191,11 +189,11 @@ export default defineDeviceType<PriceConfig>({
   },
 
   async identify(connection, ctx) {
-    if (connection.channel.kind !== 'http') throw new Error('A price service needs its web API');
+    const channel = channelOf(connection, 'http', 'A price service needs its web API');
     const area = String(ctx.config.area ?? 'SE3') as PriceArea;
     const currency = String(ctx.config.currency ?? 'SEK') as Currency;
     if (!PRICE_AREAS.includes(area)) throw new Error('Choose a price area first');
-    const periods = await fetchDay(connection.channel, dayOf(Date.now()), area, currency);
+    const periods = await fetchDay(channel, dayOf(Date.now()), area, currency);
     if (!periods.length) throw new Error('elprisetjustnu.se has no prices for today yet');
     const now = periodAt(periods, Date.now());
     const ranked = rankAt(periods, Date.now());

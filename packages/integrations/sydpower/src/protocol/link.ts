@@ -1,4 +1,4 @@
-import type { ByteChannel, Channel, MessageChannel } from '@kraftverk/device-sdk';
+import { directOf, type ByteChannel, type DirectConnection, type MessageChannel, type OpenConnection } from '@kraftverk/device-sdk';
 
 import { FrameAssembler, WRITE_SPACING_MS } from './ble.ts';
 import { commandRefusal } from './guard.ts';
@@ -228,9 +228,9 @@ function overBytes(channel: ByteChannel, address: string, transport: string): Sy
   };
 }
 
-/** A Sydpower link over an open channel: a broker's topics, or a byte stream. */
-export function linkOver(connection: { channel: Channel; address: string; transport: string }): SydpowerLink {
-  const { channel, address, transport } = connection;
+/** A Sydpower link over an open connection: a broker's topics, or a byte stream. */
+export function linkOver(connection: OpenConnection | Pick<DirectConnection, 'channel' | 'address' | 'transport'>): SydpowerLink {
+  const { channel, address, transport } = 'kind' in connection ? directOf(connection, 'A Sydpower station is reached over Wi-Fi or Bluetooth') : connection;
   switch (channel.kind) {
     case 'messages':
       return overMessages(channel, address);

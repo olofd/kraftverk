@@ -37,7 +37,9 @@ export class ProtocolRegistry {
     return [];
   }
 
-  get(id: string): Protocol | null {
+  /** A protocol by id; none for a way that has none, through a bridge. */
+  get(id: string | undefined): Protocol | null {
+    if (id === undefined) return null;
     return this.#protocols.get(id) ?? null;
   }
 

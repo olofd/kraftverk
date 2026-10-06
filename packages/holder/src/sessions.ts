@@ -247,7 +247,9 @@ export class SessionManager {
   reachable(deviceId: SavedDeviceId): boolean {
     const open = this.#open.get(deviceId);
     if (!open) return false;
-    return isSimulated(open.connection) || open.opened.channel?.connected === true;
+    if (isSimulated(open.connection)) return true;
+    // Over a channel, its word; through a bridge, there is none: the session's own, read through its link.
+    return open.opened.channel ? open.opened.channel.connected : open.opened.session.health().status === 'connected';
   }
 
   /** How a device is doing: its session's own answer, or why it has none. */

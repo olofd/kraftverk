@@ -1,16 +1,15 @@
-import { identityOf, type ConfigSchema, type OpenConnection, type Protocol, type SetupAction } from '@kraftverk/device-sdk';
+import { channelOf, directOf, identityOf, type ConfigSchema, type OpenConnection, type Protocol, type SetupAction } from '@kraftverk/device-sdk';
 
 import { NIU_ACCOUNT, NiuClient, NiuError, signIn, type NiuHttp } from './api.ts';
 
 export * from './api.ts';
-export * from './member.ts';
 export { md5Hex } from './md5.ts';
 
 /**
- * The NIU cloud as a protocol: how a NIU account, and the scooters NIU's
- * servers speak for, are reached — the account over HTTPS, to the API host
- * and the sign-in host beside it (`alsoOrigins`) and nowhere else; a scooter
- * through its account (`bridge`), in the messages of `member.ts`.
+ * The NIU cloud as a protocol: how a NIU account is reached — over HTTPS, to
+ * the API host and the sign-in host beside it (`alsoOrigins`) and nowhere
+ * else. A scooter is not spoken to: it is read through its account's link
+ * (`../link.ts`).
  *
  * A NIU scooter of this age has no way in but NIU's cloud: its control unit
  * reports over the mobile network, and the app reads it back from NIU. So
@@ -71,11 +70,6 @@ const protocol: Protocol = {
       // Nothing to find: the account is signed into.
       recognise: () => null,
     },
-    // A scooter, through its account: told what is its own, over the account's channel.
-    bridge: {
-      open: () => ({}),
-      recognise: () => null,
-    },
   },
   credentials: { schema: CREDENTIALS, actions: [signInAction], first: true, title: 'Your NIU account' },
 };
@@ -84,10 +78,9 @@ export default protocol;
 
 /** A signed-in client over an account's open connection: its channel, and the account stored with it. */
 export function clientOver(connection: OpenConnection, now?: () => number): { client: NiuClient; account: string } {
-  if (connection.channel.kind !== 'http') throw new Error('The NIU cloud is reached over HTTPS');
-  const channel = connection.channel;
+  const channel = channelOf(connection, 'http', 'The NIU cloud is reached over HTTPS');
   const account = String(connection.config.account ?? '').trim();
-  const password = connection.secrets.get('password');
+  const password = directOf(connection, 'The NIU cloud is reached over HTTPS').secrets.get('password');
   if (!account || !password) throw new Error('No NIU account: sign in again in the account’s connection settings');
   return { client: new NiuClient((url, init) => channel.fetch(url, init), { account, password }, now), account };
 }

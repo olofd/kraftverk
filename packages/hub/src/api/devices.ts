@@ -1,5 +1,5 @@
 import { ApiError, type Caller, type ChangesQuery, type DeviceTypeListing, type HistoryQuery, type KraftverkApi } from '@kraftverk/api-contract';
-import { capabilityIn, CATEGORIES, describeDeviceType, isBridged, isSimulated, methodsOf, placementsOf, platformsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
+import { capabilityIn, CATEGORIES, describeDeviceType, isBridgedMethod, isSimulated, methodsOf, placementsOf, platformsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
 import { deviceReader } from '@kraftverk/holder';
 
 import { openBridges } from '../devices/members.ts';
@@ -52,7 +52,7 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
   const holds = (method: ConnectionMethod): Availability => {
     if (isSimulated(method)) return { ok: true };
     // Through a bridge: while one it goes through is open here — an account added, a gateway reached.
-    if (isBridged(method)) {
+    if (isBridgedMethod(method)) {
       if (openBridges(hub, method.through).length) return { ok: true };
       const which = (method.through ?? []).map((id) => types.get(id)?.meta.name ?? id).join(' or ');
       return { ok: false, reason: `It is reached through ${which}: add that first` };

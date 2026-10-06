@@ -1,4 +1,4 @@
-import type { BridgeHost, BridgeSpec } from './bridge.ts';
+import type { Bridge, BridgeSpec } from './bridge.ts';
 import type { CapabilityId, CommandResult } from './capabilities.ts';
 import type { CategoryId } from './categories.ts';
 import type { Clock } from './clock.ts';
@@ -238,8 +238,8 @@ export interface DeviceSession {
    * holds. A session that reports as often as it can already need not have it.
    */
   wantFresh?(until: number): void;
-  /** For a type that is a bridge: who is behind it, and a channel to each. Every session of a bridge has it, its simulator's included. */
-  readonly bridge?: BridgeHost;
+  /** For a type that is a bridge: who is behind it, and a link to each. Every session of a bridge has it, its simulator's included. */
+  readonly bridge?: Bridge;
   close(): Promise<void>;
 }
 

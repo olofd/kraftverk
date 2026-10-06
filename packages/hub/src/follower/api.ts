@@ -1,5 +1,5 @@
 import { ApiError, type AutomationView, type DeviceView, type DraftView, type KraftverkApi, type LiveUpdate, type TransportView, type WayView } from '@kraftverk/api-contract';
-import { capabilityIn, connectionId as asConnectionId, methodOf, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { capabilityIn, connectionId as asConnectionId, methodOf, transportOf, type SavedDeviceId } from '@kraftverk/device-sdk';
 import { deviceReader } from '@kraftverk/holder';
 
 import { runAskedTool } from '../devices/tools.ts';
@@ -75,7 +75,7 @@ export function followerApi(h: Follower): KraftverkApi {
         types: list.types.map((listing) => {
           const type = h.installed.types.get(listing.id);
           const mine: WayView[] = type
-            ? type.connections.filter((method) => holdableHere(h.installed, h.self, method)).map((method) => ({ method: method.id, holder: 'this-node', fits: true, availability: transports.available(method.transport) }))
+            ? type.connections.filter((method) => holdableHere(h.installed, h.self, method)).map((method) => ({ method: method.id, holder: 'this-node', fits: true, availability: transports.available(transportOf(method)) }))
             : [];
           return { ...listing, ways: [...listing.ways, ...mine] };
         }),

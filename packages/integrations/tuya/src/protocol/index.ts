@@ -7,6 +7,8 @@ import {
   type SetupAction,
   type SetupChoice,
   type Sighting,
+  channelOf,
+  directOf,
 } from '@kraftverk/device-sdk';
 
 import { fromHex } from './bytes.ts';
@@ -316,15 +318,15 @@ export default protocol;
  * sends unasked.
  */
 export function linkOver(connection: OpenConnection, options: Pick<TuyaLinkOptions, 'log' | 'onPush' | 'onPresence'> = {}): TuyaLink {
-  if (connection.channel.kind !== 'bytes') throw new Error('Tuya local needs a byte stream');
-  const localKey = connection.secrets.get('localKey');
+  const channel = channelOf(connection, 'bytes', 'Tuya local needs a byte stream');
+  const localKey = directOf(connection, 'Tuya local needs a byte stream').secrets.get('localKey');
   if (!localKey) throw new Error('No local key: add it in the plug’s connection settings');
   const deviceId = String(connection.config.deviceId ?? '');
   if (!deviceId) throw new Error('No device id: set the plug up again from the network');
   const version = String(connection.config.protocolVersion ?? 'auto');
   // Behind a gateway, the address names the device there: the link speaks to the gateway about it.
   const cid = cidOfAddress(connection.address);
-  return new TuyaLink(connection.channel, {
+  return new TuyaLink(channel, {
     deviceId,
     localKey,
     version: (VERSIONS as readonly string[]).includes(version) ? (version as ProtocolVersion) : 'auto',

@@ -66,10 +66,13 @@ newer mopeds with "NIU Link".
 - Its identity is its sign-in, written plainly: NIU names no account id.
 
 **A scooter** (`niu.scooter`, and each model's type): reached **through its
-account** (`transport: bridge`, `through: ['niu.account']`), its address
-its serial. It keeps no credentials: it is told what is its own, over the
-channel its account opens for it, in the messages of `niu-cloud`'s
-`member.ts`. Its identity is `niu-cloud:<serial>`, as before.
+account** (`through: ['niu.account']`), its address its serial. It keeps no
+credentials and speaks no protocol: its session links to it through the
+account (`ScooterLink`, `src/link.ts`) — plain calls, `report()`,
+`slow()`, `raw()`, `ask()` — and the account calls it back when NIU has
+said something new (docs/PLAN-INTEGRATIONS.md §1.1). Its identity is
+`niu-cloud:<serial>`, as before. A device package for a model reads it
+through the same link, imported from `@kraftverk/integration-niu`.
 
 - Adding: add the account and sign in; its scooters are then found — on Home
   under "Found near you", and on the account's page — each offered as the

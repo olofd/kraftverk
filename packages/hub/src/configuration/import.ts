@@ -17,6 +17,7 @@ import {
   type NodeId,
   type PolicyValueName,
   type SavedDeviceId,
+  transportOf,
 } from '@kraftverk/device-sdk';
 import type { SessionManager } from '@kraftverk/holder';
 import {
@@ -222,7 +223,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
       const bridge = way.through !== null ? (deps.catalog.byKey(way.through)?.id ?? null) : null;
       // An address belongs to one device where its transport says so — never a simulator's, which every simulated device shares — as setup decides it.
       const exclusive = !isSimulated(method) && deps.transports.definition(method.transport)?.exclusive !== false;
-      const claim = way.through !== null ? (bridge ? deps.connections.member(bridge, address) : null) : exclusive ? deps.connections.claimant(method.transport, address) : null;
+      const claim = way.through !== null ? (bridge ? deps.connections.member(bridge, address) : null) : exclusive ? deps.connections.claimant(transportOf(method), address) : null;
       if (claim && claim.deviceId !== existing?.id) problem(way.through !== null ? `Another device you have is already ${address} behind ${way.through}` : `Another device you have is already reached at ${address}`, ['devices', key, 'connect', index, 'address']);
       const had = existing ? governed(deps, existing.id).find((connection) => sameWay(deps, connection, way)) : undefined;
       for (const [field, spec] of secretFieldsOf(method, deps.protocols.get(method.protocol) ?? null)) {
@@ -681,7 +682,7 @@ function writeDevice(deps: ImportDeps, key: string, entry: DeviceEntry, opened: 
     const exportable = way.exportable && (!had || had.secretsExportable || deps.connections.secretFields(had.id).every((field) => field in secrets));
     const connection = had
       ? deps.connections.update(had.id, { address, config: way.settings, priority: index, secretsExportable: exportable })!
-      : deps.connections.add({ deviceId: device!.id, method: way.via, transport: method.transport, ...holdingOf(deps, way), address, config: way.settings, priority: index, secretsExportable: exportable });
+      : deps.connections.add({ deviceId: device!.id, method: way.via, transport: transportOf(method), ...holdingOf(deps, way), address, config: way.settings, priority: index, secretsExportable: exportable });
     if (Object.keys(secrets).length) deps.connections.setSecrets(connection.id, secrets);
   });
   for (const had of ways) if (!entry.connect.some((way) => sameWay(deps, had, way))) deps.connections.remove(had.id);

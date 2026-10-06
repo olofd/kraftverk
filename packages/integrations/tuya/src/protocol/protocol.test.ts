@@ -483,6 +483,7 @@ describe('a device behind a gateway', () => {
   test('a connection to it builds a link that names it, from its address', async () => {
     const gateway = fakeGateway(utf8(GATEWAY_KEY), { [PLUG]: { '1': true } });
     const link = linkOver({
+      kind: 'direct',
       method: 'lan',
       protocol: 'tuya-local',
       transport: 'lan',
@@ -582,6 +583,7 @@ describe('a conversation with a plug', () => {
   test('a connection builds its link from what setup stored', async () => {
     const plug = fakePlug('3.3', utf8(PLUG_KEY), { '1': true });
     const link = linkOver({
+      kind: 'direct',
       method: 'lan',
       protocol: 'tuya-local',
       transport: 'lan',

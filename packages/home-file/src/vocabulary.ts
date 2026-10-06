@@ -1,6 +1,6 @@
 import {
   configDefaults,
-  isBridged,
+  isBridgedMethod,
   isSecretField,
   LINK_KIND_IDS,
   methodsOf,
@@ -67,7 +67,7 @@ export function vocabularyOf(
       parts: partsOf(type.describe(configDefaults(type.config ?? { fields: {} }))).map((part) => part.id),
       methods: methodsOf(type).map((method) => {
         // A way through a bridge signs in as the bridge does: it carries no credentials of its own.
-        const credentials = isBridged(method) ? undefined : protocol(method.protocol)?.credentials?.schema;
+        const credentials = isBridgedMethod(method) ? undefined : protocol(method.protocol)?.credentials?.schema;
         return {
           id: method.id,
           label: method.label,

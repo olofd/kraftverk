@@ -4,7 +4,7 @@ import { ApiError, type Caller, type CheckOutcome, type DeviceView, type Kraftve
 import { plainSecrets, type SqlDatabase } from '@kraftverk/store';
 
 import { createHub, installedFrom, type Hub } from '../src/index.ts';
-import { busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE, makeHubType, relayedLampType, relayProtocol, testIntegration, type HubWatch } from '../src/testing.ts';
+import { busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE, makeHubType, relayedLampType, testIntegration, type HubWatch } from '../src/testing.ts';
 import { forecastContribution, forecastType, plugType, stationType } from './kinds.ts';
 import { testDatabase } from './home.ts';
 
@@ -62,7 +62,7 @@ export async function aHome(options: { readOnly?: boolean; bridges?: boolean } =
   const bridging = options.bridges ? [{ type: hubType.type }, { type: relayedLampType }] : [];
   const installed = installedFrom(
     {
-      integrations: [{ ...testIntegration({ type: lampType }, { type: stationType }, { type: plugType }, { type: forecastType, automation: forecastContribution }, ...bridging), protocols: options.bridges ? [lampProtocol, relayProtocol] : [lampProtocol] }],
+      integrations: [{ ...testIntegration({ type: lampType }, { type: stationType }, { type: plugType }, { type: forecastType, automation: forecastContribution }, ...bridging), protocols: [lampProtocol] }],
 
       transports: [{ definition: busDefinition, create: () => bus }],
     },

@@ -1,5 +1,5 @@
-import { BRIDGE_TRANSPORT } from './bridge.ts';
-import type { Channel } from './channel.ts';
+import { BRIDGE_TRANSPORT, type MemberLink } from './bridge.ts';
+import type { Channel, ChannelKind } from './channel.ts';
 import type { DeviceDescription, DeviceInfo } from './description.ts';
 import { PLATFORMS, type NodeNeeds, type Platform } from './node.ts';
 import type { Protocol } from './protocol.ts';
@@ -31,13 +31,6 @@ import type { Availability, Transport, TransportDefinition } from './transport.t
  */
 
 /**
- * One way a device type can be reached: its protocol over one transport.
- *
- * Declared as a pair, not as two lists, because not every protocol rides every
- * transport. Where it runs is never said here: a method is offered wherever its
- * transport is available (docs/ARCHITECTURE.md, decision 8).
- */
-/**
  * What a way of reaching a device needs besides your home network (H11):
  *
  * - `local` — nothing. It works with the internet unplugged.
@@ -49,24 +42,18 @@ export type Reach = 'local' | 'cloud-at-setup' | 'cloud';
 
 export const REACHES: readonly Reach[] = ['local', 'cloud-at-setup', 'cloud'];
 
-export type ConnectionMethod = {
-  /** `wifi`, `bluetooth`, `lan`. Stable forever within the type: connections name it. */
+/** What every way of reaching a device says, however it reaches it. */
+type WayBase = {
+  /** `wifi`, `bluetooth`, `lan`, `account`. Stable forever within the type: connections name it. */
   id: string;
-  /** How people say it: "Wi-Fi", "Bluetooth". The holder is added on screen. */
+  /** How people say it: "Wi-Fi", "Bluetooth", "Through your account". The holder is added on screen. */
   label: string;
   /** One line on what this way needs or gives. */
   description?: string;
-  protocol: string;
-  transport: string;
   /** Whether it needs anything beyond your home network: said on the add screen before anything is chosen. */
   reach: Reach;
   /** The one to suggest, when a type has several. */
   recommended?: boolean;
-  /**
-   * A fixed address — a web API's origin — so nothing is chosen. Absent for a
-   * device, which is found.
-   */
-  address?: string;
   /** Choices of this method's own, stored with the connection. Never secrets. */
   config?: ConfigSchema;
   /**
@@ -78,12 +65,23 @@ export type ConnectionMethod = {
   needs?: NodeNeeds;
   /** Steps of the type's own for this method, after those its layers supply. */
   steps?: readonly SetupStep[];
+};
+
+/**
+ * A way over a transport: its integration's protocol over one transport.
+ *
+ * Declared as a pair, not as two lists, because not every protocol rides every
+ * transport. Where it runs is never said here: a method is offered wherever its
+ * transport is available (docs/ARCHITECTURE.md, decision 8).
+ */
+export type DirectMethod = WayBase & {
+  protocol: string;
+  transport: string;
   /**
-   * The bridge types it is reached through, when its transport is the
-   * bridge's (`BRIDGE_TRANSPORT`): a scooter through its account. Its
-   * address is then the member's key within the bridge.
+   * A fixed address — a web API's origin — so nothing is chosen. Absent for a
+   * device, which is found.
    */
-  through?: readonly string[];
+  address?: string;
   /**
    * Where it can be held at all, when that is fewer places than its
    * transport runs: a cloud that does not answer a browser's page is reached
@@ -93,7 +91,33 @@ export type ConnectionMethod = {
    * its transport runs.
    */
   platforms?: readonly Platform[];
+  through?: never;
 };
+
+/**
+ * A way through a bridge (docs/PLAN-INTEGRATIONS.md §4.3): a scooter through
+ * its account, a plug through its gateway. No protocol and no transport of
+ * its own — it reads its bridge through the link the bridge's session hands
+ * it — and no credentials: it is signed in as its bridge is. Its address is
+ * the member's key within the bridge; it is held wherever the bridge is.
+ */
+export type BridgedMethod = WayBase & {
+  /** The bridge types it is reached through: `['acme.account']`. At least one. */
+  through: readonly string[];
+  protocol?: never;
+  transport?: never;
+  address?: never;
+  platforms?: never;
+};
+
+/** One way a device type can be reached: over a transport, or through a bridge. */
+export type ConnectionMethod = DirectMethod | BridgedMethod;
+
+/** Whether a way goes through a bridge rather than over a transport. */
+export const isBridgedMethod = (method: ConnectionMethod): method is BridgedMethod => method.through !== undefined;
+
+/** The transport a way's connections are kept under: its own, or the bridge's for a way through one. */
+export const transportOf = (method: ConnectionMethod): string => (isBridgedMethod(method) ? BRIDGE_TRANSPORT : method.transport);
 
 /**
  * Simulated: a way every device type can be added, with no hardware.
@@ -111,7 +135,7 @@ export const SIMULATED_TRANSPORT = 'sim';
 
 export const SIMULATED_ADDRESS = 'simulated';
 
-export const SIMULATED_METHOD: ConnectionMethod = {
+export const SIMULATED_METHOD: DirectMethod = {
   id: SIMULATED_METHOD_ID,
   label: 'Simulated',
   description: 'No hardware: its simulator stands in, to try it out.',
@@ -122,7 +146,7 @@ export const SIMULATED_METHOD: ConnectionMethod = {
 };
 
 /** A type's simulated way: chosen with what its own simulator is set up with, when it is set up with anything. */
-export const simulatedMethodOf = (type: { readonly simulation?: ConfigSchema }): ConnectionMethod =>
+export const simulatedMethodOf = (type: { readonly simulation?: ConfigSchema }): DirectMethod =>
   type.simulation && Object.keys(type.simulation.fields).length ? { ...SIMULATED_METHOD, config: type.simulation } : SIMULATED_METHOD;
 
 type HasWays = { readonly connections: readonly ConnectionMethod[]; readonly simulation?: ConfigSchema };
@@ -134,7 +158,7 @@ export const methodsOf = (type: HasWays): ConnectionMethod[] => [...type.connect
 export const methodOf = (type: HasWays, id: string): ConnectionMethod | null => methodsOf(type).find((method) => method.id === id) ?? null;
 
 /** Whether a connection is simulated: its holder opens the type's simulator, and reaches nothing. */
-export const isSimulated = (connection: { readonly transport: string }): boolean => connection.transport === SIMULATED_TRANSPORT;
+export const isSimulated = (connection: { readonly transport?: string }): boolean => connection.transport === SIMULATED_TRANSPORT;
 
 /**
  * The runtimes a method can be held on at all: those its transport has an
@@ -142,7 +166,7 @@ export const isSimulated = (connection: { readonly transport: string }): boolean
  */
 export function platformsOf(method: ConnectionMethod, transport: Pick<TransportDefinition, 'platforms'> | null): Platform[] {
   // A simulator reaches nothing; a bridge's member is held wherever its bridge is.
-  if (isSimulated(method) || method.transport === BRIDGE_TRANSPORT) return [...PLATFORMS];
+  if (isBridgedMethod(method) || isSimulated(method)) return [...PLATFORMS];
   // Its transport's, less what the way itself cannot be held on.
   return (transport?.platforms ?? []).filter((platform) => !method.platforms || method.platforms.includes(platform));
 }
@@ -162,15 +186,15 @@ export type Placement = { method: string; platforms: Platform[]; needs: NodeNeed
  */
 export function placementsOf(
   type: Pick<HasWays, 'connections'>,
-  transportOf: (id: string) => Pick<TransportDefinition, 'platforms'> | null,
+  definitionOf: (id: string) => Pick<TransportDefinition, 'platforms'> | null,
   typeOf: (id: string) => Pick<HasWays, 'connections'> | null = () => null,
   depth = 0
 ): Placement[] {
   return type.connections.map((method) => {
-    if (method.transport !== BRIDGE_TRANSPORT || depth >= 4) return { method: method.id, platforms: platformsOf(method, transportOf(method.transport)), needs: { ...method.needs } };
-    const bridges = (method.through ?? []).flatMap((id) => {
+    if (!isBridgedMethod(method) || depth >= 4) return { method: method.id, platforms: platformsOf(method, method.transport ? definitionOf(method.transport) : null), needs: { ...method.needs } };
+    const bridges = method.through.flatMap((id) => {
       const bridge = typeOf(id);
-      return bridge ? placementsOf(bridge, transportOf, typeOf, depth + 1) : [];
+      return bridge ? placementsOf(bridge, definitionOf, typeOf, depth + 1) : [];
     });
     if (!bridges.length) return { method: method.id, platforms: platformsOf(method, null), needs: { ...method.needs } };
     return {
@@ -181,25 +205,73 @@ export function placementsOf(
   });
 }
 
+/** What every open connection says, however it reaches its device. */
+type OpenBase = {
+  readonly method: string;
+  /** Its address: on its transport, or the member's key within its bridge. */
+  readonly address: string;
+  /** The connection's own settings: the method's config and the protocol's non-secret credentials. */
+  readonly config: ConfigValues;
+  /** Where this is running. */
+  readonly platform: Platform;
+};
+
+/** A connection over a transport: its protocol's channel, guarded, and its secrets. */
+export type DirectConnection = OpenBase & {
+  readonly kind: 'direct';
+  readonly protocol: string;
+  readonly transport: string;
+  readonly channel: Channel;
+  /** The connection's secrets, by field. */
+  readonly secrets: { get(field: string): string | null };
+};
+
 /**
- * A connection, open: what a device type's session and its `identify` are handed.
+ * A connection through a bridge: how to link to the member through its
+ * bridge's session. The session links with a function of its own, called
+ * whenever what it reads through the link has moved; whoever opened the
+ * connection lets go of every link made through it when it closes.
+ */
+export type BridgedConnection = OpenBase & {
+  readonly kind: 'bridged';
+  link(changed: () => void): Promise<MemberLink>;
+};
+
+/**
+ * A connection, open: what a device type's session and its `identify` are
+ * handed — a channel over a transport, or a link through a bridge.
  *
  * The same shape wherever it is held, which is how the same device-type code
  * runs in the server and in the app.
  */
-export type OpenConnection = {
-  readonly method: string;
-  readonly protocol: string;
-  readonly transport: string;
-  readonly address: string;
-  readonly channel: Channel;
-  /** The connection's own settings: the method's config and the protocol's non-secret credentials. */
-  readonly config: ConfigValues;
-  /** The connection's secrets, by field. */
-  readonly secrets: { get(field: string): string | null };
-  /** Where this is running. */
-  readonly platform: Platform;
-};
+export type OpenConnection = DirectConnection | BridgedConnection;
+
+/**
+ * The channel of the kind a type speaks over, from its open connection — or
+ * an error saying `why`, in a person's words: a connection through a
+ * bridge, or of another kind, is not one it can speak over.
+ */
+export function channelOf<K extends ChannelKind>(connection: OpenConnection | null, kind: K, why: string): Extract<Channel, { kind: K }> {
+  if (connection?.kind !== 'direct' || connection.channel.kind !== kind) throw new Error(why);
+  return connection.channel as Extract<Channel, { kind: K }>;
+}
+
+/** A connection over a transport, with its channel and secrets — or an error saying `why`. */
+export function directOf(connection: OpenConnection | null, why: string): DirectConnection {
+  if (connection?.kind !== 'direct') throw new Error(why);
+  return connection;
+}
+
+/**
+ * A link to a member through its bridge, as the integration's own interface —
+ * or an error saying `why`. `changed` is called whenever what it reads has
+ * moved. The integration that declares the link declares the bridge that
+ * hands it, so the type is its word.
+ */
+export async function linkOf<Link extends MemberLink>(connection: OpenConnection | null, changed: () => void, why: string): Promise<Link> {
+  if (connection?.kind !== 'bridged') throw new Error(why);
+  return (await connection.link(changed)) as Link;
+}
 
 /** What `identify` learns by reading a device once. */
 export type Identified = {

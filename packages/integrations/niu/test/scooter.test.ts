@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { isCurrent, type HttpChannel } from '@kraftverk/device-sdk';
-import { checkDeviceTypeContract, fakeConnection, simulatorContext } from '@kraftverk/device-sdk/testing';
+import { bridgedConnection, checkDeviceTypeContract, fakeConnection, simulatorContext } from '@kraftverk/device-sdk/testing';
 import { md5Hex, NIU_ACCOUNT, NIU_API, parseState } from '../src/protocol/index.ts';
 
 import account from '../src/account.ts';
@@ -73,16 +73,15 @@ async function throughTheAccount() {
   const session = await account.createSession({ ...context, connection: over() });
   // Its first look round: signed in, and the list read.
   for (let tries = 0; tries < 100 && !session.bridge!.members().length; tries++) await new Promise((resolve) => setTimeout(resolve, 5));
-  const channel = await session.bridge!.open('N0TAREALSERIAL01');
-  const connection = fakeConnection({ method: 'account', protocol: 'niu-cloud', transport: 'bridge', address: 'N0TAREALSERIAL01', channel });
-  return { session, channel, connection, stop };
+  const connection = bridgedConnection(session.bridge!, { method: 'account', address: 'N0TAREALSERIAL01' });
+  return { session, connection, stop };
 }
 
 describe('NIU scooter', () => {
   test('keeps the device-type contract, as hardware under Vehicles, reached through its NIU account', async () => {
     expect(await checkDeviceTypeContract(scooter)).toEqual([]);
     expect(scooter.meta.category).toBe('vehicle');
-    expect(scooter.connections.map((method) => [method.protocol, method.transport, method.reach, method.through])).toEqual([['niu-cloud', 'bridge', 'cloud', ['niu.account']]]);
+    expect(scooter.connections.map((method) => [method.protocol, method.transport, method.reach, method.through])).toEqual([[undefined, undefined, 'cloud', ['niu.account']]]);
   });
 
   test('its charge is the scooter’s headline, and what "Charge between two levels" charges', () => {

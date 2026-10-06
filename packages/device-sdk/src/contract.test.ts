@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isSimulated, methodOf, methodsOf, platformsOf, SIMULATED_METHOD, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, simulatedMethodOf } from './connection.ts';
+import { channelOf, isSimulated, methodOf, methodsOf, platformsOf, SIMULATED_METHOD, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, simulatedMethodOf, type DirectMethod } from './connection.ts';
 import { MAIN_PART, type DeviceDescription } from './description.ts';
 import type { DeviceContext, DeviceSession, DeviceType } from './device-type.ts';
 import { defineDeviceType, describeDeviceType } from './device-type.ts';
@@ -69,8 +69,7 @@ const plug = (flaws: Parameters<typeof simulatedPlug>[1] = {}, description: Devi
     describe: () => description,
     // Asks the plug who it is: it answers "id:<serial>".
     async identify(connection) {
-      if (connection.channel.kind !== 'bytes') throw new Error('Expected bytes');
-      const channel = connection.channel;
+      const channel = channelOf(connection, 'bytes', 'Expected bytes');
       const answer = await new Promise<string>((resolve) => {
         const stop = channel.onData((bytes) => {
           stop();
@@ -155,7 +154,7 @@ describe('validating a declaration', () => {
 
   test('where a way can be held follows from its transport’s runtimes, and what it needs of the node holding it', () => {
     const radio = { platforms: ['system', 'web', 'native'] as Platform[] };
-    const own = plug().connections[0]!;
+    const own = plug().connections[0]! as DirectMethod;
     expect(platformsOf(SIMULATED_METHOD, null)).toEqual(['system', 'web', 'native']);
     expect(platformsOf({ ...own, transport: 'radio' }, radio)).toEqual(['system', 'web', 'native']);
     // A transport nothing installed provides runs nowhere.
@@ -181,7 +180,7 @@ describe('validating a declaration', () => {
     expect(isSimulated(SIMULATED_METHOD)).toBe(true);
     expect(describeDeviceType(type).connections.at(-1)).toMatchObject({ id: 'simulated', label: 'Simulated' });
 
-    const own = type.connections[0]!;
+    const own = type.connections[0]! as DirectMethod;
     expect(broken((candidate) => ({ ...candidate, connections: [{ ...own, id: SIMULATED_METHOD_ID }] }))).toContain(
       'connection method id "simulated" is every type\'s own: its simulator'
     );

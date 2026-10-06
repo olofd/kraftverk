@@ -6,3 +6,4 @@
  * builds a model of its own with this (`@kraftverk/device-niu-uqi-gt`).
  */
 export { defineNiuScooter, type NiuScooterModel } from './scooter.ts';
+export type { ScooterLink, ScooterRaw, ScooterReport, ScooterSlow } from './link.ts';

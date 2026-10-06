@@ -12,6 +12,7 @@ import {
   type Transport,
   type TransportDefinition,
   type TypeSource,
+  channelOf,
 } from '@kraftverk/device-sdk';
 
 import type { InstalledIntegration, InstalledType } from './installed/from.ts';
@@ -227,12 +228,12 @@ export function makeLampType(): { type: ReturnType<typeof defineDeviceType<LampC
     ],
     setup: { saveAnyway: 'A lamp that is switched off at the wall cannot answer.' },
     async identify(connection, ctx) {
-      const said = await ask(connection.channel as ByteChannel, 'who', 300);
+      const said = await ask(channelOf(connection, 'bytes', 'A lamp is reached over the bus'), 'who', 300);
       return { identity: `test-lamp:${said.serial}`, model: said.model, summary: `It is ${said.on ? 'on' : 'off'}.`, config: ctx.config.room ? {} : { room: 'Hall' } };
     },
     async createSession(ctx) {
       if (watch.failOpen) throw new Error('The lamp refused the connection');
-      return lampSession(ctx, ctx.connection!.channel as ByteChannel, watch);
+      return lampSession(ctx, channelOf(ctx.connection, 'bytes', 'A lamp is reached over the bus'), watch);
     },
     async createSimulator(ctx) {
       return lampSession(ctx, null, watch);

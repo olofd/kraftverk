@@ -5,6 +5,7 @@ import {
   type DeviceDescription,
   type DeviceSession,
   type Reading,
+  channelOf,
 } from '@kraftverk/device-sdk';
 import { fetchForecast, OPEN_METEO, type WeatherHour } from './protocol/index.ts';
 
@@ -97,9 +98,7 @@ function weatherSession(options: {
 }
 
 async function realSession(ctx: DeviceContext<WeatherConfig>): Promise<DeviceSession> {
-  const connection = ctx.connection;
-  if (connection?.channel.kind !== 'http') throw new Error('A weather service needs its web API');
-  const channel = connection.channel;
+  const channel = channelOf(ctx.connection, 'http', 'A weather service needs its web API');
   let hours: WeatherHour[] = ctx.store.get<WeatherHour[]>('forecast') ?? [];
   let fetchedAt: string | null = ctx.store.get<string>('fetchedAt');
   let lastError: string | null = null;
@@ -218,11 +217,11 @@ export default defineDeviceType<WeatherConfig>({
   },
 
   async identify(connection, ctx) {
-    if (connection.channel.kind !== 'http') throw new Error('A weather service needs its web API');
+    const channel = channelOf(connection, 'http', 'A weather service needs its web API');
     const latitude = Number(ctx.config.latitude);
     const longitude = Number(ctx.config.longitude);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) throw new Error('Give a latitude and a longitude first');
-    const hours = await fetchForecast(connection.channel, { latitude, longitude });
+    const hours = await fetchForecast(channel, { latitude, longitude });
     const now = hourOf(hours);
     return {
       identity: null,

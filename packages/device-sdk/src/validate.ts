@@ -1,7 +1,7 @@
 import { CATEGORIES, isCategory } from './categories.ts';
 import { validateDescription } from './check-description.ts';
 import { BRIDGE_TRANSPORT } from './bridge.ts';
-import { REACHES, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT } from './connection.ts';
+import { isBridgedMethod, REACHES, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT } from './connection.ts';
 import { DEVICE_KINDS, type DeviceType } from './device-type.ts';
 import { CAMEL_NAME, NAMESPACED_ID, PLAIN_ID } from './names.ts';
 import { NODE_TRAITS, PLATFORMS } from './node.ts';
@@ -66,19 +66,24 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
     if (!PLAIN_ID.test(method.id ?? '')) problem(`connection method id "${method.id}" must be lowercase words`);
     if (methodIds.has(method.id)) problem(`connection method "${method.id}" is declared twice`);
     if (method.id === SIMULATED_METHOD_ID) problem(`connection method id "${SIMULATED_METHOD_ID}" is every type's own: its simulator`);
-    if (method.transport === SIMULATED_TRANSPORT) problem(`connection method "${method.id}" goes over "${SIMULATED_TRANSPORT}", which only the simulated method may`);
-    // Through a bridge, and only then, a way names the bridge types it goes through.
-    const through = method.through ?? [];
-    if (method.transport === BRIDGE_TRANSPORT && !through.length) problem(`connection method "${method.id}" goes through a bridge without naming which: "through" lists the bridge types`);
-    if (method.transport !== BRIDGE_TRANSPORT && through.length) problem(`connection method "${method.id}" names bridges in "through", but goes over "${method.transport}", not "${BRIDGE_TRANSPORT}"`);
-    for (const bridge of through) if (!NAMESPACED_ID.test(bridge)) problem(`connection method "${method.id}" goes through "${bridge}", which is not a type's id`);
-    if (method.transport === BRIDGE_TRANSPORT && method.address) problem(`connection method "${method.id}" goes through a bridge, so it has no fixed address: a member's is its key`);
-    for (const platform of method.platforms ?? []) if (!(PLATFORMS as readonly string[]).includes(platform)) problem(`connection method "${method.id}" is held on "${platform}", which is not a platform: ${PLATFORMS.join(', ')}`);
-    if (method.platforms && !method.platforms.length) problem(`connection method "${method.id}" can be held nowhere: its platforms are empty`);
     methodIds.add(method.id);
     if (!method.label?.trim()) problem(`connection method "${method.id}" has no label`);
-    if (!method.protocol?.trim()) problem(`connection method "${method.id}" names no protocol`);
-    if (!method.transport?.trim()) problem(`connection method "${method.id}" names no transport`);
+    if (isBridgedMethod(method)) {
+      // Through a bridge: the bridge types it goes through, and nothing of a transport's.
+      if (!method.through.length) problem(`connection method "${method.id}" goes through a bridge without naming which: "through" lists the bridge types`);
+      for (const bridge of method.through) if (!NAMESPACED_ID.test(bridge)) problem(`connection method "${method.id}" goes through "${bridge}", which is not a type's id`);
+      const raw = method as unknown as Record<string, unknown>;
+      for (const key of ['protocol', 'transport', 'address', 'platforms']) {
+        if (raw[key] !== undefined) problem(`connection method "${method.id}" goes through a bridge, so it has no ${key} of its own: it reads its bridge through a link`);
+      }
+    } else {
+      if (method.transport === SIMULATED_TRANSPORT) problem(`connection method "${method.id}" goes over "${SIMULATED_TRANSPORT}", which only the simulated method may`);
+      if (method.transport === BRIDGE_TRANSPORT) problem(`connection method "${method.id}" goes over "${BRIDGE_TRANSPORT}": a way through a bridge names it in "through", with no transport`);
+      for (const platform of method.platforms ?? []) if (!(PLATFORMS as readonly string[]).includes(platform)) problem(`connection method "${method.id}" is held on "${platform}", which is not a platform: ${PLATFORMS.join(', ')}`);
+      if (method.platforms && !method.platforms.length) problem(`connection method "${method.id}" can be held nowhere: its platforms are empty`);
+      if (!method.protocol?.trim()) problem(`connection method "${method.id}" names no protocol`);
+      if (!method.transport?.trim()) problem(`connection method "${method.id}" names no transport`);
+    }
     if (!REACHES.includes(method.reach)) problem(`connection method "${method.id}" must say what it reaches: ${REACHES.join(', ')}`);
     for (const [trait, why] of Object.entries(method.needs ?? {})) {
       if (!(NODE_TRAITS as readonly string[]).includes(trait)) problem(`connection method "${method.id}" needs "${trait}" of a node, which no node declares: ${NODE_TRAITS.join(', ')}`);
@@ -168,18 +173,16 @@ export function connectionProblems(
 ): string[] {
   const problems: string[] = [];
   for (const method of type.connections ?? []) {
-    const protocol = installed.protocol(method.protocol);
-    // Through a bridge: no transport package; the protocol rides the bridge, which must be a bridge.
-    if (method.transport === BRIDGE_TRANSPORT) {
-      if (!protocol) problems.push(`connection method "${method.id}" speaks "${method.protocol}", which is not installed`);
-      else if (!protocol.bindings[BRIDGE_TRANSPORT]) problems.push(`connection method "${method.id}": "${protocol.id}" has no binding for "${BRIDGE_TRANSPORT}"`);
-      for (const id of method.through ?? []) {
+    // Through a bridge: no protocol and no transport; what it goes through must be an installed bridge.
+    if (isBridgedMethod(method)) {
+      for (const id of method.through) {
         const bridge = installed.type?.(id);
         if (installed.type && !bridge) problems.push(`connection method "${method.id}" goes through "${id}", which is not installed`);
         else if (bridge && !bridge.bridge) problems.push(`connection method "${method.id}" goes through "${id}", which is not a bridge`);
       }
       continue;
     }
+    const protocol = installed.protocol(method.protocol);
     const transport = installed.transport(method.transport);
     if (!protocol) problems.push(`connection method "${method.id}" speaks "${method.protocol}", which is not installed`);
     if (!transport) problems.push(`connection method "${method.id}" goes over "${method.transport}", which is not installed`);

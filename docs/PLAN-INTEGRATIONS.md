@@ -1228,7 +1228,9 @@ and its protocol rides that by a binding, guarded, as over any transport. A
 connection record is held by a node or goes through a bridge — a union the
 compiler holds every reader to, and the schema each row. Sync opens in
 rounds, so a member opens with its bridge in one pass. `sighting_ignored`
-moved to step 4, where members are offered.
+moved to step 4, where members are offered. *Since step 5½:* no channel
+and no protocol through a bridge — the member's session links to it
+(`Bridge.link`), and reads it by the integration's own calls.
 
 **Step 4 · Bridges in the app and the API.**
 Members not yet added are offered on the add screen ("Found through …");

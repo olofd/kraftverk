@@ -83,7 +83,8 @@ export type FoundAt = { transport: string; through: string | null; address: stri
 /** "Found near you": something a transport sees, or a member behind a bridge, that nothing you have is reached by. */
 export type FoundView = {
   transport: string;
-  protocol: string;
+  /** The protocol that recognised it; none for a member of a bridge, which is read through a link. */
+  protocol: string | null;
   address: string;
   /** For a member of a bridge: the bridge it is behind. */
   through: { id: SavedDeviceId; name: string } | null;

@@ -79,12 +79,11 @@ export class Nearby {
   #members(): FoundView[] {
     const now = new Date().toISOString();
     return membersOnOffer(this.deps).flatMap(({ bridge, member, claimedBy, types }) => {
-      const way = types[0] ? types[0].type.connections.find((method) => method.id === types[0]!.methodId) : null;
-      if (claimedBy || !way) return [];
+      if (claimedBy || !types.length) return [];
       return [
         {
           transport: BRIDGE_TRANSPORT,
-          protocol: way.protocol,
+          protocol: null,
           address: member.key,
           through: { id: bridge.id, name: bridge.name },
           ignored: this.deps.ignored.has({ transport: BRIDGE_TRANSPORT, through: bridge.id, address: member.key }),

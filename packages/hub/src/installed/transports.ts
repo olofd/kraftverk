@@ -85,7 +85,9 @@ export class TransportHost {
     return [];
   }
 
-  definition(id: string): TransportDefinition | null {
+  /** A transport's definition; none for a way that has no transport of its own, through a bridge. */
+  definition(id: string | undefined): TransportDefinition | null {
+    if (id === undefined) return null;
     return this.#entries.get(id)?.definition ?? null;
   }
 

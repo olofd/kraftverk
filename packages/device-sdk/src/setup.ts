@@ -1,5 +1,5 @@
 import { BRIDGE_TRANSPORT } from './bridge.ts';
-import type { ConnectionMethod } from './connection.ts';
+import { isBridgedMethod, type ConnectionMethod } from './connection.ts';
 import type { DeviceLogger, DeviceType, ScopedHttp } from './device-type.ts';
 import type { Platform } from './node.ts';
 import type { Protocol } from './protocol.ts';
@@ -223,7 +223,9 @@ export type SetupPlanInput = {
 export function setupPlan(input: SetupPlanInput): SetupStepView[] {
   const { type, method, protocol, transport, platform } = input;
   const steps: SetupStepView[] = [];
-  const binding = method && protocol ? protocol.bindings[method.transport] : undefined;
+  // A way over a transport has its protocol's binding and credentials; one through a bridge, neither.
+  const direct = method && !isBridgedMethod(method) ? method : null;
+  const binding = direct && protocol ? protocol.bindings[direct.transport] : undefined;
 
   if (binding?.instructions) {
     steps.push({
@@ -236,7 +238,7 @@ export function setupPlan(input: SetupPlanInput): SetupStepView[] {
 
   // A way through a bridge is signed in as the bridge is: no credentials step of its own.
   const credentials =
-    protocol?.credentials && Object.keys(protocol.credentials.schema.fields).length && method?.transport !== BRIDGE_TRANSPORT
+    direct && protocol?.credentials && Object.keys(protocol.credentials.schema.fields).length
       ? viewOf({
           id: 'credentials',
           kind: 'form',
@@ -250,7 +252,7 @@ export function setupPlan(input: SetupPlanInput): SetupStepView[] {
   // An account that lists the devices comes first: signing in is how the device is found.
   if (credentials && protocol?.credentials?.first) steps.push(credentials);
 
-  if (method && transport && !method.address) {
+  if (direct && transport && !direct.address) {
     const discovery = transport.discovery[platform] ?? 'none';
     steps.push({
       id: 'choose',
@@ -260,7 +262,7 @@ export function setupPlan(input: SetupPlanInput): SetupStepView[] {
       discovery,
       manual: binding?.parseAddress ? (binding.addressLabel ?? 'Address') : null,
     });
-  } else if (method?.transport === BRIDGE_TRANSPORT) {
+  } else if (method && isBridgedMethod(method)) {
     // Through a bridge: which of its members it is, from the bridge's own list. Never typed.
     steps.push({ id: 'choose', kind: 'choose', title: `Find your ${type.meta.name}`, transport: BRIDGE_TRANSPORT, discovery: 'list', manual: null });
   }

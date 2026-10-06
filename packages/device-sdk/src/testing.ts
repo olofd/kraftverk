@@ -1,7 +1,8 @@
-import type { ByteChannel, ChannelMessage, MessageChannel } from './channel.ts';
+import type { ByteChannel, Channel, ChannelMessage, MessageChannel } from './channel.ts';
 import { validateDescription } from './check-description.ts';
 import { REAL_CLOCK } from './clock.ts';
-import { simulatedMethodOf, type OpenConnection } from './connection.ts';
+import type { Bridge } from './bridge.ts';
+import { simulatedMethodOf, type BridgedConnection, type DirectConnection, type OpenConnection } from './connection.ts';
 import { attributeMeaning, capabilitiesOf, capabilityIn, checkAttributeValue, currentForOf, isCurrent, partsOf, type AttributeSpec, type DeviceDescription } from './description.ts';
 import type { DeviceContext, DeviceSession, DeviceType } from './device-type.ts';
 import { savedDeviceId } from './ids.ts';
@@ -243,7 +244,7 @@ export async function checkDeviceTypeContract(type: DeviceType<any>, options: Co
       }
     }
 
-    // A bridge's simulator brings members, as its real sessions do, and opens a channel to each.
+    // A bridge's simulator brings members, as its real sessions do, and links each.
     if (type.bridge) {
       if (!session.bridge) problems.push('it is a bridge, but its session offers no members (`bridge`)');
       else {
@@ -252,9 +253,9 @@ export async function checkDeviceTypeContract(type: DeviceType<any>, options: Co
         for (const member of session.bridge.members()) {
           if (!member.key?.trim()) problems.push('a member behind it has no key');
           try {
-            await (await session.bridge.open(member.key)).close();
+            (await session.bridge.link(member.key, () => undefined)).close();
           } catch (error) {
-            problems.push(`member "${member.key}" could not be opened: ${(error as Error).message}`);
+            problems.push(`member "${member.key}" could not be linked: ${(error as Error).message}`);
           }
         }
       }
@@ -328,7 +329,7 @@ async function identifyProblems(type: Pick<DeviceType<any>, 'identify' | 'kind'>
     ]);
     const problems: string[] = [];
     if (type.kind === 'hardware' && !found.identity) problems.push(`${where}: a device must say who it is, and gave no identity`);
-    if (found.identity && !found.identity.startsWith(`${connection.protocol}:`)) {
+    if (connection.kind === 'direct' && found.identity && !found.identity.startsWith(`${connection.protocol}:`)) {
       problems.push(`${where}: identity "${found.identity}" is not namespaced by its protocol "${connection.protocol}"`);
     }
     if (!found.summary?.trim()) problems.push(`${where}: no sentence to show the user`);
@@ -336,7 +337,7 @@ async function identifyProblems(type: Pick<DeviceType<any>, 'identify' | 'kind'>
   } catch (error) {
     return [`${where} failed: ${(error as Error).message}`];
   } finally {
-    await connection.channel.close().catch(() => undefined);
+    if (connection.kind === 'direct') await connection.channel.close().catch(() => undefined);
   }
 }
 
@@ -451,17 +452,23 @@ export function fakeMessageChannel(
   };
 }
 
+/** An open connection through a bridge, for `identify` and a session: it links through the bridge, as its holder's would. */
+export function bridgedConnection(bridge: Bridge, input: { method: string; address: string; config?: ConfigValues }): BridgedConnection {
+  return { kind: 'bridged', method: input.method, address: input.address, config: input.config ?? {}, platform: 'system', link: (changed) => bridge.link(input.address, changed) };
+}
+
 /** An open connection over a fake channel, for `identify` and a session. */
 export function fakeConnection(input: {
   method: string;
   protocol: string;
   transport: string;
   address: string;
-  channel: OpenConnection['channel'];
+  channel: Channel;
   config?: ConfigValues;
   secrets?: Record<string, string>;
-}): OpenConnection {
+}): DirectConnection {
   return {
+    kind: 'direct',
     method: input.method,
     protocol: input.protocol,
     transport: input.transport,

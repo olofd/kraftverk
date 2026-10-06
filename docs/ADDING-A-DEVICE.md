@@ -222,6 +222,45 @@ A device package builds on its integration by the integration's package
 name — the ATORCH S1W is Tuya's socket with a profile — and never on another
 device package.
 
+## An account, and a device behind it
+
+When a service is signed into once and brings many devices — an iCloud
+account and the family's phones, a NIU account and its scooters — the
+integration writes the account, and a device package writes the device
+(docs/PLAN-INTEGRATIONS.md §1.1). They talk by calls, never messages:
+
+1. **The integration declares the link** (`src/link.ts`): what a device
+   behind the account reads and asks, as plain methods.
+
+   ```ts
+   export interface ScooterLink extends MemberLink {
+     vehicle(): NiuVehicle;
+     report(): ScooterReport | null;
+     raw(): Promise<ScooterRaw>;
+   }
+   ```
+
+2. **The account is a bridge**: `kind: 'account'`, `bridge: { fallback }`,
+   and a session whose `bridge` lists its members and hands each a link —
+   `link(key, changed)` — calling `changed()` whenever what that link reads
+   has moved. It signs in once, fetches once for all of them, and keeps the
+   password; nothing behind it ever sees one.
+3. **The device's way names the account** instead of a protocol and a
+   transport: `{ id: 'account', label: 'Through your NIU account', through:
+   ['niu.account'], reach: 'cloud' }`.
+4. **Its session links and reads**:
+
+   ```ts
+   const scooter = await linkOf<ScooterLink>(ctx.connection, () => ctx.changed(), 'Reached through its NIU account');
+   // readings() reads scooter.report(); close() calls scooter.close()
+   ```
+
+   Its `identify` links the same way. The device package imports the link
+   type from its integration, and nothing else.
+
+`@kraftverk/integration-niu` is the working example; `bridgedConnection`
+in `@kraftverk/device-sdk/testing` opens a device through a bridge in a test.
+
 ## When a way changes
 
 The configuration file carries a home across every database reset

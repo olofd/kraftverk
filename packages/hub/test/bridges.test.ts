@@ -6,7 +6,7 @@ import { SessionManager } from '@kraftverk/holder';
 import { ConnectionStore, DeviceCatalog, deviceStore, holding, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
 
 import { DeviceTypeRegistry, ProtocolRegistry, TransportHost } from '../src/index.ts';
-import { APP_NODE, LAMP, lampProtocol, MACHINE_NODE, makeHubType, relayedLampType, relayProtocol, TEST_INTEGRATION, TEST_SOURCE, type HubWatch } from '../src/testing.ts';
+import { APP_NODE, LAMP, lampProtocol, MACHINE_NODE, makeHubType, relayedLampType, TEST_INTEGRATION, TEST_SOURCE, type HubWatch } from '../src/testing.ts';
 import { testDatabase } from './home.ts';
 
 /*
@@ -26,7 +26,6 @@ let managers: SessionManager[] = [];
 const build = (node: { id: NodeId; name: string }) => {
   const protocols = new ProtocolRegistry();
   protocols.install(lampProtocol, 'test');
-  protocols.install(relayProtocol, 'test');
   const transports = new TransportHost({ platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } });
   const types = new DeviceTypeRegistry();
   const hub = makeHubType();

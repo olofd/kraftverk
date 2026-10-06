@@ -1,29 +1,33 @@
-import type { Channel } from './channel.ts';
-import { guardChannel } from './connection.ts';
-import type { Protocol } from './protocol.ts';
-
 /*
   A bridge: a device through which other devices are reached — its members
   (docs/PLAN-INTEGRATIONS.md §4.3). An account and the scooters on it, a
   gateway and the plugs paired with it. Hardware, a service or an
   account may be one; being a bridge is a role, not a kind.
 
-  A member is reached over a transport of its own, `bridge`, which is no
-  package: the bridge's open session is it. Its connection names the bridge
-  device it goes through, and its address is the member's key within it. A
-  member is held wherever its bridge is — a server, a browser, a phone — and
-  its protocol rides the bridge's channel as it rides any transport's: by a
-  binding, guarded.
+  A member is reached by calls, not messages (§1.1): the bridge's session
+  hands each member a **link** — an object of the integration's own, with
+  plain methods (`report()`, `raw()`) — and calls the one function the
+  member gave it when what the link reads has moved. The member's session
+  reads it, and tells its holder as any session does. No topics, no values
+  turned into bytes and back, no pretend transport.
+
+  A member's way names the bridge types it goes through (`through`) instead
+  of a protocol and a transport; its connection names the bridge device, and
+  its address is the member's key within it. It is held wherever its bridge
+  is — a server, a browser, a phone.
 */
 
-/** The transport every connection through a bridge rides: the bridge's own open session, not a package. */
+/**
+ * What a connection through a bridge is kept as, where a connection names a
+ * transport: none is opened for it — its bridge's session is the way.
+ */
 export const BRIDGE_TRANSPORT = 'bridge';
 
 /** What a type that is a bridge declares. */
 export type BridgeSpec = {
   /**
    * The type a member becomes when no installed type claims it: the
-   * platform's generic one. Absent: a member nothing claims is not offered.
+   * integration's generic one. Absent: a member nothing claims is not offered.
    */
   readonly fallback?: string;
 };
@@ -42,25 +46,54 @@ export type Member = {
   readonly typeId: string | null;
 };
 
-/** What a bridge's open session offers the devices behind it. */
-export interface BridgeHost {
-  /** Who is behind it now. */
+/**
+ * What every link to a member has: a way to let go of it. The rest is the
+ * integration's own interface — what its members read and ask — declared
+ * beside its bridge type and imported by the device packages built on it.
+ */
+export type MemberLink = {
+  /** Lets go: the bridge stops working for this member, until linked again. */
+  close(): void;
+};
+
+/**
+ * What a bridge's open session offers the devices behind it: who they are,
+ * and a link to each. Every session of a bridge type has it, its
+ * simulator's included.
+ */
+export interface Bridge<Link extends MemberLink = MemberLink> {
+  /** Who is behind it now. Read again whenever its session says it changed (`ctx.changed()`). */
   members(): readonly Member[];
-  /** Called when who is behind it changes. Returns how to stop listening. */
-  onMembersChange(listener: () => void): () => void;
-  /** A channel to one member, for its session: closed by whoever opened it. */
-  open(member: string): Promise<Channel>;
+  /**
+   * A link to one member, for its session and for the check step: `changed`
+   * is called whenever what it reads through the link has moved. Rejects,
+   * with a sentence for a person, for a key that is not a member.
+   */
+  link(member: string, changed: () => void): Promise<Link>;
 }
 
-/** Whether a connection rides a bridge: held wherever its bridge is, opened by the bridge's session. */
+/** Whether a kept connection goes through a bridge: held wherever its bridge is, opened by the bridge's session. */
 export const isBridged = (connection: { readonly transport: string }): boolean => connection.transport === BRIDGE_TRANSPORT;
 
 /**
- * Opens a member's channel: the protocol's binding for the bridge, over the
- * bridge's open session, guarded — as `openChannel` does over a transport.
- * Its errors are sentences for a person.
+ * A link that lets go once, however often it is closed: what its holder
+ * hands a member's session, so the session closing it and the holder closing
+ * what is left are the same single close.
  */
-export async function openThroughBridge(host: BridgeHost, protocol: Protocol | null | undefined, connection: { address: string }): Promise<Channel> {
-  if (!protocol?.bindings[BRIDGE_TRANSPORT]) throw new Error('This device cannot be reached through its bridge here: an update is needed');
-  return guardChannel(await host.open(connection.address), protocol);
+export function closingOnce<Link extends MemberLink>(link: Link): Link {
+  let closed = false;
+  return new Proxy(link, {
+    get(target, key) {
+      if (key === 'close') {
+        return () => {
+          if (closed) return;
+          closed = true;
+          target.close();
+        };
+      }
+      // Bound to the link itself, so a class's methods and private state still work.
+      const value: unknown = Reflect.get(target, key, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
 }

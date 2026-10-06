@@ -9,6 +9,7 @@ import {
   type ConfigValues,
   type NodeId,
   type SavedDeviceId,
+  transportOf,
 } from '@kraftverk/device-sdk';
 
 import { ApiError } from '@kraftverk/api-contract';
@@ -108,12 +109,12 @@ export function writeSaved(deps: SaveDeps, draft: Draft, input: SaveRequest, con
     const claim = deps.connections.member(draft.through, address);
     if (claim && claim.deviceId !== record.id) throw new ApiError('conflict', 'Another device you have is already that one behind it');
   } else if (draft.reach.exclusive && draft.heldBy === deps.self) {
-    const claim = deps.connections.claimant(method.transport, address);
+    const claim = deps.connections.claimant(transportOf(method), address);
     if (claim && claim.deviceId !== record.id) throw new ApiError('conflict', 'Another device you have is already reached at that address');
   }
 
   const holding = draft.through ? { through: draft.through } : { heldBy: draft.heldBy };
-  const saved = deps.connections.add({ deviceId: record.id, method: method.id, transport: method.transport, ...holding, address, config: config.connection, secretsExportable: draft.heldBy === deps.self && input.secretsExportable === true });
+  const saved = deps.connections.add({ deviceId: record.id, method: method.id, transport: transportOf(method), ...holding, address, config: config.connection, secretsExportable: draft.heldBy === deps.self && input.secretsExportable === true });
   if (draft.secrets.size) deps.connections.setSecrets(saved.id, Object.fromEntries(draft.secrets));
 
   for (const link of input.links ?? []) {

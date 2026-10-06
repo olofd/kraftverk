@@ -1,5 +1,5 @@
 import { ApiError } from '@kraftverk/api-contract';
-import { isBridged, isSecretField, type ConfigField, type ConfigSchema, type ConnectionMethod, type Protocol } from '@kraftverk/device-sdk';
+import { isBridgedMethod, isSecretField, type ConfigField, type ConfigSchema, type ConnectionMethod, type Protocol } from '@kraftverk/device-sdk';
 
 /**
  * The schema of everything a connection stores for a method: its own config
@@ -7,7 +7,7 @@ import { isBridged, isSecretField, type ConfigField, type ConfigSchema, type Con
  * sign-in is the bridge's: it carries none of its own.
  */
 export function connectionSchema(method: ConnectionMethod | null, protocol: Protocol | null): ConfigSchema {
-  const credentials = method && isBridged(method) ? {} : (protocol?.credentials?.schema.fields ?? {});
+  const credentials = method && isBridgedMethod(method) ? {} : (protocol?.credentials?.schema.fields ?? {});
   return { fields: { ...credentials, ...(method?.config?.fields ?? {}) } };
 }
 

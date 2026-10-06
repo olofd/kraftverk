@@ -1,15 +1,15 @@
 import {
   checkValue,
-  isBridged,
+  closingOnce,
+  isBridgedMethod,
   isSimulated,
   openChannel,
-  openThroughBridge,
   REAL_CLOCK,
   SIMULATED_TRANSPORT,
   simulatedMethodOf,
   validateConfig,
+  type Bridge,
   type Channel,
-  type BridgeHost,
   type Clock,
   type ClockTimer,
   type ConnectionHealth,
@@ -21,6 +21,7 @@ import {
   type DeviceSession,
   type DeviceStore,
   type DeviceType,
+  type MemberLink,
   type OpenConnection,
   type NodeId,
   type Platform,
@@ -35,9 +36,9 @@ import type { DeviceEventMessage } from './bus.ts';
 /**
  * Opening one device, the same in every holder (docs/ARCHITECTURE.md step 17).
  *
- * The connection's channel through the protocol's binding and guard, the
- * device's context, and its type's session over them — or its simulator, with
- * no connection. What the holder differs in is handed in: where the store,
+ * The connection's channel through the protocol's binding and guard — or,
+ * through a bridge, the link its bridge hands it — the device's context, and
+ * its type's session over them; or its simulator, with no connection. What the holder differs in is handed in: where the store,
  * secrets, log and audit go, which transports it has, and where it runs.
  */
 
@@ -59,8 +60,8 @@ export type OpenInput = {
   device: { id: SavedDeviceId; name: string; config: Record<string, unknown> };
   /** The connection to open; null, or a simulated one, opens the type's simulator. */
   connection: { method: string; transport: string; address: string; config: Record<string, unknown> } | null;
-  /** For a connection through a bridge: the bridge's open session, which opens the channel. Null when it is not open here. */
-  bridge?: BridgeHost | null;
+  /** For a connection through a bridge: the bridge's open session, which hands it its link. Null when it is not open here. */
+  bridge?: Bridge | null;
   secret: (field: string) => string | null;
   protocols: { get(id: string): Protocol | null | undefined };
   transports: TransportSource;
@@ -98,9 +99,9 @@ export type OpenedDevice = {
   info(): DeviceInfo | null;
   /** How it is doing: its session's word, and who holds it over what — which only the holder knows. */
   health(): ConnectionHealth;
-  /** The channel this holder opened, and so closes; null for a simulator. */
+  /** The channel this holder opened, and so closes; null for a simulator, and through a bridge. */
   channel: Channel | null;
-  /** Stops its scheduled work, closes its session, then its channel. Never throws. */
+  /** Stops its scheduled work, closes its session, then its channel or its link. Never throws. */
   close(): Promise<void>;
 };
 
@@ -136,6 +137,11 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
   const clock = input.clock ?? REAL_CLOCK;
   const timers: ClockTimer[] = [];
   let channel: Channel | null = null;
+  // Every link a session or its check makes through a bridge: let go of when the device closes, whatever the session did.
+  const links: MemberLink[] = [];
+  const letGo = () => {
+    for (const link of links.splice(0)) link.close();
+  };
   const stop = () => {
     for (const timer of timers.splice(0)) clock.clear(timer);
   };
@@ -146,20 +152,38 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
     if (input.connection && !isSimulated(input.connection)) {
       const method = type.connections.find((candidate) => candidate.id === input.connection!.method);
       if (!method) throw new OpenRefused(`${type.meta.name} no longer has a way called "${input.connection.method}"`, 'error');
-      if (isBridged(input.connection)) {
-        if (!input.bridge) throw new OpenRefused(`${device.name} is reached through a bridge that is not open here`, 'error');
-        channel = await openThroughBridge(input.bridge, input.protocols.get(method.protocol), input.connection);
-      } else channel = await openChannel(input.transports, input.protocols.get(method.protocol), input.connection);
-      connection = {
-        method: method.id,
-        protocol: method.protocol,
-        transport: input.connection.transport,
-        address: input.connection.address,
-        channel,
-        config: input.connection.config as OpenConnection['config'],
-        secrets: { get: input.secret },
-        platform: input.platform,
-      };
+      const config = input.connection.config as OpenConnection['config'];
+      if (isBridgedMethod(method)) {
+        // Through a bridge: its session links to the member through it, and is told through the link when what it reads has moved.
+        const bridge = input.bridge;
+        if (!bridge) throw new OpenRefused(`${device.name} is reached through a bridge that is not open here`, 'error');
+        const address = input.connection.address;
+        connection = {
+          kind: 'bridged',
+          method: method.id,
+          address,
+          config,
+          platform: input.platform,
+          link: async (changed) => {
+            const link = closingOnce(await bridge.link(address, changed));
+            links.push(link);
+            return link;
+          },
+        };
+      } else {
+        channel = await openChannel(input.transports, input.protocols.get(method.protocol), input.connection);
+        connection = {
+          kind: 'direct',
+          method: method.id,
+          protocol: method.protocol,
+          transport: input.connection.transport,
+          address: input.connection.address,
+          channel,
+          config,
+          secrets: { get: input.secret },
+          platform: input.platform,
+        };
+      }
     }
 
     // Declared once for this device's config; a device that reports its own replaces it.
@@ -246,11 +270,13 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
         stop();
         await withTimeout(opened.close(), 'Closing a device', 5_000).catch(() => undefined);
         await openChannelRef?.close().catch(() => undefined);
+        letGo();
       },
     };
   } catch (error) {
     stop();
     await channel?.close().catch(() => undefined);
+    letGo();
     throw error instanceof OpenRefused ? error : new OpenRefused((error as Error).message, 'error');
   }
 }

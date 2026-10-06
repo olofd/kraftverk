@@ -108,8 +108,8 @@ describe('signing in', () => {
     expect((await run('wrong')).ok).toBe(false);
   });
 
-  test('a scooter rides its account: a binding for the bridge, beside the account’s HTTPS', () => {
-    expect(Object.keys(protocol.bindings).sort()).toEqual(['bridge', 'https']);
+  test('the account is reached over HTTPS alone: a scooter is read through its account, not spoken to', () => {
+    expect(Object.keys(protocol.bindings)).toEqual(['https']);
   });
 
   test('the scooter list takes sn or sn_id, as a list or as items', () => {

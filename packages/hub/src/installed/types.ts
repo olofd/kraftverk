@@ -1,5 +1,5 @@
 import { checkContribution, type AutomationContribution } from '@kraftverk/automation';
-import { connectionProblems, isBridged, methodsOf, sourceProblem, validateDeviceType, type DeviceType, type FileMigration, type FileTypes, type IntegrationInfo, type TransportDefinition, type TypeSource } from '@kraftverk/device-sdk';
+import { connectionProblems, isBridgedMethod, methodsOf, sourceProblem, validateDeviceType, type DeviceType, type FileMigration, type FileTypes, type IntegrationInfo, type TransportDefinition, type TypeSource } from '@kraftverk/device-sdk';
 
 import type { Contributed } from '@kraftverk/automation-engine';
 
@@ -110,7 +110,7 @@ export class DeviceTypeRegistry {
       // A way speaks its own integration's protocol: a device is reached through its integration, not another's.
       const own = this.#sources.get(type.id)?.integration.id;
       for (const method of type.connections) {
-        if (isBridged(method)) continue;
+        if (isBridgedMethod(method)) continue;
         const of = installed.protocols.integrationOf(method.protocol);
         if (own && of && of !== own) problems.push(`connection method "${method.id}" speaks "${method.protocol}", which is the ${of} integration's, not ${own}'s`);
       }

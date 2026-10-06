@@ -1,4 +1,4 @@
-import { BRIDGE_TRANSPORT, modelCloseness, type BridgeHost, type DeviceType, type Member, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { isBridgedMethod, modelCloseness, type Bridge, type DeviceType, type Member, type SavedDeviceId } from '@kraftverk/device-sdk';
 import type { SessionManager } from '@kraftverk/holder';
 import type { ConnectionStore, DeviceCatalog } from '@kraftverk/store';
 
@@ -14,7 +14,7 @@ import type { DeviceTypeRegistry } from '../installed/types.ts';
 type MemberType = { type: DeviceType<any>; methodId: string };
 
 /** A bridge open here, by its device. */
-export type OpenBridge = { id: SavedDeviceId; name: string; typeId: string; host: BridgeHost };
+export type OpenBridge = { id: SavedDeviceId; name: string; typeId: string; host: Bridge };
 
 /** One member of an open bridge: which bridge, what it says, the device that already is it, and the types that could be it. */
 export type MemberOffer = {
@@ -39,7 +39,7 @@ export function openBridges(deps: Pick<Deps, 'sessions' | 'catalog'>, typeIds?: 
 /** Every type with a way through a bridge of this type, and that way. */
 function typesThrough(types: DeviceTypeRegistry, bridgeTypeId: string): MemberType[] {
   return types.all().flatMap((type) => {
-    const method = type.connections.find((candidate) => candidate.transport === BRIDGE_TRANSPORT && candidate.through?.includes(bridgeTypeId));
+    const method = type.connections.find((candidate) => isBridgedMethod(candidate) && candidate.through.includes(bridgeTypeId));
     return method ? [{ type, methodId: method.id }] : [];
   });
 }
