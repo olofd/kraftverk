@@ -94,19 +94,22 @@ describe('signing in', () => {
     await expect(signIn(http, 'rider@example.test', 'wrong')).rejects.toThrow('did not accept that account and password');
   });
 
-  test('the setup action lists the scooters on the account: its serial is sn_id on some models', async () => {
+  test('the setup action signs in, says how many scooters are on the account, and fills in the account', async () => {
     const { http } = niu();
     const action = protocol.credentials!.actions![0]!;
-    const result = await action.run({ http, draft: {}, connection: {}, address: null, secrets: { get: () => null }, sightings: [], log: { debug() {}, info() {}, warn() {}, error() {} } } as never, {
-      account: 'rider@example.test',
-      password: 'correct horse',
-    });
-    expect(result.ok).toBe(true);
-    expect(result.choices).toEqual([
-      expect.objectContaining({ id: 'N0TAREALSERIAL01', label: 'Blixten', name: 'Blixten', config: { account: 'rider@example.test', password: 'correct horse', serial: 'N0TAREALSERIAL01' } }),
-    ]);
-    // Its connection's address is fixed: a choice with one of its own would be chosen as if typed, and refused.
-    expect(result.choices![0]!.address).toBeUndefined();
+    const run = (password: string) =>
+      action.run({ http, draft: {}, connection: {}, address: null, secrets: { get: () => null }, sightings: [], log: { debug() {}, info() {}, warn() {}, error() {} } } as never, {
+        account: 'rider@example.test',
+        password,
+      });
+    expect(await run('correct horse')).toEqual({ ok: true, detail: 'Signed in: 1 scooter on it.', suggestedConfig: { account: 'rider@example.test', password: 'correct horse' } });
+    // One account, one password: its scooters are found on it later, each a device of its own.
+    expect(protocol.credentials!.schema.fields).not.toHaveProperty('serial');
+    expect((await run('wrong')).ok).toBe(false);
+  });
+
+  test('a scooter rides its account: a binding for the bridge, beside the account’s HTTPS', () => {
+    expect(Object.keys(protocol.bindings).sort()).toEqual(['bridge', 'https']);
   });
 
   test('the scooter list takes sn or sn_id, as a list or as items', () => {

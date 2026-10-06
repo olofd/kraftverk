@@ -234,8 +234,9 @@ export function setupPlan(input: SetupPlanInput): SetupStepView[] {
     });
   }
 
+  // A way through a bridge is signed in as the bridge is: no credentials step of its own.
   const credentials =
-    protocol?.credentials && Object.keys(protocol.credentials.schema.fields).length
+    protocol?.credentials && Object.keys(protocol.credentials.schema.fields).length && method?.transport !== BRIDGE_TRANSPORT
       ? viewOf({
           id: 'credentials',
           kind: 'form',

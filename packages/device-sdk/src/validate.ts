@@ -73,6 +73,8 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
     if (method.transport !== BRIDGE_TRANSPORT && through.length) problem(`connection method "${method.id}" names bridges in "through", but goes over "${method.transport}", not "${BRIDGE_TRANSPORT}"`);
     for (const bridge of through) if (!NAMESPACED_ID.test(bridge)) problem(`connection method "${method.id}" goes through "${bridge}", which is not a type's id`);
     if (method.transport === BRIDGE_TRANSPORT && method.address) problem(`connection method "${method.id}" goes through a bridge, so it has no fixed address: a member's is its key`);
+    for (const platform of method.platforms ?? []) if (!(PLATFORMS as readonly string[]).includes(platform)) problem(`connection method "${method.id}" is held on "${platform}", which is not a platform: ${PLATFORMS.join(', ')}`);
+    if (method.platforms && !method.platforms.length) problem(`connection method "${method.id}" can be held nowhere: its platforms are empty`);
     methodIds.add(method.id);
     if (!method.label?.trim()) problem(`connection method "${method.id}" has no label`);
     if (!method.protocol?.trim()) problem(`connection method "${method.id}" names no protocol`);

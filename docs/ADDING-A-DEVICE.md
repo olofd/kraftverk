@@ -224,6 +224,17 @@ A device package builds on its integration by the integration's package
 name — the ATORCH S1W is Tuya's socket with a profile — and never on another
 device package.
 
+## When a way changes
+
+The configuration file carries a home across every database reset
+([CONFIG.md](CONFIG.md)), so a change to how a type is reached — a way it no
+longer has, a way that goes through an account now — must read a file kept
+before it. The integration says how: a `FileMigration` in the module its
+manifest names (`"migrations": "./src/migrations.ts"`), from the file's
+version before the change, finding its entries by what is installed — the
+types reached through its account — never by naming a product. The NIU
+integration's is the example, with its test.
+
 ## Safety
 
 - **Every command goes through the action gateway.** A session carries out

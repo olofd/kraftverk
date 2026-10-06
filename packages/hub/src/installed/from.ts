@@ -1,5 +1,5 @@
 import type { AutomationContribution } from '@kraftverk/automation';
-import type { DeviceType, Protocol, TransportDefinition, TransportFactory } from '@kraftverk/device-sdk';
+import type { DeviceType, FileMigration, Protocol, TransportDefinition, TransportFactory } from '@kraftverk/device-sdk';
 
 import { ProtocolRegistry } from './protocols.ts';
 import { TransportHost, type TransportHostOptions } from './transports.ts';
@@ -31,6 +31,8 @@ export type InstalledIntegration = {
   name: string;
   types: readonly InstalledType[];
   products: readonly InstalledType[];
+  /** How its entries in a configuration file changed, version by version: a home kept before comes back after. */
+  migrations?: readonly FileMigration[];
 };
 
 /**
@@ -73,7 +75,7 @@ export function installedFrom(lists: InstalledLists, host: TransportHostOptions)
  */
 export function installIntegration(types: DeviceTypeRegistry, integration: InstalledIntegration, source = integration.id): void {
   const info = { id: integration.id, name: integration.name };
-  if (types.installIntegration(info, source).length) return;
+  if (types.installIntegration(info, source, integration.migrations ?? []).length) return;
   for (const [entries, product] of [[integration.products, true], [integration.types, false]] as const) {
     for (const { type, automation } of entries) {
       if (types.install(type, { integration: info, product }, `${source} (${type.id ?? 'a type'})`).length) continue;

@@ -1,5 +1,5 @@
 import { checkContribution, type AutomationContribution } from '@kraftverk/automation';
-import { connectionProblems, sourceProblem, validateDeviceType, type DeviceType, type IntegrationInfo, type Protocol, type TransportDefinition, type TypeSource } from '@kraftverk/device-sdk';
+import { connectionProblems, methodsOf, sourceProblem, validateDeviceType, type DeviceType, type FileMigration, type FileTypes, type IntegrationInfo, type Protocol, type TransportDefinition, type TypeSource } from '@kraftverk/device-sdk';
 
 import type { Contributed } from '@kraftverk/automation-engine';
 
@@ -31,21 +31,28 @@ import type { Refused } from './protocols.ts';
 
 export class DeviceTypeRegistry {
   #integrations = new Map<string, IntegrationInfo>();
+  #migrations: FileMigration[] = [];
   #types = new Map<string, DeviceType<any>>();
   #sources = new Map<string, TypeSource>();
   #refused: Refused[] = [];
   #warnings = new Map<string, string[]>();
   #contributed: Contributed[] = [];
 
-  /** Accepts an integration, before its types: one id is one platform. */
-  installIntegration(integration: IntegrationInfo, source = integration.id): string[] {
+  /** Accepts an integration, before its types — one id is one platform — and how its entries in a file changed. */
+  installIntegration(integration: IntegrationInfo, source = integration.id, migrations: readonly FileMigration[] = []): string[] {
     if (this.#integrations.has(integration.id)) {
       const problems = [`another package already is the integration "${integration.id}"`];
       this.refuse(source, problems);
       return problems;
     }
     this.#integrations.set(integration.id, integration);
+    this.#migrations.push(...migrations);
     return [];
+  }
+
+  /** Every installed integration's file migrations, and what is installed for them to find their entries by: what reading a file is given. */
+  fileMigrations(): { migrations: readonly FileMigration[]; installed: FileTypes } {
+    return { migrations: this.#migrations, installed: this.all().map((type) => ({ id: type.id, methods: methodsOf(type).map((method) => ({ id: method.id, through: [...(method.through ?? [])] })) })) };
   }
 
   /**

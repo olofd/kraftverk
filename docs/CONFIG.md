@@ -19,7 +19,7 @@ and check a file with the same code.
 
 ```yaml
 # yaml-language-server: $schema=http://<your server>/api/config/schema.json
-kraftverk: 5                      # the document's version: required
+kraftverk: 6                      # the document's version: required
 
 home:
   clock: Europe/Stockholm          # what an automation that says no clock keeps time in
@@ -373,6 +373,18 @@ nothing wrong — and write back the same.
 | 3 | A role under `uses` has no `description`: what a recipe says for whoever fills a role stays with the recipe |
 | 4 | A setting is `setting.low`, not `$low`; a package's function is called by its id alone, without `call` |
 | 5 | A way may go `through` another device — an account, a gateway — named by its key, its address then its key there. Nothing older says so, so nothing changes |
+| 6 | The document's shape is as in 5; an integration's own entries changed, as its migrations say: a NIU scooter is reached through its NIU account, a device of its own |
+
+**An integration's own entries.** A change to what a type is reached by —
+a way it no longer has — is not the document's shape, but a home kept
+before it must come back after it all the same. So an integration may name
+its file migrations (`kraftverk.integration.migrations`, each a
+`FileMigration` from the SDK): each takes the document from one version to
+the next after the core's own step, and finds its entries by what is
+installed — the types reached through its account — never by a product's
+name. The version line is still the core's: a version that only an
+integration's entries changed in is a version all the same, with its fixture
+here, and the integration keeps its own test of the change.
 
 ## Importing
 

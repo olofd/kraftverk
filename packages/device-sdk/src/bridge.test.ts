@@ -9,7 +9,7 @@ import { connectionProblems, validateDeviceType } from './validate.ts';
 /*
   A way through a bridge (docs/PLAN-INTEGRATIONS.md §4.3): it rides the
   bridge's own transport, names the bridge types it goes through, has no
-  fixed address, and is held wherever its bridge is — any platform.
+  fixed address, and is held wherever its bridge can be.
 */
 
 const member = (connection: Partial<ConnectionMethod>): DeviceType =>
@@ -53,4 +53,11 @@ test('a member is held wherever its bridge is: every platform, and it needs noth
   expect(isBridged(way)).toBe(true);
   expect(platformsOf(way, null)).toEqual(['system', 'web', 'native']);
   expect(placementsOf(member({}), () => null)).toEqual([{ method: 'through', platforms: ['system', 'web', 'native'], needs: {} }]);
+});
+
+test('where a member runs, said: where its bridge can be held, and what that needs of a node', () => {
+  const account = { connections: [{ id: 'cloud', label: 'Cloud', protocol: 'acme-cloud', transport: 'https', reach: 'cloud', platforms: ['system', 'native'], needs: { trusted: 'the password stays home' } }] as ConnectionMethod[] };
+  const https = { platforms: ['system', 'web', 'native'] as const };
+  const placements = placementsOf(member({}), (id) => (id === 'https' ? { platforms: [...https.platforms] } : null), (id) => (id === 'acme.hub' ? account : null));
+  expect(placements).toEqual([{ method: 'through', platforms: ['system', 'native'], needs: { trusted: 'the password stays home' } }]);
 });

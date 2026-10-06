@@ -35,6 +35,7 @@ export * from './bridge.ts';
 export * from './connection.ts';
 export * from './device-type.ts';
 export * from './integration.ts';
+export * from './models.ts';
 export * from './setup.ts';
 export * from './validate.ts';
 export * from './time.ts';

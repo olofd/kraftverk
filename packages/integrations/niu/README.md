@@ -2,8 +2,9 @@
 
 ## What it is
 
-NIU as a platform: electric scooters read from **NIU's cloud** with the
-owner's NIU account — their charge, whether they are charging, range,
+NIU as a platform: the **NIU account** — the sign-in the NIU app uses, a
+device of its own (`niu.account`) — and electric scooters read through it
+from **NIU's cloud**: their charge, whether they are charging, range,
 odometer and state. The first use: a smart plug in front of a scooter's
 charger stops it at a limit, with the shared "Charge between two levels"
 automation — this scooter's battery, that plug.
@@ -16,10 +17,12 @@ Support is `experimental` until a model has been mapped.
 
 ## What it does — and does not
 
-- **Does:** read a NIU scooter from NIU's cloud with its owner's account —
-  charge, charging, range, odometer, state — as a vehicle; the builder a
-  model is made with; the generic scooter and its screens, which models
-  reuse.
+- **Does:** sign in to NIU's cloud once, as an account, and be the bridge
+  to every scooter on it (docs/PLAN-INTEGRATIONS.md §4.3); read each scooter
+  through it — charge, charging, range, odometer, state — as a vehicle; the
+  builder a model is made with; the generic scooter and its screens, which
+  models reuse; and how a configuration file kept before the account was a
+  device of its own comes back with one (`src/migrations.ts`).
 - **Does not:** know a model — each is a device package that names this
   integration — control the scooter (it is read only), speak NIU's API
   (`@kraftverk/protocol-niu-cloud`), or charge it — a plug in front of its
@@ -44,18 +47,32 @@ and so do we. No Bluetooth: NIU's Bluetooth protocol
 ([niu-kqi](https://github.com/BaesTheorem/niu-kqi)) is for kick scooters and
 newer mopeds with "NIU Link".
 
+**The account** (`niu.account`):
+
 - Protocol: `niu-cloud` (`packages/protocols/niu-cloud`), over `https`.
 - Two hosts, outside China: `app-api-fk.niu.com` (everything) and
   `account-fk.niu.com` (signing in). The channel reaches those two and nothing
   else (`OpenOptions.alsoOrigins`).
 - Reach: `cloud` — always the internet.
-- Credentials: the NIU app's account (email or phone) and password. The
-  password is the connection's secret, encrypted on the server, and sent only
-  to NIU — hashed, as the app does. Tokens live in memory only.
-- Held only by a node trusted with it (`needs: { trusted }`) — your server:
-  the password stays there, and NIU's cloud sends no CORS headers, so a web
-  page could not reach it anyway.
-- Adding it: sign in, and pick the scooter from the account's list.
+- Credentials: the NIU app's account (email or phone) and password — once,
+  however many scooters are on it. The password is the account connection's
+  secret, encrypted where it is held, and sent only to NIU — hashed, as the
+  app does. Tokens live in memory only.
+- Two facts, kept apart (docs/PLAN-INTEGRATIONS.md §0): **where** it can be
+  held — a server or a phone, never a browser, because NIU's cloud sends no
+  CORS headers (`platforms`) — and **what** the node holding it must be:
+  trusted with the password (`needs: { trusted }`).
+- Its identity is its sign-in, written plainly: NIU names no account id.
+
+**A scooter** (`niu.scooter`, and each model's type): reached **through its
+account** (`transport: bridge`, `through: ['niu.account']`), its address
+its serial. It keeps no credentials: it is told what is its own, over the
+channel its account opens for it, in the messages of `niu-cloud`'s
+`member.ts`. Its identity is `niu-cloud:<serial>`, as before.
+
+- Adding: add the account and sign in; its scooters are then found — on Home
+  under "Found near you", and on the account's page — each offered as the
+  model it says it is, or as the common scooter.
 
 ## What NIU's cloud says — as those before us found it
 
@@ -103,9 +120,11 @@ The `app_id` is not stable: projects use `niu_ktdrr960`, `niu_8xt1afu6`,
 ## How it behaves
 
 - **Pulled**, never pushed: NIU's cloud has no way to tell anyone else. The
-  scooter reports to NIU over the mobile network on its own rhythm; the
-  server asks NIU every minute while it is charging or switched on, every
-  10 min otherwise; battery health and the odometer every 30 min.
+  scooter reports to NIU over the mobile network on its own rhythm; its
+  account asks NIU — for each scooter someone has added — every minute while
+  it is charging or switched on, every 10 min otherwise; battery health and
+  the odometer every 30 min; and which scooters are on it every 30 min. One
+  sign-in, one conversation with NIU, however many scooters.
 - **Parked** (not charging, not switched on), the scooter goes quiet, and its
   charge does not move — so its last report stands for as long as NIU keeps
   answering, and a charge limit can act on it however long ago the scooter

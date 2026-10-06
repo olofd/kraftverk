@@ -41,6 +41,30 @@ export type IntegrationManifest = {
   readonly name: string;
   /** The platform's own types — accounts, gateways, services, the generic one. There may be none. */
   readonly types: readonly PackageTypeEntry[];
+  /** The module whose default export is its file migrations (`FileMigration[]`), when its entries in a configuration file ever changed. */
+  readonly migrations?: string;
+};
+
+/** What a file migration may know of what is installed: each type, and the bridge types each of its ways goes through. */
+export type FileTypes = readonly { readonly id: string; readonly methods: readonly { readonly id: string; readonly through: readonly string[] }[] }[];
+
+/**
+ * How an integration's entries in a configuration file change from one of
+ * the file's versions to the next (docs/CONFIG.md): a way a type no longer
+ * has, become what replaced it. The file is what carries a home across a
+ * database reset, so a home kept before the change must come back after it.
+ *
+ * Run on the file as data, after the core's own migration from `from`:
+ * pure, and deterministic. It finds its entries by what is installed — the
+ * types reached through its account, say — never by naming a product: a
+ * platform names none.
+ */
+export type FileMigration = {
+  /** The file's version it takes entries from, to the next. */
+  readonly from: number;
+  /** What it changes, in a sentence. */
+  readonly says: string;
+  migrate(document: Readonly<Record<string, unknown>>, installed: FileTypes): Record<string, unknown>;
 };
 
 /** The `kraftverk.device` section of a device package's package.json. */
@@ -112,6 +136,7 @@ export function integrationManifestProblems(raw: unknown): string[] {
   if (!valid) problems.push(`id "${String(id)}" must be lowercase words joined by dashes, like "acme-cloud"`);
   if (typeof manifest.name !== 'string' || !manifest.name.trim()) problems.push('name is required');
   typeEntryProblems(manifest.types, problems, valid ? (id as string) : null);
+  if (manifest.migrations !== undefined && !isPath(manifest.migrations)) problems.push('migrations must be a path in the package, like "./src/migrations.ts"');
   return problems;
 }
 

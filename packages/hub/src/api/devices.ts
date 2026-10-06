@@ -1,7 +1,8 @@
 import { ApiError, type Caller, type ChangesQuery, type DeviceTypeListing, type HistoryQuery, type KraftverkApi } from '@kraftverk/api-contract';
-import { capabilityIn, CATEGORIES, describeDeviceType, isSimulated, methodsOf, placementsOf, platformsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
+import { capabilityIn, CATEGORIES, describeDeviceType, isBridged, isSimulated, methodsOf, placementsOf, platformsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
 import { deviceReader } from '@kraftverk/holder';
 
+import { openBridges } from '../devices/members.ts';
 import { runAskedTool } from '../devices/tools.ts';
 import { FIRST_PICTURE, PICTURE_REF } from '../devices/views.ts';
 import { changesOf } from '../history/changes.ts';
@@ -50,6 +51,12 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
    */
   const holds = (method: ConnectionMethod): Availability => {
     if (isSimulated(method)) return { ok: true };
+    // Through a bridge: while one it goes through is open here — an account added, a gateway reached.
+    if (isBridged(method)) {
+      if (openBridges(hub, method.through).length) return { ok: true };
+      const which = (method.through ?? []).map((id) => types.get(id)?.meta.name ?? id).join(' or ');
+      return { ok: false, reason: `It is reached through ${which}: add that first` };
+    }
     // What a way needs of the node holding it — trusted with a vendor account's password — this one may not be.
     const unfit = unfitFor(method, hub.self);
     if (unfit) return { ok: false, reason: unfit };
@@ -84,7 +91,7 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
       const listing: DeviceTypeListing[] = types.all().map((type) => ({
         ...describeDeviceType(type),
         source: sourceOf(type.id),
-        placements: placementsOf(type, (id) => transports.definition(id)),
+        placements: placementsOf(type, (id) => transports.definition(id), (id) => types.get(id)),
         /*
           The ways that can be held where this home runs at all — one that
           cannot (the broker in a browser) is not offered, rather than offered

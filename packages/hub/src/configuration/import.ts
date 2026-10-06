@@ -147,7 +147,8 @@ const secretKey = (device: string, index: number, field: string) => `${device}.$
 export async function planImport(deps: ImportDeps, text: string, options: { mode: ImportMode; passphrase?: string; by: string; kept?: boolean; lenient?: boolean }): Promise<ImportPlan> {
   const vocabulary = homeVocabulary(deps);
   // A restore reads what it can: an entry it cannot read is left out and said, never the whole home lost for it.
-  const read = readConfig(text, (document) => checkDocument(document, vocabulary, { hasSecret: () => true, uses: 'leave' }), { partial: options.lenient });
+  // A file kept before an installed integration's entries changed comes back as they are now.
+  const read = readConfig(text, (document) => checkDocument(document, vocabulary, { hasSecret: () => true, uses: 'leave' }), { partial: options.lenient, migrations: deps.types.fileMigrations() });
   const empty: ImportPlan = { id: null, from: read.from, problems: read.problems.map((each) => ({ ...each, path: [...each.path] })), devices: [], links: [], automations: [], policy: [], location: null, needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
   if (!read.document) return empty;
   const document = read.document;

@@ -1,53 +1,50 @@
-import type { ConfigSchema, OpenConnection, Protocol, SetupAction, SetupChoice } from '@kraftverk/device-sdk';
+import { identityOf, type ConfigSchema, type OpenConnection, type Protocol, type SetupAction } from '@kraftverk/device-sdk';
 
 import { NIU_ACCOUNT, NiuClient, NiuError, signIn, type NiuHttp } from './api.ts';
 
 export * from './api.ts';
+export * from './member.ts';
 export { md5Hex } from './md5.ts';
 
 /**
- * The NIU cloud as a protocol: how a scooter NIU's servers speak for is
- * reached — over HTTPS, to the API host, and to the sign-in host beside it
- * (`alsoOrigins`), and nowhere else.
+ * The NIU cloud as a protocol: how a NIU account, and the scooters NIU's
+ * servers speak for, are reached — the account over HTTPS, to the API host
+ * and the sign-in host beside it (`alsoOrigins`) and nowhere else; a scooter
+ * through its account (`bridge`), in the messages of `member.ts`.
  *
  * A NIU scooter of this age has no way in but NIU's cloud: its control unit
  * reports over the mobile network, and the app reads it back from NIU. So
- * this is a cloud connection, always, and says so.
+ * the account is a cloud connection, always, and says so.
  *
  * Its credentials are the NIU app's account: an email or phone number, and
- * the password — kept as the connection's secret, encrypted, and sent to NIU
- * (hashed, as the app does) to sign in. Signing in lists the scooters on the
- * account, so which one is yours is a pick, not a serial number to find.
+ * the password — kept as the account connection's secret, encrypted, and
+ * sent to NIU (hashed, as the app does) to sign in. One account, one
+ * password, however many scooters are on it.
  */
 
 export const CREDENTIALS: ConfigSchema = {
-  help: 'NIU scooters of this age are reached through NIU’s cloud, with the account you use in the NIU app. Signing in lists your scooters.',
+  help: 'NIU scooters of this age are reached through NIU’s cloud, with the account you use in the NIU app. Signing in finds every scooter on it.',
   fields: {
     account: { type: 'string', title: 'Email or phone number', description: 'The one you sign in to the NIU app with.', required: true },
     password: {
       type: 'string',
       presentation: 'secret',
       title: 'Password',
-      description: 'Kept encrypted on your server, and sent only to NIU, to sign in.',
+      description: 'Kept encrypted where the account is held, and sent only to NIU, to sign in.',
       required: true,
     },
-    serial: { type: 'string', title: 'Serial number', description: 'Filled in when you pick your scooter.', required: true },
   },
 };
 
-const signInSchema: ConfigSchema = {
-  fields: {
-    account: CREDENTIALS.fields.account!,
-    password: CREDENTIALS.fields.password!,
-  },
-};
+/** The account's identity: NIU names none, so its sign-in, as written — what makes adding it twice the same account. */
+export const accountIdentity = (account: string): string => identityOf('niu-cloud', `account:${account.trim().toLowerCase()}`);
 
-/** Signs in with the NIU app's account and lists its scooters: the one picked brings its serial, and the account. */
+/** Signs in with the NIU app's account, and says how many scooters are on it: the account and password, checked. */
 const signInAction: SetupAction = {
   id: 'signIn',
   label: 'Sign in with your NIU account',
-  description: 'The account you use in the NIU app. Your scooters come back by name; nothing is changed on them.',
-  input: signInSchema,
+  description: 'The account you use in the NIU app. Your scooters are found on it; nothing is changed on them.',
+  input: CREDENTIALS,
   async run(ctx, input) {
     const account = String(input.account ?? '').trim();
     const password = String(input.password ?? '');
@@ -56,17 +53,8 @@ const signInAction: SetupAction = {
     try {
       await signIn(http, account, password);
       const scooters = await new NiuClient(http, { account, password }).scooters();
-      if (!scooters.length) return { ok: false, detail: 'Signed in, but there is no scooter on this account. Is it bound to it in the NIU app?' };
-      const choices: SetupChoice[] = scooters.map((scooter) => ({
-        id: scooter.serial,
-        label: scooter.name ?? scooter.model ?? 'NIU scooter',
-        detail: [scooter.model, `serial ${scooter.serial}`].filter(Boolean).join(' · '),
-        // No address: the connection's is NIU's API, fixed, so there is nothing to choose.
-        config: { account, password, serial: scooter.serial },
-        ...(scooter.name ? { name: scooter.name } : {}),
-        recommended: scooters.length === 1,
-      }));
-      return { ok: true, detail: `Signed in: ${scooters.length} scooter${scooters.length === 1 ? '' : 's'} on the account. Which is it?`, choices };
+      const said = scooters.length === 1 ? '1 scooter on it' : `${scooters.length} scooters on it`;
+      return { ok: true, detail: scooters.length ? `Signed in: ${said}.` : 'Signed in, but there is no scooter on this account. Is it bound to it in the NIU app?', suggestedConfig: { account, password } };
     } catch (error) {
       return { ok: false, detail: error instanceof NiuError ? error.message : `NIU could not be reached: ${(error as Error).message}` };
     }
@@ -80,7 +68,12 @@ const protocol: Protocol = {
     https: {
       // The API is the address; the sign-in host is the one other it may reach.
       open: () => ({ alsoOrigins: [NIU_ACCOUNT] }),
-      // Nothing to find: a scooter is picked from the account.
+      // Nothing to find: the account is signed into.
+      recognise: () => null,
+    },
+    // A scooter, through its account: told what is its own, over the account's channel.
+    bridge: {
+      open: () => ({}),
       recognise: () => null,
     },
   },
@@ -89,14 +82,12 @@ const protocol: Protocol = {
 
 export default protocol;
 
-/** A signed-in client over an open connection: its channel, and the account and scooter setup stored with it. */
-export function clientOver(connection: OpenConnection, now?: () => number): { client: NiuClient; serial: string } {
+/** A signed-in client over an account's open connection: its channel, and the account stored with it. */
+export function clientOver(connection: OpenConnection, now?: () => number): { client: NiuClient; account: string } {
   if (connection.channel.kind !== 'http') throw new Error('The NIU cloud is reached over HTTPS');
   const channel = connection.channel;
   const account = String(connection.config.account ?? '').trim();
-  const serial = String(connection.config.serial ?? '').trim();
   const password = connection.secrets.get('password');
-  if (!account || !password) throw new Error('No NIU account: sign in again in the scooter’s connection settings');
-  if (!serial) throw new Error('No scooter chosen: pick it again in the connection settings');
-  return { client: new NiuClient((url, init) => channel.fetch(url, init), { account, password }, now), serial };
+  if (!account || !password) throw new Error('No NIU account: sign in again in the account’s connection settings');
+  return { client: new NiuClient((url, init) => channel.fetch(url, init), { account, password }, now), account };
 }

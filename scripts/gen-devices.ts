@@ -174,7 +174,10 @@ for (const { dir, manifest } of packages('packages/integrations')) {
     for (const entry of product.device.types) products.push(await typeLine(product.dir, product.manifest, entry));
   }
   productsOn.delete(integration.id);
-  platforms.push(`  { id: '${integration.id}', name: '${integration.name.replace(/[\\']/g, '\\$&')}', types: [${own.join(', ')}], products: [${products.join(', ')}] },`);
+  // How its entries in a file changed: what reading a file kept before brings it to now.
+  const migrations = integration.migrations ? local(integration.id, 'Migrations') : null;
+  if (migrations) installed.imports.push(`import ${migrations} from '${exported(manifest, integration.migrations!)}';`);
+  platforms.push(`  { id: '${integration.id}', name: '${integration.name.replace(/[\\']/g, '\\$&')}', types: [${own.join(', ')}], products: [${products.join(', ')}]${migrations ? `, migrations: ${migrations}` : ''} },`);
 }
 for (const [id, products] of productsOn) fail(`${products.map((product) => product.manifest.name).join(', ')}: built on "${id}", which is not installed`);
 

@@ -4,8 +4,8 @@
 
 The NIU UQi GT — sold as the **UQi GT Sport** in some markets — as a model of
 its own: a product on the [NIU integration](../../integrations/niu/README.md), which
-says how it is reached (NIU's cloud, with the owner's NIU account) and what
-it reports. This package adds its name, the model names NIU's account gives
+says how it is reached — through the NIU account it is on, from NIU's cloud —
+and what it reports. This package adds its name, the model names NIU's account gives
 it, and its pictures; what only this model does is added here as it is
 mapped.
 

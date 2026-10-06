@@ -1172,6 +1172,15 @@ one per distinct account — and the scooter through it.
 *Done when* two scooters on one account sign in once and keep one password,
 and the configuration kept on the server comes back as an account with its
 scooter.
+**Done 2026-10-06, with three things learnt.** The kept file did hold a NIU
+scooter, and a migration in the core would have named NIU; so an integration
+may name its own file migrations (`FileMigration`, CONFIG.md), run after the
+core's step, finding its entries by what is installed. A way may name the
+platforms it can be held on (`platforms`), so "NIU's cloud answers no
+browser" left the trust reason. And a way through a bridge carries no
+credentials of its own: its setup has none, the file names none. One rule
+now matches a reported model to a type, for the check and for members alike
+(`coversModel`).
 
 **Step 6 · The Tuya gateway as a bridge.**
 `tuya.gateway`, the Tuya integration's: hardware, a bridge, reached by `tuya-local` over `lan` with

@@ -23,7 +23,7 @@ test('App settings → Integrations: each platform, where it runs, and the produ
   await expect(page.getByText(/Tuya smart plug/).first()).toBeVisible();
   await expect(page.getByText(/For one nobody has described yet/).first()).toBeVisible();
   // NIU: where it runs, and apart from that, what the node holding it must be, and why.
-  await expect(page.getByText(/Runs on a server, in a browser and on a phone\. Held by a node that is trusted to keep it: your NIU password stays at home/)).toBeVisible();
+  await expect(page.getByText(/Runs on a server and on a phone\. Held by a node that is trusted to keep it: your NIU password stays at home/)).toBeVisible();
   // A service is the platform's own.
   await expect(page.getByText(/Its service/).first()).toBeVisible();
 

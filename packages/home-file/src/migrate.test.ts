@@ -107,3 +107,32 @@ automations:
     });
   });
 });
+
+describe("an integration's own migrations", () => {
+  /** An integration whose way "cloud" became "account" in version 6: it finds its entries by the installed types reached through its account. */
+  const renamed = {
+    from: 5,
+    says: 'A scooter reached "cloud" is reached through its account',
+    migrate(document: Readonly<Record<string, unknown>>, installed: readonly { id: string; methods: readonly { id: string; through: readonly string[] }[] }[]) {
+      const mine = new Set(installed.filter((type) => type.methods.some((method) => method.through.includes('acme.account'))).map((type) => type.id));
+      const devices = Object.fromEntries(
+        Object.entries((document.devices ?? {}) as Record<string, { type: string; connect?: { via: string }[] }>).map(([key, entry]) => [
+          key,
+          mine.has(entry.type) ? { ...entry, connect: (entry.connect ?? []).map((way) => (way.via === 'cloud' ? { ...way, via: 'account' } : way)) } : entry,
+        ])
+      );
+      return { ...document, devices };
+    },
+  };
+  const installed = [{ id: 'acme.scooter', methods: [{ id: 'account', through: ['acme.account'] }] }];
+  const file = (version: number) => `kraftverk: ${version}\ndevices:\n  scooter:\n    type: acme.scooter\n    name: Scooter\n    connect:\n      - via: cloud\n        address: S-1\n`;
+
+  test("run after the core's own, from their version, for a file written before it — and not for one written after", () => {
+    const old = readConfig(file(4), undefined, { migrations: { migrations: [renamed], installed } });
+    expect(old.problems).toEqual([]);
+    expect(old.document!.devices.scooter!.connect[0]!.via).toBe('account');
+    expect(readConfig(file(6), undefined, { migrations: { migrations: [renamed], installed } }).document!.devices.scooter!.connect[0]!.via).toBe('cloud');
+    // Without them, a file is read as its shape says.
+    expect(readConfig(file(4)).document!.devices.scooter!.connect[0]!.via).toBe('cloud');
+  });
+});

@@ -10,8 +10,10 @@
   it against.
 */
 
+import type { FileMigration, FileTypes } from '@kraftverk/device-sdk';
+
 /** The version this kraftverk writes. */
-export const CURRENT_VERSION = 5;
+export const CURRENT_VERSION = 6;
 
 /** Each version's document, as data, made into the next version's. */
 export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unknown>) => Record<string, unknown>>> = {
@@ -20,7 +22,12 @@ export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unkno
   3: (document) => ({ ...document, automations: inTextsOf(document.automations, plainerExpressions) }),
   // Version 5 may say a way goes through another device (`through:`): nothing older does, so nothing changes.
   4: (document) => document,
+  // Version 6: an integration's own entries changed, as its file migrations say (`FileMigration`); the document's shape did not.
+  5: (document) => document,
 };
+
+/** What an integration brings to a file's migration: its own steps, and what is installed for them to find their entries by. */
+export type PackageMigrations = { migrations: readonly FileMigration[]; installed: FileTypes };
 
 /**
  * Version 4 writes a setting as `setting.low`, not `$low`, and a package's
@@ -116,7 +123,7 @@ function renamedMeanings(value: unknown, renames: readonly (readonly [string, st
 export type Migrated = { ok: true; document: Record<string, unknown>; from: number } | { ok: false; message: string };
 
 /** A document of any version this kraftverk can read, brought to the current one. */
-export function migrate(document: Record<string, unknown>): Migrated {
+export function migrate(document: Record<string, unknown>, packages: PackageMigrations = { migrations: [], installed: [] }): Migrated {
   const version = document.kraftverk;
   if (version === undefined) return { ok: false, message: `The document says which version it is: "kraftverk: ${CURRENT_VERSION}" at its top` };
   if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) return { ok: false, message: '"kraftverk" is the document\'s version: a whole number' };
@@ -125,7 +132,10 @@ export function migrate(document: Record<string, unknown>): Migrated {
   for (let at = version; at < CURRENT_VERSION; at++) {
     const step = MIGRATIONS[at];
     if (!step) return { ok: false, message: `There is no way from version ${at} to ${at + 1}` };
-    migrated = { ...step(migrated), kraftverk: at + 1 };
+    migrated = step(migrated);
+    // Then each integration's own, from this version: its entries, as its types now are.
+    for (const own of packages.migrations.filter((each) => each.from === at)) migrated = own.migrate(migrated, packages.installed);
+    migrated = { ...migrated, kraftverk: at + 1 };
   }
   return { ok: true, document: migrated, from: version };
 }

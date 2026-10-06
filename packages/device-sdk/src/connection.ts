@@ -84,6 +84,15 @@ export type ConnectionMethod = {
    * address is then the member's key within the bridge.
    */
   through?: readonly string[];
+  /**
+   * Where it can be held at all, when that is fewer places than its
+   * transport runs: a cloud that does not answer a browser's page is reached
+   * over HTTPS from a server and a phone, never from a browser. A fact about
+   * software, kept apart from what it `needs` of the node holding it — a
+   * choice, with its reason (docs/PLAN-INTEGRATIONS.md §0). Absent: wherever
+   * its transport runs.
+   */
+  platforms?: readonly Platform[];
 };
 
 /**
@@ -134,7 +143,8 @@ export const isSimulated = (connection: { readonly transport: string }): boolean
 export function platformsOf(method: ConnectionMethod, transport: Pick<TransportDefinition, 'platforms'> | null): Platform[] {
   // A simulator reaches nothing; a bridge's member is held wherever its bridge is.
   if (isSimulated(method) || method.transport === BRIDGE_TRANSPORT) return [...PLATFORMS];
-  return [...(transport?.platforms ?? [])];
+  // Its transport's, less what the way itself cannot be held on.
+  return (transport?.platforms ?? []).filter((platform) => !method.platforms || method.platforms.includes(platform));
 }
 
 /**
@@ -144,9 +154,31 @@ export function platformsOf(method: ConnectionMethod, transport: Pick<TransportD
  */
 export type Placement = { method: string; platforms: Platform[]; needs: NodeNeeds };
 
-/** Each of a type's real ways, and where it can be held: what "where it runs" is worked out from. Its simulator runs anywhere, and is not among them. */
-export function placementsOf(type: Pick<HasWays, 'connections'>, transportOf: (id: string) => Pick<TransportDefinition, 'platforms'> | null): Placement[] {
-  return type.connections.map((method) => ({ method: method.id, platforms: platformsOf(method, transportOf(method.transport)), needs: { ...method.needs } }));
+/**
+ * Each of a type's real ways, and where it can be held: what "where it runs"
+ * is worked out from. Its simulator runs anywhere, and is not among them. A
+ * way through a bridge is held wherever its bridge can be, and needs what
+ * its bridge's ways need: worked out from the bridge types, when known.
+ */
+export function placementsOf(
+  type: Pick<HasWays, 'connections'>,
+  transportOf: (id: string) => Pick<TransportDefinition, 'platforms'> | null,
+  typeOf: (id: string) => Pick<HasWays, 'connections'> | null = () => null,
+  depth = 0
+): Placement[] {
+  return type.connections.map((method) => {
+    if (method.transport !== BRIDGE_TRANSPORT || depth >= 4) return { method: method.id, platforms: platformsOf(method, transportOf(method.transport)), needs: { ...method.needs } };
+    const bridges = (method.through ?? []).flatMap((id) => {
+      const bridge = typeOf(id);
+      return bridge ? placementsOf(bridge, transportOf, typeOf, depth + 1) : [];
+    });
+    if (!bridges.length) return { method: method.id, platforms: platformsOf(method, null), needs: { ...method.needs } };
+    return {
+      method: method.id,
+      platforms: PLATFORMS.filter((platform) => bridges.some((bridge) => bridge.platforms.includes(platform))),
+      needs: Object.assign({}, ...bridges.map((bridge) => bridge.needs), method.needs),
+    };
+  });
 }
 
 /**

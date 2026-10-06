@@ -1,5 +1,5 @@
 import type { CheckOutcome } from '@kraftverk/api-contract';
-import type { DeviceType, Identified, SavedDeviceId } from '@kraftverk/device-sdk';
+import { coversModel, modelCloseness, type DeviceType, type Identified, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 /**
  * What a device's answer to the check step means, against the devices you
@@ -28,16 +28,10 @@ export function judgeCheck(
   }
 ): CheckOutcome {
   const { type } = context;
-  // A model name covers what a device reports as it, and with a finish after it: "X2 Sport Black (Matte)".
-  const covers = (model: string, reported: string) => {
-    const [name, said] = [model.toLowerCase(), reported.toLowerCase()];
-    return said === name || said.startsWith(`${name} `);
-  };
-
   // A model this type does not cover, which another installed type may — the one naming it most closely.
   const models = type.meta.models ?? [];
-  if (identified.model && models.length && !models.some((model) => covers(model, identified.model!))) {
-    const closeness = (candidate: DeviceType<any>) => Math.max(0, ...(candidate.meta.models ?? []).filter((model) => covers(model, identified.model!)).map((model) => model.length));
+  if (identified.model && models.length && !models.some((model) => coversModel(model, identified.model!))) {
+    const closeness = (candidate: DeviceType<any>) => modelCloseness(candidate.meta.models, identified.model!);
     const other = [...context.types].filter((candidate) => closeness(candidate) > 0).sort((a, b) => closeness(b) - closeness(a))[0];
     return {
       outcome: 'other-model',

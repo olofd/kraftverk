@@ -9,8 +9,10 @@ import type { Protocol, TransportDefinition } from '@kraftverk/device-sdk';
 import type { InstalledIntegration } from '@kraftverk/hub';
 
 import elprisetjustnuPricesType from '@kraftverk/integration-elprisetjustnu';
+import niuAccountType from '@kraftverk/integration-niu/account';
 import niuScooterType from '@kraftverk/integration-niu/scooter';
 import niuUqiGtType from '@kraftverk/device-niu-uqi-gt';
+import niuMigrations from '@kraftverk/integration-niu/migrations';
 import openMeteoWeatherType from '@kraftverk/integration-open-meteo';
 import openMeteoWeatherAutomation from '@kraftverk/integration-open-meteo/automation';
 import aferiyP280Type from '@kraftverk/device-aferiy-p280/type';
@@ -30,7 +32,7 @@ import transportMqtt from '@kraftverk/transport-mqtt';
 /** Every installed integration, its own types and the products on it, each with what it brings to automations: the same code the server runs. */
 export const INTEGRATIONS: readonly InstalledIntegration[] = [
   { id: 'elprisetjustnu', name: 'Elpriset just nu', types: [{ type: elprisetjustnuPricesType, automation: null }], products: [] },
-  { id: 'niu', name: 'NIU', types: [{ type: niuScooterType, automation: null }], products: [{ type: niuUqiGtType, automation: null }] },
+  { id: 'niu', name: 'NIU', types: [{ type: niuAccountType, automation: null }, { type: niuScooterType, automation: null }], products: [{ type: niuUqiGtType, automation: null }], migrations: niuMigrations },
   { id: 'open-meteo', name: 'Open-Meteo', types: [{ type: openMeteoWeatherType, automation: openMeteoWeatherAutomation }], products: [] },
   { id: 'sydpower', name: 'Sydpower', types: [], products: [{ type: aferiyP280Type, automation: null }] },
   { id: 'tuya', name: 'Tuya', types: [{ type: tuyaPlugType, automation: null }], products: [{ type: atorchS1wType, automation: null }, { type: tuyaZigbeePlugType, automation: null }] },

@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
 import { isCurrent, type HttpChannel } from '@kraftverk/device-sdk';
-import { checkDeviceTypeContract, fakeConnection } from '@kraftverk/device-sdk/testing';
+import { checkDeviceTypeContract, fakeConnection, simulatorContext } from '@kraftverk/device-sdk/testing';
 import { md5Hex, NIU_ACCOUNT, NIU_API, parseState } from '@kraftverk/protocol-niu-cloud';
 
+import account from '../src/account.ts';
 import scooter, { chargingEventOf, confirmedSince, isParked, readingsOf, withoutPlace } from '../src/scooter.ts';
 
 /**
@@ -54,6 +55,7 @@ function niu(): HttpChannel & { asked: string[] } {
   };
 }
 
+/** The account's connection, to the fake cloud. */
 const over = (channel = niu(), password = 'correct horse') =>
   fakeConnection({
     method: 'cloud',
@@ -61,32 +63,64 @@ const over = (channel = niu(), password = 'correct horse') =>
     transport: 'https',
     address: NIU_API,
     channel,
-    config: { account: 'rider@example.test', serial: 'N0TAREALSERIAL01' },
+    config: { account: 'rider@example.test' },
     secrets: { password },
   });
 
+/** The account opened over the fake cloud, as its holder opens it — and the scooter's connection through it. */
+async function throughTheAccount() {
+  const { context, stop } = simulatorContext(account);
+  const session = await account.createSession({ ...context, connection: over() });
+  // Its first look round: signed in, and the list read.
+  for (let tries = 0; tries < 100 && !session.bridge!.members().length; tries++) await new Promise((resolve) => setTimeout(resolve, 5));
+  const channel = await session.bridge!.open('N0TAREALSERIAL01');
+  const connection = fakeConnection({ method: 'account', protocol: 'niu-cloud', transport: 'bridge', address: 'N0TAREALSERIAL01', channel });
+  return { session, channel, connection, stop };
+}
+
 describe('NIU scooter', () => {
-  test('keeps the device-type contract, as hardware under Vehicles, reached through NIU’s cloud', async () => {
+  test('keeps the device-type contract, as hardware under Vehicles, reached through its NIU account', async () => {
     expect(await checkDeviceTypeContract(scooter)).toEqual([]);
     expect(scooter.meta.category).toBe('vehicle');
-    expect(scooter.connections.map((method) => [method.protocol, method.transport, method.reach])).toEqual([['niu-cloud', 'https', 'cloud']]);
+    expect(scooter.connections.map((method) => [method.protocol, method.transport, method.reach, method.through])).toEqual([['niu-cloud', 'bridge', 'cloud', ['niu.account']]]);
   });
 
-  test('its charge is the scooter’s headline, and what "Charge between two levels" charges; only a trusted node holds it', () => {
+  test('its charge is the scooter’s headline, and what "Charge between two levels" charges', () => {
     const description = scooter.describe({});
     const soc = description.attributes.find((attribute) => attribute.means === 'charge');
     expect([soc?.part ?? 'main', soc?.category]).toEqual(['main', 'primary']);
-    expect(scooter.connections[0]!.needs?.trusted).toContain('password stays at home');
   });
 
-  test('checked once: which scooter, its model and how it is, from the account', async () => {
-    const identified = await scooter.identify(over(), { config: {}, log: console as never, signal: AbortSignal.timeout(5_000) });
-    expect(identified).toMatchObject({ identity: 'niu-cloud:N0TAREALSERIAL01', model: 'UQi GT Sport', name: 'Blixten', info: { manufacturer: 'NIU', serial: 'N0TAREALSERIAL01' } });
-    expect(identified.summary).toContain('74 % charged, charging, 38 km of range');
+  test('checked once, through its account: which scooter, its model and how it is', async () => {
+    const { session, connection, stop } = await throughTheAccount();
+    try {
+      const identified = await scooter.identify(connection, { config: {}, log: console as never, signal: AbortSignal.timeout(5_000) });
+      expect(identified).toMatchObject({ identity: 'niu-cloud:N0TAREALSERIAL01', model: 'UQi GT Sport', name: 'Blixten', info: { manufacturer: 'NIU', serial: 'N0TAREALSERIAL01' } });
+      expect(identified.summary).toContain('74 % charged, charging, 38 km of range');
+    } finally {
+      stop();
+      await session.close();
+    }
   });
 
-  test('a wrong password is said, not guessed around', async () => {
-    await expect(scooter.identify(over(niu(), 'wrong'), { config: {}, log: console as never, signal: AbortSignal.timeout(5_000) })).rejects.toThrow('did not accept');
+  test('opened through its account, it reads what the account is told — dated when the scooter reported it', async () => {
+    const { session, connection, stop } = await throughTheAccount();
+    const { context, stop: stopScooter } = simulatorContext(scooter);
+    try {
+      const opened = await scooter.createSession({ ...context, connection });
+      for (let tries = 0; tries < 100 && !opened.readings().length; tries++) await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(opened.readings().find((reading) => reading.key === 'soc')).toMatchObject({ value: 74, at: new Date(1_790_000_000_000).toISOString() });
+      expect(opened.identity?.()).toEqual({ id: 'niu-cloud:N0TAREALSERIAL01', name: 'Blixten' });
+      // Its raw tool asks the account, which asks NIU — and never says where it is.
+      const raw = (await opened.tools!.raw!({})) as { state: string };
+      expect(raw.state).toContain('estimatedMileage');
+      expect(raw.state).not.toContain('postion');
+      await opened.close();
+    } finally {
+      stopScooter();
+      stop();
+      await session.close();
+    }
   });
 
   test('its readings carry the time the scooter reported, not when it was asked', () => {

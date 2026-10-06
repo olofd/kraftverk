@@ -1,4 +1,4 @@
-import { BRIDGE_TRANSPORT, type BridgeHost, type DeviceType, type Member, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { BRIDGE_TRANSPORT, modelCloseness, type BridgeHost, type DeviceType, type Member, type SavedDeviceId } from '@kraftverk/device-sdk';
 import type { SessionManager } from '@kraftverk/holder';
 import type { ConnectionStore, DeviceCatalog } from '@kraftverk/store';
 
@@ -46,14 +46,20 @@ function typesThrough(types: DeviceTypeRegistry, bridgeTypeId: string): MemberTy
 
 /**
  * The types a member could be: the one its bridge says, when it is
- * installed and goes through it; else those claiming its model; else the
- * bridge's fallback, the platform's generic one. None: nothing here knows it.
+ * installed and goes through it; else those whose models cover the one it
+ * reports, the closest first; else the bridge's fallback, the platform's
+ * generic one. None: nothing here knows it.
  */
 function typesFor(member: Member, candidates: readonly MemberType[], fallback: string | undefined): MemberType[] {
   const named = member.typeId ? candidates.filter((candidate) => candidate.type.id === member.typeId) : [];
   if (named.length) return named;
-  const model = member.model?.trim().toLowerCase();
-  const claiming = model ? candidates.filter((candidate) => candidate.type.meta.models?.some((claimed: string) => claimed.toLowerCase() === model)) : [];
+  const claiming = member.model
+    ? candidates
+        .map((candidate) => ({ candidate, closeness: modelCloseness(candidate.type.meta.models, member.model!) }))
+        .filter(({ closeness }) => closeness > 0)
+        .sort((a, b) => b.closeness - a.closeness)
+        .map(({ candidate }) => candidate)
+    : [];
   if (claiming.length) return claiming;
   return candidates.filter((candidate) => candidate.type.id === fallback);
 }

@@ -8,6 +8,7 @@ import {
   integrationManifestProblems,
   type DeviceManifest,
   type DeviceType,
+  type FileMigration,
   type IntegrationManifest,
   type PackageTypeEntry,
   type Protocol,
@@ -166,7 +167,8 @@ export async function discoverIntegrations(
       const own = await loadTypes(pkg, manifest.types);
       const built = onPlatform.get(manifest.id) ?? [];
       onPlatform.delete(manifest.id);
-      installIntegration(types, { id: manifest.id, name: manifest.name, types: own, products: built.flatMap((product) => product.types) }, pkg.name);
+      const migrations = manifest.migrations ? await load<FileMigration[]>(pkg, manifest.migrations) : [];
+      installIntegration(types, { id: manifest.id, name: manifest.name, types: own, products: built.flatMap((product) => product.types), migrations }, pkg.name);
     } catch (error) {
       types.refuse(pkg.folder, [(error as Error).message]);
     }

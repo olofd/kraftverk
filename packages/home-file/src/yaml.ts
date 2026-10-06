@@ -11,7 +11,7 @@ import {
   type ConfigDocument,
   type DeviceEntry,
 } from './document.ts';
-import { CURRENT_VERSION, migrate } from './migrate.ts';
+import { CURRENT_VERSION, migrate, type PackageMigrations } from './migrate.ts';
 import type { Issue } from '@kraftverk/automation';
 
 /*
@@ -96,7 +96,8 @@ function readWrapped(parsed: Parsed, kind: 'automations' | 'devices', key: strin
  * a problem is about is left out of the document — the problem said. What a
  * restore does, so that one entry it cannot read does not lose the others.
  */
-export type ReadOptions = { partial?: boolean };
+/** `partial`: read what can be, leaving out what cannot. `migrations`: the installed integrations' own, for a file from before their entries changed. */
+export type ReadOptions = { partial?: boolean; migrations?: PackageMigrations };
 
 /** The document without the entries these problems are about. */
 function withoutTroubled(document: ConfigDocument, issues: readonly Issue[]): ConfigDocument {
@@ -113,7 +114,7 @@ function withoutTroubled(document: ConfigDocument, issues: readonly Issue[]): Co
 
 /** A whole document's data read: brought to this version, its shape and meaning checked. */
 function readWhole(parsed: Parsed & { data: Record<string, unknown> }, check?: Check, options: ReadOptions = {}): { document: ConfigDocument | null; problems: Problem[]; from: number | null } {
-  const migrated = migrate(parsed.data);
+  const migrated = migrate(parsed.data, options.migrations);
   if (!migrated.ok) return { document: null, from: null, problems: [parsed.place({ message: migrated.message, path: ['kraftverk'] })] };
   const read = documentFromData(migrated.document, options);
   if (!read.document) return { document: null, from: migrated.from, problems: read.issues.map(parsed.place) };

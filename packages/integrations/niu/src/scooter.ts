@@ -9,21 +9,25 @@ import {
   type DeviceType,
   type DeviceTypeMeta,
   type OpenConnection,
+  type MessageChannel,
   type Reading,
   type SessionHealth,
   type ToolSpec,
   type Value,
 } from '@kraftverk/device-sdk';
-import { clientOver, NIU_API, NiuError, parseState, type NiuBatteryHealth, type NiuClient, type NiuVehicle, type NiuState, type NiuTotals } from '@kraftverk/protocol-niu-cloud';
+import { ASK, decodeMessage, encodeMessage, SAID, type MemberSaid, type NiuBatteryHealth, type NiuVehicle, type NiuState, type NiuTotals } from '@kraftverk/protocol-niu-cloud';
 
 import { ago, REPORT_TRUSTED_MS } from './report.ts';
+import { SimulatedScooter } from './simulation.ts';
 
 /**
  * A NIU electric scooter, as NIU's cloud tells of it (README.md).
  *
  * One of this age has no way in but NIU's cloud: its control unit reports
  * over the mobile network, and we read that back from NIU with the owner's
- * account — as the NIU app does. So it is only as current as its last report,
+ * account — as the NIU app does. That account is a device of its own
+ * (`./account.ts`), and the scooter is reached through it: told what is its
+ * own as the account asks NIU. So it is only as current as its last report,
  * and every reading carries the time the scooter made it, not when we asked:
  * a scooter asleep reports seldom, and says so by its age.
  *
@@ -40,12 +44,10 @@ import { ago, REPORT_TRUSTED_MS } from './report.ts';
 
 type Config = Record<string, never>;
 
-/** How often it is read while charging, or with a charger in: a charge moves about 1 % in 3–4 minutes. */
-const CHARGING_EVERY_MS = 60_000;
-/** Otherwise: an idle scooter's charge barely moves, and NIU is asked gently. */
-const IDLE_EVERY_MS = 10 * 60_000;
-/** Its totals and battery health change slowly. */
+/** Its totals and battery health change slowly: its account asks for them this often. */
 const SLOW_EVERY_MS = 30 * 60_000;
+/** How long a scooter waits for its account to answer what it asked. */
+const ASKED_WAIT_MS = 20_000;
 /**
  * How long a report stays current. Charging or switched on, the scooter
  * reports every few minutes, and a report older than this is not known — so
@@ -187,77 +189,86 @@ const TOOLS: Readonly<Record<string, ToolSpec>> = {
 
 const json = (value: unknown) => JSON.stringify(withoutPlace(value), null, 2);
 
-async function realSession(ctx: DeviceContext<Config>): Promise<DeviceSession> {
-  if (!ctx.connection) throw new Error('A NIU scooter is reached through NIU’s cloud');
-  const { client, serial } = clientOver(ctx.connection);
+/** Its channel from its account, which only a scooter reached through one has. */
+function channelOf(connection: OpenConnection | null): MessageChannel {
+  if (connection?.channel.kind !== 'messages') throw new Error('A NIU scooter is reached through its NIU account');
+  return connection.channel;
+}
+
+/** Asks its account for everything NIU says of it, raw: the raw tool's answer, or why not. */
+function askRaw(channel: MessageChannel): Promise<Extract<MemberSaid, { kind: 'raw' }>> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      stop();
+      reject(new Error('Its NIU account did not answer'));
+    }, ASKED_WAIT_MS);
+    const stop = channel.subscribe(SAID, (message) => {
+      const said = decodeMessage<MemberSaid>(message.payload);
+      if (said.kind !== 'raw' && said.kind !== 'error') return;
+      clearTimeout(timer);
+      stop();
+      if (said.kind === 'raw') resolve(said);
+      else reject(new Error(said.error));
+    });
+    channel.publish(ASK, encodeMessage({ kind: 'raw' })).catch((error: unknown) => {
+      clearTimeout(timer);
+      stop();
+      reject(error as Error);
+    });
+  });
+}
+
+/** A scooter through its account: what the account is told by NIU, as the account tells it. */
+async function memberSession(ctx: DeviceContext<Config>): Promise<DeviceSession> {
+  const channel = channelOf(ctx.connection);
+  const serial = ctx.connection!.address;
 
   let state: NiuState | null = null;
-  /** When the scooter made its last report; and when NIU last gave it to us. */
+  /** When the scooter made its last report; and when NIU last gave it to its account. */
   let stateAt: string | null = null;
   let answeredAt: string | null = null;
   let batteries: NiuBatteryHealth[] = [];
   let totals: NiuTotals | null = null;
   let slowAt: string | null = null;
   let scooter: NiuVehicle | null = null;
-  let lastAsked = 0;
-  let lastSlow = 0;
   let error: string | null = null;
 
-  const readSlow = async () => {
-    [batteries, totals] = await Promise.all([client.batteries(serial), client.totals(serial)]);
-    slowAt = new Date().toISOString();
-  };
-
-  const read = async () => {
-    const next = await client.state(serial);
-    const event = chargingEventOf(state, next);
-    state = next;
-    answeredAt = new Date().toISOString();
-    // When the scooter reported it; NIU not saying, when we were told.
-    stateAt = next.at ?? answeredAt;
-    if (event) ctx.event(event.id, { soc: event.soc });
-  };
-
-  const tick = async () => {
-    const busy = state?.charging === true || state?.poweredOn === true;
-    const due = Date.now() - lastAsked >= (busy ? CHARGING_EVERY_MS : IDLE_EVERY_MS);
-    const slowDue = Date.now() - lastSlow >= SLOW_EVERY_MS;
-    if (!due && !slowDue) return;
-    try {
-      if (due) {
-        lastAsked = Date.now();
-        await read();
+  const stop = channel.subscribe(SAID, (message) => {
+    const said = decodeMessage<MemberSaid>(message.payload);
+    switch (said.kind) {
+      case 'vehicle':
+        scooter = said.vehicle;
+        break;
+      case 'state': {
+        const event = chargingEventOf(state, said.state);
+        state = said.state;
+        answeredAt = said.answeredAt;
+        // When the scooter reported it; NIU not saying, when the account was told.
+        stateAt = said.state.at ?? said.answeredAt;
+        error = null;
+        if (event) ctx.event(event.id, { soc: event.soc });
+        break;
       }
-      // Asked, answered or not: one that failed waits its turn as one that answered does.
-      if (slowDue) {
-        lastSlow = Date.now();
-        await readSlow();
-      }
-      error = null;
-    } catch (thrown) {
-      error = thrown instanceof NiuError ? thrown.message : `NIU could not be reached: ${(thrown as Error).message}`;
-      ctx.log.warn(error);
+      case 'slow':
+        batteries = said.batteries;
+        totals = said.totals;
+        slowAt = said.at;
+        break;
+      case 'error':
+        error = said.error;
+        break;
+      case 'raw':
+        return;
     }
     ctx.changed();
-  };
-
-  // Which scooter this is, by name and model, for its About page: once.
-  void client
-    .scooters()
-    .then((all) => {
-      scooter = all.find((candidate) => candidate.serial === serial) ?? null;
-      ctx.changed();
-    })
-    .catch(() => undefined);
-  ctx.schedule(CHARGING_EVERY_MS / 2, tick);
-  void tick();
+  });
 
   return {
     health(): SessionHealth {
       if (error) return { status: 'error', detail: error, lastReadingAt: stateAt };
-      if (!state || !stateAt) return { status: 'connecting', detail: 'Asking NIU’s cloud', lastReadingAt: null };
+      if (!state || !stateAt) return { status: 'connecting', detail: 'Asking NIU’s cloud through its account', lastReadingAt: null };
       // No clock time here: the server's time zone need not be its owner's. When it reported is `lastReadingAt`, for the app to say.
-      return { status: 'connected', detail: `${stateWord(state)} · through NIU’s cloud`, lastReadingAt: stateAt };
+      return { status: 'connected', detail: `${stateWord(state)} · through its NIU account`, lastReadingAt: stateAt };
     },
     readings: () => (state && stateAt && answeredAt ? readingsOf(state, batteries, totals, stateAt, slowAt, confirmedSince(state, stateAt, answeredAt)) : []),
     info: (): DeviceInfo => ({ manufacturer: 'NIU', serial, ...(scooter?.model ? { model: scooter.model } : {}) }),
@@ -265,11 +276,11 @@ async function realSession(ctx: DeviceContext<Config>): Promise<DeviceSession> {
     command: async () => ({ accepted: false, error: 'It takes no commands here yet: which ones NIU’s cloud takes for this model is still being learnt' }),
     tools: {
       raw: async () => {
-        const [{ data, from }, batteriesRaw, totalsRaw] = await Promise.all([client.stateRaw(serial), client.batteriesRaw(serial).catch((thrown) => ({ error: (thrown as Error).message })), client.totalsRaw(serial).catch((thrown) => ({ error: (thrown as Error).message }))]);
-        return { from, state: json(data), batteries: json(batteriesRaw), totals: json(totalsRaw) };
+        const raw = await askRaw(channel);
+        return { from: raw.from, state: json(raw.state), batteries: json(raw.batteries), totals: json(raw.totals) };
       },
     },
-    close: async () => undefined,
+    close: async () => stop(),
   };
 }
 
@@ -279,54 +290,25 @@ async function realSession(ctx: DeviceContext<Config>): Promise<DeviceSession> {
  * down, and again. Its reports are a minute apart, as NIU's are while charging.
  */
 function simulatedSession(ctx: DeviceContext<Config>): DeviceSession {
-  let soc = ctx.store.get<number>('soc') ?? 55;
-  let charging = ctx.store.get<boolean>('charging') ?? true;
-  let odometer = ctx.store.get<number>('odometer') ?? 4180.4;
-  let at = new Date().toISOString();
-  const state = (): NiuState => ({
-    at,
-    soc: Math.round(soc),
-    batteries: [{ compartment: 'A', connected: true, soc: Math.round(soc) }],
-    charging,
-    online: true,
-    minutesToFull: charging ? Math.round((100 - soc) * 3.5) : null,
-    rangeKm: Math.round(soc * 0.55),
-    speedKmh: charging ? 0 : 24,
-    poweredOn: !charging,
-    alarmArmed: charging,
-    lockStatus: charging ? 0 : 1,
-    gsm: 4,
-    gps: charging ? 2 : 5,
-    controlUnitBattery: 100,
-  });
-
+  const scooter = new SimulatedScooter({ soc: ctx.store.get<number>('soc') ?? undefined, charging: ctx.store.get<boolean>('charging') ?? undefined, odometer: ctx.store.get<number>('odometer') ?? undefined });
   ctx.schedule(60_000, () => {
-    const before = state();
-    if (charging) soc = Math.min(90, soc + 60 / 210);
-    else {
-      soc = Math.max(30, soc - 0.8);
-      odometer += 0.4;
-    }
-    if (charging && soc >= 90) charging = false;
-    else if (!charging && soc <= 30) charging = true;
-    at = new Date().toISOString();
-    ctx.store.set('soc', soc);
-    ctx.store.set('charging', charging);
-    ctx.store.set('odometer', odometer);
-    const event = chargingEventOf(before, state());
+    const before = scooter.state();
+    scooter.step();
+    ctx.store.set('soc', scooter.soc);
+    ctx.store.set('charging', scooter.charging);
+    ctx.store.set('odometer', scooter.odometer);
+    const event = chargingEventOf(before, scooter.state());
     if (event) ctx.event(event.id, { soc: event.soc });
     ctx.changed();
   });
-
-  const batteries: NiuBatteryHealth[] = [{ compartment: 'A', soc: null, temperature: 21, health: 96, cycles: 212 }];
   return {
-    health: () => ({ status: 'connected', detail: 'Simulated: charging and riding by itself', lastReadingAt: at }),
-    readings: () => readingsOf(state(), batteries, { odometerKm: Math.round(odometer * 10) / 10, daysOwned: 1800 }, at, at),
+    health: () => ({ status: 'connected', detail: 'Simulated: charging and riding by itself', lastReadingAt: scooter.at }),
+    readings: () => readingsOf(scooter.state(), scooter.batteries(), scooter.totals(), scooter.at, scooter.at),
     // As NIU names a model: its name, then its finish.
     info: () => ({ manufacturer: 'NIU', model: 'UQi-GT Citi Black (Matte)', serial: 'SIMULATED' }),
     command: async () => ({ accepted: false, error: 'It takes no commands here yet' }),
     tools: {
-      raw: async () => ({ from: 'simulated', state: json(state()), batteries: json(batteries), totals: json({ totalMileage: odometer }) }),
+      raw: async () => ({ from: 'simulated', state: json(scooter.state()), batteries: json(scooter.batteries()), totals: json({ totalMileage: scooter.odometer }) }),
     },
     close: async () => undefined,
   };
@@ -364,24 +346,41 @@ const COMMON = {
   tools: TOOLS,
   connections: [
     {
-      id: 'cloud',
-      label: 'NIU’s cloud',
-      description: 'Through NIU’s servers, with the account you use in the NIU app. Needs the internet: the scooter reports to NIU over the mobile network.',
+      id: 'account',
+      label: 'Through your NIU account',
+      description: 'Through the NIU account it is on, which asks NIU’s servers for it. Needs the internet: the scooter reports to NIU over the mobile network.',
       protocol: 'niu-cloud',
-      transport: 'https',
-      address: NIU_API,
+      transport: 'bridge',
+      through: ['niu.account'],
       reach: 'cloud',
-      needs: { trusted: 'your NIU password stays at home, and NIU’s cloud does not answer a web page' },
     },
   ],
 
+  /** Read once through its account: which scooter, and how it is. */
   async identify(connection: OpenConnection) {
-    const { client, serial } = clientOver(connection);
-    const scooters = await client.scooters();
-    const scooter = scooters.find((candidate) => candidate.serial === serial);
-    if (!scooter) throw new Error('That scooter is no longer on the NIU account');
-    const { data } = await client.stateRaw(serial);
-    const state = parseState(data);
+    const channel = channelOf(connection);
+    const serial = connection.address;
+    const { scooter, state } = await new Promise<{ scooter: NiuVehicle; state: NiuState }>((resolve, reject) => {
+      let scooter: NiuVehicle | null = null;
+      const timer = setTimeout(() => {
+        stop();
+        reject(new Error('Its NIU account did not say how it is'));
+      }, ASKED_WAIT_MS);
+      const stop = channel.subscribe(SAID, (message) => {
+        const said = decodeMessage<MemberSaid>(message.payload);
+        if (said.kind === 'vehicle') scooter = said.vehicle;
+        if (said.kind === 'error') {
+          clearTimeout(timer);
+          stop();
+          reject(new Error(said.error));
+        }
+        if (said.kind === 'state' && scooter) {
+          clearTimeout(timer);
+          stop();
+          resolve({ scooter, state: said.state });
+        }
+      });
+    });
     const said = [
       state.soc === null ? 'charge not known' : `${Math.round(state.soc)} % charged`,
       state.charging ? 'charging' : null,
@@ -397,7 +396,7 @@ const COMMON = {
     };
   },
 
-  createSession: realSession,
+  createSession: memberSession,
   createSimulator: async (ctx: DeviceContext<Config>) => simulatedSession(ctx),
 } satisfies Omit<DeviceType<Config>, 'id' | 'kind' | 'meta' | 'config'>;
 
@@ -416,4 +415,3 @@ export default defineNiuScooter({
   },
 });
 
-export type { NiuClient };

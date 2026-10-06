@@ -5,7 +5,7 @@
  * stations", "Smart plugs" — because nobody arrives knowing a type id. A
  * category never decides behaviour: that comes from capabilities. Nor does it
  * decide the section of the add screen: that comes from each type's `kind`,
- * hardware or service.
+ * hardware, service or account.
  *
  * A category is a shelf, so it says nothing about any one product; what a
  * product is, its package says in its own description. A fixed list, so two
@@ -29,6 +29,8 @@ export const CATEGORIES = {
   weather: { label: 'Weather', singular: 'weather forecast', icon: 'cloud' },
   'energy-price': { label: 'Electricity prices', singular: 'electricity price', icon: 'tag' },
   vehicle: { label: 'Vehicles', singular: 'vehicle', icon: 'navigation' },
+  // A sign-in to someone's cloud, and what is reached through it: an account and the scooters on it.
+  account: { label: 'Accounts', singular: 'account', icon: 'user' },
 } as const satisfies Record<string, CategorySpec>;
 
 export type CategoryId = keyof typeof CATEGORIES;

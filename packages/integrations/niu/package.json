@@ -2,7 +2,7 @@
   "name": "@kraftverk/integration-niu",
   "version": "0.1.0",
   "private": true,
-  "description": "NIU as a platform: electric scooters read from NIU's cloud with their owner's account — the builder a scooter model is made with, the generic scooter and its screens.",
+  "description": "NIU as a platform: the NIU account — signed in once, a bridge to every scooter on it — and electric scooters read through it from NIU's cloud: the builder a scooter model is made with, the generic scooter and its screens.",
   "type": "module",
   "main": "./src/index.ts",
   "kraftverk": {
@@ -11,16 +11,23 @@
       "name": "NIU",
       "types": [
         {
+          "id": "niu.account",
+          "entry": "./src/account.ts"
+        },
+        {
           "id": "niu.scooter",
           "entry": "./src/scooter.ts",
           "ui": "./ui/index.ts"
         }
-      ]
+      ],
+      "migrations": "./src/migrations.ts"
     }
   },
   "exports": {
     ".": "./src/index.ts",
+    "./account": "./src/account.ts",
     "./scooter": "./src/scooter.ts",
+    "./migrations": "./src/migrations.ts",
     "./ui": "./ui/index.ts"
   },
   "scripts": {
