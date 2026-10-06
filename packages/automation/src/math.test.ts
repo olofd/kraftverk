@@ -29,7 +29,7 @@ const rule = (on: Expr, extra: Partial<Rule> = {}): Rule => ({
 });
 
 const scope = (charge: number | null): RuleScope => ({
-  param: () => null,
+  param: () => ({ value: null, unit: null }),
   read: (_role, means) => (means === 'charge' && charge !== null ? { value: charge, label: 'Charge', unit: '%' } : null),
   reachable: () => ({ reachable: true, detail: '' }),
   name: (role) => (role === 'battery' ? 'Garage station' : 'Scooter plug'),

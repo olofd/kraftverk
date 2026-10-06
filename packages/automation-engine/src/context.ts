@@ -1,5 +1,5 @@
 import type { ConditionState } from '@kraftverk/api-contract';
-import { capitalise, checkBinding, describeExpr, describeSteps, evaluateNow, measure, numberIn, secondsNow, isAutomationRole, partRoles, secondsText, triggerKey, triggerOf, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type RuleSteps, type Step, type Write } from '@kraftverk/automation';
+import { capitalise, settingOf, checkBinding, describeExpr, describeSteps, evaluateNow, measure, numberIn, secondsNow, isAutomationRole, partRoles, secondsText, triggerKey, triggerOf, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type RuleSteps, type Step, type Write } from '@kraftverk/automation';
 import { attributeMeaning, capabilityIn, clockTime, isCurrent, isScalar, readingOf, REAL_CLOCK, standardMeaning, unitIn, type CapabilityName, type Clock, type Value } from '@kraftverk/device-sdk';
 
 import type { AutomationEngineDeps, AutomationRecord, EngineDevice } from './model.ts';
@@ -61,11 +61,8 @@ export class RuleContext {
         if (!event) return null;
         return field === undefined ? event.id : (event.data?.[field] ?? null);
       },
-      // An automation's own rule has no settings: its values are in its blocks. A recipe's are its defaults.
-      param: (name) => {
-        const field = rule.params.fields[name];
-        return ((field && 'default' in field ? field.default : undefined) ?? null) as Value;
-      },
+      // Its settings, as it runs with them: each its value, in its unit.
+      param: (name) => settingOf(rule.params, name),
       read: (role, means) => {
         const device = part(role);
         const attribute = device ? attributeMeaning(device.description, device.part, means) : null;

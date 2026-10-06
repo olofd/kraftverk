@@ -4,7 +4,7 @@ import type { Unit, Value } from '@kraftverk/device-sdk';
 
 import { checkBinding, checkRule } from './check.ts';
 import { describeExpr } from './describe.ts';
-import { evaluateNow, inlineParams, measureNow, type RuleScope } from './evaluate.ts';
+import { evaluateNow, inlineParams, measureNow, settledScope, type RuleScope } from './evaluate.ts';
 import type { Expr, Rule } from './rule.ts';
 import { parseExpr, printExpr } from './text/expr.ts';
 
@@ -31,7 +31,7 @@ const readings: Record<string, { value: Value; unit: Unit | null }> = {
   'price.priceRank': { value: 3, unit: null },
 };
 const scope: RuleScope = {
-  param: () => null,
+  param: () => ({ value: null, unit: null }),
   read: (role, means) => {
     const found = readings[`${role}.${means}`];
     return found ? { value: found.value as never, label: means, unit: found.unit } : null;
@@ -151,6 +151,14 @@ describe('said in words', () => {
 });
 
 describe('a recipe’s settings written in', () => {
+  test('a setting is a number in its own unit: one kept in W, beside kW, is converted — not taken for kW', () => {
+    const rule: Rule = { roles: {}, params: { fields: { power: { type: 'number', title: 'Power', unit: 'W', default: 1500 } } }, when: [], then: [] };
+    const scope = settledScope(rule, {});
+    expect(evaluateNow(parse('setting.power > 1 kW'), scope)).toBe(true);
+    expect(evaluateNow(parse('setting.power > 2 kW'), scope)).toBe(false);
+    expect(measureNow(parse('setting.power'), scope)).toEqual({ value: 1500, unit: 'W' });
+  });
+
   test('what the settings alone decide is decided, in its unit', () => {
     const recipe: Rule = {
       roles: { charger: { label: 'Charger', capabilities: ['switch', 'powerMeter'] } },

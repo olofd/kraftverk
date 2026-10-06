@@ -48,7 +48,7 @@ describe('charging between two levels', () => {
   const params = { low: 15, lowFor: 120, high: 50, highFor: 180 };
   /** As a run sees it: the charge and the settings. */
   const scope = (soc: Value, overrides: Record<string, Value> = {}): RuleScope => ({
-    param: (name) => ({ ...params, ...overrides })[name as keyof typeof params] ?? null,
+    param: (name) => ({ value: ({ ...params, ...overrides })[name as keyof typeof params] ?? null, unit: null }),
     read: (_role, means) => (means === 'charge' && typeof soc === 'number' ? { value: soc, label: 'Charge', unit: '%' } : null),
     reachable: () => ({ reachable: true, detail: 'connected' }),
     name: (role) => (role === 'battery' ? 'Garage P280' : 'ATORCH plug'),

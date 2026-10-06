@@ -217,7 +217,7 @@ describe('units', () => {
   const read = (condition: string) => ruleFromConfig({ uses: { plug: 'plug' }, when: [{ becomes: condition }], do: [{ 'turn on': 'plug' }] }, ['a']);
   const problems = (condition: string) => checkRule(read(condition).rule!, { fn: () => null });
   const scope = (watts: number): RuleScope => ({
-    param: () => null,
+    param: () => ({ value: null, unit: null }),
     read: (_role, means) => (means === 'power' ? { value: watts, label: 'Power', unit: 'W' } : null),
     reachable: () => ({ reachable: true, detail: '' }),
     name: (role) => role,

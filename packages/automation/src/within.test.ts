@@ -25,7 +25,7 @@ const rule = (condition: Expr, extra: Partial<Rule> = {}): Rule => ({
   ...extra,
 });
 
-const at = (clock: string | null): RuleScope => ({ param: () => null, read: () => null, reachable: () => ({ reachable: null, detail: '' }), name: (role) => role, clock: () => clock });
+const at = (clock: string | null): RuleScope => ({ param: () => ({ value: null, unit: null }), read: () => null, reachable: () => ({ reachable: null, detail: '' }), name: (role) => role, clock: () => clock });
 
 describe('between two times of day', () => {
   test('from it, up to but not at its end — across midnight when the end comes first', () => {

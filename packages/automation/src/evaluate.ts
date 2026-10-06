@@ -34,6 +34,17 @@ function inOneUnit(left: Measured, right: Measured): { left: Value; right: Value
   return converted === null ? null : { left: left.value, right: converted, unit: left.unit };
 }
 
+/**
+ * A setting as a rule runs with it: the value given — a form's, as it is set
+ * — or its own, a number in the setting's unit: `setting.power > 1 kW`
+ * compares a setting kept in W as W.
+ */
+export function settingOf(schema: ConfigSchema, name: string, given?: Value): Measured {
+  const field = schema.fields[name];
+  const value = (given ?? (field && 'default' in field ? field.default : undefined) ?? null) as Value;
+  return { value, unit: field?.type === 'number' && typeof value === 'number' ? (field.unit ?? null) : null };
+}
+
 /** A number worked out without the float's dust: 0.1 + 0.2 is 0.3. */
 const tidy = (value: number): number => Math.round(value * 1e9) / 1e9;
 
@@ -45,7 +56,8 @@ export function numberIn(measured: Measured, unit: Unit): number | null {
 
 /** What an expression is evaluated against. */
 export type RuleScope = {
-  param(name: string): Value;
+  /** One of the rule's settings, as it runs with it: a number in the setting's unit. */
+  param(name: string): Measured;
   /** What the part filling a role reports now for a meaning — a number in its unit, if it has one — or null when it cannot be known. */
   read(role: string, means: string): { value: ScalarValue; label: string; unit: Unit | null } | null;
   /** A function's answer; not given where calls are not allowed. */
@@ -162,7 +174,7 @@ export function measureNow(expr: Expr, scope: RuleScope, trace: string[] = [], a
       return { value, unit: typeof value === 'number' ? (unit ?? null) : null };
     }
     case 'param':
-      return plain(scope.param((expr as ExprOf<'param'>).param));
+      return scope.param((expr as ExprOf<'param'>).param);
     case 'read': {
       const { role, means } = (expr as ExprOf<'read'>).read;
       const read = scope.read(role, means);
@@ -268,10 +280,7 @@ export function measureNow(expr: Expr, scope: RuleScope, trace: string[] = [], a
  */
 export function settledScope(rule: Rule, params: Readonly<Record<string, Value>>, name: (role: string) => string = (role) => role): RuleScope {
   return {
-    param: (key) => {
-      const field = rule.params.fields[key];
-      return (params[key] ?? (field && 'default' in field ? field.default : undefined) ?? null) as Value;
-    },
+    param: (key) => settingOf(rule.params, key, params[key]),
     read: () => null,
     reachable: () => ({ reachable: null, detail: 'not known until it runs' }),
     name,
@@ -317,7 +326,7 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
   const scope = settledScope(rule, values);
   /** A setting's value as a rule writes it: a number in the setting's unit — a length of time in the largest that says it whole. */
   const written = (name: string): Expr => {
-    const value = scope.param(name);
+    const { value } = scope.param(name);
     const field = rule.params.fields[name];
     const unit = field?.type === 'number' ? field.unit : undefined;
     if (typeof value !== 'number' || !unit) return { value };

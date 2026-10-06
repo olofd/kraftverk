@@ -14,7 +14,7 @@ import {
   type ScalarValue,
   type Value,
 } from '@kraftverk/device-sdk';
-import { evaluate, evaluateNow, EVERY_SECONDS, minutesOf, ruleUses, runsOn, secondsNow, secondsText, stepsOf, triggerKey, triggerOf, type RoleBinding, type Rule, type RuleScope } from '@kraftverk/automation';
+import { evaluate, evaluateNow, settingOf, EVERY_SECONDS, minutesOf, ruleUses, runsOn, secondsNow, secondsText, stepsOf, triggerKey, triggerOf, type RoleBinding, type Rule, type RuleScope } from '@kraftverk/automation';
 
 /**
  * A rule, rehearsed on what happened (PROPOSITION.md §5.3): walked through a
@@ -109,11 +109,8 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
   const scopeAt = (t: number, trigger: string | null = null): RuleScope => ({
     clock: () => clockTime(new Date(t), automation.timeZone),
     reachable: () => ({ reachable: null, detail: 'history does not keep whether it could be reached' }),
-    // An automation's own rule has no settings: its values are in its blocks.
-    param: (param) => {
-      const field = recipe.params.fields[param];
-      return ((field && 'default' in field ? field.default : undefined) ?? null) as Value;
-    },
+    // Its settings, as it runs with them: each its value, in its unit.
+    param: (param) => settingOf(recipe.params, param),
     read: (role, means) => {
       const found = series.get(`${role}:${means}`);
       if (!found) return null;
