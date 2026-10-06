@@ -23,8 +23,12 @@ export interface AutomationStorage {
   /** What a trigger last saw, by its key (`triggerKey`): its id, or its place in the rule when it has none. */
   trigger(id: string, trigger: string): TriggerState | null;
   keepTrigger(id: string, trigger: string, state: TriggerState): void;
-  /** It starts afresh: what its triggers saw is forgotten, and it last looked now. */
+  /** It starts afresh: what its triggers saw, and when each last started it, is forgotten, and it last looked now. */
   startAfresh(id: string, at: string): void;
+  /** When a trigger, by its key, last started a run of it: what `at most every` is counted from. Null: not since it started afresh. */
+  triggerStarted(id: string, trigger: string): string | null;
+  /** A trigger started a run of it, now. */
+  keepTriggerStarted(id: string, trigger: string, at: string): void;
   /** It looked again, to keep things so. */
   looked(id: string, at: string): void;
 

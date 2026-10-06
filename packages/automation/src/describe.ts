@@ -278,7 +278,9 @@ export function describeTriggers(rule: Rule, params: Readonly<Record<string, Val
   };
   return rule.when.map((trigger) => {
     const kind = triggerKind(trigger);
-    return (TRIGGER_KINDS[kind].words as (trigger: Trigger, say: Say) => string)(trigger, say);
+    const said = (TRIGGER_KINDS[kind].words as (trigger: Trigger, say: Say) => string)(trigger, say);
+    // How often it may start one, at most: "…, at most every 10 min".
+    return trigger.atMostEvery ? `${said}, at most every ${holdText(trigger.atMostEvery, text)}` : said;
   });
 }
 

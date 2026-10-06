@@ -191,7 +191,12 @@ export type Trigger =
  * what a run does asks which one started it (`run.trigger`): `low`, `high`.
  * Unique within the rule.
  */
-export type RuleTrigger = Trigger & { id?: string; then?: readonly Step[] };
+export type RuleTrigger = Trigger & {
+  id?: string;
+  /** A start it would make sooner than this after its last is let go: a door opened twice a minute turns the hall light on once in ten. Seconds, a number or a setting. */
+  atMostEvery?: Expr;
+  then?: readonly Step[];
+};
 
 /** A trigger's id: letters and digits, starting with a lowercase letter, as a role's name — `low`, `aboveHigh`. */
 export const TRIGGER_ID = /^[a-z][a-zA-Z0-9]{0,31}$/;

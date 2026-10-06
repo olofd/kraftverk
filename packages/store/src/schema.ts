@@ -340,6 +340,18 @@ export const SCHEMA = `
   );
 
   /*
+    When each of an automation's triggers, by its key, last started a run of
+    it: what "at most every" is counted from, across a restart. Forgotten,
+    as what its triggers saw is, whenever it starts afresh.
+  */
+  CREATE TABLE automation_trigger_start (
+    automation_id TEXT NOT NULL REFERENCES automation (id) ON DELETE CASCADE,
+    trigger       TEXT NOT NULL CHECK (trigger <> ''),
+    started_at    TEXT NOT NULL,
+    PRIMARY KEY (automation_id, trigger)
+  );
+
+  /*
     What each automation remembers (its memory), by name: the value a run
     last left it, as JSON, in its field's unit. Kept across runs, restarts
     and changes to the automation — a count goes on counting; a value its

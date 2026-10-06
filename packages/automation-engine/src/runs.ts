@@ -1,5 +1,5 @@
 import type { AutomationRun, RunLog, RunStep } from '@kraftverk/api-contract';
-import { bindingsOf, eachAsGroup, isGroupRole, memberRole, branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, measure, paramText, toRemember, secondsNow, fieldValue, negation, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepsOf, stepSpec, takesSteps, type StepOf, type Command, type Expr, type Rule, type RoleBinding, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
+import { bindingsOf, eachAsGroup, triggerOf, isGroupRole, memberRole, branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, measure, paramText, toRemember, secondsNow, fieldValue, negation, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepsOf, stepSpec, takesSteps, type StepOf, type Command, type Expr, type Rule, type RoleBinding, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
 import { attributeMeaning, MAIN_PART, readingOf, type AutomationId } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
@@ -129,6 +129,8 @@ export class Runs {
    * Null when it did not run now.
    */
   async runAndKeep(automation: AutomationRecord, why: string, trigger: string | null = null, event: StartingEvent | null = null): Promise<AutomationRun | null> {
+    // Started again by a trigger sooner than it may be: let go.
+    if (trigger !== null && this.#tooSoon(automation, trigger)) return null;
     if (this.#running.has(automation.id)) {
       const way = automation.rule.whileRunning ?? 'skip';
       if (way === 'skip') return null;
@@ -145,6 +147,7 @@ export class Runs {
       if (this.#running.has(automation.id)) return null;
     }
     this.#running.add(automation.id);
+    if (trigger !== null) this.deps.store.keepTriggerStarted(automation.id, trigger, this.#context.now().toISOString());
     const going = this.run(automation, { why, trigger, event });
     this.#ending.set(automation.id, going.catch(() => undefined));
     try {
@@ -156,6 +159,15 @@ export class Runs {
     } finally {
       this.#ended(automation.id);
     }
+  }
+
+  /** Whether a trigger, by its key, started a run of it less than its `at most every` ago. */
+  #tooSoon(automation: AutomationRecord, key: string): boolean {
+    const every = triggerOf(automation.rule, key)?.atMostEvery;
+    const last = every ? this.deps.store.triggerStarted(automation.id, key) : null;
+    if (!every || !last) return false;
+    const seconds = secondsNow(every, this.#context.scope(automation, automation.rule));
+    return seconds !== null && this.#context.now().getTime() - Date.parse(last) < seconds * 1000;
   }
 
   /** A run of an automation ended: the next of the starts it queued, if any, is taken — as it is now, unless it has been turned off or deleted since. */

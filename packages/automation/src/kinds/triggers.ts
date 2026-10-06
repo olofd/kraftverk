@@ -129,6 +129,14 @@ export const TRIGGER_FIELDS: readonly FieldSpec[] = [
     help: 'For steps shared by several triggers that ask which one started them: run.trigger == "low".',
   },
   {
+    data: ['atMostEvery'],
+    key: 'at most every',
+    type: { type: 'duration', min: 60, max: 7 * 86_400, fixed: true },
+    required: false,
+    label: 'At most every',
+    help: 'A start it would make sooner than this after its last is let go.',
+  },
+  {
     data: ['then'],
     key: 'do',
     type: { type: 'steps', sure: 'inherit' },
@@ -144,8 +152,8 @@ export const triggerFields = (trigger: Trigger): readonly FieldSpec[] => [...tri
 /** What every trigger may have, for the reference: a page of its own, beside the kinds'. */
 export const TRIGGER_FIELDS_DOCS: KindDocs = {
   summary:
-    'Every trigger may say what it does itself, under `do`: a run it starts takes those steps in place of the automation’s own — one automation, each side where it is said. And a name, `id`, that steps shared by several triggers read back as `run.trigger`.',
-  examples: ['becomes: station.charge < 20 %\nfor: 2 min\ndo:\n  - turn on: charger', 'id: low\nbecomes: station.charge < 20 %'],
+    'Every trigger may say what it does itself, under `do`: a run it starts takes those steps in place of the automation’s own — one automation, each side where it is said. A name, `id`, that steps shared by several triggers read back as `run.trigger`. And `at most every`: a start it would make sooner than that after its last is let go — a minute to a week, a number or a setting.',
+  examples: ['becomes: station.charge < 20 %\nfor: 2 min\ndo:\n  - turn on: charger', 'id: low\nbecomes: station.charge < 20 %', 'becomes: charger.power > 10 W\nat most every: 30 min'],
 };
 
 /** The order the editor offers them in. */

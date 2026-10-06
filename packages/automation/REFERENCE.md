@@ -291,11 +291,12 @@ when:
 
 ### Every trigger — what it does, and its name
 
-Every trigger may say what it does itself, under `do`: a run it starts takes those steps in place of the automation’s own — one automation, each side where it is said. And a name, `id`, that steps shared by several triggers read back as `run.trigger`.
+Every trigger may say what it does itself, under `do`: a run it starts takes those steps in place of the automation’s own — one automation, each side where it is said. A name, `id`, that steps shared by several triggers read back as `run.trigger`. And `at most every`: a start it would make sooner than that after its last is let go — a minute to a week, a number or a setting.
 
 | Word | Holds | |
 |---|---|---|
 | `id` | a name of its own, unique in the automation: letters and digits, from a lowercase letter | if you like |
+| `at most every` | a length of time, `2 min` — 1 min to 7 d; a number or a setting, never a reading | if you like |
 | `do` | steps | if you like |
 
 ```yaml
@@ -310,6 +311,12 @@ when:
 when:
   - id: low
     becomes: station.charge < 20 %
+```
+
+```yaml
+when:
+  - becomes: charger.power > 10 W
+    at most every: 30 min
 ```
 
 ## What it does — steps

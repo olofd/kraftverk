@@ -91,7 +91,9 @@ describes.
   - any of them with `do: [steps]` of its own, which a run it starts takes
     in place of the automation's — "when the charge is below 20 %, turn
     the charger on; when it is 40 %, off", one automation — and with a
-    name, `id: low`, which shared steps read back as `run.trigger`
+    name, `id: low`, which shared steps read back as `run.trigger` — and
+    `at most every: 10 min`: a start it would make sooner than that after
+    its last is let go
 - **Only when** (`only if: <condition>`).
 - **What it does** (`do:`), and what it does if a step does not succeed or it
   is stopped (`if a step fails:`):

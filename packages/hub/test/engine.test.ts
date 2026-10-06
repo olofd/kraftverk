@@ -1108,6 +1108,37 @@ describe('a battery kept between two levels', () => {
   });
 });
 
+describe('at most every so often', () => {
+  test('a start sooner than that after the trigger’s last is let go — and one after it is not', async () => {
+    db.exec('DELETE FROM automation');
+    const context = setup();
+    const { engine, bus, sent, store } = context;
+    const rule: Rule = {
+      roles: { station: { label: 'Mains', capabilities: ['acInput'] }, plug: { label: 'Plug', capabilities: ['switch'] } },
+      params: { fields: {} },
+      when: [{ event: { role: 'station', event: 'mains.lost' }, atMostEvery: { value: 10, unit: 'min' } }],
+      then: [{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
+    };
+    expect(checkRule(rule, { fn: () => null })).toEqual([]);
+    const made = store.create({ name: 'Once in ten', rule, madeFrom: null, roles: { station: { device: STATION, part: 'input.ac' }, plug: { device: PLUG, part: 'main' } }, groups: {}, starts: {}, timeZone: ZONE, recheckMinutes: null });
+    store.update(made.id, { mode: 'act' });
+    engine.start();
+    try {
+      const lost = () => bus.publish({ kind: 'event', deviceId: STATION, event: { id: 'mains.lost', level: 'warn', part: 'input.ac', data: null, at: new Date().toISOString() } });
+      for (let times = 0; times < 3; times++) (lost(), await settle());
+      expect(sent).toHaveLength(1);
+      // Eleven minutes on: once more.
+      context.at(new Date(context.now().getTime() + 11 * 60_000));
+      lost();
+      await settle();
+      expect(sent).toHaveLength(2);
+      expect(store.get(made.id)!.lastRun?.why).toContain('Garage P280 — Mains said');
+    } finally {
+      engine.stop();
+    }
+  });
+});
+
 describe('across a group', () => {
   test('a condition over its parts is looked at as any part reports — and runs when it turns true', async () => {
     db.exec('DELETE FROM automation');

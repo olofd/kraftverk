@@ -299,10 +299,19 @@ export class AutomationStore implements AutomationStorage {
       .run(id, trigger, state.last ? 1 : 0, state.last ? state.heldSince : null, state.last && state.fired ? 1 : 0);
   }
 
-  /** It starts afresh: what its triggers saw is forgotten, and it last looked now. */
+  triggerStarted(id: string, trigger: string): string | null {
+    return this.#db.query<{ started_at: string }, [string, string]>('SELECT started_at FROM automation_trigger_start WHERE automation_id = ? AND trigger = ?').get(id, trigger)?.started_at ?? null;
+  }
+
+  keepTriggerStarted(id: string, trigger: string, at: string): void {
+    this.#db.query('INSERT INTO automation_trigger_start (automation_id, trigger, started_at) VALUES (?, ?, ?) ON CONFLICT (automation_id, trigger) DO UPDATE SET started_at = excluded.started_at').run(id, trigger, at);
+  }
+
+  /** It starts afresh: what its triggers saw, and when each last started it, is forgotten, and it last looked now. */
   startAfresh(id: string, at: string): void {
     this.#db.transaction(() => {
       this.#db.query('DELETE FROM automation_trigger WHERE automation_id = ?').run(id);
+      this.#db.query('DELETE FROM automation_trigger_start WHERE automation_id = ?').run(id);
       this.#db.query('UPDATE automation SET looked_at = ? WHERE id = ?').run(at, id);
     })();
   }
