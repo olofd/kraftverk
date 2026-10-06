@@ -158,8 +158,8 @@ export default defineDeviceType<Config>({
   describe: () => ({
     parts: [{ id: 'main', label: 'Plug', kind: 'outlet', energy: { role: 'load' }, offers: ['switch'] }],
     attributes: [
-      { key: 'on', label: 'On', value: { type: 'boolean' }, means: 'switch.on' },
-      { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power.draw' },
+      { key: 'on', label: 'On', value: { type: 'boolean' }, means: 'on' },
+      { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power' },
     ],
   }),
 
@@ -172,7 +172,7 @@ export default defineDeviceType<Config>({
 });
 ```
 
-From that declaration the app gives it a card, a section for each part, controls from the commands its parts take, settings from what it can be told, history charts and a place in automations, with no screen code. Standard meanings such as `battery.soc` and `power.draw` are what charts, automations and the Home Assistant bridge work from, so a device written tomorrow fits everything that exists today.
+From that declaration the app gives it a card, a section for each part, controls from the commands its parts take, settings from what it can be told, history charts and a place in automations, with no screen code. Standard meanings such as `charge` and `power` are what charts, automations and the Home Assistant bridge work from, so a device written tomorrow fits everything that exists today.
 
 **Writing one with a coding agent works well, on purpose.** The contract, the simulator, the contract test and the architecture check tell the agent, and you, exactly where it is wrong. [ADDING-A-DEVICE.md](docs/ADDING-A-DEVICE.md) is the guide, and [AGENTS.md](AGENTS.md) is what an agent reads first. A protocol or transport of its own is `npm run new:protocol` or `npm run new:transport`.
 

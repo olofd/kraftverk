@@ -44,7 +44,7 @@ export const lowBattery = defineRecipe({
   },
   when: [
     {
-      becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { param: 'below' } },
+      becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'charge' } }, right: { param: 'below' } },
       heldFor: { param: 'heldFor' },
     },
   ],
@@ -66,7 +66,7 @@ export const mainsLost = defineRecipe({
   then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: turn } } }],
 });
 
-const soc: Expr = { read: { role: 'battery', means: 'battery.soc' } };
+const soc: Expr = { read: { role: 'battery', means: 'charge' } };
 
 /**
  * "Charge the station through the plug that feeds it: on below 15 %, off at
@@ -123,7 +123,7 @@ const CHARGER: RoleSpec = {
 };
 
 const set = (role: string, on: boolean): Step => ({ command: { role, capability: 'switch', command: 'set', args: { on: { value: on } } } });
-const draws = (role: string): Expr => ({ read: { role, means: 'power.draw' } });
+const draws = (role: string): Expr => ({ read: { role, means: 'power' } });
 
 /**
  * "Start charging": power the charger, wait for its plug, switch it on, and
@@ -222,7 +222,7 @@ export const stopCharging = defineRecipe({
   ],
 });
 
-const rank: Expr = { read: { role: 'prices', means: 'price.rank' } };
+const rank: Expr = { read: { role: 'prices', means: 'priceRank' } };
 
 /**
  * "Charge in the day's four cheapest hours" — from any service that reports

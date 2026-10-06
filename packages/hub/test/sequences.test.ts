@@ -41,15 +41,15 @@ const OUTLET: DeviceDescription = {
     { id: 'outlet.ac', label: 'AC outlets', kind: 'outlet', offers: ['switch'] },
   ],
   attributes: [
-    { key: 'outlet.ac.on', part: 'outlet.ac', label: 'AC outlets', value: { type: 'boolean' }, means: 'switch.on' },
-    { key: 'outlet.ac.watts', part: 'outlet.ac', label: 'AC draw', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power.draw' },
+    { key: 'outlet.ac.on', part: 'outlet.ac', label: 'AC outlets', value: { type: 'boolean' }, means: 'on' },
+    { key: 'outlet.ac.watts', part: 'outlet.ac', label: 'AC draw', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power' },
   ],
 };
 const SOCKET: DeviceDescription = {
   parts: [{ id: MAIN_PART, label: 'Socket', kind: 'outlet', offers: ['switch'] }],
   attributes: [
-    { key: 'relay', label: 'Power', value: { type: 'boolean' }, means: 'switch.on' },
-    { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power.draw' },
+    { key: 'relay', label: 'Power', value: { type: 'boolean' }, means: 'on' },
+    { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power' },
     { key: 'live', label: 'Live readings', value: { type: 'boolean' }, access: 'write' },
   ],
 };

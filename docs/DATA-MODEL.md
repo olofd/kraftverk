@@ -278,7 +278,7 @@ classDiagram
 | **Description** | What a device is: its **parts** (`main`, and whatever it has several of — each of a curated **kind** with an icon, or one of the type's own, namespaced, and an optional **energy role**), their **attributes** (what they report, and what they remember and can be told), its **events**, and any capabilities of its own. An attribute's key begins with its part (`pack.1.soc`); it says how long a value stays **current** (`currentFor`). A type declares it for a device's config; a session may report its own. | `device-sdk` (`description.ts`) | A P280: `main`, `input.ac` (`input.ac.present`), `input.solar`, `outlet.ac`/`dc`/`usb` (`outlet.ac.on`), and `pack.1` when a pack is plugged in |
 | **Capability** | What a part can do or report, declared like a Matter cluster: attributes bound to standard meanings (Matter's names), commands with typed arguments, what each sets and **what makes it consequential**, queries with the **type of their answer**, and events. The library is shared; a package may declare its own, namespaced by its type, in the same shape. | `device-sdk` | `switch` (off while drawing more than the home's `loadWatts` is consequential), `powerMeter`, `battery`, `acInput` (raises `mains.lost`), `weather.forecast` (answers a list of hours) |
 | **Tool** | Something a kind of device can do beyond its capabilities — a register dump, a raw frame — **declared as data**: what it asks for, what it answers, whether it writes. The holder checks both ways. | inside the device type | P280: `registers`, `scan`, `raw`; a Tuya plug: `datapoints` |
-| **Link kind** | A physical fact between **parts** of two devices: which capability each end needs, what on the target proves a command on the source did something, and whether being its source makes a command consequential. | `device-sdk` | `feeds`: from a part with `switch` to a part with `acInput`, proven by `grid.present` following `switch.on`; consequential |
+| **Link kind** | A physical fact between **parts** of two devices: which capability each end needs, what on the target proves a command on the source did something, and whether being its source makes a command consequential. | `device-sdk` | `feeds`: from a part with `switch` to a part with `acInput`, proven by `mainsPresent` following `on`; consequential |
 
 ### A method's setup is assembled, not written
 
@@ -299,11 +299,11 @@ underneath. Improving a layer improves every device that uses it.
 flowchart LR
   subgraph P280["Garage P280: sydpower over mqtt, held by the server"]
     direction LR
-    T1["transport mqtt<br/>the broker on :1883<br/>client AABBCC001122 connected"] --> P1["protocol sydpower<br/>topic AABBCC001122/device/response/04<br/>a read of holding registers 0–79"] --> D1["device type aferiy.p280<br/>register 56 → battery.soc = 87 %"]
+    T1["transport mqtt<br/>the broker on :1883<br/>client AABBCC001122 connected"] --> P1["protocol sydpower<br/>topic AABBCC001122/device/response/04<br/>a read of holding registers 0–79"] --> D1["device type aferiy.p280<br/>register 56 → charge = 87 %"]
   end
   subgraph PLUG["Heater plug: tuya-local over lan, held by the server"]
     direction LR
-    T2["transport lan<br/>UDP broadcast from 192.0.2.41<br/>TCP 192.0.2.41:6668"] --> P2["protocol tuya-local<br/>v3.4 session, AES with the local key<br/>dps: 1 = true, 19 = 1520"] --> D2["device type atorch.s1w<br/>dp 19 ÷ 100 → power.draw = 15.2 W"]
+    T2["transport lan<br/>UDP broadcast from 192.0.2.41<br/>TCP 192.0.2.41:6668"] --> P2["protocol tuya-local<br/>v3.4 session, AES with the local key<br/>dps: 1 = true, 19 = 1520"] --> D2["device type atorch.s1w<br/>dp 19 ÷ 100 → power = 15.2 W"]
   end
   subgraph PHONE["Garage P280: sydpower over ble, held by Olof's iPhone"]
     direction LR
@@ -418,7 +418,7 @@ erDiagram
   sample {
     text device_id PK "d-3f9a2c61b0e43f9a"
     text part "main · pack.1 · the part the key begins with"
-    text key PK "soc · the type's own key · means battery.soc"
+    text key PK "soc · the type's own key · means charge"
     text at PK "2026-09-27T19:41:00Z"
     real value "87 · a number, or on/off as 1/0"
     text text "charging · an enum or text instead of a value"
@@ -445,7 +445,7 @@ erDiagram
     text device_id PK "d-3f9a2c61b0e43f9a"
     text key PK "pack.1.soc"
     text part "pack.1"
-    json spec "{label: Pack 1 charge, value: {type: number, unit: %}, means: battery.soc}"
+    json spec "{label: Pack 1 charge, value: {type: number, unit: %}, means: charge}"
     text first_seen "2026-09-27T19:41:00Z"
     text last_seen "2026-09-29T10:02:00Z"
   }

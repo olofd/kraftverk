@@ -96,86 +96,86 @@ export type MeaningProjection = {
  * the attribute is the same.
  */
 export const MEANING_PROJECTIONS: Readonly<Record<StandardMeaningId, MeaningProjection>> = {
-  'battery.soc': {
+  'charge': {
     homeAssistant: { platform: 'sensor', deviceClass: 'battery' },
     // Matter counts in half-percents: 0–200.
     matter: { cluster: 'PowerSource', attribute: 'BatPercentRemaining', scale: 2 },
   },
-  'battery.capacity': {
+  'capacity': {
     homeAssistant: { platform: 'sensor', deviceClass: 'energy_storage' },
     matter: { none: 'Matter states battery capacity in mAh, not energy' },
   },
-  'battery.chargeLimit': {
+  'chargeLimit': {
     homeAssistant: { platform: 'number', deviceClass: null },
     matter: { none: 'Matter has no setting for the charge a store stops charging at' },
   },
-  'battery.dischargeFloor': {
+  'dischargeFloor': {
     homeAssistant: { platform: 'number', deviceClass: null },
     matter: { none: 'Matter has no setting for the charge a store stops supplying at' },
   },
-  'power.in': {
+  'input': {
     homeAssistant: { platform: 'sensor', deviceClass: null },
     matter: { cluster: 'ElectricalPowerMeasurement', attribute: 'ActivePower', scale: 1000 },
   },
-  'power.in.ac': {
+  'mainsInput': {
     homeAssistant: { platform: 'sensor', deviceClass: null },
     matter: { cluster: 'ElectricalPowerMeasurement', attribute: 'ActivePower', scale: 1000 },
   },
-  'power.in.solar': {
+  'solarInput': {
     homeAssistant: { platform: 'sensor', deviceClass: null },
     matter: { cluster: 'ElectricalPowerMeasurement', attribute: 'ActivePower', scale: 1000 },
   },
-  'power.in.ac.max': {
+  'mainsInputLimit': {
     homeAssistant: { platform: 'number', deviceClass: null },
     matter: { none: 'Matter has no setting for how hard a store charges from mains' },
   },
-  'power.out': {
+  'output': {
     homeAssistant: { platform: 'sensor', deviceClass: null },
     matter: { cluster: 'ElectricalPowerMeasurement', attribute: 'ActivePower', scale: 1000 },
   },
-  'power.draw': {
+  'power': {
     homeAssistant: { platform: 'sensor', deviceClass: null },
     matter: { cluster: 'ElectricalPowerMeasurement', attribute: 'ActivePower', scale: 1000 },
   },
-  'energy.total': {
+  'energy': {
     homeAssistant: { platform: 'sensor', deviceClass: null },
     // kWh to mWh.
     matter: { cluster: 'ElectricalEnergyMeasurement', attribute: 'CumulativeEnergyImported', scale: 1_000_000 },
   },
-  'voltage.ac': {
+  'voltage': {
     homeAssistant: { platform: 'sensor', deviceClass: null },
     matter: { cluster: 'ElectricalPowerMeasurement', attribute: 'Voltage', scale: 1000 },
   },
-  'current.ac': {
+  'current': {
     homeAssistant: { platform: 'sensor', deviceClass: null },
     matter: { cluster: 'ElectricalPowerMeasurement', attribute: 'ActiveCurrent', scale: 1000 },
   },
-  'frequency.ac': {
+  'frequency': {
     homeAssistant: { platform: 'sensor', deviceClass: null },
     matter: { cluster: 'ElectricalPowerMeasurement', attribute: 'Frequency', scale: 1000 },
   },
-  'grid.present': {
+  'mainsPresent': {
     homeAssistant: { platform: 'binary_sensor', deviceClass: 'power' },
     matter: { cluster: 'PowerSource', attribute: 'WiredPresent', scale: 1 },
   },
-  'switch.on': {
+  'on': {
     homeAssistant: { platform: 'switch', deviceClass: 'outlet' },
     matter: { cluster: 'OnOff', attribute: 'OnOff', scale: 1 },
   },
-  'temperature.air': {
+  'temperature': {
     homeAssistant: { platform: 'sensor', deviceClass: null },
     // Hundredths of a degree.
     matter: { cluster: 'TemperatureMeasurement', attribute: 'MeasuredValue', scale: 100 },
   },
-  'price.now': {
+  'price': {
     homeAssistant: { platform: 'sensor', deviceClass: null },
     matter: { none: 'Matter states tariffs in clusters kraftverk does not project yet' },
   },
-  'price.rank': {
+  'priceRank': {
     homeAssistant: { platform: 'sensor', deviceClass: null },
     matter: { none: 'Matter has no rank of an hour by price' },
   },
-  'sky.cloudCover': {
+  'cloudCover': {
     homeAssistant: { platform: 'sensor', deviceClass: null },
     matter: { none: 'Matter has no cloud-cover measurement' },
   },

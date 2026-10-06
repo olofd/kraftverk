@@ -19,11 +19,11 @@ const STATION: DeviceDescription = {
     { id: 'lock', label: 'Lock', kind: 'lock' },
   ],
   attributes: [
-    { key: 'soc', label: 'Charge', value: { type: 'number', unit: '%' }, quantity: 'percent', means: 'battery.soc' },
-    { key: 'input.ac.volts', part: 'input.ac', label: 'Voltage', value: { type: 'number', unit: 'V' }, quantity: 'voltage', means: 'voltage.ac' },
-    { key: 'input.ac.watts', part: 'input.ac', label: 'From mains', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power.in.ac' },
-    { key: 'outlet.ac.on', part: 'outlet.ac', label: 'On', value: { type: 'boolean' }, means: 'switch.on' },
-    { key: 'outlet.ac.watts', part: 'outlet.ac', label: 'Draw', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power.draw' },
+    { key: 'soc', label: 'Charge', value: { type: 'number', unit: '%' }, quantity: 'percent', means: 'charge' },
+    { key: 'input.ac.volts', part: 'input.ac', label: 'Voltage', value: { type: 'number', unit: 'V' }, quantity: 'voltage', means: 'voltage' },
+    { key: 'input.ac.watts', part: 'input.ac', label: 'From mains', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'mainsInput' },
+    { key: 'outlet.ac.on', part: 'outlet.ac', label: 'On', value: { type: 'boolean' }, means: 'on' },
+    { key: 'outlet.ac.watts', part: 'outlet.ac', label: 'Draw', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power' },
   ],
 };
 

@@ -21,9 +21,9 @@ const STATION = savedDeviceId('d-station');
 const DESCRIPTION: DeviceDescription = {
   parts: [{ id: 'outlet.ac', label: 'AC outlets', kind: 'outlet' }],
   attributes: [
-    { key: 'outlet.ac.on', part: 'outlet.ac', label: 'AC outlets', value: { type: 'boolean' }, means: 'switch.on' },
+    { key: 'outlet.ac.on', part: 'outlet.ac', label: 'AC outlets', value: { type: 'boolean' }, means: 'on' },
     { key: 'mode', label: 'Mode', value: { type: 'enum', options: [{ value: 'eco', label: 'Eco' }, { value: 'fast', label: 'Fast' }] } },
-    { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, means: 'power.draw' },
+    { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, means: 'power' },
   ],
 };
 const LOGGED = loggedAttributes(DESCRIPTION);

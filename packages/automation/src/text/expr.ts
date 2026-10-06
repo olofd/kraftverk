@@ -3,8 +3,8 @@ import { standardMeaning, type Value } from '@kraftverk/device-sdk';
 
 /*
   The rule language's expressions as text (docs/CONFIG.md): what a condition
-  reads like in a configuration file — `charger.power.draw > 50 W`,
-  `station.battery.soc < 15 % and not plug reachable`. The text is only a way
+  reads like in a configuration file — `charger.power > 50 W`,
+  `station.charge < 15 % and not plug reachable`. The text is only a way
   of writing an `Expr`: parsed, it is the expression the checker checks, the
   describer says and the engine runs. Printed, it is that expression again —
   `parseExpr(printExpr(e))` is `e` — or, for the few an expression cannot say
@@ -251,7 +251,7 @@ export function parseExpr(text: string): Parsed {
           next();
           return { reachable: token.value };
         }
-        if (!isSymbol('.')) throw new Failure(`After the role "${token.value}": what it reads ("${token.value}.battery.soc"), or "reachable"`, peek().at);
+        if (!isSymbol('.')) throw new Failure(`After the role "${token.value}": what it reads ("${token.value}.charge"), or "reachable"`, peek().at);
         const segments: string[] = [];
         while (isSymbol('.')) {
           next();

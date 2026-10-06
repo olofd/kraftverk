@@ -191,7 +191,7 @@ const lampSession = (ctx: DeviceContext<LampConfig>, channel: ByteChannel | null
 /** A lamp: one part, a switch. */
 export const LAMP: DeviceDescription = {
   parts: [{ id: MAIN_PART, label: 'Lamp', kind: 'light', offers: ['switch'] }],
-  attributes: [{ key: 'on', label: 'On', value: { type: 'boolean' }, means: 'switch.on' }],
+  attributes: [{ key: 'on', label: 'On', value: { type: 'boolean' }, means: 'on' }],
   events: [{ id: 'bulb.failed', label: 'Bulb failed', level: 'error', description: 'The bulb has gone.' }],
 };
 

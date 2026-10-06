@@ -13,9 +13,9 @@ import { calculate, type Expr, type Rule } from './rule.ts';
 
 const NO_FUNCTIONS = { fn: () => null };
 
-const soc: Expr = { read: { role: 'battery', means: 'battery.soc' } };
+const soc: Expr = { read: { role: 'battery', means: 'charge' } };
 
-const draw: Expr = { read: { role: 'plug', means: 'power.draw' } };
+const draw: Expr = { read: { role: 'plug', means: 'power' } };
 
 const rule = (on: Expr, extra: Partial<Rule> = {}): Rule => ({
   roles: {
@@ -30,7 +30,7 @@ const rule = (on: Expr, extra: Partial<Rule> = {}): Rule => ({
 
 const scope = (charge: number | null): RuleScope => ({
   param: () => null,
-  read: (_role, means) => (means === 'battery.soc' && charge !== null ? { value: charge, label: 'Charge', unit: '%' } : null),
+  read: (_role, means) => (means === 'charge' && charge !== null ? { value: charge, label: 'Charge', unit: '%' } : null),
   reachable: () => ({ reachable: true, detail: '' }),
   name: (role) => (role === 'battery' ? 'Garage station' : 'Scooter plug'),
   clock: () => null,

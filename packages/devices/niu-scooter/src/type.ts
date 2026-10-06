@@ -88,7 +88,7 @@ const DESCRIPTION: DeviceDescription = {
   ],
   // In the order a person asks: how full, how far, is it charging. A card shows the first three.
   attributes: [
-    { key: 'soc', label: 'Charge', value: { type: 'number', unit: '%', precision: 0 }, means: 'battery.soc', category: 'primary', currentFor: CURRENT_FOR_MS },
+    { key: 'soc', label: 'Charge', value: { type: 'number', unit: '%', precision: 0 }, means: 'charge', category: 'primary', currentFor: CURRENT_FOR_MS },
     { key: 'range', label: 'Range', value: { type: 'number', unit: 'km', precision: 0 }, quantity: 'distance', currentFor: CURRENT_FOR_MS },
     { key: 'charging', label: 'Charging', value: { type: 'boolean', words: YES_NO }, currentFor: CURRENT_FOR_MS },
     { key: 'minutesToFull', label: 'Until full', value: { type: 'number', unit: 'min', precision: 0 }, quantity: 'duration', currentFor: CURRENT_FOR_MS },

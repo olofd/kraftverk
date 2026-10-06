@@ -58,7 +58,7 @@ do:
   - wait until: charger reachable
     at most: 2 min
   - turn on: charger
-  - make sure: charger.power.draw > 50 W
+  - make sure: charger.power > 50 W
     within: 20 s
     tries: 5
     each time:
@@ -85,7 +85,7 @@ const rule: Rule = {
     { command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: true } } } },
     {
       ensure: {
-        condition: { compare: 'gt', left: { read: { role: 'charger', means: 'power.draw' } }, right: { value: 50 } },
+        condition: { compare: 'gt', left: { read: { role: 'charger', means: 'power' } }, right: { value: 50 } },
         within: { value: 20 },
         tries: { value: 5 },
         retry: [/* turn off, wait 10 s, turn on */],
@@ -120,7 +120,7 @@ time are kept in seconds (`heldFor`, `every`), whatever a file writes.
 | `at` | `at: "07:00"`, with `days: weekdays`, `weekends` or `[mon, fri]` | at a time of day on the automation's own clock — every day, or on those days |
 | `every` | `every: 15 min` | every so many minutes from midnight (every 15 min is :00, :15, :30, :45); once a slot, never catching up |
 | `event` | `event: mains.lost` with `from: station` | when the part filling a role raises an event its description declares |
-| `becomes` | `becomes: station.battery.soc < 15 %`, with `for: 2 min` | when a condition turns true — and, with `for` (`heldFor`), has stayed true that long; reads and comparisons only |
+| `becomes` | `becomes: station.charge < 15 %`, with `for: 2 min` | when a condition turns true — and, with `for` (`heldFor`), has stayed true that long; reads and comparisons only |
 
 Any trigger may carry an `id` (`id: low`) — letters and digits, starting
 with a lowercase letter, unique within the rule — that what it does reads
@@ -131,10 +131,10 @@ its own hold, and no level written twice:
 ```text
 when:
   - id: low
-    becomes: station.battery.soc < 5 %
+    becomes: station.charge < 5 %
     for: 2 min
   - id: high
-    becomes: station.battery.soc >= 30 %
+    becomes: station.charge >= 30 %
     for: 2 min
 do:
   - switch: charger
@@ -161,7 +161,7 @@ Lengths of time are in seconds, named as a file says them: `wait.for`,
 | `command` | `turn on: charger` · `turn off: charger` | switch a part (the `switch` capability's `set`) |
 | `command` | `switch: charger` with `on: <condition>` | switch it on while the condition holds, off when it does not |
 | `command` | `send: command` with `to: role`, `capability:` and `with: {…}` | any command a capability offers |
-| `write` | `set: plug` with `setting: key` or `meaning: battery.chargeLimit`, and `to: <value>` | change a setting the part offers, read back as any setting — never one its device declares dangerous |
+| `write` | `set: plug` with `setting: key` or `meaning: chargeLimit`, and `to: <value>` | change a setting the part offers, read back as any setting — never one its device declares dangerous |
 | `wait` | `wait: 5 s` | a pause |
 | `waitUntil` | `wait until: <condition>` with `at most: 2 min` | until the condition is true, or the run stops, not having succeeded |
 | `ensure` | `make sure: <condition>` with `within: 20 s`, `tries: 5` and `each time: [steps]` | make sure it comes true within a time; if not, take the steps and look again, at most that many times — then the run stops, not having succeeded |
@@ -190,7 +190,7 @@ charge is below 15 %".
 |---|---|---|
 | `value` | `50 W`, `15 %`, `07:00`, `"text"`, `true` | a value; a number in the unit of what it is compared with |
 | `param` | `$cloudMax` | one of a recipe's settings |
-| `read` | `charger.power.draw` | what the part filling a role reports now, by meaning (`battery.soc`) or by its type's own (`acme.minutesToFull`) |
+| `read` | `charger.power` | what the part filling a role reports now, by meaning (`charge`) or by its type's own (`acme.minutesToFull`) |
 | `call` | `call open-meteo.weather.skyLooks(forecast, cloudMax = 40)` | a function a package contributes, over the part filling a role |
 | `compare` | `a > b` | a comparison (below) |
 | `math` | `a + b`, `min(a, b)` | a number from two (below), in one unit |
@@ -227,7 +227,7 @@ never acts on what it cannot see.
 ## Units and lengths of time
 
 - A number beside a reading is in that reading's unit — its standard
-  meaning's (`power.draw` is in W), or the part's own. One written in another
+  meaning's (`power` is in W), or the part's own. One written in another
   unit of the same quantity is converted (`2 kW` beside a reading in W is
   2000); one of another quantity is a problem (`50 °C` beside W).
 - Lengths of time are written with their unit — `5 s`, `2 min`, `1 h`. A

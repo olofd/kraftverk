@@ -1,6 +1,6 @@
 import { isCapability, isPolicyValueName, requiredMeanings, type CapabilitySpec } from './capabilities.ts';
 import { attributeMeaning, capabilitiesOf, capabilityIn, isStandardPartKind, MAIN_PART, partOf, partsOf, quantityOf, type DeviceDescription } from './description.ts';
-import { QUANTITIES, STANDARD_NAMESPACES, standardMeaning, STATE_CLASSES, unitsOfMeaning } from './meanings.ts';
+import { QUANTITIES, standardMeaning, STATE_CLASSES, unitsOfMeaning } from './meanings.ts';
 import { ATTRIBUTE_KEY, NAMESPACED_ID, NAMESPACED_NAME, PART_ID, PLAIN_ID } from './names.ts';
 import { valueTypeProblems } from './values.ts';
 
@@ -133,8 +133,8 @@ export function validateDescription(description: DeviceDescription, typeId = 'br
         problem(`${where} means ${attribute.means}, which is ${standardState}, but is declared ${attribute.stateClass ?? 'measurement'}`);
       }
     } else {
-      const namespace = attribute.means.split('.')[0]!;
-      if (!attribute.means.includes('.') || STANDARD_NAMESPACES.includes(namespace)) {
+      // One word is a standard meaning's; a type's own has a namespace, so the two never meet.
+      if (!attribute.means.includes('.')) {
         problem(`${where} means "${attribute.means}", which is not a standard meaning; a type's own are namespaced by the type, like "${typeId.split('.').pop()}.${attribute.key}"`);
       }
     }

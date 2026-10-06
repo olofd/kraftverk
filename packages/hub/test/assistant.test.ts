@@ -31,7 +31,7 @@ describe('an assistant', () => {
     expect(world.rules.length).toBeGreaterThan(0);
     const mains = world.devices.find((device) => device.id === station.id)!.parts.find((part) => part.id === 'input.ac')!;
     expect(mains).toMatchObject({ kind: 'input', capabilities: ['acInput'] });
-    expect(mains.values).toContainEqual(expect.objectContaining({ key: 'input.ac.present', means: 'grid.present', current: true }));
+    expect(mains.values).toContainEqual(expect.objectContaining({ key: 'input.ac.present', means: 'mainsPresent', current: true }));
     // The same, a few lines a device, for a context window.
     const text = worldText(world);
     expect(text).toContain(`Garage station [${station.id}] Test station: connected`);
@@ -41,7 +41,7 @@ describe('an assistant', () => {
   test('reads the words it is said in: capabilities with what makes a command consequential, and the recipes', async () => {
     const words = await t.home.vocabulary();
     expect(words.capabilities.switch!.commands.set!.consequential).toMatchObject({ when: { arg: 'on', is: false } });
-    expect(words.meanings['battery.soc']).toEqual({ label: 'Charge', type: 'number', unit: '%' });
+    expect(words.meanings['charge']).toEqual({ label: 'Charge', type: 'number', unit: '%' });
     expect(words.recipes.map((recipe) => recipe.id)).toContain('standard.charge-between');
     expect(words.policy.loadWatts).toMatchObject({ value: 5, unit: 'W' });
   });

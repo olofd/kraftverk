@@ -107,7 +107,7 @@ const BECOMES: TriggerSpec<'becomes'> = {
   docs: {
     summary:
       'When a condition turns true — and, with `for`, has stayed true that long. Reads and comparisons only: it is looked at on every reading, and its hold survives a restart.',
-    examples: ['becomes: station.battery.soc < 15 %\nfor: 2 min', 'id: low\nbecomes: station.battery.soc < 5 %\nfor: 2 min'],
+    examples: ['becomes: station.charge < 15 %\nfor: 2 min', 'id: low\nbecomes: station.charge < 5 %\nfor: 2 min'],
   },
 };
 

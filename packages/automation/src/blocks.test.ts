@@ -21,8 +21,8 @@ const NO_FUNCTIONS = { fn: () => null };
 /** A plug with a setting it may be told, one it only reports, and one that can harm it. */
 const PLUG: DeviceDescription = {
   attributes: [
-    { key: 'relay', label: 'Switch', value: { type: 'boolean' }, means: 'switch.on' },
-    { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, means: 'power.draw' },
+    { key: 'relay', label: 'Switch', value: { type: 'boolean' }, means: 'on' },
+    { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, means: 'power' },
     { key: 'live', label: 'Live readings', value: { type: 'boolean' }, access: 'write' },
     { key: 'light', label: 'Light', value: { type: 'enum', options: [{ value: 'none', label: 'Off' }, { value: 'relay', label: 'With the switch' }] }, access: 'write' },
     { key: 'countdown', label: 'Countdown', value: { type: 'number', unit: 's' } },
@@ -34,9 +34,9 @@ const PLUG: DeviceDescription = {
 const STATION: DeviceDescription = {
   parts: [{ id: 'main', label: 'Station', kind: 'device', energy: { role: 'storage' } }],
   attributes: [
-    { key: 'soc', label: 'Charge', value: { type: 'number', unit: '%' }, means: 'battery.soc' },
-    { key: 'acLimit', label: 'AC charge limit', value: { type: 'number', unit: '%', min: 60, max: 100 }, means: 'battery.chargeLimit', access: 'write' },
-    { key: 'acWatts', label: 'AC charging power', value: { type: 'number', unit: 'W', min: 600, max: 1800, step: 300 }, means: 'power.in.ac.max', access: 'write' },
+    { key: 'soc', label: 'Charge', value: { type: 'number', unit: '%' }, means: 'charge' },
+    { key: 'acLimit', label: 'AC charge limit', value: { type: 'number', unit: '%', min: 60, max: 100 }, means: 'chargeLimit', access: 'write' },
+    { key: 'acWatts', label: 'AC charging power', value: { type: 'number', unit: 'W', min: 600, max: 1800, step: 300 }, means: 'mainsInputLimit', access: 'write' },
   ],
 };
 
@@ -205,8 +205,8 @@ describe('a recipe, copied', () => {
     expect(window.if).toEqual({ compare: 'ne', left: { run: 'trigger' }, right: { value: '' } });
     // Its triggers keep their ids; a hold of 0 min is none.
     expect(window.when).toEqual([
-      { id: 'low', becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { value: 15 } }, heldFor: { value: 120 } },
-      { id: 'high', becomes: { compare: 'ge', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { value: 50 } } },
+      { id: 'low', becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'charge' } }, right: { value: 15 } }, heldFor: { value: 120 } },
+      { id: 'high', becomes: { compare: 'ge', left: { read: { role: 'battery', means: 'charge' } }, right: { value: 50 } } },
     ]);
     const names = (role: string) => (role === 'battery' ? 'Garage P280' : 'ATORCH plug');
     expect(describeRule(window, {}, names, NO_FUNCTIONS)).toBe(
@@ -234,23 +234,23 @@ describe('a recipe, copied', () => {
   fills the role says which of its settings has the meaning.
 */
 describe('change a setting by what it means', () => {
-  const limit = (value: unknown): Step => ({ write: { role: 'station', means: 'battery.chargeLimit', value: { value: value as never } } });
+  const limit = (value: unknown): Step => ({ write: { role: 'station', means: 'chargeLimit', value: { value: value as never } } });
 
   test('checked: a standard meaning — by key or by meaning, not both — and, bound, a setting there that has it', () => {
     expect(checkRule(rule([limit(80)]), NO_FUNCTIONS)).toEqual([]);
     expect(checkRule(rule([{ write: { role: 'station', means: 'station.limit', value: { value: 80 } } }]), NO_FUNCTIONS)).toEqual(['then[0].write.means: "station.limit" is not a standard meaning']);
-    expect(checkRule(rule([{ write: { role: 'station', means: 'battery.chargeLimit', key: 'acLimit', value: { value: 80 } } as never }]), NO_FUNCTIONS)).toEqual([
+    expect(checkRule(rule([{ write: { role: 'station', means: 'chargeLimit', key: 'acLimit', value: { value: 80 } } as never }]), NO_FUNCTIONS)).toEqual([
       'then[0].write: a setting by its key or by its meaning, not both',
     ]);
     expect(checkBinding(rule([limit(80)]), bound)).toEqual([]);
     expect(checkBinding(rule([limit(40)]), bound)).toEqual(['Station: AC charge limit must be at least 60']);
-    expect(checkBinding(rule([{ write: { role: 'plug', means: 'battery.chargeLimit', value: { value: 80 } } }]), bound)).toEqual(['Plug: Scooter plug has no setting that is its charge limit']);
+    expect(checkBinding(rule([{ write: { role: 'plug', means: 'chargeLimit', value: { value: 80 } } }]), bound)).toEqual(['Plug: Scooter plug has no setting that is its charge limit']);
     // A reading with the meaning is not a setting.
-    expect(checkBinding(rule([{ write: { role: 'station', means: 'battery.soc', value: { value: 80 } } }]), bound)).toEqual(['Station: Garage station has no setting that is its charge']);
+    expect(checkBinding(rule([{ write: { role: 'station', means: 'charge', value: { value: 80 } } }]), bound)).toEqual(['Station: Garage station has no setting that is its charge']);
   });
 
   test('a value between steps is refused: 600, 900 … 1800 W, never 700', () => {
-    const power = (watts: number): Step => ({ write: { role: 'station', means: 'power.in.ac.max', value: { value: watts } } });
+    const power = (watts: number): Step => ({ write: { role: 'station', means: 'mainsInputLimit', value: { value: watts } } });
     expect(checkBinding(rule([power(1200)]), bound)).toEqual([]);
     expect(checkBinding(rule([power(700)]), bound)).toEqual(['Station: AC charging power must be in steps of 300 from 600']);
   });

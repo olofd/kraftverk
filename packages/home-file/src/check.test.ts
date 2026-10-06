@@ -53,7 +53,7 @@ describe('what a file means', () => {
 describe('one automation’s own YAML', () => {
   test('written as its page shows it, and read back the same', () => {
     const entry = readConfig(DOCUMENT).document!.automations['start-charging']!;
-    const text = writeAutomationYaml(entry, { unitOf: (_role, means) => (means === 'power.draw' ? 'W' : null) });
+    const text = writeAutomationYaml(entry, { unitOf: (_role, means) => (means === 'power' ? 'W' : null) });
     expect(text.split('\n').slice(0, 4)).toEqual(['name: Start charging the scooter', 'mode: watch', 'clock: Europe/Stockholm', 'uses:']);
     const read = readAutomationYaml(text, 'start-charging');
     expect(read.problems).toEqual([]);

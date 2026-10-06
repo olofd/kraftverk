@@ -36,19 +36,19 @@ describe('charging between two levels', () => {
   const station: DeviceDescription = {
     parts: [{ id: MAIN_PART, label: 'Station', kind: 'device' }, { id: 'input.ac', label: 'Mains', kind: 'input' }],
     attributes: [
-      { key: 'soc', label: 'Charge', value: { type: 'number', unit: '%' }, means: 'battery.soc' },
-      { key: 'input.ac.present', part: 'input.ac', label: 'Mains', value: { type: 'boolean' }, means: 'grid.present' },
+      { key: 'soc', label: 'Charge', value: { type: 'number', unit: '%' }, means: 'charge' },
+      { key: 'input.ac.present', part: 'input.ac', label: 'Mains', value: { type: 'boolean' }, means: 'mainsPresent' },
     ],
   };
   const plug: DeviceDescription = {
     parts: [{ id: MAIN_PART, label: 'Plug', kind: 'outlet', offers: ['switch'] }],
-    attributes: [{ key: 'relay', label: 'Power', value: { type: 'boolean' }, means: 'switch.on' }],
+    attributes: [{ key: 'relay', label: 'Power', value: { type: 'boolean' }, means: 'on' }],
   };
   const params = { low: 15, lowFor: 120, high: 50, highFor: 180 };
   /** As a run sees it: the charge, the settings, and the id of the trigger that started it ("" — none did). */
   const scope = (soc: Value, overrides: Record<string, Value> = {}, trigger = ''): RuleScope => ({
     param: (name) => ({ ...params, ...overrides })[name as keyof typeof params] ?? null,
-    read: (_role, means) => (means === 'battery.soc' && typeof soc === 'number' ? { value: soc, label: 'Charge', unit: '%' } : null),
+    read: (_role, means) => (means === 'charge' && typeof soc === 'number' ? { value: soc, label: 'Charge', unit: '%' } : null),
     reachable: () => ({ reachable: true, detail: 'connected' }),
     name: (role) => (role === 'battery' ? 'Garage P280' : 'ATORCH plug'),
     clock: () => '12:00',
@@ -75,7 +75,7 @@ describe('charging between two levels', () => {
 
   test('each side holds for its own time, and the step reads no level: the two can never disagree', () => {
     expect(chargeBetween.when.map((trigger) => ('becomes' in trigger ? trigger.heldFor : null))).toEqual([{ param: 'lowFor' }, { param: 'highFor' }]);
-    expect(JSON.stringify(on)).not.toContain('battery.soc');
+    expect(JSON.stringify(on)).not.toContain('charge');
   });
 
   test('in between, neither edge is true: it charges all the way up, and runs all the way down', () => {

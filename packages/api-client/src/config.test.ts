@@ -25,7 +25,7 @@ const plug = {
   config: { profile: 'b' },
   description: {
     parts: [{ id: MAIN_PART, label: 'Plug', kind: 'outlet', offers: ['switch', 'powerMeter'] }],
-    attributes: [{ key: 'power', label: 'Power', value: { type: 'number', unit: 'W' }, means: 'power.draw' }],
+    attributes: [{ key: 'power', label: 'Power', value: { type: 'number', unit: 'W' }, means: 'power' }],
   },
   connections: [
     { id: 'c-1', method: 'lan', methodLabel: 'Home network', heldBy: { kind: 'master', id: 'n-00000000000000a1', name: 'Test machine' }, address: '192.0.2.10#a4c1380000000001', priority: 0, secrets: ['localKey'], secretsExportable: false, config: { deviceId: 'made-up-id' } },
@@ -55,7 +55,7 @@ const rule: Rule = {
   when: [],
   then: [
     { command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: true } } } },
-    { waitUntil: { condition: { compare: 'gt', left: { read: { role: 'charger', means: 'power.draw' } }, right: { value: 50 } }, atMost: { value: 20 } } },
+    { waitUntil: { condition: { compare: 'gt', left: { read: { role: 'charger', means: 'power' } }, right: { value: 50 } }, atMost: { value: 20 } } },
   ],
 };
 
@@ -77,7 +77,7 @@ describe('an automation as YAML, in the app', () => {
     expect(text).toContain('mode: act');
     // It reads the plug's power as well as switching it: what it needs is said.
     expect(text).toContain('  charger:\n    part: scooter-plug\n    needs:\n      - switch\n      - powerMeter\n');
-    expect(text).toContain('wait until: charger.power.draw > 50 W');
+    expect(text).toContain('wait until: charger.power > 50 W');
     expect(text).toContain('home page: 2');
     const read = readAutomationText(text, 'charge', VOCABULARY, context);
     expect(read.problems).toEqual([]);

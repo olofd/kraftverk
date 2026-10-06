@@ -30,8 +30,8 @@ const health = (connected = true): ConnectionHealth => ({
 const PLUG_DESCRIPTION: DeviceDescription = {
   parts: [{ id: MAIN_PART, label: 'Plug', kind: 'outlet', offers: ['switch'] }],
   attributes: [
-    { key: 'relay', label: 'Relay', value: { type: 'boolean' }, means: 'switch.on' },
-    { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power.draw' },
+    { key: 'relay', label: 'Relay', value: { type: 'boolean' }, means: 'on' },
+    { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power' },
   ],
 };
 
@@ -87,10 +87,10 @@ const STATION_DESCRIPTION: DeviceDescription = {
     { id: 'outlet.ac', label: 'AC outlets', kind: 'outlet', offers: ['switch'], energy: { role: 'load' } },
   ],
   attributes: [
-    { key: 'soc', label: 'Battery', value: { type: 'number', unit: '%' }, quantity: 'percent', means: 'battery.soc' },
-    { key: 'input.ac.present', part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'grid.present' },
-    { key: 'outlet.ac.on', part: 'outlet.ac', label: 'AC outlets', value: { type: 'boolean' }, means: 'switch.on' },
-    { key: 'outlet.ac.watts', part: 'outlet.ac', label: 'AC draw', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power.draw' },
+    { key: 'soc', label: 'Battery', value: { type: 'number', unit: '%' }, quantity: 'percent', means: 'charge' },
+    { key: 'input.ac.present', part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'mainsPresent' },
+    { key: 'outlet.ac.on', part: 'outlet.ac', label: 'AC outlets', value: { type: 'boolean' }, means: 'on' },
+    { key: 'outlet.ac.watts', part: 'outlet.ac', label: 'AC draw', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power' },
   ],
 };
 
@@ -382,13 +382,13 @@ describe('what a command declares', () => {
     capabilities: {
       'acme.safe.bolt': {
         label: 'Bolt',
-        attributes: { thrown: { means: 'switch.on', required: true } },
+        attributes: { thrown: { means: 'on', required: true } },
         commands: { set: { description: 'Throw or draw the bolt', args: { thrown: { type: 'boolean' } }, sets: { thrown: 'thrown' }, consequential: 'always' } },
         queries: {},
       },
     },
     parts: [{ id: MAIN_PART, label: 'Safe', kind: 'lock', offers: ['acme.safe.bolt'] }],
-    attributes: [{ key: 'bolt', label: 'Bolt', value: { type: 'boolean' }, means: 'switch.on' }],
+    attributes: [{ key: 'bolt', label: 'Bolt', value: { type: 'boolean' }, means: 'on' }],
   };
 
   test('a package’s own capability is commanded like any other, and "always" means every time', async () => {

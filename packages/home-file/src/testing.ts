@@ -46,7 +46,7 @@ export const VOCABULARY: Vocabulary = {
 };
 
 /** A whole document, as the owner's charging chain would be written. */
-export const DOCUMENT = `kraftverk: 1
+export const DOCUMENT = `kraftverk: 2
 
 home:
   policy: { loadWatts: 50, reserveSoc: 20 }
@@ -89,7 +89,7 @@ automations:
       - wait until: charger reachable
         at most: 2 min
       - turn on: charger
-      - make sure: charger.power.draw > 50 W
+      - make sure: charger.power > 50 W
         within: 20 s
         tries: 5
         each time:

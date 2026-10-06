@@ -18,8 +18,8 @@ const STRIP: DeviceDescription = {
     { id: 'usb', label: 'USB', kind: 'outlet' },
   ],
   attributes: [
-    { key: 'socket.1.on', part: 'socket.1', label: 'On', value: { type: 'boolean' }, means: 'switch.on' },
-    { key: 'socket.2.on', part: 'socket.2', label: 'On', value: { type: 'boolean' }, means: 'switch.on' },
+    { key: 'socket.1.on', part: 'socket.1', label: 'On', value: { type: 'boolean' }, means: 'on' },
+    { key: 'socket.2.on', part: 'socket.2', label: 'On', value: { type: 'boolean' }, means: 'on' },
     { key: 'usb.on', part: 'usb', label: 'On', value: { type: 'boolean' }, means: 'p.usbOn' },
     { key: 'childLock', label: 'Child lock', value: { type: 'boolean' }, access: 'write', category: 'config', section: 'Safety' },
     { key: 'led', label: 'Indicator', value: { type: 'enum', options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }] }, access: 'write', category: 'config' },

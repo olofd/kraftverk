@@ -42,7 +42,7 @@ and in its protocol, where the next Sydpower model can build on it.
   silent charging, charge scheduling, DC input type, standby timers, screen
   timeout, light modes, and every output port. The charge limit, discharge
   floor and AC charging power carry the standard meanings
-  `battery.chargeLimit`, `battery.dischargeFloor` and `power.in.ac.max`, so
+  `chargeLimit`, `dischargeFloor` and `mainsInputLimit`, so
   a shared recipe can change them without knowing this station.
 - **Its own screens** — a live energy-flow dashboard, and settings grouped the
   way the station works rather than the way its registers are numbered.

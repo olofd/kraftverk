@@ -3,14 +3,17 @@
  *
  * An attribute has two names on purpose. Its **key** is what history is kept
  * under, local to its type — a station's `soc`, a plug's `watts`. Its
- * **meaning** is what it is, in words every device uses — `battery.soc`,
- * `power.draw` — and is what the generic screens, charts that compare devices,
+ * **meaning** is what it is, in words every device uses — `charge`,
+ * `power` — and is what the generic screens, charts that compare devices,
  * automations and the bridges to Home Assistant and Matter work from. Keeping
  * them apart lets meaning be added to a type without touching what it stored.
  *
- * A meaning is named by what is measured — `temperature.air`, not the weather
- * service's temperature — and the part it is on says where: an outdoor
- * thermometer, a BTHome sensor and a forecast all report the air's temperature.
+ * A standard meaning is one word, named by what is measured — `temperature`,
+ * not the weather service's temperature — and the part it is on says where:
+ * an outdoor thermometer, a BTHome sensor and a forecast all report the air's
+ * temperature. The word is what a rule reads: `station.charge`,
+ * `charger.power`. A type's own meanings are namespaced, `acme.minutesToFull`,
+ * so the two never meet.
  */
 
 /**
@@ -101,37 +104,37 @@ export const unitsOfMeaning = (meaning: Extract<StandardMeaning, { type: 'number
  * share an axis without conversion.
  */
 export const STANDARD_MEANINGS = {
-  'battery.soc': { label: 'Charge', type: 'number', unit: '%', quantity: 'percent' },
-  'battery.capacity': { label: 'Capacity', type: 'number', unit: 'Wh', quantity: 'energy' },
+  charge: { label: 'Charge', type: 'number', unit: '%', quantity: 'percent' },
+  capacity: { label: 'Capacity', type: 'number', unit: 'Wh', quantity: 'energy' },
   /** A setting a station keeps: the charge it stops charging from mains at. */
-  'battery.chargeLimit': { label: 'Charge limit', type: 'number', unit: '%', quantity: 'percent' },
+  chargeLimit: { label: 'Charge limit', type: 'number', unit: '%', quantity: 'percent' },
   /** A setting a station keeps: the charge below which it stops supplying its outputs. */
-  'battery.dischargeFloor': { label: 'Discharge floor', type: 'number', unit: '%', quantity: 'percent' },
+  dischargeFloor: { label: 'Discharge floor', type: 'number', unit: '%', quantity: 'percent' },
   /** Everything coming in, from any source. */
-  'power.in': { label: 'Input', type: 'number', unit: 'W', quantity: 'power' },
-  'power.in.ac': { label: 'From mains', type: 'number', unit: 'W', quantity: 'power' },
-  'power.in.solar': { label: 'Solar', type: 'number', unit: 'W', quantity: 'power' },
+  input: { label: 'Input', type: 'number', unit: 'W', quantity: 'power' },
+  mainsInput: { label: 'From mains', type: 'number', unit: 'W', quantity: 'power' },
+  solarInput: { label: 'Solar', type: 'number', unit: 'W', quantity: 'power' },
   /** A setting a station keeps: how hard it charges from mains, at most. */
-  'power.in.ac.max': { label: 'Mains charging power', type: 'number', unit: 'W', quantity: 'power' },
+  mainsInputLimit: { label: 'Mains charging power', type: 'number', unit: 'W', quantity: 'power' },
   /** Everything a device supplies to what is plugged into it. */
-  'power.out': { label: 'Output', type: 'number', unit: 'W', quantity: 'power' },
+  output: { label: 'Output', type: 'number', unit: 'W', quantity: 'power' },
   /** What a device, or what is plugged through it, consumes: a plug's meter, an outlet's draw. */
-  'power.draw': { label: 'Power', type: 'number', unit: 'W', quantity: 'power' },
+  power: { label: 'Power', type: 'number', unit: 'W', quantity: 'power' },
   /** A meter's own lifetime counter. */
-  'energy.total': { label: 'Energy', type: 'number', unit: 'kWh', quantity: 'energy', stateClass: 'total_increasing' },
-  'voltage.ac': { label: 'Voltage', type: 'number', unit: 'V', quantity: 'voltage' },
-  'current.ac': { label: 'Current', type: 'number', unit: 'A', quantity: 'current' },
-  'frequency.ac': { label: 'Frequency', type: 'number', unit: 'Hz', quantity: 'frequency' },
-  'grid.present': { label: 'Mains present', type: 'boolean' },
-  'switch.on': { label: 'On', type: 'boolean' },
+  energy: { label: 'Energy', type: 'number', unit: 'kWh', quantity: 'energy', stateClass: 'total_increasing' },
+  voltage: { label: 'Voltage', type: 'number', unit: 'V', quantity: 'voltage' },
+  current: { label: 'Current', type: 'number', unit: 'A', quantity: 'current' },
+  frequency: { label: 'Frequency', type: 'number', unit: 'Hz', quantity: 'frequency' },
+  mainsPresent: { label: 'Mains present', type: 'boolean' },
+  on: { label: 'On', type: 'boolean' },
   /** The air's temperature, where the part is: outdoors, a room, the hour a forecast is for. */
-  'temperature.air': { label: 'Temperature', type: 'number', unit: '°C', quantity: 'temperature' },
+  temperature: { label: 'Temperature', type: 'number', unit: '°C', quantity: 'temperature' },
   /** How much of the sky is cloud, measured or forecast. */
-  'sky.cloudCover': { label: 'Cloud cover', type: 'number', unit: '%', quantity: 'percent' },
+  cloudCover: { label: 'Cloud cover', type: 'number', unit: '%', quantity: 'percent' },
   /** What electricity costs now, per kWh, in the provider's currency. */
-  'price.now': { label: 'Electricity price', type: 'number', unit: 'EUR/kWh', units: ['SEK/kWh', 'NOK/kWh', 'DKK/kWh'], quantity: 'price' },
+  price: { label: 'Electricity price', type: 'number', unit: 'EUR/kWh', units: ['SEK/kWh', 'NOK/kWh', 'DKK/kWh'], quantity: 'price' },
   /** Where the hour now stands among the day's hours by price: 1 is the cheapest. "The cheapest four hours" is a rank of 4 or less. */
-  'price.rank': { label: 'Price rank', type: 'number', unit: '', quantity: 'rank' },
+  priceRank: { label: 'Price rank', type: 'number', unit: '', quantity: 'rank' },
 } as const satisfies Record<string, StandardMeaning>;
 
 export type StandardMeaningId = keyof typeof STANDARD_MEANINGS;
@@ -139,6 +142,3 @@ export type StandardMeaningId = keyof typeof STANDARD_MEANINGS;
 /** The standard a meaning is, or null when it is a type's own. */
 export const standardMeaning = (id: string): StandardMeaning | null =>
   Object.hasOwn(STANDARD_MEANINGS, id) ? STANDARD_MEANINGS[id as StandardMeaningId] : null;
-
-/** The namespaces the standard meanings live in, which a type's own meanings may not use. */
-export const STANDARD_NAMESPACES: readonly string[] = [...new Set(Object.keys(STANDARD_MEANINGS).map((id) => id.split('.')[0]!))];

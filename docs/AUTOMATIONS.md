@@ -76,7 +76,7 @@ automation, `{ label, description, automation: true }`, filled by one of the
 owner's own.
 
 Every name in a rule is one the device model already has: roles ask for
-**capabilities**, values are read by **meaning** (`battery.soc`, or a type's
+**capabilities**, values are read by **meaning** (`charge`, or a type's
 own `p280.minutesToFull`), triggers name **events** a description declares,
 actions are **commands** a capability declares, with typed arguments. The rule
 adds no vocabulary of its own; it composes the model's.
@@ -178,7 +178,7 @@ product still gets them.
 - **When mains power is lost** — on `acInput`'s own `mains.lost`, from any
   station that raises it.
 - **In the cheapest hours** — switch something on in the day's cheapest
-  hours by the electricity price (`price.rank`, from any part offering
+  hours by the electricity price (`priceRank`, from any part offering
   `energyPrice`), off in the others.
 
 A recipe may use any installed package's functions; one whose function is

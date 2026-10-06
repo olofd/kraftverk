@@ -83,7 +83,7 @@ One word for each thing, in code, in docs and on screen.
 | **Service** | A device type with `kind: 'service'`: no hardware. Added and shown the same way, in its own section. | "Weather (Open-Meteo)" |
 | **Description** | What a device is, as data: its parts, their attributes, and its events. Declared by its type, or reported by the device. | — |
 | **Part** | The device itself (`main`), or one of what it has several of, as a Matter endpoint is. | `main`, `outlet.ac`, `pack.1` |
-| **Attribute** | A value a part reports, with a stable key, a type and — where one applies — a standard meaning. | `soc` meaning `battery.soc` |
+| **Attribute** | A value a part reports, with a stable key, a type and — where one applies — a standard meaning. | `soc` meaning `charge` |
 | **Capability** | What a part can do or report, declared like a Matter cluster: attributes, commands, queries. | `switch`, `battery`, `weather.forecast` |
 | **Setting** | An attribute the device remembers across a power cycle, and can be told. | A charge limit, a standby timer |
 | **Event** | Something that happened, declared by the device's description. | An overload trip |
@@ -352,11 +352,11 @@ automations until promoted to the library.
 
 | Capability | Attributes (meaning) | Commands and queries | Consequential |
 |---|---|---|---|
-| `switch` | `on` (`switch.on`, required) | `set(on)` sets `on`; turning on **drains** the store behind a load part | turning off while `power.draw` is above the home's `loadWatts` (5 W until set), or not known; or while it is the source of a consequential link. Turning a load on while its device's charge is below the home's `reserveSoc` (none until set): refused to automations and assistants, confirmed by a person |
-| `powerMeter` | `activePower` (`power.draw`, required), `voltage`, `activeCurrent`, `frequency`, `energyImported` | — | — |
-| `battery` | `soc` (`battery.soc`, required), `capacity` | — | — |
-| `acInput` | `present` (`grid.present`, required), `activePower`; events `mains.lost`, `mains.restored` | — | — |
-| `energyPrice` | `now` (`price.now`, required), `rank` (`price.rank`) | — | — |
+| `switch` | `on` (`on`, required) | `set(on)` sets `on`; turning on **drains** the store behind a load part | turning off while `power` is above the home's `loadWatts` (5 W until set), or not known; or while it is the source of a consequential link. Turning a load on while its device's charge is below the home's `reserveSoc` (none until set): refused to automations and assistants, confirmed by a person |
+| `powerMeter` | `activePower` (`power`, required), `voltage`, `activeCurrent`, `frequency`, `energyImported` | — | — |
+| `battery` | `soc` (`charge`, required), `capacity` | — | — |
+| `acInput` | `present` (`mainsPresent`, required), `activePower`; events `mains.lost`, `mains.restored` | — | — |
+| `energyPrice` | `now` (`price`, required), `rank` (`priceRank`) | — | — |
 | `weather.forecast` | — | query `hourly(hours)`, answering a list of `{at, temperature, cloudCover, precipitation, irradiance}` | — |
 
 **Projections** (`standards.ts`): every standard meaning, quantity, state class
@@ -403,7 +403,7 @@ keeps the latest with the device.
   `outlet.ac.on`, `pack.1.soc`; a value type from the one value system
   (number with unit and precision, boolean, enum, string, timestamp, or a list
   or object of values); how long a value stays **current**; a **meaning** — a
-  standard one (`battery.soc`, `power.draw`), whose unit, quantity and state
+  standard one (`charge`, `power`), whose unit, quantity and state
   class it must keep, or one namespaced by the type (`p280.minutesToFull`); a
   quantity and a **state class** (`measurement`, `total`, `total_increasing`),
   as Home Assistant has them; `read` or `write` — a setting is an attribute
@@ -415,14 +415,16 @@ keeps the latest with the device.
   `identify` and `session.info()`.
 
 The standard meanings start small and grow only when something needs them:
-`battery.soc`, `battery.capacity`, `power.in`, `power.in.ac`,
-`power.in.solar`, `power.out`, `power.draw`, `energy.total`, `voltage.ac`,
-`current.ac`, `frequency.ac`, `grid.present`, `switch.on`, `temperature.air`,
-`sky.cloudCover` (`meanings.ts`) — each named by what it measures, the part
-saying where — and three a station keeps as settings, so a recipe can change
-them without naming a product's keys: `battery.chargeLimit`,
-`battery.dischargeFloor` and `power.in.ac.max` (a `number` in Home
-Assistant); and `price.now` and `price.rank`, what electricity costs now
+`charge`, `capacity`, `input`, `mainsInput`,
+`solarInput`, `output`, `power`, `energy`, `voltage`,
+`current`, `frequency`, `mainsPresent`, `on`, `temperature`,
+`cloudCover` (`meanings.ts`) — each one word, named by what it measures, the
+part saying where, and read by that word in a rule (`station.charge`,
+`charger.power`); a type's own always has a namespace, so the two never meet
+— and three a station keeps as settings, so a recipe can change
+them without naming a product's keys: `chargeLimit`,
+`dischargeFloor` and `mainsInputLimit` (a `number` in Home
+Assistant); and `price` and `priceRank`, what electricity costs now
 (in the provider's currency: a meaning may allow several units) and where the
 hour stands among the day's by price. An on/off has no quantity: it is a boolean, drawn as a band. `validateDescription` checks every rule, and
 the contract suite checks a session keeps its description.
@@ -474,7 +476,7 @@ consequential:
 
 | Kind | From | To | Evidence | One per source | Consequential |
 |---|---|---|---|---|---|
-| `feeds` | a part with `switch` | a part with `acInput` | `grid.present` follows `switch.on` | yes | yes: cutting it, and the first command through it |
+| `feeds` | a part with `switch` | a part with `acInput` | `mainsPresent` follows `on` | yes | yes: cutting it, and the first command through it |
 
 The gateway walks every link from the part it commands, of any kind, by these
 declarations; it names none. The second kind comes with the first device
@@ -546,7 +548,7 @@ from its kind's — and applies, per part:
 - that the part offers the capability, and the arguments are the command's own,
   of the right types;
 - confirmation where the command is **consequential** as declared — `switch.set`
-  turning off a part whose `power.draw` is above `loadWatts` — or the part is
+  turning off a part whose `power` is above `loadWatts` — or the part is
   the source of a link whose kind says being its source is (cutting what feeds
   a station), and for the first command through such a link. A declared
   condition that cannot be judged — the part reports the meaning, but nothing
@@ -558,7 +560,7 @@ from its kind's — and applies, per part:
   kept by the home in `home_setting` and served at `/api/policy`);
 - the home's **reserve**: a command declared to drain (`drains`) — turning a
   load part on — on a device with a `storage` part, changing something, while
-  that store's `battery.soc` is below `reserveSoc` or not known: refused to
+  that store's `charge` is below `reserveSoc` or not known: refused to
   automations and agents, confirmed by a person (docs/SHARED-PARTS-AND-RESERVE.md);
 - confirmation as a **token**, not a word: the refusal hands out one bound to
   the device, part, command and arguments (or the patch) and the person,
@@ -584,7 +586,7 @@ from its kind's — and applies, per part:
   value;
 - verification: reading back the attribute the command `sets`, plus every
   link from the part — the target part's evidence must come to agree, from a
-  reading taken after the command: a station's `grid.present` following the
+  reading taken after the command: a station's `mainsPresent` following the
   plug that feeds it;
 - for a write: only attributes that can be written, held to their types, a
   dangerous one confirmed by a person and never changed by an automation; and
@@ -1296,7 +1298,7 @@ before they shipped.
   presentation (`secret` and `host` are strings shown their own way).
   `null` is unknown, never off or zero.
 - **Capabilities are declared like clusters**: the attributes they bind — each
-  to a standard meaning (`battery.soc`, `power.draw`) — the commands they
+  to a standard meaning (`charge`, `power`) — the commands they
   accept, with typed arguments, a safety level, and which attribute each one
   `sets`, and queries for data that is not a current value (a forecast). The
   hand-written capability interfaces stay until step 26.
@@ -1314,7 +1316,7 @@ a value type plus presentation, validated by it. Capabilities declare their
 attributes (by standard meaning), commands (typed arguments, safety, what they
 set) and queries; `requiredMeanings` replaces the old `requires` list.
 `stateClass` replaced `cumulative` outright — one package used it. New
-meanings `current.ac` and `frequency.ac` give a plug's current and frequency a
+meanings `current` and `frequency` give a plug's current and frequency a
 standard name, and the quantities gained humidity, illuminance and signal.
 `standards.ts` projects every meaning, quantity, state class and capability
 into Home Assistant and Matter, with `homeAssistantEntityOf` as the one call a
@@ -1511,7 +1513,7 @@ everywhere at once (decision 21):
   what makes them `consequential`; a package may declare its own,
   namespaced; `powerMeter`'s attributes take Matter's names; `acInput`
   declares the events it raises (J3, J10, J12).
-- **Meanings**: `temperature.air` and `sky.cloudCover` replace the weather
+- **Meanings**: `temperature` and `cloudCover` replace the weather
   service's; the quantity `state` is gone (J9).
 - **Parts**: curated kinds with icons and a namespaced escape; the energy role
   optional; a key off `main` begins with its part, enforced, and `sample`

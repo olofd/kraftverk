@@ -19,7 +19,7 @@ and check a file with the same code.
 
 ```yaml
 # yaml-language-server: $schema=http://<your server>/api/config/schema.json
-kraftverk: 1                      # the document's version: required
+kraftverk: 2                      # the document's version: required
 
 home:
   clock: Europe/Stockholm          # what an automation that says no clock keeps time in
@@ -57,7 +57,7 @@ automations:
       - wait until: charger reachable
         at most: 2 min
       - turn on: charger
-      - make sure: charger.power.draw > 50 W
+      - make sure: charger.power > 50 W
         within: 20 s
         tries: 5
         each time:
@@ -96,7 +96,7 @@ describes.
   | `turn on: role` · `turn off: role` | switch a part |
   | `switch: role` + `on: <condition>` | on while the condition holds, off when it does not |
   | `send: command` + `to: role` + `capability:` + `with: {…}` | any command of a capability |
-  | `set: role` + `setting: key` or `meaning: battery.chargeLimit` + `to: <value>` | change a setting |
+  | `set: role` + `setting: key` or `meaning: chargeLimit` + `to: <value>` | change a setting |
   | `wait: 5 s` | a pause |
   | `wait until: <condition>` + `at most: 2 min` | until it holds — every wait has its limit |
   | `make sure: <condition>` + `within:` + `tries:` + `each time: [steps]` | retry until it holds |
@@ -105,11 +105,11 @@ describes.
   | `start: role` + `and wait: 10 min` | start another automation |
 
 - **Conditions and values** are expressions:
-  - a reading: `role.meaning` — `charger.power.draw`, `station.battery.soc`;
+  - a reading: `role.meaning` — `charger.power`, `station.charge`;
   - `role reachable`;
   - numbers with units — `50 W`, `15 %`, `30 min` — times of day `07:00`,
     `"text"`, `true`, `false`. A number beside a reading is in the unit
-    that reading is in — its standard meaning's (`power.draw` is in W), or
+    that reading is in — its standard meaning's (`power` is in W), or
     the part's own: one written in another unit of the same quantity is
     converted (`2 kW` beside a reading in W is 2000), one of another
     quantity is a problem (`50 °C` beside W);
@@ -123,7 +123,7 @@ describes.
 - **What fills a role** (`uses:`): `device-key` or `device-key.part`; another
   automation as `{ automation: key }`. A role's label and what it needs come
   from what the rule does with it — the commands it is sent, the standard
-  readings read from it (`battery.soc` asks for a battery, `power.draw` a
+  readings read from it (`charge` asks for a battery, `power` a
   power meter), the events it raises (`mains.lost`, an AC input); say them
   only when they differ:
   `{ part: …, label: …, description: …, needs: [switch, powerMeter] }`. A
@@ -245,6 +245,11 @@ The fixtures are in `packages/home-file/fixtures/` (`v1.yaml`, and one for each 
 kept; `migrate.test.ts` fails while a version lacks its fixture, a version
 below this one lacks its migration, or any fixture does not read — with
 nothing wrong — and write back the same.
+
+| Version | What changed |
+| --- | --- |
+| 1 | The first |
+| 2 | Each standard meaning is one word: `station.battery.soc` is `station.charge`, `charger.power.draw` is `charger.power`, `meaning: battery.chargeLimit` is `meaning: chargeLimit` |
 
 ## Importing
 

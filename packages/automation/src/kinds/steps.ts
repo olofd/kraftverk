@@ -165,7 +165,7 @@ const COMMAND: StepSpec<'command'> = {
   brief: (step, say) => say.command(step.command),
   docs: {
     summary: 'A command to the part filling a role, through the gateway, as any command is — checked, confirmed where it must be, and verified against what the device reports.',
-    examples: ['turn on: charger', 'switch: charger\non: station.battery.soc < 30 %', 'send: set\nto: charger\ncapability: switch\nwith:\n  on: true'],
+    examples: ['turn on: charger', 'switch: charger\non: station.charge < 30 %', 'send: set\nto: charger\ncapability: switch\nwith:\n  on: true'],
   },
 };
 
@@ -205,7 +205,7 @@ const WRITE: StepSpec<'write'> = {
   brief: (step, say) => say.write(step.write),
   docs: {
     summary: 'Change a setting the part filling a role offers, through the gateway, read back as any setting is — by its key, or by a standard meaning a recipe can name without knowing the product. Never one its device declares dangerous.',
-    examples: ['set: plug\nsetting: liveReadings\nto: true', 'set: station\nmeaning: battery.chargeLimit\nto: 80 %'],
+    examples: ['set: plug\nsetting: liveReadings\nto: true', 'set: station\nmeaning: chargeLimit\nto: 80 %'],
   },
 };
 
@@ -259,7 +259,7 @@ const ENSURE: StepSpec<'ensure'> = {
   brief: (step, say) => `make sure ${say.expr(step.ensure.condition)}`,
   docs: {
     summary: 'Make sure a condition comes true within a time; if not, take the steps under `each time` and look again, at most `tries` times — then the run stops, not having succeeded.',
-    examples: ['make sure: charger.power.draw > 50 W\nwithin: 20 s\ntries: 5\neach time:\n  - turn off: charger\n  - wait: 5 s\n  - turn on: charger'],
+    examples: ['make sure: charger.power > 50 W\nwithin: 20 s\ntries: 5\neach time:\n  - turn off: charger\n  - wait: 5 s\n  - turn on: charger'],
   },
 };
 
@@ -281,7 +281,7 @@ const CHOOSE: StepSpec<'choose'> = {
     const otherwise = say.briefs(step.choose.else);
     return `if ${say.expr(step.choose.if)}, ${say.briefs(step.choose.then).join(' and ') || 'nothing'}${otherwise.length ? `, otherwise ${otherwise.join(' and ')}` : ''}`;
   },
-  docs: { summary: 'One way or the other, as a condition is now. Unknown is not true: `else`.', examples: ['if: station.battery.soc < 20 %\nthen:\n  - turn on: charger\nelse:\n  - turn off: charger'] },
+  docs: { summary: 'One way or the other, as a condition is now. Unknown is not true: `else`.', examples: ['if: station.charge < 20 %\nthen:\n  - turn on: charger\nelse:\n  - turn off: charger'] },
 };
 
 const WATCH: StepSpec<'watch'> = {
@@ -303,7 +303,7 @@ const WATCH: StepSpec<'watch'> = {
   },
   docs: {
     summary: 'Watch a condition for a while: the steps under `if it stays so` if it stays true all that time, those under `if not` the moment it is not — or cannot be told.',
-    examples: ['watch: supply.power.draw < 10 W\nfor: 5 s\nif it stays so:\n  - turn off: supply'],
+    examples: ['watch: supply.power < 10 W\nfor: 5 s\nif it stays so:\n  - turn off: supply'],
   },
 };
 

@@ -6,8 +6,8 @@ import { dayOf, nextDay, periodAt, rankAt, simulatedDay } from './prices.ts';
 /**
  * Sweden's electricity prices, as a service: a device with no hardware, added
  * and shown like any other (docs/PLAN-RUN-AND-CHAIN.md, Phase 4). Its part is
- * a price area; it reports what electricity costs now (`price.now`) and where
- * the hour now stands among the day's hours by price (`price.rank`) — so "the
+ * a price area; it reports what electricity costs now (`price`) and where
+ * the hour now stands among the day's hours by price (`priceRank`) — so "the
  * cheapest four hours" is a condition like any other, which `becomes`, keeping
  * things so and rehearsal all understand.
  *
@@ -34,7 +34,7 @@ const description = (currency: Currency): DeviceDescription => ({
       label: 'Electricity price',
       value: { type: 'number', unit: `${currency}/kWh`, precision: currency === 'SEK' ? 2 : 3 },
       quantity: 'price',
-      means: 'price.now',
+      means: 'price',
       category: 'primary',
       currentFor: CURRENT_FOR_MS,
     },
@@ -44,7 +44,7 @@ const description = (currency: Currency): DeviceDescription => ({
       description: 'Where the hour now stands among the day’s hours by price: 1 is the cheapest.',
       value: { type: 'number', unit: '', integer: true, min: 1, max: 25 },
       quantity: 'rank',
-      means: 'price.rank',
+      means: 'priceRank',
       currentFor: CURRENT_FOR_MS,
     },
   ],

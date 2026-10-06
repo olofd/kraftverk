@@ -30,8 +30,8 @@ One part, the price area, offering `energyPrice`:
 
 | Attribute | Meaning | What it is |
 |---|---|---|
-| `price` | `price.now` | What electricity costs in the quarter hour now, per kWh, in SEK or EUR as chosen — the market price, without tax, fees or your supplier's margin. |
-| `rank` | `price.rank` | Where the hour now stands among the day's hours by price: 1 is the cheapest. |
+| `price` | `price` | What electricity costs in the quarter hour now, per kWh, in SEK or EUR as chosen — the market price, without tax, fees or your supplier's margin. |
+| `rank` | `priceRank` | Where the hour now stands among the day's hours by price: 1 is the cheapest. |
 
 - **Periods are quarter hours** since Nord Pool moved to them in October
   2025. A **rank is of hours**, each at the average of its four quarters,
@@ -57,7 +57,7 @@ One part, the price area, offering `energyPrice`:
 The shared recipe **"In the cheapest hours"** (`standard.cheap-hours`)
 switches something on in the day's cheapest hours and off in the others:
 any part offering `energyPrice` fills its role, so another price service
-would too. A rule of your own can use `price.rank` and `price.now` like any
+would too. A rule of your own can use `priceRank` and `price` like any
 reading — "only if the price is below 0.50".
 
 ## Simulated

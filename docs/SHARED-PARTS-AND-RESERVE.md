@@ -83,7 +83,7 @@ battery behind it.
   arg: 'on', is: true } }`. The gateway knows no station: it applies the
   reserve when a command so declared would change something, the part's
   energy role is `load`, and its device has a `storage` part reporting
-  `battery.soc` (the device's own, not a pack's).
+  `charge` (the device's own, not a pack's).
 - **Below the reserve**, or with the charge not known or read too long ago
   — unknown is never the safe answer — the command is **refused to
   automations and assistants** and **asked of a person**, in the gateway's

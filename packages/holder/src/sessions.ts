@@ -231,7 +231,7 @@ export class SessionManager {
     return open !== undefined && isSimulated(open.connection);
   }
 
-  /** What an open device reports now for a meaning on one of its parts — a plug's `switch.on` — or null: not open, or saying nothing of it. */
+  /** What an open device reports now for a meaning on one of its parts — a plug's `on` — or null: not open, or saying nothing of it. */
   reads(deviceId: SavedDeviceId, part: string, means: string): Value {
     const open = this.#open.get(deviceId);
     const attribute = open ? attributeMeaning(open.opened.description(), part, means) : null;

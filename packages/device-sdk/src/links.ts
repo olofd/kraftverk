@@ -69,7 +69,7 @@ export const LINK_KINDS = {
     },
     whenSourceOff: 'It feeds {target}, which loses its mains while this is off.',
     onePerSource: true,
-    evidence: { means: 'grid.present', follows: 'switch.on' },
+    evidence: { means: 'mainsPresent', follows: 'on' },
     consequential: true,
   },
 } as const satisfies Record<string, LinkKindSpec>;

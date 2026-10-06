@@ -12,7 +12,7 @@ import { addSimulated, unique } from './helpers';
 */
 
 const HEADERS = { 'x-kraftverk-client': 'app' };
-const SOC = { read: { role: 'battery', means: 'battery.soc' } };
+const SOC = { read: { role: 'battery', means: 'charge' } };
 
 /** What is wrong with the layout as it is now, in words; empty when nothing is. */
 async function problems(page: Page): Promise<string[]> {
@@ -181,7 +181,7 @@ for (const width of [320, 375]) {
     expect(await problems(page)).toEqual([]);
     const editor = page.getByRole('textbox', { name: 'The configuration to import' });
     await editor.click();
-    await page.keyboard.insertText('kraftverk: 1\nautomations:\n  a-rather-long-key-for-a-narrow-screen:\n    name: Evening\n    clock: Europe/Stockholm\n    uses:\n      plug: some-plug-from-another-server-entirely\n    do:\n      - turn on: plug\n');
+    await page.keyboard.insertText('kraftverk: 2\nautomations:\n  a-rather-long-key-for-a-narrow-screen:\n    name: Evening\n    clock: Europe/Stockholm\n    uses:\n      plug: some-plug-from-another-server-entirely\n    do:\n      - turn on: plug\n');
     await page.getByRole('button', { name: 'Read it' }).click();
     await expect(page.getByText('It still needs 1 device.')).toBeVisible();
     await page.getByRole('button', { name: /^Plug: .*Choose$/ }).click();

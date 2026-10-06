@@ -13,7 +13,7 @@ import { ActionGateway, type WriteIntent } from './gateway.ts';
 
 const DESCRIPTION: DeviceDescription = {
   attributes: [
-    { key: 'soc', label: 'Charge', value: { type: 'number', unit: '%' }, quantity: 'percent', means: 'battery.soc' },
+    { key: 'soc', label: 'Charge', value: { type: 'number', unit: '%' }, quantity: 'percent', means: 'charge' },
     {
       key: 'led',
       label: 'Light',

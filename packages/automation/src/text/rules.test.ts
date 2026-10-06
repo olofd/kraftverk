@@ -74,14 +74,14 @@ describe('a rule, written and read back', () => {
       when: [{ at: { value: '07:00' }, days: ['mon', 'fri'] }, { every: { value: 900 } }, { event: { role: 'station', event: 'mains-lost' } }, { becomes: { reachable: 'plug' }, heldFor: { value: 120 } }],
       if: { all: [{ reachable: 'plug' }] },
       then: [
-        { command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { compare: 'lt', left: { read: { role: 'station', means: 'battery.soc' } }, right: { value: 50 } } } } },
+        { command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { compare: 'lt', left: { read: { role: 'station', means: 'charge' } }, right: { value: 50 } } } } },
         { command: { role: 'station', capability: 'light' as CapabilityName, command: 'mode', args: { mode: { value: 'sos' }, list: { value: [1, 2] } } } },
         { command: { role: 'station', capability: 'beep' as CapabilityName, command: 'now', args: {} } },
         { write: { role: 'station', key: 'acChargeLimit', value: { value: 80 } } },
-        { write: { role: 'station', means: 'battery.dischargeFloor', value: { value: 20 } } },
+        { write: { role: 'station', means: 'dischargeFloor', value: { value: 20 } } },
         { wait: { for: { value: 90 } } },
         { waitUntil: { condition: { reachable: 'plug' }, atMost: { value: 120 } } },
-        { ensure: { condition: { compare: 'gt', left: { read: { role: 'plug', means: 'power.draw' } }, right: { value: 50 } }, within: { value: 20 }, tries: { value: 5 }, retry: [{ wait: { for: { value: 5 } } }] } },
+        { ensure: { condition: { compare: 'gt', left: { read: { role: 'plug', means: 'power' } }, right: { value: 50 } }, within: { value: 20 }, tries: { value: 5 }, retry: [{ wait: { for: { value: 5 } } }] } },
         { choose: { if: { reachable: 'plug' }, then: [], else: [{ start: { role: 'other', andWait: { value: 600 } } }] } },
         { choose: { if: { value: true }, then: [{ start: { role: 'other' } }] } },
         { watch: { condition: { reachable: 'plug' }, for: { value: 5 }, then: [] } },
@@ -107,7 +107,7 @@ describe('a rule, written and read back', () => {
           { 'turn on': 'supply' },
           { 'wait until': 'charger reachable', 'at most': '2 min' },
           { 'turn on': 'charger' },
-          { 'make sure': 'charger.power.draw > 50 W', within: '20 s', tries: 5, 'each time': [{ 'turn off': 'charger' }, { wait: '5 s' }, { 'turn on': 'charger' }] },
+          { 'make sure': 'charger.power > 50 W', within: '20 s', tries: 5, 'each time': [{ 'turn off': 'charger' }, { wait: '5 s' }, { 'turn on': 'charger' }] },
         ],
         'if a step fails': [{ 'turn off': 'charger' }, { 'turn off': 'supply' }],
       },
@@ -125,13 +125,13 @@ describe('a rule, written and read back', () => {
     const read = ruleFromConfig(
       {
         uses: { charger: 'smart-plug' },
-        do: [{ 'turn on': 'charger' }, { 'make sure': 'charger.power.draw >', within: '20 s', tries: 3 }, { jump: 'charger' }, { 'wait until': 'charger reachable' }],
+        do: [{ 'turn on': 'charger' }, { 'make sure': 'charger.power >', within: '20 s', tries: 3 }, { jump: 'charger' }, { 'wait until': 'charger reachable' }],
       },
       ['automations', 'x']
     );
     expect(read.rule).toBeNull();
     expect(read.issues).toEqual([
-      { message: 'It ends where a value was expected', path: ['automations', 'x', 'do', 1, 'make sure'], offset: 20 },
+      { message: 'It ends where a value was expected', path: ['automations', 'x', 'do', 1, 'make sure'], offset: 15 },
       { message: 'Not a step: "jump". A step starts with turn on, turn off, switch, send, set, wait, wait until, make sure, if, watch or start', path: ['automations', 'x', 'do', 2] },
       { message: '"wait until" needs "at most": every wait has its limit: then the run stops, not having succeeded', path: ['automations', 'x', 'do', 3] },
     ]);
@@ -165,8 +165,8 @@ describe('what a role needs', () => {
     const read = ruleFromConfig(
       {
         uses: { station: 'garage-station', plug: 'smart-plug', mains: 'garage-station.input.ac' },
-        when: [{ becomes: 'station.battery.soc < 20 %' }, { event: 'mains.lost', from: 'mains' }],
-        do: [{ 'turn on': 'plug' }, { 'wait until': 'plug.power.draw > 50 W', 'at most': '20 s' }],
+        when: [{ becomes: 'station.charge < 20 %' }, { event: 'mains.lost', from: 'mains' }],
+        do: [{ 'turn on': 'plug' }, { 'wait until': 'plug.power > 50 W', 'at most': '20 s' }],
       },
       ['a']
     );
@@ -184,24 +184,24 @@ describe('what a role needs', () => {
 describe('units', () => {
   const read = (condition: string, context = {}) => ruleFromConfig({ uses: { plug: 'plug' }, when: [{ becomes: condition }], do: [] }, ['a'], context);
   test('a number beside a reading is in its unit: converted from another of the same quantity, refused from another quantity', () => {
-    // power.draw is in W, its standard meaning says.
-    expect(read('plug.power.draw > 2 kW').rule!.when[0]).toEqual({ becomes: { compare: 'gt', left: { read: { role: 'plug', means: 'power.draw' } }, right: { value: 2000 } } });
-    expect(read('plug.power.draw > 2.2 kW').rule!.when[0]).toMatchObject({ becomes: { right: { value: 2200 } } });
-    expect(read('plug.power.draw < 50 W').rule!.when[0]).toMatchObject({ becomes: { right: { value: 50 } } });
-    expect(read('plug.power.draw > 50 °C').issues).toEqual([{ message: 'That is read in W: "°C" is not a unit of it', path: ['a', 'when', 0, 'becomes'], offset: 18 }]);
+    // power is in W, its standard meaning says.
+    expect(read('plug.power > 2 kW').rule!.when[0]).toEqual({ becomes: { compare: 'gt', left: { read: { role: 'plug', means: 'power' } }, right: { value: 2000 } } });
+    expect(read('plug.power > 2.2 kW').rule!.when[0]).toMatchObject({ becomes: { right: { value: 2200 } } });
+    expect(read('plug.power < 50 W').rule!.when[0]).toMatchObject({ becomes: { right: { value: 50 } } });
+    expect(read('plug.power > 50 °C').issues).toEqual([{ message: 'That is read in W: "°C" is not a unit of it', path: ['a', 'when', 0, 'becomes'], offset: 13 }]);
     // A unit on a reading that has none: refused.
-    expect(read('plug.price.rank <= 4 W').issues[0]!.message).toBe('That is read in no unit: "W" is not one');
+    expect(read('plug.priceRank <= 4 W').issues[0]!.message).toBe('That is read in no unit: "W" is not one');
     // A type's own meaning: its part's unit, as the context says it — or, unknown, the number as written.
     expect(read('plug.acme.flow > 2 kW', { unitOf: () => 'W' }).rule!.when[0]).toMatchObject({ becomes: { right: { value: 2000 } } });
     expect(read('plug.acme.flow > 2 kW').rule!.when[0]).toMatchObject({ becomes: { right: { value: 2 } } });
     // Beside a sum, too: the charge limit less 5 %.
-    expect(read('plug.battery.soc < plug.battery.chargeLimit - 5 %').issues).toEqual([]);
+    expect(read('plug.charge < plug.chargeLimit - 5 %').issues).toEqual([]);
   });
 
   test('a setting set by its meaning is set in its unit; a unit where nothing says one is refused, not dropped', () => {
     const set = (step: Record<string, unknown>, context = {}) => ruleFromConfig({ uses: { st: 'station' }, do: [{ set: 'st', ...step }] }, ['a'], context);
     expect(set({ meaning: 'acme.inputLimit', to: '2 kW' }, { unitOf: () => 'W' }).rule!.then[0]).toEqual({ write: { role: 'st', means: 'acme.inputLimit', value: { value: 2000 } } });
-    expect(set({ meaning: 'battery.chargeLimit', to: '80 %' }).rule!.then[0]).toMatchObject({ write: { value: { value: 80 } } });
+    expect(set({ meaning: 'chargeLimit', to: '80 %' }).rule!.then[0]).toMatchObject({ write: { value: { value: 80 } } });
     expect(set({ meaning: 'acme.inputLimit', to: '50 °C' }, { unitOf: () => 'W' }).issues[0]!.message).toBe('That is read in W: "°C" is not a unit of it');
     // By its key, or its meaning's unit unknown: what unit it is in nobody says, so a unit written is not quietly dropped.
     expect(set({ setting: 'inputLimit', to: '2 kW' }).issues).toEqual([{ message: 'Nothing here says what unit it is in: write it without "kW", in the unit it is set in', path: ['a', 'do', 0, 'to'], offset: 0 }]);

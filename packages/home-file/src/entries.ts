@@ -90,7 +90,7 @@ export function fillsFrom(
 
 /**
  * How numbers beside a role's readings are written: in the unit of what the
- * part filling it reports — `charger.power.draw > 50 W`.
+ * part filling it reports — `charger.power > 50 W`.
  */
 export function unitsFrom(roles: Readonly<Record<string, { device: string; part: string }>>, describe: (device: string) => DeviceDescription | null): PrintContext {
   return {

@@ -10,7 +10,7 @@ import type { CapabilityId, ConfigSchema, ConnectionHealth, LinkKind, SavedDevic
 export type WorldValue = {
   key: string;
   label: string;
-  /** Its meaning in the shared vocabulary, or a type's own: `battery.soc`. */
+  /** Its meaning in the shared vocabulary, or a type's own: `charge`. */
   means: string | null;
   value: Value;
   unit: string | null;

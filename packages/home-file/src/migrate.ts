@@ -11,10 +11,56 @@
 */
 
 /** The version this kraftverk writes. */
-export const CURRENT_VERSION = 1;
+export const CURRENT_VERSION = 2;
 
 /** Each version's document, as data, made into the next version's. */
-export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unknown>) => Record<string, unknown>>> = {};
+export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unknown>) => Record<string, unknown>>> = {
+  1: (document) => ({ ...document, automations: renamedMeanings(document.automations, MEANINGS_1_TO_2) }),
+};
+
+/**
+ * Version 2 names each standard meaning by one word: `battery.soc` is
+ * `charge`, read as `station.charge`. As version 1 named them — kept here as
+ * they were, whatever the meanings become.
+ */
+const MEANINGS_1_TO_2: readonly (readonly [string, string])[] = [
+  ['power.in.ac.max', 'mainsInputLimit'],
+  ['power.in.ac', 'mainsInput'],
+  ['power.in.solar', 'solarInput'],
+  ['power.in', 'input'],
+  ['power.out', 'output'],
+  ['power.draw', 'power'],
+  ['battery.soc', 'charge'],
+  ['battery.capacity', 'capacity'],
+  ['battery.chargeLimit', 'chargeLimit'],
+  ['battery.dischargeFloor', 'dischargeFloor'],
+  ['energy.total', 'energy'],
+  ['voltage.ac', 'voltage'],
+  ['current.ac', 'current'],
+  ['frequency.ac', 'frequency'],
+  ['grid.present', 'mainsPresent'],
+  ['switch.on', 'on'],
+  ['temperature.air', 'temperature'],
+  ['sky.cloudCover', 'cloudCover'],
+  ['price.now', 'price'],
+  ['price.rank', 'priceRank'],
+];
+
+/**
+ * The automations, with each meaning renamed where they name one: a reading
+ * in an expression's text, after its role (`station.battery.soc`), and a
+ * setting changed by its meaning (`meaning: battery.chargeLimit`). Longer
+ * names first, so `power.in.ac` is not taken for `power.in`.
+ */
+function renamedMeanings(value: unknown, renames: readonly (readonly [string, string])[], key?: string): unknown {
+  if (typeof value === 'string') {
+    if (key === 'meaning') return renames.find(([from]) => from === value)?.[1] ?? value;
+    return renames.reduce((text, [from, to]) => text.replace(new RegExp(`(?<=[A-Za-z0-9_]\\.)${from.replaceAll('.', '\\.')}(?![A-Za-z0-9_]|\\.[A-Za-z_])`, 'g'), to), value);
+  }
+  if (Array.isArray(value)) return value.map((each) => renamedMeanings(each, renames));
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([name, each]) => [name, renamedMeanings(each, renames, name)]));
+  return value;
+}
 
 export type Migrated = { ok: true; document: Record<string, unknown>; from: number } | { ok: false; message: string };
 

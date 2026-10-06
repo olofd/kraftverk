@@ -19,8 +19,8 @@ import type { Step } from './rule.ts';
 const PLUG: DeviceDescription = {
   parts: [{ id: 'main', label: 'Socket', kind: 'outlet', offers: ['switch'] }],
   attributes: [
-    { key: 'relay', label: 'Switch', value: { type: 'boolean' }, means: 'switch.on' },
-    { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, means: 'power.draw' },
+    { key: 'relay', label: 'Switch', value: { type: 'boolean' }, means: 'on' },
+    { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, means: 'power' },
   ],
 };
 

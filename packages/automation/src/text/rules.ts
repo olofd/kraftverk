@@ -294,8 +294,8 @@ export type RuleBody = Pick<Rule, 'when' | 'then' | 'otherwise' | 'if'>;
 
 /**
  * The capability a standard meaning, or an event, belongs to — when it
- * belongs to one only: reading `battery.soc` asks for a battery, reading
- * `power.draw` for a power meter, `mains.lost` for an AC input.
+ * belongs to one only: reading `charge` asks for a battery, reading
+ * `power` for a power meter, `mains.lost` for an AC input.
  */
 const CAPABILITY_OF = (() => {
   const of = new Map<string, Set<string>>();

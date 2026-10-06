@@ -17,11 +17,11 @@ const minute = (n: number) => new Date(START + n * 60_000).toISOString();
 
 const BATTERY: DeviceDescription = {
   parts: [{ id: MAIN_PART, label: 'Station', kind: 'device' }],
-  attributes: [{ key: 'soc', label: 'Charge', value: { type: 'number', unit: '%' }, quantity: 'percent', means: 'battery.soc' }],
+  attributes: [{ key: 'soc', label: 'Charge', value: { type: 'number', unit: '%' }, quantity: 'percent', means: 'charge' }],
 };
 const SWITCH: DeviceDescription = {
   parts: [{ id: MAIN_PART, label: 'Plug', kind: 'outlet', offers: ['switch'] }],
-  attributes: [{ key: 'on', label: 'On', value: { type: 'boolean' }, means: 'switch.on' }],
+  attributes: [{ key: 'on', label: 'On', value: { type: 'boolean' }, means: 'on' }],
 };
 
 /** A charge that falls to 12 %, dips back above for a minute, stays under, then — charged some other way — climbs past 50 %. */

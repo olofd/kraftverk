@@ -79,7 +79,7 @@ export type PolicyValues = Readonly<Partial<Record<PolicyValueName, number>>>;
 export const thresholdOf = (threshold: Threshold, values: PolicyValues = {}): number =>
   typeof threshold === 'number' ? threshold : (values[threshold.policy] ?? POLICY_VALUES[threshold.policy].default);
 
-/** Something true of a part now, by meaning: `{ means: 'power.draw', above: { policy: 'loadWatts' } }` — it is carrying a load. */
+/** Something true of a part now, by meaning: `{ means: 'power', above: { policy: 'loadWatts' } }` — it is carrying a load. */
 export type PartCondition = {
   means: StandardMeaningId;
   above?: Threshold;
@@ -170,14 +170,14 @@ const FORECAST_HOUR = {
 export const CAPABILITIES = {
   switch: {
     label: 'Switch',
-    attributes: { on: { means: 'switch.on', required: true } },
+    attributes: { on: { means: 'on', required: true } },
     commands: {
       set: {
         description: 'Turn it on or off',
         args: { on: { type: 'boolean' } },
         sets: { on: 'on' },
         // Turning off what carries a load, or what feeds another device, is a deliberate act. How much is a load is the home's to say.
-        consequential: { when: { arg: 'on', is: false }, if: [{ means: 'power.draw', above: { policy: 'loadWatts' } }] },
+        consequential: { when: { arg: 'on', is: false }, if: [{ means: 'power', above: { policy: 'loadWatts' } }] },
         // Switching on a station's outlet runs it from its battery: the home's reserve is kept for it.
         drains: { when: { arg: 'on', is: true } },
       },
@@ -188,24 +188,24 @@ export const CAPABILITIES = {
     label: 'Power meter',
     // Matter's ElectricalPowerMeasurement and ElectricalEnergyMeasurement names.
     attributes: {
-      activePower: { means: 'power.draw', required: true },
-      voltage: { means: 'voltage.ac' },
-      activeCurrent: { means: 'current.ac' },
-      frequency: { means: 'frequency.ac' },
-      energyImported: { means: 'energy.total' },
+      activePower: { means: 'power', required: true },
+      voltage: { means: 'voltage' },
+      activeCurrent: { means: 'current' },
+      frequency: { means: 'frequency' },
+      energyImported: { means: 'energy' },
     },
     commands: {},
     queries: {},
   },
   battery: {
     label: 'Battery',
-    attributes: { soc: { means: 'battery.soc', required: true }, capacity: { means: 'battery.capacity' } },
+    attributes: { soc: { means: 'charge', required: true }, capacity: { means: 'capacity' } },
     commands: {},
     queries: {},
   },
   acInput: {
     label: 'AC input',
-    attributes: { present: { means: 'grid.present', required: true }, activePower: { means: 'power.in.ac' } },
+    attributes: { present: { means: 'mainsPresent', required: true }, activePower: { means: 'mainsInput' } },
     commands: {},
     queries: {},
     events: {
@@ -216,7 +216,7 @@ export const CAPABILITIES = {
   energyPrice: {
     label: 'Energy price',
     // What electricity costs now, and where this hour stands among the day's.
-    attributes: { now: { means: 'price.now', required: true }, rank: { means: 'price.rank' } },
+    attributes: { now: { means: 'price', required: true }, rank: { means: 'priceRank' } },
     commands: {},
     queries: {},
   },

@@ -30,7 +30,7 @@ const rule = (then: Step[], extra: Partial<Rule> = {}): Rule => ({
 
 const on: Step = { command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { value: true } } } };
 
-const drawing: Rule['if'] = { compare: 'gt', left: { read: { role: 'plug', means: 'power.draw' } }, right: { value: 50 } };
+const drawing: Rule['if'] = { compare: 'gt', left: { read: { role: 'plug', means: 'power' } }, right: { value: 50 } };
 
 describe('the language', () => {
   test('starting and stopping a charge are sequences it checks clean: no trigger of their own — played, or started — taking steps', () => {
@@ -65,7 +65,7 @@ describe('the language', () => {
   });
 
   test('conditions are conditions, of roles it has; a choice or a watch does something; steps nest only so deep', () => {
-    expect(checkRule(rule([{ waitUntil: { condition: { read: { role: 'plug', means: 'power.draw' } }, atMost: { value: 5 } } }]), NO_FUNCTIONS)).toEqual([
+    expect(checkRule(rule([{ waitUntil: { condition: { read: { role: 'plug', means: 'power' } }, atMost: { value: 5 } } }]), NO_FUNCTIONS)).toEqual([
       'then[0].waitUntil.condition: expected a condition, got a number in W',
     ]);
     expect(checkRule(rule([{ waitUntil: { condition: { reachable: 'lamp' }, atMost: { value: 5 } } }]), NO_FUNCTIONS)).toEqual(['then[0].waitUntil.condition: there is no role "lamp"']);
@@ -78,7 +78,7 @@ describe('the language', () => {
   test('says what it reads, whose reach it asks about, and every command it may send', () => {
     const uses = ruleUses(startCharging);
     expect(uses.reaches).toEqual(['charger']);
-    expect(uses.reads).toContainEqual({ role: 'charger', means: 'power.draw' });
+    expect(uses.reads).toContainEqual({ role: 'charger', means: 'power' });
     // Supply on, charger on; each retry off and on; if it fails, both off.
     expect(ruleCommands(startCharging).map((command) => `${command.role} ${JSON.stringify(command.args.on)}`)).toEqual([
       'supply {"value":true}',
@@ -118,7 +118,7 @@ describe('read back', () => {
     const leftOn = { ...defaults(startCharging), ifItFails: 'leaveOn' };
     expect(describeSteps(startCharging, leftOn, names).otherwise).toEqual([]);
     // A choice that turns on what is read is still a step.
-    const reading: Rule = { ...stopCharging, then: [{ choose: { if: { compare: 'gt', left: { read: { role: 'supply', means: 'power.draw' } }, right: { value: 10 } }, then: [{ command: { role: 'supply', capability: 'switch', command: 'set', args: { on: { value: false } } } }] } }] };
+    const reading: Rule = { ...stopCharging, then: [{ choose: { if: { compare: 'gt', left: { read: { role: 'supply', means: 'power' } }, right: { value: 10 } }, then: [{ command: { role: 'supply', capability: 'switch', command: 'set', args: { on: { value: false } } } }] } }] };
     expect(describeSteps(reading, defaults(stopCharging), names).steps.map((line) => line.text)).toEqual(['If the power of Garage station’s AC outlets is above 10 W']);
     expect(settledChoice(startCharging, startCharging.otherwise![0] as Extract<Step, { choose: unknown }>, leftOn)).toEqual([]);
   });

@@ -101,7 +101,7 @@ describe('sampling', () => {
     const fetched = new Date(Date.now() - 40 * 60_000).toISOString();
     const description: DeviceDescription = {
       attributes: [
-        { key: 'temperature', label: 'Temperature', value: { type: 'number', unit: '°C' }, means: 'temperature.air', currentFor: 60 * 60_000 },
+        { key: 'temperature', label: 'Temperature', value: { type: 'number', unit: '°C' }, means: 'temperature', currentFor: 60 * 60_000 },
         { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' } },
       ],
     };

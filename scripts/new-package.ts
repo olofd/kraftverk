@@ -102,7 +102,7 @@ type Config = Record<string, never>;
  */
 const DESCRIPTION: DeviceDescription = {
   parts: [{ id: MAIN_PART, label: '${title}', kind: 'outlet', energy: { role: 'load' }, offers: ['switch'] }],
-  attributes: [{ key: 'on', label: 'On', value: { type: 'boolean' }, means: 'switch.on' }],
+  attributes: [{ key: 'on', label: 'On', value: { type: 'boolean' }, means: 'on' }],
 };
 
 /** A simulated ${title}: a switch that remembers where it was left. */

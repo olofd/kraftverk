@@ -61,9 +61,9 @@ export const KEYS = {
  * charge limit — solar may fill past it, as the station decides.
  */
 const SETTING_MEANINGS: Record<string, string> = {
-  chargeLimit: 'battery.chargeLimit',
-  dischargeFloor: 'battery.dischargeFloor',
-  acChargingWatts: 'power.in.ac.max',
+  chargeLimit: 'chargeLimit',
+  dischargeFloor: 'dischargeFloor',
+  acChargingWatts: 'mainsInputLimit',
 };
 
 /** Where each setting is grouped on a generic settings screen. */
@@ -111,10 +111,10 @@ export function describeStation(packs = 0): DeviceDescription {
   ];
 
   const attributes: AttributeSpec[] = [
-    { key: 'soc', label: 'Charge', value: number('%', 1), quantity: 'percent', means: 'battery.soc', category: 'primary' },
-    { key: 'capacityWh', label: 'Capacity', value: number('Wh'), quantity: 'energy', means: 'battery.capacity', category: 'diagnostic' },
-    { key: 'inputWatts', label: 'Input', value: number('W'), quantity: 'power', means: 'power.in' },
-    { key: 'outputWatts', label: 'Output', value: number('W'), quantity: 'power', means: 'power.out' },
+    { key: 'soc', label: 'Charge', value: number('%', 1), quantity: 'percent', means: 'charge', category: 'primary' },
+    { key: 'capacityWh', label: 'Capacity', value: number('Wh'), quantity: 'energy', means: 'capacity', category: 'diagnostic' },
+    { key: 'inputWatts', label: 'Input', value: number('W'), quantity: 'power', means: 'input' },
+    { key: 'outputWatts', label: 'Output', value: number('W'), quantity: 'power', means: 'output' },
     {
       key: 'state',
       label: 'Doing',
@@ -135,18 +135,18 @@ export function describeStation(packs = 0): DeviceDescription {
     { key: 'acOutputHz', label: 'Inverter frequency', value: number('Hz', 1), quantity: 'frequency', means: 'p280.inverterHz', category: 'diagnostic' },
     { key: 'chargeBookingMinutes', label: 'Charging deferred', value: number('min'), quantity: 'duration', means: 'p280.chargeDeferred' },
 
-    { key: KEYS.mainsPresent, part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'grid.present' },
-    { key: KEYS.mainsWatts, part: 'input.ac', label: 'From mains', value: number('W'), quantity: 'power', means: 'power.in.ac', category: 'primary' },
-    { key: KEYS.mainsVolts, part: 'input.ac', label: 'Mains voltage', value: number('V', 1), quantity: 'voltage', means: 'voltage.ac' },
-    { key: KEYS.mainsHz, part: 'input.ac', label: 'Mains frequency', value: number('Hz', 1), quantity: 'frequency', means: 'frequency.ac', category: 'diagnostic' },
+    { key: KEYS.mainsPresent, part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'mainsPresent' },
+    { key: KEYS.mainsWatts, part: 'input.ac', label: 'From mains', value: number('W'), quantity: 'power', means: 'mainsInput', category: 'primary' },
+    { key: KEYS.mainsVolts, part: 'input.ac', label: 'Mains voltage', value: number('V', 1), quantity: 'voltage', means: 'voltage' },
+    { key: KEYS.mainsHz, part: 'input.ac', label: 'Mains frequency', value: number('Hz', 1), quantity: 'frequency', means: 'frequency', category: 'diagnostic' },
     { key: KEYS.solarPresent, part: 'input.solar', label: 'Solar connected', value: { type: 'boolean' }, means: 'p280.solarPresent' },
-    { key: KEYS.solarWatts, part: 'input.solar', label: 'Solar', value: number('W'), quantity: 'power', means: 'power.in.solar', category: 'primary' },
+    { key: KEYS.solarWatts, part: 'input.solar', label: 'Solar', value: number('W'), quantity: 'power', means: 'solarInput', category: 'primary' },
     { key: KEYS.lightOn, part: 'light', label: 'Light on', value: { type: 'boolean' }, means: 'p280.lightOn' },
-    { key: KEYS.lightWatts, part: 'light', label: 'Light draw', value: number('W'), quantity: 'power', means: 'power.draw' },
+    { key: KEYS.lightWatts, part: 'light', label: 'Light draw', value: number('W'), quantity: 'power', means: 'power' },
 
     ...OUTLETS.flatMap((outlet): AttributeSpec[] => [
-      { key: KEYS.outletOn(outlet.port), part: outletPart(outlet.port), label: outlet.label, value: { type: 'boolean' }, means: 'switch.on' },
-      { key: KEYS.outletWatts(outlet.port), part: outletPart(outlet.port), label: `${outlet.label} draw`, value: number('W'), quantity: 'power', means: 'power.draw', category: 'primary' },
+      { key: KEYS.outletOn(outlet.port), part: outletPart(outlet.port), label: outlet.label, value: { type: 'boolean' }, means: 'on' },
+      { key: KEYS.outletWatts(outlet.port), part: outletPart(outlet.port), label: `${outlet.label} draw`, value: number('W'), quantity: 'power', means: 'power', category: 'primary' },
     ]),
 
     ...Array.from({ length: packs }, (_, index): AttributeSpec => ({
@@ -155,7 +155,7 @@ export function describeStation(packs = 0): DeviceDescription {
       label: `Pack ${index + 1} charge`,
       value: number('%', 1),
       quantity: 'percent',
-      means: 'battery.soc',
+      means: 'charge',
       category: 'primary',
     })),
 

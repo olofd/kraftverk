@@ -107,7 +107,7 @@ export type AttributeSpec = {
   /** What a number is a quantity of. On/off values are booleans, and say nothing here. */
   quantity?: Quantity;
   /**
-   * What it means: a standard meaning (`battery.soc`) — whose unit, quantity and
+   * What it means: a standard meaning (`charge`) — whose unit, quantity and
    * state class it must then keep — or one namespaced by the type
    * (`station.minutesToFull`).
    */

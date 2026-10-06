@@ -87,7 +87,7 @@ const kit = {
         description: 'When the battery stays low, switch',
         roles: { battery: { label: 'Battery', description: 'A battery', capabilities: ['battery'] }, switch: SWITCH_ROLE },
         params: { fields: { below: { type: 'number', title: 'Below', unit: '%', default: 20 }, heldFor: { type: 'number', title: 'For', unit: 's', default: 0 }, action: ACTION } },
-        when: [{ becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { param: 'below' } }, heldFor: { param: 'heldFor' } }],
+        when: [{ becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'charge' } }, right: { param: 'below' } }, heldFor: { param: 'heldFor' } }],
         then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: TURN } } }],
       }),
       defineRecipe({
@@ -105,7 +105,7 @@ const kit = {
         description: 'When the battery is charged, the plug’s light off',
         roles: { battery: { label: 'Battery', description: 'A battery', capabilities: ['battery'] }, plug: { label: 'Plug', description: 'A plug', capabilities: ['switch'] } },
         params: { fields: {} },
-        when: [{ becomes: { compare: 'ge', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { value: 50 } } }],
+        when: [{ becomes: { compare: 'ge', left: { read: { role: 'battery', means: 'charge' } }, right: { value: 50 } } }],
         then: [{ write: { role: 'plug', key: 'light', value: { value: false } } }],
       }),
     ],
@@ -117,7 +117,7 @@ const kit = {
 const PLUG_DESCRIPTION: DeviceDescription = {
   parts: [{ id: MAIN_PART, label: 'Plug', kind: 'outlet', offers: ['switch'] }],
   attributes: [
-    { key: 'on', label: 'On', value: { type: 'boolean' }, means: 'switch.on' },
+    { key: 'on', label: 'On', value: { type: 'boolean' }, means: 'on' },
     { key: 'light', label: 'Indicator light', value: { type: 'boolean' }, access: 'write', category: 'config' },
   ],
 };
@@ -130,10 +130,10 @@ const STATION_DESCRIPTION: DeviceDescription = {
     { id: 'input.ac', label: 'Mains', kind: 'input' },
   ],
   attributes: [
-    { key: 'soc', label: 'Battery', value: { type: 'number', unit: '%' }, quantity: 'percent', means: 'battery.soc' },
-    { key: 'outlet.ac.on', part: 'outlet.ac', label: 'On', value: { type: 'boolean' }, means: 'switch.on' },
-    { key: 'input.ac.present', part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'grid.present' },
-    { key: 'acLimit', label: 'AC charge limit', value: { type: 'number', unit: '%', min: 60, max: 100 }, means: 'battery.chargeLimit', access: 'write', category: 'config' },
+    { key: 'soc', label: 'Battery', value: { type: 'number', unit: '%' }, quantity: 'percent', means: 'charge' },
+    { key: 'outlet.ac.on', part: 'outlet.ac', label: 'On', value: { type: 'boolean' }, means: 'on' },
+    { key: 'input.ac.present', part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'mainsPresent' },
+    { key: 'acLimit', label: 'AC charge limit', value: { type: 'number', unit: '%', min: 60, max: 100 }, means: 'chargeLimit', access: 'write', category: 'config' },
   ],
   events: [{ id: 'mains.lost', label: 'Mains lost', level: 'warn', part: 'input.ac' }],
 };
@@ -625,7 +625,7 @@ describe('a setting by what it means', () => {
     const { engine, store, written } = setup();
     const created = store.create({
       name: 'Charge to 80 %',
-      rule: { roles: { station: { label: 'Station', description: 'A station', capabilities: ['battery'] } }, params: { fields: {} }, when: [], then: [{ write: { role: 'station', means: 'battery.chargeLimit', value: { value: 80 } } }] },
+      rule: { roles: { station: { label: 'Station', description: 'A station', capabilities: ['battery'] } }, params: { fields: {} }, when: [], then: [{ write: { role: 'station', means: 'chargeLimit', value: { value: 80 } } }] },
       madeFrom: null,
       roles: { station: { device: STATION, part: 'main' } },
       starts: {},

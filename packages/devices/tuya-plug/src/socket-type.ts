@@ -76,11 +76,11 @@ type SocketConfig = {
 };
 
 const METER: Readonly<Record<keyof SocketProfile['metrics'], AttributeSpec>> = {
-  watts: { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W', precision: 0 }, quantity: 'power', means: 'power.draw', category: 'primary' },
-  volts: { key: 'volts', label: 'Voltage', value: { type: 'number', unit: 'V', precision: 1 }, quantity: 'voltage', means: 'voltage.ac' },
-  amps: { key: 'amps', label: 'Current', value: { type: 'number', unit: 'A', precision: 2 }, quantity: 'current', means: 'current.ac' },
-  kwh: { key: 'kwh', label: 'Energy', value: { type: 'number', unit: 'kWh', precision: 2 }, quantity: 'energy', means: 'energy.total', stateClass: 'total_increasing' },
-  hz: { key: 'hz', label: 'Frequency', value: { type: 'number', unit: 'Hz', precision: 1 }, quantity: 'frequency', means: 'frequency.ac', category: 'diagnostic' },
+  watts: { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W', precision: 0 }, quantity: 'power', means: 'power', category: 'primary' },
+  volts: { key: 'volts', label: 'Voltage', value: { type: 'number', unit: 'V', precision: 1 }, quantity: 'voltage', means: 'voltage' },
+  amps: { key: 'amps', label: 'Current', value: { type: 'number', unit: 'A', precision: 2 }, quantity: 'current', means: 'current' },
+  kwh: { key: 'kwh', label: 'Energy', value: { type: 'number', unit: 'kWh', precision: 2 }, quantity: 'energy', means: 'energy', stateClass: 'total_increasing' },
+  hz: { key: 'hz', label: 'Frequency', value: { type: 'number', unit: 'Hz', precision: 1 }, quantity: 'frequency', means: 'frequency', category: 'diagnostic' },
   powerFactor: { key: 'powerFactor', label: 'Power factor', value: { type: 'number', precision: 2, min: 0, max: 1 }, category: 'diagnostic' },
 };
 
@@ -89,7 +89,7 @@ const RELAY: AttributeSpec = {
   // "Switch", not "Power": power is what it draws.
   label: 'Switch',
   value: { type: 'boolean' },
-  means: 'switch.on',
+  means: 'on',
   // What it feeds, when a link says so, the app adds from the link.
   consequence: 'Switches off whatever is plugged into it.',
 };

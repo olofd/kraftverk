@@ -60,11 +60,11 @@ const STATION: DeviceDescription = {
     { id: 'outlet.dc', label: '12V DC / car port', kind: 'outlet', offers: ['switch'] },
   ],
   attributes: [
-    { key: 'soc', label: 'Charge', value: { type: 'number', unit: '%', min: 0, max: 100 }, means: 'battery.soc' },
-    { key: 'input.ac.present', part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'grid.present' },
-    { key: 'outlet.ac.on', part: 'outlet.ac', label: 'AC outlets', value: { type: 'boolean' }, means: 'switch.on' },
-    { key: 'outlet.ac.watts', part: 'outlet.ac', label: 'AC draw', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power.draw' },
-    { key: 'outlet.dc.on', part: 'outlet.dc', label: '12V DC / car port', value: { type: 'boolean' }, means: 'switch.on' },
+    { key: 'soc', label: 'Charge', value: { type: 'number', unit: '%', min: 0, max: 100 }, means: 'charge' },
+    { key: 'input.ac.present', part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'mainsPresent' },
+    { key: 'outlet.ac.on', part: 'outlet.ac', label: 'AC outlets', value: { type: 'boolean' }, means: 'on' },
+    { key: 'outlet.ac.watts', part: 'outlet.ac', label: 'AC draw', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power' },
+    { key: 'outlet.dc.on', part: 'outlet.dc', label: '12V DC / car port', value: { type: 'boolean' }, means: 'on' },
     {
       key: 'ledMode',
       label: 'Light',
@@ -92,7 +92,7 @@ const STATION: DeviceDescription = {
 const WITH_PACK: DeviceDescription = {
   ...STATION,
   parts: [...STATION.parts!, { id: 'pack.1', label: 'Pack 1', kind: 'battery', energy: { role: 'storage' } }],
-  attributes: [...STATION.attributes, { key: 'pack.1.soc', part: 'pack.1', label: 'Pack 1 charge', value: { type: 'number', unit: '%', min: 0, max: 100 }, means: 'battery.soc' }],
+  attributes: [...STATION.attributes, { key: 'pack.1.soc', part: 'pack.1', label: 'Pack 1 charge', value: { type: 'number', unit: '%', min: 0, max: 100 }, means: 'charge' }],
 };
 
 export const stationType = defineDeviceType({
@@ -114,8 +114,8 @@ export const stationType = defineDeviceType({
 const PLUG: DeviceDescription = {
   parts: [{ id: MAIN_PART, label: 'Socket', kind: 'outlet', offers: ['switch'] }],
   attributes: [
-    { key: 'on', label: 'Power', value: { type: 'boolean' }, means: 'switch.on' },
-    { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power.draw' },
+    { key: 'on', label: 'Power', value: { type: 'boolean' }, means: 'on' },
+    { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power' },
   ],
 };
 

@@ -45,7 +45,7 @@ const lowBattery: Recipe = {
       action: { type: 'enum', title: 'Turn it', default: 'on', options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }] },
     },
   },
-  when: [{ becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { param: 'below' } }, heldFor: { param: 'heldFor' } }],
+  when: [{ becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'charge' } }, right: { param: 'below' } }, heldFor: { param: 'heldFor' } }],
   then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: turn } } }],
 };
 
@@ -60,7 +60,7 @@ describe('checking a rule before it runs', () => {
       roles: { ...lowBattery.roles, forecast: { label: 'Forecast', description: '', capabilities: ['weather.forecast'] } },
       when: [
         { at: { value: '7am' } },
-        { becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { value: true } } },
+        { becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'charge' } }, right: { value: true } } },
         { becomes: { call: 'test.weather.sky', role: 'forecast', args: { cloudMax: { value: 40 } } } },
         { event: { role: 'nobody', event: 'x' } },
       ],
@@ -92,10 +92,10 @@ describe('checking a rule before it runs', () => {
   test('a function nobody installed, a read the role cannot answer', () => {
     const rule: Recipe = {
       ...lowBattery,
-      when: [{ becomes: { compare: 'lt', left: { read: { role: 'switch', means: 'battery.soc' } }, right: { value: 10 } } }],
+      when: [{ becomes: { compare: 'lt', left: { read: { role: 'switch', means: 'charge' } }, right: { value: 10 } } }],
       if: { compare: 'eq', left: { call: 'someone.else.fn', role: 'battery' }, right: { value: 'x' } },
     };
-    expect(checkRule(rule, vocabulary)).toEqual(['when[0].becomes.left: switch asks for nothing that reports battery.soc', 'if.left: there is no function "someone.else.fn" installed']);
+    expect(checkRule(rule, vocabulary)).toEqual(['when[0].becomes.left: switch asks for nothing that reports charge', 'if.left: there is no function "someone.else.fn" installed']);
   });
 });
 
@@ -103,15 +103,15 @@ describe('checking it against the parts that fill its roles', () => {
   const station: DeviceDescription = {
     parts: [{ id: MAIN_PART, label: 'Station', kind: 'device' }, { id: 'outlet.ac', label: 'AC', kind: 'outlet', offers: ['switch'] }],
     attributes: [
-      { key: 'soc', label: 'Battery', value: { type: 'number', unit: '%' }, means: 'battery.soc' },
-      { key: 'outlet.ac.on', part: 'outlet.ac', label: 'On', value: { type: 'boolean' }, means: 'switch.on' },
+      { key: 'soc', label: 'Battery', value: { type: 'number', unit: '%' }, means: 'charge' },
+      { key: 'outlet.ac.on', part: 'outlet.ac', label: 'On', value: { type: 'boolean' }, means: 'on' },
     ],
   };
   test('fits, or says which role does not', () => {
     const bound = (parts: Record<string, string>) => (role: string) =>
       parts[role] ? { name: role === 'battery' ? 'Station' : 'Station — AC', description: station, part: parts[role]!, capabilities: parts[role] === 'main' ? (['battery'] as const) : (['switch'] as const) } : null;
     expect(checkBinding(lowBattery, bound({ battery: 'main', switch: 'outlet.ac' }))).toEqual([]);
-    expect(checkBinding(lowBattery, bound({ battery: 'outlet.ac', switch: 'outlet.ac' }))).toEqual(['Battery: Station cannot do that', 'Battery: Station does not report battery.soc']);
+    expect(checkBinding(lowBattery, bound({ battery: 'outlet.ac', switch: 'outlet.ac' }))).toEqual(['Battery: Station cannot do that', 'Battery: Station does not report charge']);
     expect(checkBinding(lowBattery, bound({ battery: 'main' }))).toEqual(['What to switch: no device']);
   });
 });
@@ -119,7 +119,7 @@ describe('checking it against the parts that fill its roles', () => {
 describe('running it', () => {
   const scope = (soc: Value, params: Record<string, Value> = {}): RuleScope => ({
     param: (name) => ({ below: 20, action: 'on', ...params })[name] ?? null,
-    read: (_role, means) => (means === 'battery.soc' && typeof soc === 'number' ? { value: soc, label: 'Charge', unit: '%' } : null),
+    read: (_role, means) => (means === 'charge' && typeof soc === 'number' ? { value: soc, label: 'Charge', unit: '%' } : null),
     reachable: () => ({ reachable: true, detail: 'connected' }),
     call: async (_fn, _role, args) => sky.evaluate({ part: { name: 'Weather', part: 'main', device: null, offline: '' }, args, now: new Date(), timeZone: 'UTC' }),
     name: () => 'Garage P280',

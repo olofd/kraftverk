@@ -74,7 +74,7 @@ describe('NIU scooter', () => {
 
   test('its charge is the scooter’s headline, and what "Charge between two levels" charges; only a trusted node holds it', () => {
     const description = scooter.describe({});
-    const soc = description.attributes.find((attribute) => attribute.means === 'battery.soc');
+    const soc = description.attributes.find((attribute) => attribute.means === 'charge');
     expect([soc?.part ?? 'main', soc?.category]).toEqual(['main', 'primary']);
     expect(scooter.connections[0]!.needs?.trusted).toContain('password stays at home');
   });

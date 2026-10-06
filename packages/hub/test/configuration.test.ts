@@ -143,7 +143,7 @@ describe('configuration', () => {
     expect(applied.devices.restored).toEqual(['hall-lamp']);
     expect((await t.home.devices.list()).map((device) => [device.id, device.key])).toEqual([[lamp.id, 'hall-lamp']]);
     // A file with nothing in it, replacing: the lamp would go — asked first, then done.
-    const replacing = await t.home.configuration.plan({ text: 'kraftverk: 1\n', mode: 'replace' });
+    const replacing = await t.home.configuration.plan({ text: 'kraftverk: 2\n', mode: 'replace' });
     expect(replacing.needs.confirm).toEqual(['"Hall lamp" is removed: Hall lamp — their history is kept']);
     const asked = await refusal(t.home.configuration.apply({ plan: replacing.id! }));
     expect(asked.kind).toBe('needs-yes');
@@ -152,7 +152,7 @@ describe('configuration', () => {
     // What it did is on the timeline.
     expect((await t.home.timeline()).filter((entry) => entry.kind === 'config.imported').length).toBe(2);
     // A file that is not one: its problems, at their lines, and no plan to apply.
-    const wrong = await t.home.configuration.plan({ text: 'kraftverk: 1\ndevices:\n  x:\n    type: test.nothing\n    name: X\n' });
+    const wrong = await t.home.configuration.plan({ text: 'kraftverk: 2\ndevices:\n  x:\n    type: test.nothing\n    name: X\n' });
     expect(wrong.id).toBeNull();
     expect(wrong.problems[0]).toMatchObject({ message: 'No installed device type is called "test.nothing"', line: 4 });
   });

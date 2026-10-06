@@ -49,7 +49,7 @@ describe('every version of the document', () => {
     expect(document.home.clock).toBe('Europe/Stockholm');
     expect(document.automations['stop-charging']!.clock).toBe('Europe/Stockholm');
     // Without one, an automation says its own.
-    expect(readConfig('kraftverk: 1\nautomations:\n  a:\n    name: A\n    do: []\n').problems.map((problem) => problem.message)).toEqual([
+    expect(readConfig('kraftverk: 2\nautomations:\n  a:\n    name: A\n    do: []\n').problems.map((problem) => problem.message)).toEqual([
       'Expected its clock: the time zone its times are in ("clock: Europe/Stockholm"), or the home\'s ("home: { clock: … }")',
     ]);
   });

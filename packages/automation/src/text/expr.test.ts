@@ -19,8 +19,8 @@ const read = (role: string, means: string): Expr => ({ read: { role, means } });
 
 describe('reading a condition', () => {
   test('a reading against a number with its unit, and the unit kept beside it', () => {
-    const parsed = parseExpr('charger.power.draw > 50 W');
-    expect(parsed.ok && parsed.expr).toEqual({ compare: 'gt', left: read('charger', 'power.draw'), right: { value: 50 } });
+    const parsed = parseExpr('charger.power > 50 W');
+    expect(parsed.ok && parsed.expr).toEqual({ compare: 'gt', left: read('charger', 'power'), right: { value: 50 } });
     if (parsed.ok && 'compare' in parsed.expr) expect(parsed.units.get(parsed.expr.right)?.unit).toBe('W');
   });
 
@@ -33,7 +33,7 @@ describe('reading a condition', () => {
 
   test('time of day, a window across midnight, sums, the lower of two, a setting, a function', () => {
     expect(parse('time between 23:00 and 05:00')).toEqual({ within: { from: { value: '23:00' }, to: { value: '05:00' } } });
-    expect(parse('station.battery.chargeLimit - 5 %')).toEqual({ math: 'subtract', left: read('station', 'battery.chargeLimit'), right: { value: 5 } });
+    expect(parse('station.chargeLimit - 5 %')).toEqual({ math: 'subtract', left: read('station', 'chargeLimit'), right: { value: 5 } });
     expect(parse('min(forecast.hours, 4) >= $hours')).toEqual({ compare: 'ge', left: { math: 'min', left: read('forecast', 'hours'), right: { value: 4 } }, right: { param: 'hours' } });
     expect(parse('call open-meteo.weather.skyLooks(forecast, cloudMax = 40) == "sunny"')).toEqual({
       compare: 'eq',
@@ -53,7 +53,7 @@ describe('reading a condition', () => {
       if (parsed.ok) throw new Error('read');
       return parsed.error;
     };
-    expect(wrong('charger.power.draw >')).toEqual({ message: 'It ends where a value was expected', offset: 20 });
+    expect(wrong('charger.power >')).toEqual({ message: 'It ends where a value was expected', offset: 15 });
     expect(wrong('charger > 50')).toMatchObject({ offset: 8 });
     expect(wrong('a.x < 1 < 2').message).toBe('One comparison at a time: join two with "and"');
     expect(wrong('25:00 == a.b').message).toBe('25:00 is not a time of day');
@@ -63,7 +63,7 @@ describe('reading a condition', () => {
 
 describe('writing it back', () => {
   const cases: Expr[] = [
-    { compare: 'gt', left: read('charger', 'power.draw'), right: { value: 50 } },
+    { compare: 'gt', left: read('charger', 'power'), right: { value: 50 } },
     { any: [{ all: [{ reachable: 'a' }, { not: { reachable: 'b' } }] }, { compare: 'eq', left: read('c', 'mode'), right: { value: 'charging' } }] },
     { all: [{ any: [{ reachable: 'a' }, { reachable: 'b' }] }, { reachable: 'c' }] },
     { all: [{ all: [{ reachable: 'a' }, { reachable: 'b' }] }, { reachable: 'c' }] },
@@ -73,7 +73,7 @@ describe('writing it back', () => {
     { math: 'max', left: read('a', 'b'), right: { compare: 'gt', left: read('c', 'd'), right: { value: 0 } } },
     { within: { from: { value: '22:00' }, to: { param: 'until' } } },
     { call: 'test.weather.sky', role: 'forecast' },
-    { compare: 'eq', left: read('plug', 'switch.on'), right: { value: true } },
+    { compare: 'eq', left: read('plug', 'on'), right: { value: true } },
     { compare: 'ne', left: { value: null }, right: { value: 'a "quoted" word' } },
   ];
   for (const expr of cases) {
@@ -86,16 +86,16 @@ describe('writing it back', () => {
 
   test('a very small or very large number is written in plain digits, and read back as itself', () => {
     for (const value of [1e-7, 1.5e-7, 1e21, 2.5e22, -3e-9, 0.1, 123.456]) {
-      const text = printExpr({ compare: 'gt', left: read('meter', 'power.draw'), right: { value } })!;
+      const text = printExpr({ compare: 'gt', left: read('meter', 'power'), right: { value } })!;
       expect(text).not.toMatch(/\de/);
-      expect(parse(text)).toEqual({ compare: 'gt', left: read('meter', 'power.draw'), right: { value } });
+      expect(parse(text)).toEqual({ compare: 'gt', left: read('meter', 'power'), right: { value } });
     }
   });
 
   test('a number beside a reading says the reading’s unit', () => {
-    const unitOf = (_role: string, means: string) => (means === 'power.draw' ? 'W' : means === 'battery.soc' ? '%' : null);
-    expect(printExpr({ compare: 'gt', left: read('charger', 'power.draw'), right: { value: 50 } }, { unitOf })).toBe('charger.power.draw > 50 W');
-    expect(printExpr({ compare: 'lt', left: read('station', 'battery.soc'), right: { value: 15 } }, { unitOf })).toBe('station.battery.soc < 15 %');
+    const unitOf = (_role: string, means: string) => (means === 'power' ? 'W' : means === 'charge' ? '%' : null);
+    expect(printExpr({ compare: 'gt', left: read('charger', 'power'), right: { value: 50 } }, { unitOf })).toBe('charger.power > 50 W');
+    expect(printExpr({ compare: 'lt', left: read('station', 'charge'), right: { value: 15 } }, { unitOf })).toBe('station.charge < 15 %');
   });
 
   test('what text cannot say is not said: a list for a value, one condition alone in an "all"', () => {

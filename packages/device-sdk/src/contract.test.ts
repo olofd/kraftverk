@@ -54,8 +54,8 @@ const decoder = new TextDecoder();
 const PLUG: DeviceDescription = {
   parts: [{ id: MAIN_PART, label: 'Example plug', kind: 'device', offers: ['switch'] }],
   attributes: [
-    { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power.draw', category: 'primary' },
-    { key: 'relay', label: 'Relay', value: { type: 'boolean' }, means: 'switch.on' },
+    { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power', category: 'primary' },
+    { key: 'relay', label: 'Relay', value: { type: 'boolean' }, means: 'on' },
   ],
 };
 
@@ -228,8 +228,8 @@ describe('validating a declaration', () => {
   });
 
   test('a part that offers a capability has the attributes it needs', () => {
-    expect(described((d) => ({ ...d, attributes: d.attributes.filter((attribute) => attribute.means !== 'switch.on') }))).toContain(
-      'part "main" offers "switch", which needs an attribute meaning "switch.on"'
+    expect(described((d) => ({ ...d, attributes: d.attributes.filter((attribute) => attribute.means !== 'on') }))).toContain(
+      'part "main" offers "switch", which needs an attribute meaning "on"'
     );
   });
 
@@ -238,7 +238,7 @@ describe('validating a declaration', () => {
       ...d,
       attributes: d.attributes.map((attribute) => (attribute.key === 'watts' ? { ...attribute, value: { type: 'number', unit: 'kW' } } : attribute)),
     }));
-    expect(problems).toContain('attribute "watts" means power.draw, which is power in "W"');
+    expect(problems).toContain('attribute "watts" means power, which is power in "W"');
   });
 
   test('a device can be reached some way', () => {

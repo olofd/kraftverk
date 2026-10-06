@@ -9,7 +9,7 @@ dependencies.
 
 ## What it does — and does not
 
-- **Does:** values and their types; meanings (`battery.soc`, `power.draw`)
+- **Does:** values and their types; meanings (`charge`, `power`)
   and their units; capabilities and their commands; descriptions — parts,
   attributes, events; links between parts; categories; config schemas;
   `DeviceType`, `DeviceSession`, `ConnectionMethod`, `Protocol`,

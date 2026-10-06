@@ -24,11 +24,11 @@ const STATION: DeviceDescription = {
     { id: 'outlet.b', label: 'Outlet B', kind: 'outlet', energy: { role: 'load' }, offers: ['switch'] },
   ],
   attributes: [
-    { key: 'soc', label: 'Charge', value: { type: 'number', unit: '%', min: 0, max: 100 }, means: 'battery.soc', category: 'primary' },
+    { key: 'soc', label: 'Charge', value: { type: 'number', unit: '%', min: 0, max: 100 }, means: 'charge', category: 'primary' },
     { key: 'mode', label: 'Mode', value: { type: 'enum', options: [{ value: 'idle', label: 'Idle' }, { value: 'charging', label: 'Charging' }] } },
-    { key: 'outlet.a.on', part: 'outlet.a', label: 'Outlet A', value: { type: 'boolean' }, means: 'switch.on' },
-    { key: 'outlet.a.watts', part: 'outlet.a', label: 'Outlet A draw', value: { type: 'number', unit: 'W' }, means: 'power.draw' },
-    { key: 'outlet.b.on', part: 'outlet.b', label: 'Outlet B', value: { type: 'boolean' }, means: 'switch.on' },
+    { key: 'outlet.a.on', part: 'outlet.a', label: 'Outlet A', value: { type: 'boolean' }, means: 'on' },
+    { key: 'outlet.a.watts', part: 'outlet.a', label: 'Outlet A draw', value: { type: 'number', unit: 'W' }, means: 'power' },
+    { key: 'outlet.b.on', part: 'outlet.b', label: 'Outlet B', value: { type: 'boolean' }, means: 'on' },
     { key: 'limit', label: 'Charge limit', value: { type: 'number', unit: '%', min: 50, max: 100 }, access: 'write', category: 'config' },
   ],
   events: [{ id: 'overload', label: 'Overload', level: 'warn', part: 'outlet.a', data: { watts: { type: 'number', unit: 'W' } } }],
@@ -38,7 +38,7 @@ const STATION: DeviceDescription = {
 const withPack = (description: DeviceDescription): DeviceDescription => ({
   ...description,
   parts: [...(description.parts ?? []), { id: 'pack.1', label: 'Pack 1', kind: 'battery', energy: { role: 'storage' } }],
-  attributes: [...description.attributes, { key: 'pack.1.soc', part: 'pack.1', label: 'Pack 1 charge', value: { type: 'number', unit: '%' }, means: 'battery.soc' }],
+  attributes: [...description.attributes, { key: 'pack.1.soc', part: 'pack.1', label: 'Pack 1 charge', value: { type: 'number', unit: '%' }, means: 'charge' }],
 });
 
 function simulatedStation(ctx: DeviceContext, flaws: Flaws): DeviceSession {
@@ -108,7 +108,7 @@ describe('a device made of parts', () => {
     expect(capabilitiesOf(STATION, MAIN_PART)).toEqual(['battery']);
     expect(capabilitiesOf(STATION, 'outlet.a')).toEqual(['switch', 'powerMeter']);
     // It reports its state, but says nothing of switching it: so no switch.
-    expect(capabilitiesOf({ attributes: [{ key: 'on', label: 'On', value: { type: 'boolean' }, means: 'switch.on' }] }, MAIN_PART)).toEqual([]);
+    expect(capabilitiesOf({ attributes: [{ key: 'on', label: 'On', value: { type: 'boolean' }, means: 'on' }] }, MAIN_PART)).toEqual([]);
     expect(deviceCapabilities(STATION)).toEqual(['battery', 'switch', 'powerMeter']);
   });
 
@@ -142,7 +142,7 @@ describe('checking a description', () => {
   });
 
   test('a key off main begins with its part, and a key on main never with another part', () => {
-    expect(broken((d) => ({ ...d, attributes: [...d.attributes, { key: 'bWatts', part: 'outlet.b', label: 'B draw', value: { type: 'number', unit: 'W' }, means: 'power.draw' }] }))).toContain(
+    expect(broken((d) => ({ ...d, attributes: [...d.attributes, { key: 'bWatts', part: 'outlet.b', label: 'B draw', value: { type: 'number', unit: 'W' }, means: 'power' }] }))).toContain(
       'attribute "bWatts" is on "outlet.b", so its key begins "outlet.b.": "outlet.b.bWatts"'
     );
     expect(broken((d) => ({ ...d, attributes: [...d.attributes, { key: 'outlet.b.volts', label: 'Volts', value: { type: 'number', unit: 'V' } }] }))).toContain(
@@ -165,13 +165,13 @@ describe('checking a description', () => {
       capabilities: {
         'example.station.childLock': {
           label: 'Child lock',
-          attributes: { on: { means: 'switch.on', required: true } },
+          attributes: { on: { means: 'on', required: true } },
           commands: { set: { description: 'Lock the buttons', args: { on: { type: 'boolean' } }, sets: { on: 'on' } } },
           queries: {},
         },
       },
       parts: [...(STATION.parts ?? []), { id: 'buttons', label: 'Buttons', kind: 'button', offers: ['example.station.childLock'] }],
-      attributes: [...STATION.attributes, { key: 'buttons.locked', part: 'buttons', label: 'Locked', value: { type: 'boolean' }, means: 'switch.on' }],
+      attributes: [...STATION.attributes, { key: 'buttons.locked', part: 'buttons', label: 'Locked', value: { type: 'boolean' }, means: 'on' }],
     };
     expect(validateDescription(lock, 'example.station')).toEqual([]);
     expect(capabilitiesOf(lock, 'buttons')).toEqual(['example.station.childLock']);
@@ -184,7 +184,7 @@ describe('checking a description', () => {
       capabilities: {
         'example.station.childLock': {
           ...lock.capabilities!['example.station.childLock']!,
-          commands: { set: { description: 'Lock', args: { on: { type: 'boolean' as const } }, sets: { on: 'on' }, consequential: { if: [{ means: 'power.draw' as const, above: above as never }] } } },
+          commands: { set: { description: 'Lock', args: { on: { type: 'boolean' as const } }, sets: { on: 'on' }, consequential: { if: [{ means: 'power' as const, above: above as never }] } } },
         },
       },
     });
@@ -199,7 +199,7 @@ describe('checking a description', () => {
     expect(thresholdOf(3)).toBe(3);
     expect(thresholdOf({ policy: 'loadWatts' })).toBe(POLICY_VALUES.loadWatts.default);
     expect(thresholdOf({ policy: 'loadWatts' }, { loadWatts: 12 })).toBe(12);
-    const load = { means: 'power.draw' as const, above: { policy: 'loadWatts' as const } };
+    const load = { means: 'power' as const, above: { policy: 'loadWatts' as const } };
     expect(conditionHolds(load, 6)).toBe(true);
     expect(conditionHolds(load, 6, { loadWatts: 10 })).toBe(false);
     expect(conditionHolds(load, null)).toBeNull();
@@ -223,11 +223,11 @@ describe('checking a description', () => {
     expect(broken((d) => ({ ...d, attributes: [...d.attributes, { key: 'x', part: 'nowhere', label: 'X', value: { type: 'boolean' } }] }))).toContain(
       'attribute "x" belongs to "nowhere", which is not a part'
     );
-    expect(broken((d) => ({ ...d, attributes: [...d.attributes, { key: 'kw', label: 'Power', value: { type: 'number', unit: 'kW' }, means: 'power.draw' }] }))).toContain(
-      'attribute "kw" means power.draw, which is power in "W"'
+    expect(broken((d) => ({ ...d, attributes: [...d.attributes, { key: 'kw', label: 'Power', value: { type: 'number', unit: 'kW' }, means: 'power' }] }))).toContain(
+      'attribute "kw" means power, which is power in "W"'
     );
     expect(broken((d) => ({ ...d, parts: [...(d.parts ?? []), { id: 'outlet.c', label: 'C', kind: 'outlet', offers: ['switch'] }] }))).toContain(
-      'part "outlet.c" offers "switch", which needs an attribute meaning "switch.on"'
+      'part "outlet.c" offers "switch", which needs an attribute meaning "on"'
     );
     expect(broken((d) => ({ ...d, attributes: d.attributes.map((a) => (a.key === 'mode' ? { ...a, dangerous: true } : a)) }))).toContain(
       "attribute \"mode\" is dangerous but cannot be written; a command's danger is its capability's"
@@ -235,8 +235,8 @@ describe('checking a description', () => {
     expect(broken((d) => ({ ...d, attributes: d.attributes.map((a) => (a.key === 'mode' ? { ...a, category: 'primary' } : a)) }))).toContain(
       'part "main" has 2 primary attributes; one leads its card'
     );
-    expect(broken((d) => ({ ...d, attributes: [...d.attributes, { key: 'own', label: 'Own', value: { type: 'number' }, means: 'power.own' }] }))).toContain(
-      'attribute "own" means "power.own", which is not a standard meaning; a type\'s own are namespaced by the type, like "station.own"'
+    expect(broken((d) => ({ ...d, attributes: [...d.attributes, { key: 'own', label: 'Own', value: { type: 'number' }, means: 'own' }] }))).toContain(
+      'attribute "own" means "own", which is not a standard meaning; a type\'s own are namespaced by the type, like "station.own"'
     );
   });
 });

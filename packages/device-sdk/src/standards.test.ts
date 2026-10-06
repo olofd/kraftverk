@@ -85,7 +85,7 @@ describe('capabilities', () => {
 
 describe('an attribute as Home Assistant should show it', () => {
   test("a plug's lifetime energy is a total_increasing energy sensor in kWh", () => {
-    expect(homeAssistantEntityOf({ value: { type: 'number', unit: 'kWh' }, means: 'energy.total', stateClass: 'total_increasing' })).toEqual({
+    expect(homeAssistantEntityOf({ value: { type: 'number', unit: 'kWh' }, means: 'energy', stateClass: 'total_increasing' })).toEqual({
       platform: 'sensor',
       deviceClass: 'energy',
       stateClass: 'total_increasing',
@@ -94,7 +94,7 @@ describe('an attribute as Home Assistant should show it', () => {
   });
 
   test("a station's charge is a battery sensor, more specific than its quantity", () => {
-    expect(homeAssistantEntityOf({ value: { type: 'number', unit: '%' }, means: 'battery.soc' }).deviceClass).toBe('battery');
+    expect(homeAssistantEntityOf({ value: { type: 'number', unit: '%' }, means: 'charge' }).deviceClass).toBe('battery');
   });
 
   test("a type's own attribute projects from its quantity alone", () => {

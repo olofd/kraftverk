@@ -21,7 +21,7 @@ const HERE = nodeId('n-00000000000000a1');
 /** A device's description, as a lamp's. */
 const LAMP: DeviceDescription = {
   parts: [{ id: MAIN_PART, label: 'Lamp', kind: 'light', offers: ['switch'] }],
-  attributes: [{ key: 'on', label: 'On', value: { type: 'boolean' }, means: 'switch.on' }],
+  attributes: [{ key: 'on', label: 'On', value: { type: 'boolean' }, means: 'on' }],
 };
 
 /** Secrets sealed so that what is kept is not what was given: a stand-in for the server's key. */

@@ -34,7 +34,7 @@ export type Expr =
   | { value: Value }
   /** One of the rule's settings. */
   | { param: string }
-  /** What the part filling a role reports now, by meaning: `battery.soc`, or a type's own `acme.minutesToFull`. */
+  /** What the part filling a role reports now, by meaning: `charge`, or a type's own `acme.minutesToFull`. */
   | { read: { role: string; means: string } }
   /** A function a package contributes, over the part filling a role. */
   | { call: string; role: string; args?: Readonly<Record<string, Expr>> }
@@ -241,7 +241,7 @@ export const defineRecipe = (recipe: Recipe): Recipe => recipe;
 
 /**
  * Which setting a `write` changes: by its key, for a rule its owner built on
- * their own devices — or by a standard meaning ("battery.chargeLimit"), which
+ * their own devices — or by a standard meaning ("chargeLimit"), which
  * a recipe can name without knowing any product.
  */
 export type WriteTarget = { key: string; means?: never } | { means: string; key?: never };

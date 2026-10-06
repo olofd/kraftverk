@@ -50,7 +50,7 @@ Work through `src/type.ts` in this order:
    when it is not on `main` (`outlet.ac.on`, `pack.1.soc`) — a value type
    (number with unit and precision, boolean, enum, string, timestamp, or a
    list or object of values), a standard **meaning** where one applies
-   (`power.in.ac`, `grid.present`, `temperature.air`) or one of your own
+   (`mainsInput`, `mainsPresent`, `temperature`) or one of your own
    namespaced by the type, a quantity and state class for numbers, how long a
    value stays **current** when it is not two minutes (`currentFor`: a
    forecast fetched every half hour says an hour), and a category: `primary`

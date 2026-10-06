@@ -34,7 +34,7 @@ const STEPS: Record<Keys<Step>, string> = {
 const EXPRESSIONS: Record<Exclude<Keys<Expr>, 'role' | 'args' | 'left' | 'right'>, string> = {
   value: '50 W',
   param: '$',
-  read: 'charger.power.draw',
+  read: 'charger.power',
   call: 'call ',
   compare: ' > ',
   math: 'min(',

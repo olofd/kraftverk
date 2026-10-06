@@ -139,7 +139,7 @@ const EXPRESSION: Schema = {
     {
       type: 'string',
       description:
-        'An expression: a reading `role.meaning` ("charger.power.draw"), `role reachable`, `run.trigger` (the id of the trigger that started the run), numbers with units ("50 W"), times ("07:00"), "text", compared with < <= > >= == !=, joined with and, or, not; `time between 23:00 and 05:00`; min( , ), max( , ), + -; `call package.fn(role, name = value)`.',
+        'An expression: a reading `role.meaning` ("charger.power"), `role reachable`, `run.trigger` (the id of the trigger that started the run), numbers with units ("50 W"), times ("07:00"), "text", compared with < <= > >= == !=, joined with and, or, not; `time between 23:00 and 05:00`; min( , ), max( , ), + -; `call package.fn(role, name = value)`.',
     },
     { type: 'number' },
     { type: 'boolean' },

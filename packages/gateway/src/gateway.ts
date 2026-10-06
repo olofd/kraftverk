@@ -364,7 +364,7 @@ export class ActionGateway {
     const parts = partsOf(device.description);
     if (parts.find((part) => part.id === intent.part)?.energy?.role !== 'load') return null;
     const store = parts.find((part) => part.energy?.role === 'storage' && !part.parent);
-    const attribute = store ? attributeMeaning(device.description, store.id, 'battery.soc') : null;
+    const attribute = store ? attributeMeaning(device.description, store.id, 'charge') : null;
     if (!attribute) return null;
     const reading = readingOf(readingsNow(), attribute.key);
     if (!this.#fresh(attribute, reading) || typeof reading?.value !== 'number') return `${device.name}'s charge is not known now, so the ${reserve} % reserve cannot be kept`;

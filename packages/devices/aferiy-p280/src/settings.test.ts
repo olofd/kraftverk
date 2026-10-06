@@ -16,13 +16,13 @@ describe('the settings every station has', () => {
   const description = describeStation();
 
   test('are found by what they mean, on the station itself', () => {
-    expect(writtenAttribute(description, MAIN_PART, { means: 'battery.chargeLimit' })?.key).toBe('chargeLimit');
-    expect(writtenAttribute(description, MAIN_PART, { means: 'battery.dischargeFloor' })?.key).toBe('dischargeFloor');
-    expect(writtenAttribute(description, MAIN_PART, { means: 'power.in.ac.max' })?.key).toBe('acChargingWatts');
+    expect(writtenAttribute(description, MAIN_PART, { means: 'chargeLimit' })?.key).toBe('chargeLimit');
+    expect(writtenAttribute(description, MAIN_PART, { means: 'dischargeFloor' })?.key).toBe('dischargeFloor');
+    expect(writtenAttribute(description, MAIN_PART, { means: 'mainsInputLimit' })?.key).toBe('acChargingWatts');
   });
 
   test('its AC charging power is watts, in its five steps: one between them is refused before it reaches a register', () => {
-    const power = writtenAttribute(description, MAIN_PART, { means: 'power.in.ac.max' })!;
+    const power = writtenAttribute(description, MAIN_PART, { means: 'mainsInputLimit' })!;
     expect(checkValue(power.value, 1200)).toEqual({ ok: true, value: 1200 });
     expect(checkValue(power.value, 700)).toEqual({ ok: false, problem: 'must be in steps of 300 from 600' });
     expect(() => settingsWrites({ acChargingWatts: 700 as never })).toThrow('AC charging power is one of 600, 900, 1200, 1500, 1800 W, not 700');

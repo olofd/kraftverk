@@ -17,7 +17,7 @@ function holds(field: FieldSpec, fields: readonly FieldSpec[]): string {
   const type = field.type;
   switch (type.type) {
     case 'condition':
-      return `a condition: \`station.battery.soc < 15 %\`${type.calls ? ', which may ask a package' : ''}`;
+      return `a condition: \`station.charge < 15 %\`${type.calls ? ', which may ask a package' : ''}`;
     case 'value':
       return 'a value, or an expression for one';
     case 'timeOfDay':
@@ -93,7 +93,7 @@ export function referenceMarkdown(): string {
   lines.push(
     '## Conditions and values — expressions',
     '',
-    'An expression is written as text — `station.battery.soc < 15 %` — wherever',
+    'An expression is written as text — `station.charge < 15 %` — wherever',
     'a condition or a value goes. Unknown — a reading not given, a part not',
     'reached — is never taken for true.',
     '',

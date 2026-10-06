@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 import { addSimulated, answer, link, press, unique, whose } from './helpers';
 
-const SOC = { read: { role: 'battery', means: 'battery.soc' } };
+const SOC = { read: { role: 'battery', means: 'charge' } };
 
 /*
   The owner's own case: a P280 charged through the ATORCH that feeds its

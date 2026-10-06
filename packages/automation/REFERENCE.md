@@ -62,19 +62,19 @@ When a condition turns true — and, with `for`, has stayed true that long. Read
 
 | Word | Holds | |
 |---|---|---|
-| `becomes` | a condition: `station.battery.soc < 15 %` | needed |
+| `becomes` | a condition: `station.charge < 15 %` | needed |
 | `for` | a length of time, `2 min` — 1 s to 168 h | if you like |
 
 ```yaml
 when:
-  - becomes: station.battery.soc < 15 %
+  - becomes: station.charge < 15 %
     for: 2 min
 ```
 
 ```yaml
 when:
   - id: low
-    becomes: station.battery.soc < 5 %
+    becomes: station.charge < 5 %
     for: 2 min
 ```
 
@@ -119,7 +119,7 @@ do:
 ```yaml
 do:
   - switch: charger
-    on: station.battery.soc < 30 %
+    on: station.charge < 30 %
 ```
 
 ```yaml
@@ -152,7 +152,7 @@ do:
 ```yaml
 do:
   - set: station
-    meaning: battery.chargeLimit
+    meaning: chargeLimit
     to: 80 %
 ```
 
@@ -180,7 +180,7 @@ Wait until a condition is true — judged on readings taken since the run last c
 
 | Word | Holds | |
 |---|---|---|
-| `wait until` | a condition: `station.battery.soc < 15 %` | needed |
+| `wait until` | a condition: `station.charge < 15 %` | needed |
 | `at most` | a length of time, `2 min` — 1 s to 1 h; a number or a setting, never a reading | needed |
 
 ```yaml
@@ -195,14 +195,14 @@ Make sure a condition comes true within a time; if not, take the steps under `ea
 
 | Word | Holds | |
 |---|---|---|
-| `make sure` | a condition: `station.battery.soc < 15 %` | needed |
+| `make sure` | a condition: `station.charge < 15 %` | needed |
 | `within` | a length of time, `2 min` — 1 s to 10 min; a number or a setting, never a reading | needed |
 | `tries` | how many times, 1 to 10; a number or a setting | needed |
 | `each time` | steps — none that waits for what might not come; at least one | needed |
 
 ```yaml
 do:
-  - make sure: charger.power.draw > 50 W
+  - make sure: charger.power > 50 W
     within: 20 s
     tries: 5
     each time:
@@ -217,13 +217,13 @@ One way or the other, as a condition is now. Unknown is not true: `else`.
 
 | Word | Holds | |
 |---|---|---|
-| `if` | a condition: `station.battery.soc < 15 %`, which may ask a package | needed |
+| `if` | a condition: `station.charge < 15 %`, which may ask a package | needed |
 | `then` | steps | needed |
 | `else` | steps | if you like |
 
 ```yaml
 do:
-  - if: station.battery.soc < 20 %
+  - if: station.charge < 20 %
     then:
       - turn on: charger
     else:
@@ -236,14 +236,14 @@ Watch a condition for a while: the steps under `if it stays so` if it stays true
 
 | Word | Holds | |
 |---|---|---|
-| `watch` | a condition: `station.battery.soc < 15 %` | needed |
+| `watch` | a condition: `station.charge < 15 %` | needed |
 | `for` | a length of time, `2 min` — 1 s to 1 h; a number or a setting, never a reading | needed |
 | `if it stays so` | steps | if you like |
 | `if not` | steps | if you like |
 
 ```yaml
 do:
-  - watch: supply.power.draw < 10 W
+  - watch: supply.power < 10 W
     for: 5 s
     if it stays so:
       - turn off: supply
@@ -271,7 +271,7 @@ do:
 
 ## Conditions and values — expressions
 
-An expression is written as text — `station.battery.soc < 15 %` — wherever
+An expression is written as text — `station.charge < 15 %` — wherever
 a condition or a value goes. Unknown — a reading not given, a part not
 reached — is never taken for true.
 
@@ -279,13 +279,13 @@ reached — is never taken for true.
 |---|---|---|
 | A value | `50 W` · `"eco"` · `07:00` | A number — with its unit beside a reading, `50 W`, `15 %` — a time of day, `07:00`, text in quotes, `true` or `false`. |
 | A setting | `$low` | One of the rule’s settings, by its name: a recipe’s, before it is copied into an automation. |
-| A reading | `station.battery.soc` · `charger.power.draw` | What the part filling a role reports now, by what it means: a standard meaning, or a type’s own. Unknown when it has not said, or said too long ago. |
+| A reading | `station.charge` · `charger.power` | What the part filling a role reports now, by what it means: a standard meaning, or a type’s own. Unknown when it has not said, or said too long ago. |
 | Can be reached | `charger reachable` | Whether the part filling a role can be reached now: its holder says it is connected. Never unknown — not being reachable is the answer. |
 | What the run knows | `run.trigger == "low"` | What the run knows of itself: `run.trigger`, the id of the trigger that started it — `""` when none with an id did. |
 | Time of day | `time between 23:00 and 05:00` | Whether the owner’s clock is between two times of day, from the first up to the second — across midnight when the second comes first. |
 | Ask a package | `call acme.weather.sunny(forecast, day = "tomorrow")` | A function a package contributes, over the part filling a role: what the forecast says of tomorrow, the price’s rank. Only where a run may wait for its answer. |
-| A comparison | `station.battery.soc < 15 %` | Two values compared: `<`, `<=`, `>`, `>=`, `==`, `!=`. Unknown when either is. |
-| Arithmetic | `station.battery.soc + 10 %` · `min(station.battery.soc, 80 %)` | A number from two, in one unit: their sum or difference, or the lower or higher of them. Unknown when either is. |
-| All of | `charger reachable and station.battery.soc < 50 %` | True when every part is: one false is enough to say no, and with none false, one unknown leaves it unknown. |
-| Any of | `station.battery.soc < 10 % or time between 23:00 and 05:00` | True when any part is: one true is enough, and with none true, one unknown leaves it unknown. |
+| A comparison | `station.charge < 15 %` | Two values compared: `<`, `<=`, `>`, `>=`, `==`, `!=`. Unknown when either is. |
+| Arithmetic | `station.charge + 10 %` · `min(station.charge, 80 %)` | A number from two, in one unit: their sum or difference, or the lower or higher of them. Unknown when either is. |
+| All of | `charger reachable and station.charge < 50 %` | True when every part is: one false is enough to say no, and with none false, one unknown leaves it unknown. |
+| Any of | `station.charge < 10 % or time between 23:00 and 05:00` | True when any part is: one true is enough, and with none true, one unknown leaves it unknown. |
 | Not | `not charger reachable` | True when its part is false, false when it is true; unknown stays unknown. |

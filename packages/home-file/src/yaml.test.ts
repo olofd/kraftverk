@@ -9,7 +9,7 @@ import { readAutomationYaml, readConfig, readDeviceYaml, schemaLine, writeConfig
 */
 
 const EXAMPLE = `${schemaLine('http://192.0.2.1:8080/api/config/schema.json')}
-kraftverk: 1
+kraftverk: 2
 
 home:
   policy: { loadWatts: 50, reserveSoc: 20 }
@@ -50,7 +50,7 @@ automations:
       - wait until: charger reachable
         at most: 2 min
       - turn on: charger
-      - make sure: charger.power.draw > 50 W
+      - make sure: charger.power > 50 W
         within: 20 s
         tries: 5
         each time:
@@ -83,7 +83,7 @@ describe('a configuration file', () => {
   test('read: devices, a secret by name, a link, automations in words', () => {
     const { document, problems, from } = readConfig(EXAMPLE);
     expect(problems).toEqual([]);
-    expect(from).toBe(1);
+    expect(from).toBe(2);
     expect(document!.home.policy).toEqual({ loadWatts: 50, reserveSoc: 20 });
     expect(document!.devices['smart-plug']!.connect[0]).toEqual({
       via: 'lan',
@@ -101,11 +101,11 @@ describe('a configuration file', () => {
 
   test('written back and read again: the same document, its secret still by name', () => {
     const first = readConfig(EXAMPLE).document!;
-    const unitOf = (_role: string, means: string) => (means === 'power.draw' ? 'W' : null);
+    const unitOf = (_role: string, means: string) => (means === 'power' ? 'W' : null);
     const text = writeConfig(first, { schemaUrl: 'http://192.0.2.1:8080/api/config/schema.json', unitOf });
     expect(text.split('\n')[0]).toBe('# yaml-language-server: $schema=http://192.0.2.1:8080/api/config/schema.json');
     expect(text).toContain('localKey: !secret smart-plug-key');
-    expect(text).toContain('make sure: charger.power.draw > 50 W');
+    expect(text).toContain('make sure: charger.power > 50 W');
     expect(text).toContain('at: "07:00"');
     const again = readConfig(text);
     expect(again.problems).toEqual([]);
@@ -113,7 +113,7 @@ describe('a configuration file', () => {
   });
 
   test('every problem where it is: a missing field, inside an expression, a wrong key — all at once', () => {
-    const text = `kraftverk: 1
+    const text = `kraftverk: 2
 devices:
   Smart_Plug:
     type: tuya.zigbee-plug
@@ -124,7 +124,7 @@ automations:
     name: A
     clock: Europe/Stockholm
     do:
-      - make sure: charger.power.draw >>
+      - make sure: charger.power >>
         within: 20 s
         tries: 3
 `;
@@ -134,14 +134,14 @@ automations:
       { message: '"Smart_Plug" is not a key: lowercase letters, digits and dashes', line: 4, column: 5 },
       { message: 'Expected its name', line: 4, column: 5 },
       { message: 'Expected its type ("type: acme.plug")', line: 6, column: 5 },
-      { message: 'Expected a value, a reading or "(" — not ">"', line: 12, column: 40 },
+      { message: 'Expected a value, a reading or "(" — not ">"', line: 12, column: 35 },
     ]);
   });
 
   test('YAML that is not YAML, a missing version, and one written by a newer kraftverk', () => {
     expect(readConfig('devices: [').problems[0]).toMatchObject({ line: 1 });
-    expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 1" at its top');
-    expect(readConfig('kraftverk: 9').problems[0]).toMatchObject({ message: 'It was written by a newer kraftverk (version 9); this one reads up to version 1', line: 1, column: 12 });
+    expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 2" at its top');
+    expect(readConfig('kraftverk: 9').problems[0]).toMatchObject({ message: 'It was written by a newer kraftverk (version 9); this one reads up to version 2', line: 1, column: 12 });
   });
 });
 
