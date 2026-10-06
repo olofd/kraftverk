@@ -154,6 +154,12 @@ begins a new one, so the first account is created again from the home network
 and the station added again through the add flow. The `.before-migration-*`
 and `.set-aside.*` copies on the server's volume are the owner's to delete.
 
+## The automation language
+
+Paused at a good point on 2026-10-06, its plan's phases A–C done and
+deployed. What it does, and what is left — in the order it is worth doing —
+is in [AUTOMATION-LANGUAGE-STATUS.md](AUTOMATION-LANGUAGE-STATUS.md).
+
 ## What is built, and what is not
 
 Measured against [NEXT-STEP-ARCHITECTURE.md](NEXT-STEP-ARCHITECTURE.md) §10

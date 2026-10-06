@@ -20,6 +20,7 @@ here is in one list or the other.
 | [CONFIG.md](CONFIG.md) | The configuration file: its language, its versions, its secrets |
 | [AUTOMATIONS.md](AUTOMATIONS.md) | Automations: the rule, its triggers and conditions, watching and acting |
 | [SEQUENCES.md](SEQUENCES.md) | Automations that take steps: waits, retries, choices, and their runs |
+| [AUTOMATION-LANGUAGE-STATUS.md](AUTOMATION-LANGUAGE-STATUS.md) | The automation language: what is done of its plan, and what is left, in order |
 | [SHARED-PARTS-AND-RESERVE.md](SHARED-PARTS-AND-RESERVE.md) | Parts shared between automations, and the reserve the gateway keeps |
 | [AUTOMATION-EDITOR.md](AUTOMATION-EDITOR.md) | Building an automation from blocks, and where each piece lives |
 | [ADDING-A-DEVICE.md](ADDING-A-DEVICE.md) | How support for a new product gets in: its packages, and what each declares |

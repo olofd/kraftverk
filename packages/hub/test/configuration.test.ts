@@ -205,5 +205,7 @@ describe('configuration', () => {
     expect(changesConfiguration('device.control')).toBe(false);
     expect(changesConfiguration('device.added')).toBe(true);
     expect(changesConfiguration('automation.let-act')).toBe(true);
+    // Where the home is: kept beside the database, so a reset keeps it.
+    expect(changesConfiguration('home.located')).toBe(true);
   });
 });
