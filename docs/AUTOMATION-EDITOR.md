@@ -259,10 +259,15 @@ recipe to start from), top to bottom:
    weekdays, or chosen days), every so often (minutes, on the clock), when
    something holds (a condition, and for
    how long), or when a device says something (a part, and one of the
-   events it declares). Under them: "You can always start it with ▶".
+   events it declares). Each trigger may have blocks of its own beneath
+   it — what a run it starts does, in place of the automation's — shown
+   always when it has some, and offered when the trigger is opened. Under
+   them: "You can always start it with ▶".
 3. **Only if** — an optional condition.
 4. **What it does** — the blocks, numbered and nested as the card shows
-   them.
+   them: what a run does when what started it has no blocks of its own.
+   When every trigger has its own, these are for when it is started by
+   hand or by another automation, and the page says so.
    - Each block is a card: its kind, what it says in words, and its fields
      when opened.
    - Between blocks, and at the end of each nested list, "+" adds one.

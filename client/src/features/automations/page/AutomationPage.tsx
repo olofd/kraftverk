@@ -88,6 +88,8 @@ function Page({ automation, onChanged, onEdit }: { automation: AutomationView; o
   const name = (role: string) => automation.names[role] ?? role;
   const condition = automation.rule.if ? describeExpr(automation.rule, automation.rule.if, {}, name) : null;
   const steps = automation.steps.length;
+  // Every trigger says what it does: the automation's own steps are only for when it is started.
+  const eachSaysItsOwn = onItsOwn && automation.whenSteps.every((own) => own.length > 0);
 
   return (
     <Screen back="Automations" backTo="/automations" title={automation.name}>
@@ -109,10 +111,18 @@ function Page({ automation, onChanged, onEdit }: { automation: AutomationView; o
 
       <Group icon={startsBy(automation)} title="When" summary={onItsOwn ? undefined : 'When started'}>
         {onItsOwn ? (
-          automation.when.map((trigger) => (
-            <Text key={trigger} fontSize={15} color="$color" lineHeight={22}>
-              {trigger}
-            </Text>
+          automation.when.map((trigger, index) => (
+            <YStack key={`${index}:${trigger}`} gap="$1.5">
+              <Text fontSize={15} color="$color" lineHeight={22}>
+                {trigger}
+              </Text>
+              {/* What it does of its own, beneath it. */}
+              {automation.whenSteps[index]?.length ? (
+                <YStack paddingLeft="$3" borderLeftWidth={2} borderColor="$borderColor">
+                  <StepPlan steps={automation.whenSteps[index]!} />
+                </YStack>
+              ) : null}
+            </YStack>
           ))
         ) : (
           <Empty>Nothing starts it on its own: you start it, or another automation does.</Empty>
@@ -129,9 +139,11 @@ function Page({ automation, onChanged, onEdit }: { automation: AutomationView; o
         )}
       </Group>
 
-      <Group icon="list" title="Does" summary={steps ? `${steps} step${steps === 1 ? '' : 's'}` : undefined}>
-        {steps ? <StepPlan steps={automation.steps} /> : <Empty>Nothing yet.</Empty>}
-      </Group>
+      {eachSaysItsOwn && !steps ? null : (
+        <Group icon="list" title="Does" summary={eachSaysItsOwn ? 'When you start it' : steps ? `${steps} step${steps === 1 ? '' : 's'}` : undefined}>
+          {steps ? <StepPlan steps={automation.steps} /> : <Empty>Nothing yet.</Empty>}
+        </Group>
+      )}
 
       {automation.otherwise.length ? (
         <Group icon="corner-up-left" title="If a step fails, or you stop it">

@@ -27,6 +27,8 @@ export type RecipeView = {
   takesSteps: boolean;
   /** Its steps in words, its roles named by their labels and its settings at their defaults. */
   steps: StepLine[];
+  /** Each trigger's own steps in words, by its place under `when`: empty, it takes `steps`. */
+  whenSteps: StepLine[][];
   /** The rule itself, with its roles and its settings. */
   rule: Rule;
 };
@@ -57,6 +59,8 @@ export type AutomationDraftView = {
   sentence: string;
   when: string[];
   steps: StepLine[];
+  /** Each trigger's own steps in words, by its place under `when`: empty, it takes `steps`. */
+  whenSteps: StepLine[][];
   otherwise: StepLine[];
   takesSteps: boolean;
   /** Each role's name as its steps say it: "Scooter plug", "“Charge the scooter”". */
@@ -203,8 +207,9 @@ export type AutomationView = RoleFills & {
   nextLookAt: string | null;
   /** Why it cannot run as it is: a removed device. Empty when it can. */
   problems: string[];
-  /** What it does, step by step, in words — and what it does if a step does not succeed. */
+  /** What it does, step by step, in words — each trigger's own, by its place under `when` (empty: it takes `steps`) — and what it does if a step does not succeed. */
   steps: StepLine[];
+  whenSteps: StepLine[][];
   otherwise: StepLine[];
   /** It takes steps rather than sending its commands at once. */
   takesSteps: boolean;

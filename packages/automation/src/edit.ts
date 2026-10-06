@@ -5,13 +5,17 @@ import { SEQUENCE_LIMITS, type Expr, type Rule, type Step } from './rule.ts';
 
 /*
   Edits to a rule, as data (docs/AUTOMATION-EDITOR.md): where a list of steps
-  is — the rule's own, what it does if a step does not succeed, or one within
-  a step — and the rule with a step there added, changed, moved or removed,
-  each a new rule. What any editor builds on: the app's, an assistant's.
+  is — the rule's own, a trigger's own, what it does if a step does not
+  succeed, or one within a step — and the rule with a step there added,
+  changed, moved or removed, each a new rule. What any editor builds on: the
+  app's, an assistant's.
 */
 
-/** Where a list of steps is: the rule's own (`then`), what it does if a step does not succeed, or one within a step. */
-export type ListPath = { root: 'then' | 'otherwise'; trail: readonly { index: number; branch: Branch }[] };
+/** A list of steps at the top of a rule: its own (`then`), a trigger's own, by its place under `when`, or what it does if a step does not succeed. */
+export type ListRoot = 'then' | 'otherwise' | { when: number };
+
+/** Where a list of steps is: at the top of the rule, or within a step there. */
+export type ListPath = { root: ListRoot; trail: readonly { index: number; branch: Branch }[] };
 
 /** The lists a step holds, by the last word of where each is kept: a retry's, a choice's or a watch's two. */
 export type Branch = 'retry' | 'then' | 'else';
@@ -28,6 +32,13 @@ export const THEN: ListPath = { root: 'then', trail: [] };
 
 export const OTHERWISE: ListPath = { root: 'otherwise', trail: [] };
 
+/** A trigger's own steps: its place under `when`. */
+export const triggerSteps = (index: number): ListPath => ({ root: { when: index }, trail: [] });
+
+/** The steps at the top of a rule, at a root. */
+const rootList = (rule: Rule, root: ListRoot): readonly Step[] =>
+  typeof root === 'object' ? (rule.when[root.when]?.then ?? []) : root === 'then' ? rule.then : (rule.otherwise ?? []);
+
 /** The list a step holds, by its branch. */
 const branchOf = (step: Step, branch: Branch): readonly Step[] => {
   const field = branchField(step, branch);
@@ -42,7 +53,7 @@ const withBranch = (step: Step, branch: Branch, list: Step[]): Step => {
 
 /** The steps at a place. */
 export function listAt(rule: Rule, path: ListPath): readonly Step[] {
-  let list: readonly Step[] = rule[path.root] ?? [];
+  let list: readonly Step[] = rootList(rule, path.root);
   for (const { index, branch } of path.trail) list = list[index] ? branchOf(list[index]!, branch) : [];
   return list;
 }
@@ -54,8 +65,20 @@ export function withList(rule: Rule, path: ListPath, change: (list: Step[]) => S
     if (!first) return change([...list]);
     return list.map((step, at) => (at === first.index ? withBranch(step, first.branch, inner(branchOf(step, first.branch), rest)) : step));
   };
-  const next = inner(rule[path.root] ?? [], path.trail);
-  if (path.root === 'then') return { ...rule, then: next };
+  const next = inner(rootList(rule, path.root), path.trail);
+  const root = path.root;
+  if (root === 'then') return { ...rule, then: next };
+  // A trigger with no steps of its own left takes the rule's again: none is said, not an empty list.
+  if (typeof root === 'object') {
+    return {
+      ...rule,
+      when: rule.when.map((trigger, at) => {
+        if (at !== root.when) return trigger;
+        const { then: _then, ...rest } = trigger;
+        return next.length ? { ...rest, then: next } : rest;
+      }),
+    };
+  }
   const { otherwise: _otherwise, ...rest } = rule;
   return next.length ? { ...rest, otherwise: next } : rest;
 }
@@ -100,7 +123,7 @@ export function kindsFor(path: ListPath): StepKind[] {
 }
 
 /** Whether steps in this list may wait for what might not come — a condition, an automation's end: not after a failure, nor in a retry. */
-export const mayWait = (path: ListPath): boolean => path.root === 'then' && !path.trail.some((step) => UNSURE_BRANCHES.has(step.branch));
+export const mayWait = (path: ListPath): boolean => path.root !== 'otherwise' && !path.trail.some((step) => UNSURE_BRANCHES.has(step.branch));
 
 /** The roles the rule uses: what it reads, asks, waits on, switches, writes or starts. */
 export function usedRoles(rule: Rule): Set<string> {

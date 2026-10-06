@@ -121,6 +121,37 @@ describe('a rule, written and read back', () => {
     expect(start.rule!.then).toEqual(recipe.then);
   });
 
+  test('a charge kept between two levels: each trigger with what it does beside it — no ids, no asking which started it', () => {
+    const entry = {
+      uses: { battery: 'garage-p280', charger: 'smart-plug' },
+      when: [
+        { becomes: 'battery.charge < 20 %', for: '2 min', do: [{ 'turn on': 'charger' }] },
+        { becomes: 'battery.charge >= 40 %', for: '2 min', do: [{ 'turn off': 'charger' }] },
+      ],
+      do: [],
+    };
+    const read = ruleFromConfig(entry, ['automations', 'battery-window']);
+    expect(read.issues).toEqual([]);
+    expect(checkRule(read.rule!, { fn: () => null })).toEqual([]);
+    // What the recipe makes, its settings at these levels.
+    const recipe = inlineParams(STANDARD_RECIPES.find((each) => each.id === 'standard.charge-between')!, { low: 20, lowFor: 120, high: 40, highFor: 120 });
+    expect(read.rule!.when).toEqual(recipe.when);
+    expect(read.rule!.if).toBeUndefined();
+    // Written back as it was written.
+    expect(ruleToConfig(read.rule!, read.uses)).toMatchObject({ when: entry.when, do: [] });
+  });
+
+  test('a trigger with no steps of its own takes the automation’s; with none there either, it is said where', () => {
+    const shared = ruleFromConfig({ uses: { plug: 'smart-plug' }, when: [{ at: '07:00', do: [{ 'turn on': 'plug' }] }, { at: '22:00' }], do: [{ 'turn off': 'plug' }] }, ['a']);
+    expect(checkRule(shared.rule!, { fn: () => null })).toEqual([]);
+    const bare = ruleFromConfig({ uses: { plug: 'smart-plug' }, when: [{ at: '07:00', do: [{ 'turn on': 'plug' }] }, { at: '22:00' }], do: [] }, ['a']);
+    expect(checkRule(bare.rule!, { fn: () => null })).toEqual(['when[1].then: it does nothing — say what it does, or what the automation does']);
+    // A name of its own is checked as one.
+    expect(ruleFromConfig({ uses: { plug: 'smart-plug' }, when: [{ at: '07:00', id: 'Morning' }], do: [{ 'turn on': 'plug' }] }, ['a']).issues).toEqual([
+      { message: 'A name of its own is letters and digits, starting with a lowercase letter: "low"', path: ['a', 'when', 0, 'id'] },
+    ]);
+  });
+
   test('each problem with where it is: the step, and how far into its text', () => {
     const read = ruleFromConfig(
       {

@@ -242,6 +242,8 @@ function Editing({
   );
 
   const nothingStarts = draft.rule.when.length === 0;
+  // Every trigger says what it does: the automation's own steps are only for when it is started.
+  const eachSaysItsOwn = !nothingStarts && draft.rule.when.every((trigger) => trigger.then?.length);
   return (
     <Screen back={back.label} backTo={back.to} title={title} footer={footer}>
       <Card inset>
@@ -300,8 +302,13 @@ function Editing({
             <OnlyIf />
           </Group>
 
-          <Group icon="list" title="Does">
+          <Group icon="list" title="Does" summary={eachSaysItsOwn ? 'When you start it' : undefined}>
             <Problems list={problems('does')} />
+            {eachSaysItsOwn ? (
+              <Text fontSize={13} color="$muted" lineHeight={19}>
+                Each trigger says what it does. These steps are for when you start it yourself, or another automation does.
+              </Text>
+            ) : null}
             <BlockList path={THEN} label="What it does" />
           </Group>
 

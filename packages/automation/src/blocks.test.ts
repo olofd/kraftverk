@@ -201,16 +201,17 @@ describe('a recipe, copied', () => {
 
   test('what its settings alone decide is decided: a check of its own sliders goes, and it reads as what it watches', () => {
     const window = inlineParams(chargeBetween, { low: 15, lowFor: 120, high: 50, highFor: 0 });
-    // "Only if 15 is below 50" was the recipe checking its settings: always so, and gone; what is left asks of the run.
-    expect(window.if).toEqual({ compare: 'ne', left: { run: 'trigger' }, right: { value: '' } });
-    // Its triggers keep their ids; a hold of 0 min is none.
+    // "Only if 15 is below 50" was the recipe checking its settings: always so, and gone.
+    expect(window.if).toBeUndefined();
+    // Each trigger keeps what it does beside it; a hold of 0 min is none.
+    const turn = (on: boolean): Step[] => [{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: on } } } }];
     expect(window.when).toEqual([
-      { id: 'low', becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'charge' } }, right: { value: 15 } }, heldFor: { value: 120 } },
-      { id: 'high', becomes: { compare: 'ge', left: { read: { role: 'battery', means: 'charge' } }, right: { value: 50 } } },
+      { becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'charge' } }, right: { value: 15 } }, heldFor: { value: 120 }, then: turn(true) },
+      { becomes: { compare: 'ge', left: { read: { role: 'battery', means: 'charge' } }, right: { value: 50 } }, then: turn(false) },
     ]);
     const names = (role: string) => (role === 'battery' ? 'Garage P280' : 'ATORCH plug');
     expect(describeRule(window, {}, names, NO_FUNCTIONS)).toBe(
-      'When Garage P280’s charge is below 15 % for 2 min, or when Garage P280’s charge is at least 50 %, if one of its triggers started it, turn ATORCH plug on if it started because Garage P280’s charge is below 15 % for 2 min, off if not.'
+      'When Garage P280’s charge is below 15 % for 2 min, turn ATORCH plug on; when Garage P280’s charge is at least 50 %, turn ATORCH plug off.'
     );
     // Settings that can never hold: kept as they are, so it says so rather than acting.
     expect(inlineParams(chargeBetween, { low: 60, high: 50 }).if).toEqual({ value: false });

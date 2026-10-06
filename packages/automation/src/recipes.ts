@@ -66,21 +66,21 @@ export const mainsLost = defineRecipe({
   then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: turn } } }],
 });
 
-const soc: Expr = { read: { role: 'battery', means: 'charge' } };
+const charge: Expr = { read: { role: 'battery', means: 'charge' } };
+const set = (role: string, on: boolean): Step => ({ command: { role, capability: 'switch', command: 'set', args: { on: { value: on } } } });
 
 /**
  * "Charge the station through the plug that feeds it: on below 15 %, off at
  * 50 %" — a charge window of your own, below what the device's own settings
  * allow, by switching what charges it.
  *
- * One rule, two edges, each with its own id and its own hold: `low` when the
- * charge has stayed below the low level for a while, `high` when it has
- * stayed at the high one or above. Its one step switches the charger on when
- * `low` started it and off when `high` did (`run.trigger`), so each level is
- * written once and the two can never disagree. In between nothing happens —
- * which is the point: the battery charges up from low to high, then runs down
- * again, instead of hovering at one level with the charger clicking. Played
- * by hand between the two, it does nothing either.
+ * One rule, two edges, each with its own hold and what it does beside it:
+ * when the charge has stayed below the low level for a while, the charger
+ * goes on; when it has stayed at the high one or above, off. In between
+ * nothing happens — which is the point: the battery charges up from low to
+ * high, then runs down again, instead of hovering at one level with the
+ * charger clicking. Played by hand, it does what the edge that holds now
+ * says — and between the two, nothing.
  */
 export const chargeBetween = defineRecipe({
   id: 'standard.charge-between',
@@ -101,12 +101,12 @@ export const chargeBetween = defineRecipe({
     },
   },
   when: [
-    { id: 'low', becomes: { compare: 'lt', left: soc, right: { param: 'low' } }, heldFor: { param: 'lowFor' } },
-    { id: 'high', becomes: { compare: 'ge', left: soc, right: { param: 'high' } }, heldFor: { param: 'highFor' } },
+    { becomes: { compare: 'lt', left: charge, right: { param: 'low' } }, heldFor: { param: 'lowFor' }, then: [set('charger', true)] },
+    { becomes: { compare: 'ge', left: charge, right: { param: 'high' } }, heldFor: { param: 'highFor' }, then: [set('charger', false)] },
   ],
-  // A window that is upside down would switch the charger on and off at once; played between the two, nothing is due.
-  if: { all: [{ compare: 'lt', left: { param: 'low' }, right: { param: 'high' } }, { compare: 'ne', left: { run: 'trigger' }, right: { value: '' } }] },
-  then: [{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { compare: 'eq', left: { run: 'trigger' }, right: { value: 'low' } } } } }],
+  // A window that is upside down would switch the charger on and off at once.
+  if: { compare: 'lt', left: { param: 'low' }, right: { param: 'high' } },
+  then: [],
 });
 
 // --- sequences (docs/SEQUENCES.md) ------------------------------------------------------
@@ -122,7 +122,6 @@ const CHARGER: RoleSpec = {
   capabilities: ['switch', 'powerMeter'],
 };
 
-const set = (role: string, on: boolean): Step => ({ command: { role, capability: 'switch', command: 'set', args: { on: { value: on } } } });
 const draws = (role: string): Expr => ({ read: { role, means: 'power' } });
 
 /**

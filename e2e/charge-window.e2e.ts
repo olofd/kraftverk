@@ -60,18 +60,22 @@ test('a charge window of your own, copied from the shared recipe', async ({ page
   expect(await answer(page, true)).toContain('What you changed is not kept');
   await expect(page.getByRole('heading', { level: 1, name: 'Charge between two levels' })).toBeVisible();
 
-  // Changed, in its form: its step's "on if the low side started it" stays a condition — never a plain on or off,
-  // and drawn as which of its triggers started the run — and a new name, saved with Enter, back on its page.
+  // Changed, in its form: each trigger with what it does beneath it — on below the low level, off at the high one —
+  // and the automation's own steps only for when it is started by hand; a new name, saved with Enter, back on its page.
   const renamed = unique('Charge window');
   await main.getByRole('button', { name: 'Edit', exact: true }).click();
-  await page.getByRole('button', { name: /^Open step: Turn .+ on if it started because .+ below 15 % for 2 min, off if not$/ }).click();
-  await expect(page.getByText('On while this holds, off when it does not:')).toBeVisible();
-  await expect(page.getByText('Which of its triggers started this run')).toBeVisible();
+  await expect(page.getByRole('list', { name: 'What trigger 1 does' }).getByRole('button', { name: /^Open step: Turn .+ on$/ })).toBeVisible();
+  await expect(page.getByRole('list', { name: 'What trigger 2 does' }).getByRole('button', { name: /^Open step: Turn .+ off$/ })).toBeVisible();
+  await expect(page.getByText(/^Each trigger says what it does\./)).toBeVisible();
   await page.getByLabel('Name').fill(renamed);
   await expect(page.getByRole('status')).toContainText('It can run as it is');
   await page.getByLabel('Name').press('Enter');
   await expect(page.getByRole('heading', { level: 1, name: renamed })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Does' }).getByText(/^Turn .+ on if it started because .+ charge is below 15 % for 2 min, off if not$/)).toBeVisible();
+  // On its page: what each does, beneath it — and no steps of its own besides.
+  const when = page.getByRole('region', { name: 'When' });
+  await expect(when.getByText(/^Turn .+ on$/)).toBeVisible();
+  await expect(when.getByText(/^Turn .+ off$/)).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Does' })).toHaveCount(0);
 
   // Kept so, on its page: a look every ten minutes — not asked, while it only watches.
   await main.getByRole('radio', { name: '10 min' }).click();

@@ -4,7 +4,7 @@ import { CLOCK_TIME, minutesOf, WEEKDAYS, type Weekday } from './clock.ts';
 import { secondsText } from './describe.ts';
 import { fieldValue, type FieldSpec } from './kinds/spec.ts';
 import { branchesOf, STEP_KIND_ORDER, STEP_KINDS } from './kinds/steps.ts';
-import { TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './kinds/triggers.ts';
+import { TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './kinds/triggers.ts';
 import type { AutomationFunction } from './functions.ts';
 import { ruleUses } from './reads.ts';
 import { COMPARE_OPS, isAutomationRole, MATH_OPS, ORDERED_OPS, partRoles, RUN_FACTS, SEQUENCE_LIMITS, TRIGGER_ID, type Command, type Expr, type PartRole, type Rule, type Step, type WriteTarget } from './rule.ts';
@@ -241,24 +241,21 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
   // No trigger is allowed: it runs when played, or started by another automation.
   (rule.when ?? []).forEach((trigger, index) => {
     const where = `when[${index}]`;
-    if (trigger.id !== undefined) {
-      if (typeof trigger.id !== 'string' || !TRIGGER_ID.test(trigger.id)) problems.push(`${where}.id: letters and digits, starting with a lowercase letter`);
-      else if ((rule.when ?? []).findIndex((other) => other.id === trigger.id) !== index) problems.push(`${where}.id: "${trigger.id}" is another trigger's id too`);
-    }
-    // Each kind's fields, by what each holds (kinds/triggers.ts).
+    // Each kind's fields, and those every trigger has, by what each holds (kinds/triggers.ts).
     const kind = TRIGGER_KIND_ORDER.find((each) => each in trigger);
     if (!kind) {
       problems.push(`${where}: not a trigger`);
       return;
     }
-    for (const field of TRIGGER_KINDS[kind].fields) {
+    for (const field of [...TRIGGER_KINDS[kind].fields, ...TRIGGER_FIELDS]) {
       const value = fieldValue(trigger, field);
       const at = `${where}.${field.data.join('.')}`;
       if (value === undefined || value === null) {
         if (field.required) problems.push(`${at}: it needs ${field.label.toLowerCase()}`);
         continue;
       }
-      checkField(field, value, at, { inTrigger: true, sure: true, depth: 1 });
+      // What it does is said at the top, as the automation's own steps are.
+      checkField(field, value, at, { inTrigger: true, sure: true, depth: 0 });
     }
   });
 
@@ -320,6 +317,10 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       }
       case 'event':
         if (!String(value).trim()) problems.push(`${at}: which event?`);
+        return;
+      case 'id':
+        if (typeof value !== 'string' || !TRIGGER_ID.test(value)) problems.push(`${at}: letters and digits, starting with a lowercase letter`);
+        else if ((rule.when ?? []).filter((other) => other.id === value).length > 1) problems.push(`${at}: "${value}" is another trigger's id too`);
         return;
       case 'steps': {
         const list = value as readonly Step[];
@@ -403,7 +404,12 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
     });
   }
 
-  if (!rule.then?.length) problems.push('then: it does nothing');
+  // Whatever starts it does something: its own steps, or the automation's.
+  if (!rule.then?.length) {
+    const without = (rule.when ?? []).flatMap((trigger, index) => (trigger.then?.length ? [] : [index]));
+    if (!rule.when?.length) problems.push('then: it does nothing');
+    for (const index of without) problems.push(`when[${index}].then: it does nothing — say what it does, or what the automation does`);
+  }
   steps(rule.then ?? [], 'then', true, 1);
   steps(rule.otherwise ?? [], 'otherwise', false, 1);
 

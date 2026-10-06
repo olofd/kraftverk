@@ -46,6 +46,8 @@ export type FieldType =
   | { type: 'event'; role: string }
   /** A name the construct's own words check: a capability, a command, a setting's key or meaning. */
   | { type: 'name' }
+  /** A name of its own, unique among its kind in the rule — letters and digits, from a lowercase letter: a trigger's, that `run.trigger` reads back. */
+  | { type: 'id' }
   /** A command's arguments: each its name and an expression. */
   | { type: 'args' }
   /**

@@ -5,8 +5,8 @@ import type { Evaluation } from './functions.ts';
 import { exprKind, expressionsIn, mapChildren, type ExprOf } from './kinds/exprs.ts';
 import { EXPRESSION_FIELDS, fieldValue, withField } from './kinds/spec.ts';
 import { stepSpec } from './kinds/steps.ts';
-import { triggerSpec } from './kinds/triggers.ts';
-import { calculate, type CompareOp, type Expr, type NamedTrigger, type Rule, type RunFact, type Step } from './rule.ts';
+import { triggerFields } from './kinds/triggers.ts';
+import { calculate, type CompareOp, type Expr, type RuleTrigger, type Rule, type RunFact, type Step } from './rule.ts';
 
 /*
   Evaluating a rule's expressions where it runs: against what its parts read
@@ -277,11 +277,16 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
       return withField(settled, field, inner.length || field.required ? inner : undefined);
     }, step);
   }
-  // Each trigger's expressions settled, by its kind's fields (kinds/triggers.ts); its id kept.
-  const when = rule.when.map((trigger): NamedTrigger =>
-    triggerSpec(trigger).fields.reduce<NamedTrigger>((settled, field) => {
+  // Each trigger's expressions settled, and its own steps, by its fields (kinds/triggers.ts); its id kept.
+  const when = rule.when.map((trigger): RuleTrigger =>
+    triggerFields(trigger).reduce<RuleTrigger>((settled, field) => {
       const value = fieldValue(trigger, field);
-      if (value === undefined || !EXPRESSION_FIELDS.has(field.type.type)) return settled;
+      if (value === undefined) return settled;
+      if (field.type.type === 'steps') {
+        const own = steps(value as readonly Step[]);
+        return withField(settled, field, own.length ? own : undefined);
+      }
+      if (!EXPRESSION_FIELDS.has(field.type.type)) return settled;
       const next = expr(value as Expr);
       // A length of time its settings make none — 0 — where none may be, is none: a hold of 0 min is no hold.
       const none = !field.required && field.type.type === 'duration' && 'value' in next && next.value === 0;

@@ -13,7 +13,7 @@ import {
   type ScalarValue,
   type Value,
 } from '@kraftverk/device-sdk';
-import { evaluate, evaluateNow, EVERY_SECONDS, minutesOf, ruleUses, runsOn, secondsText, type RoleBinding, type Rule, type RuleScope } from '@kraftverk/automation';
+import { evaluate, evaluateNow, EVERY_SECONDS, minutesOf, ruleUses, runsOn, secondsText, stepsOf, triggerKey, triggerOf, type RoleBinding, type Rule, type RuleScope } from '@kraftverk/automation';
 
 /**
  * A rule, rehearsed on what happened (PROPOSITION.md §5.3): walked through a
@@ -105,7 +105,7 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
   }
   for (const call of uses.calls) caveats.push(`It asks ${call.fn} of ${name(call.role)}, which history does not keep: taken as unknown`);
 
-  const scopeAt = (t: number, trigger = ''): RuleScope => ({
+  const scopeAt = (t: number, trigger: string | null = null): RuleScope => ({
     clock: () => clockTime(new Date(t), automation.timeZone),
     reachable: () => ({ reachable: null, detail: 'history does not keep whether it could be reached' }),
     // An automation's own rule has no settings: its values are in its blocks.
@@ -123,8 +123,8 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
       return { value: latest.value, label: standardMeaning(means)?.label ?? found.attribute.label, unit };
     },
     name,
-    // The trigger that started the run it rehearses: "" for none with an id.
-    run: (fact) => (fact === 'trigger' ? trigger : null),
+    // The trigger that started the run it rehearses, by its key: its id, or "" for none with one.
+    run: (fact) => (fact === 'trigger' ? (triggerOf(recipe, trigger)?.id ?? '') : null),
   });
 
   // The moments anything could have changed: every sample, every time of day, every event.
@@ -154,7 +154,8 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
 
   type Fired = { at: number; because: string; trigger: string };
   const fired: Fired[] = [];
-  for (const trigger of recipe.when) {
+  for (const [index, trigger] of recipe.when.entries()) {
+    const key = triggerKey(trigger, index);
     if ('at' in trigger) {
       const at = evaluateNow(trigger.at, scopeAt(start));
       const [hour, minute] = typeof at === 'string' ? at.split(':').map(Number) : [];
@@ -163,7 +164,7 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
         // Only on its days, on the owner's calendar.
         if (!runsOn(trigger, date)) continue;
         const instant = zonedInstant({ ...date, hour, minute }, automation.timeZone).getTime();
-        if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `It is ${at}`, trigger: trigger.id ?? '' });
+        if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `It is ${at}`, trigger: key });
       }
     } else if ('every' in trigger) {
       const seconds = evaluateNow(trigger.every, scopeAt(start));
@@ -174,18 +175,18 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
           // Each time the clock shows it: twice in the hour repeated as clocks go back, not at all in the one skipped.
           for (const each of zonedInstants({ ...date, hour: Math.floor(slot / 60), minute: slot % 60 }, automation.timeZone)) {
             const instant = each.getTime();
-            if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `Every ${secondsText(seconds)}`, trigger: trigger.id ?? '' });
+            if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `Every ${secondsText(seconds)}`, trigger: key });
           }
         }
       }
     } else if ('event' in trigger) {
       const binding = automation.roles[trigger.event.role];
       if (!binding) continue;
-      for (const at of source.events(binding.device, binding.part, trigger.event.event, from, to)) fired.push({ at: Date.parse(at), because: `${name(trigger.event.role)} said ${trigger.event.event}`, trigger: trigger.id ?? '' });
+      for (const at of source.events(binding.device, binding.part, trigger.event.event, from, to)) fired.push({ at: Date.parse(at), because: `${name(trigger.event.role)} said ${trigger.event.event}`, trigger: key });
     }
   }
   // A condition turning true, and held: the engine's own rules, with nothing kept at the start.
-  const becomes = recipe.when.flatMap((trigger) => ('becomes' in trigger ? [{ trigger, last: false, heldSince: null as number | null, fired: false }] : []));
+  const becomes = recipe.when.flatMap((trigger, index) => ('becomes' in trigger ? [{ trigger, key: triggerKey(trigger, index), last: false, heldSince: null as number | null, fired: false }] : []));
   // A hold is looked at again when it has run its time, as the engine's timer does, sample or not.
   const queue = [...moments].sort((a, b) => a - b);
   const lookAgainAt = (t: number) => {
@@ -213,7 +214,7 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
       state.fired = true;
       const trace: string[] = [];
       evaluateNow(state.trigger.becomes, scope, trace);
-      fired.push({ at: t, because: `${trace.join('; ')}${seconds > 0 ? `, for ${secondsText(seconds)}` : ''}`, trigger: state.trigger.id ?? '' });
+      fired.push({ at: t, because: `${trace.join('; ')}${seconds > 0 ? `, for ${secondsText(seconds)}` : ''}`, trigger: state.key });
     }
   }
 
@@ -231,7 +232,7 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
     }
     const done: string[] = [];
     let unknown = false;
-    for (const step of recipe.then) {
+    for (const step of stepsOf(recipe, run.trigger)) {
       // What a step that waits or chooses would have done depends on what the commands before it changed, which
       // history cannot show: said, not guessed — and nothing after it, which depends on it.
       if (!('command' in step)) {

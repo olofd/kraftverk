@@ -3,7 +3,7 @@ import { capabilitySpec, isCapability, type CapabilityNeed } from '@kraftverk/de
 import { expressionsIn } from './kinds/exprs.ts';
 import { EXPRESSION_FIELDS, fieldValue } from './kinds/spec.ts';
 import { branchesOf, stepSpec } from './kinds/steps.ts';
-import { triggerSpec } from './kinds/triggers.ts';
+import { stepListsOf, triggerSpec } from './kinds/triggers.ts';
 import type { Command, Expr, Rule, Step, Write } from './rule.ts';
 
 /*
@@ -80,12 +80,12 @@ export function ruleUses(rule: Rule): {
     }
   }
   walk(rule.if);
-  walkSteps(rule.then);
-  walkSteps(rule.otherwise ?? []);
+  // Its own steps, each trigger's, and what it does if one fails.
+  for (const list of stepListsOf(rule)) walkSteps(list.steps);
   return { reads, events, calls, reaches: [...new Set(reaches)], writes, starts: [...new Set(starts)], windows };
 }
 
-/** Every command a rule may send, in its steps, retries and `otherwise`: what its roles must be able to take. */
+/** Every command a rule may send, in its steps, its triggers', retries and `otherwise`: what its roles must be able to take. */
 export function ruleCommands(rule: Rule): Command[] {
   const found: Command[] = [];
   const walk = (steps: readonly Step[]) => {
@@ -94,8 +94,7 @@ export function ruleCommands(rule: Rule): Command[] {
       for (const branch of branchesOf(step)) walk(branch.steps);
     }
   };
-  walk(rule.then);
-  walk(rule.otherwise ?? []);
+  for (const list of stepListsOf(rule)) walk(list.steps);
   return found;
 }
 
@@ -108,9 +107,11 @@ export const changedRoles = (rule: Rule): string[] => [...new Set([...ruleComman
 
 /**
  * Whether a rule takes steps — waits, choices, another automation, a
- * fallback — rather than sending its commands and settings at once.
+ * fallback — rather than sending its commands and settings at once,
+ * whatever starts it.
  */
-export const takesSteps = (rule: Rule): boolean => rule.then.some((step) => !stepSpec(step).atOnce) || Boolean(rule.otherwise?.length);
+export const takesSteps = (rule: Rule): boolean =>
+  stepListsOf(rule).some((list) => list.steps.some((step) => !stepSpec(step).atOnce)) || Boolean(rule.otherwise?.length);
 
 /** Whether a rule waits for a condition to come true. */
 export const hasConditions = (rule: Rule): boolean => rule.when.some((trigger) => 'becomes' in trigger);

@@ -84,7 +84,7 @@ function Block({ path, index, step, count, open, onToggle }: { path: ListPath; i
   const set = (next: Step) => editor.change((draft) => ({ ...draft, rule: withStep(draft.rule, path, index, () => next) }));
   const move = (by: -1 | 1) => (haptic(), setMenu(false), editor.change((draft) => ({ ...draft, rule: moveStep(draft.rule, path, index, by) })));
   const remove = () => (haptic(), setMenu(false), editor.change((draft) => ({ ...draft, rule: removeStep(draft.rule, path, index) })));
-  const numbered = path.trail.length === 0 && path.root === 'then';
+  const numbered = path.trail.length === 0 && path.root !== 'otherwise';
   const actions = [
     ...(index > 0 ? [{ icon: 'arrow-up' as const, label: 'Move up', onPress: () => move(-1) }] : []),
     ...(index < count - 1 ? [{ icon: 'arrow-down' as const, label: 'Move down', onPress: () => move(1) }] : []),
@@ -384,9 +384,11 @@ function AddStep({ path, list, onAdded }: { path: ListPath; list: string; onAdde
     onAdded();
   };
   if (!open) {
+    // A trigger's own list says whose it is: beside the automation's, "Add a step" would be two of one.
+    const text = typeof path.root === 'object' && !path.trail.length ? 'Add a step to this trigger' : 'Add a step';
     return (
-      <Button alignSelf="flex-start" size="$3" minHeight={44} chromeless color="$accent" icon={<Icon name="plus" size={16} color={tone('$accent')} />} aria-label={`Add a step: ${list}`} onPress={() => setOpen(true)}>
-        Add a step
+      <Button alignSelf="flex-start" size="$3" minHeight={44} chromeless color="$accent" icon={<Icon name="plus" size={16} color={tone('$accent')} />} aria-label={`${text}: ${list}`} onPress={() => setOpen(true)}>
+        {text}
       </Button>
     );
   }

@@ -1,5 +1,5 @@
 import { ApiError, type Caller, type KraftverkApi, type RecipeView } from '@kraftverk/api-contract';
-import { describeSteps, hasConditions, keepsSo, takesSteps, type AutomationDraft } from '@kraftverk/automation';
+import { describeSteps, hasConditions, keepsSo, takesSteps, type AutomationDraft, type RuleSteps } from '@kraftverk/automation';
 import { RunRefusal, type AutomationRecord } from '@kraftverk/automation-engine';
 import { isTimeZone, type AutomationId, type Value } from '@kraftverk/device-sdk';
 import { subjectOf } from '@kraftverk/gateway';
@@ -58,6 +58,7 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
     if (!isTimeZone(timeZone)) throw new ApiError('invalid', `"${timeZone}" is not a time zone`);
   };
 
+  const pick = ({ steps, whenSteps }: RuleSteps) => ({ steps, whenSteps });
   return {
     automations: {
       async kit() {
@@ -73,7 +74,7 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
               hasConditions: hasConditions(recipe),
               takesSteps: takesSteps(recipe),
               // Its steps as starting from it shows them: each role by its label, each setting at its default.
-              steps: describeSteps(recipe, defaults, (role) => lowerFirst(recipe.roles[role]?.label ?? role), library).steps,
+              ...pick(describeSteps(recipe, defaults, (role) => lowerFirst(recipe.roles[role]?.label ?? role), library)),
               rule: rest,
             };
           }),

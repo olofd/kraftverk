@@ -24,7 +24,7 @@ import { TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerKind, type TriggerKind } from
 const KINDS = Object.keys(TRIGGER_KINDS) as TriggerKind[];
 
 /** An automation's entry around one trigger, its roles filled by made-up parts. */
-const entryOf = (trigger: unknown) => ({ uses: { station: 'garage-station', plug: 'smart-plug' }, when: [trigger], do: [{ 'turn on': 'plug' }] });
+const entryOf = (trigger: unknown) => ({ uses: { station: 'garage-station', plug: 'smart-plug', charger: 'charger-plug' }, when: [trigger], do: [{ 'turn on': 'plug' }] });
 
 describe('the triggers, as data', () => {
   test('every kind is offered, once, in the editor’s order', () => {

@@ -1,4 +1,4 @@
-import { capitalise, describeTriggers, evaluateNow, EVERY_SECONDS, HOLD_SECONDS, readsRole, runsOn, secondsText, slotOf, takesSteps, triggerKey, triggerKind, type NamedTrigger, type Rule, type Trigger } from '@kraftverk/automation';
+import { capitalise, describeTriggers, evaluateNow, EVERY_SECONDS, HOLD_SECONDS, readsRole, runsOn, secondsText, slotOf, stepsOf, takesSteps, triggerKey, triggerKind, type RuleTrigger, type Rule, type Trigger } from '@kraftverk/automation';
 import { dayAfter, localTime, MAIN_PART, zonedInstant, type ClockTimer } from '@kraftverk/device-sdk';
 import type { LiveMessage } from '@kraftverk/holder';
 
@@ -106,12 +106,13 @@ export class Triggers {
       for (const automation of this.deps.store.list()) {
         if (automation.mode === 'off') continue;
         const rule = automation.rule;
-        const due = rule.when.find((trigger) => this.#due(automation, rule, trigger, now));
+        const dueAt = rule.when.findIndex((trigger) => this.#due(automation, rule, trigger, now));
+        const due = rule.when[dueAt];
         if (due) {
           // A run that takes steps goes on by itself: the clock does not wait for it.
           // Why, as the trigger reads: "Every day at 07:00", "At 07:00 on weekdays".
           const why = describeTriggers({ ...rule, when: [due] }, this.#context.settled(automation, rule), (role) => this.#context.scope(automation, rule, now).name(role), this.#context.vocabulary(automation))[0]!;
-          const going = this.#runs.runAndKeep(automation, why, due.id ?? null);
+          const going = this.#runs.runAndKeep(automation, why, triggerKey(due, dueAt));
           if (!takesSteps(rule)) await going;
         }
         // A condition is looked at on the clock too, not only when a reading moves: a battery that sits
@@ -145,7 +146,9 @@ export class Triggers {
       const state = this.#becoming.get(`${automation.id}:${triggerKey(trigger, index)}`)?.state;
       if (!state?.last || !state.fired) continue;
       if (evaluateNow(trigger.becomes, scope) !== true) continue;
-      const planned = await this.#context.plan(automation, rule, this.#context.scope(automation, rule, now, trigger.id ?? null));
+      // What this trigger does — its own steps, or the rule's — is what is kept so.
+      const key = triggerKey(trigger, index);
+      const planned = await this.#context.plan(automation, stepsOf(rule, key), this.#context.scope(automation, rule, now, key));
       if ('unknown' in planned) continue;
       const differing = planned.filter((change) => !('command' in change ? this.#context.alreadySo(change.command) : this.#context.settingSo(change.write)));
       if (!differing.length) return;
@@ -157,7 +160,7 @@ export class Triggers {
         return by !== undefined && by.startsWith(AUTOMATION_ACTOR) && by !== own;
       });
       if (others) return;
-      await this.#runs.runAndKeep(automation, `Looked again after ${automation.recheckMinutes} min, and it still holds: ${this.#context.said(automation, rule, trigger.becomes)}`, trigger.id ?? null);
+      await this.#runs.runAndKeep(automation, `Looked again after ${automation.recheckMinutes} min, and it still holds: ${this.#context.said(automation, rule, trigger.becomes)}`, key);
       return;
     }
   }
@@ -176,7 +179,7 @@ export class Triggers {
           if (!matches) continue;
           const device = this.deps.device(binding);
           const label = device?.description.events?.find((event) => event.id === message.event.id)?.label ?? message.event.id;
-          const going = this.#runs.runAndKeep(automation, `${device?.name ?? 'A device'} said: ${label}`, trigger.id ?? null);
+          const going = this.#runs.runAndKeep(automation, `${device?.name ?? 'A device'} said: ${label}`, triggerKey(trigger, index));
           if (!takesSteps(rule)) await going;
         }
         if (message.kind === 'readings' && 'becomes' in trigger) {
@@ -193,7 +196,7 @@ export class Triggers {
    * already true. Its state is kept after every change, so a restart resumes
    * a hold with the time it had left and never fires one twice.
    */
-  #becomes(automation: AutomationRecord, rule: Rule, trigger: Extract<NamedTrigger, { becomes: unknown }>, index: number): void {
+  #becomes(automation: AutomationRecord, rule: Rule, trigger: Extract<RuleTrigger, { becomes: unknown }>, index: number): void {
     const key = `${automation.id}:${triggerKey(trigger, index)}`;
     const scope = this.#context.scope(automation, rule);
     const now = evaluateNow(trigger.becomes, scope);
@@ -239,7 +242,7 @@ export class Triggers {
       if (this.#runs.busy(automation.id)) return;
       state.fired = true;
       keep();
-      void this.#runs.runAndKeep(current, why, trigger.id ?? null);
+      void this.#runs.runAndKeep(current, why, triggerKey(trigger, index));
     };
     const since = Date.parse(state.heldSince ?? this.#context.now().toISOString());
     const remaining = seconds > 0 ? since + seconds * 1000 - this.#context.now().getTime() : 0;
@@ -266,7 +269,7 @@ export class Triggers {
   }
 
   /** Whether a trigger of the clock's is due now; one the clock does not start is never. */
-  #due(automation: AutomationRecord, rule: Rule, trigger: NamedTrigger, now: Date): boolean {
+  #due(automation: AutomationRecord, rule: Rule, trigger: RuleTrigger, now: Date): boolean {
     const kind = triggerKind(trigger);
     switch (kind) {
       case 'at':

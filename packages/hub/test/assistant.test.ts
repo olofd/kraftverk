@@ -102,7 +102,7 @@ describe('an assistant', () => {
     const proposal = await tool('propose', { name: 'My charge window', recipe: 'standard.charge-between', roles, params: { low: 15, lowFor: 120, high: 50, highFor: 0 }, timeZone: 'Europe/Stockholm' });
     expect(proposal.isError).toBeUndefined();
     expect(proposal.content[0]!.text).toContain(
-      'only watching: When Garage station’s charge is below 15 % for 2 min, or when Garage station’s charge is at least 50 %, if one of its triggers started it, turn Charger plug on if it started because Garage station’s charge is below 15 % for 2 min, off if not.'
+      'only watching: When Garage station’s charge is below 15 % for 2 min, turn Charger plug on; when Garage station’s charge is at least 50 %, turn Charger plug off.'
     );
     expect(proposal.content[0]!.text).toContain('It acts on its own only once a person lets it, in the app');
     expect(proposal.content[0]!.text).toContain('Rehearsed from');

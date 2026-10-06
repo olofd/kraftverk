@@ -102,9 +102,9 @@ A rule has:
 |---|---|---|
 | `roles` | `uses:` | What it works on, by role: a part of a device that offers some capabilities, or another automation. Filled when the rule becomes an automation. |
 | `params` | — | A recipe's settings, read as `$name`. An automation of its own has them written into its blocks (`inlineParams`). |
-| `when` | `when:` | What starts a run: any one trigger. Empty: it runs only when a person plays it or another automation starts it. |
+| `when` | `when:` | What starts a run: any one trigger — each with steps of its own, if it has them (`do:` under it). Empty: it runs only when a person plays it or another automation starts it. |
 | `if` | `only if:` | Must be true for a run to act. Unknown is not true: nothing is done, and the run says why. |
-| `then` | `do:` | What it does, step by step. |
+| `then` | `do:` | What it does, step by step — when what started it has no steps of its own. |
 | `otherwise` | `if a step fails:` | If a step does not succeed, or a person stops the run: each of these tried, whatever the others do. |
 
 ## What starts it — triggers
@@ -122,29 +122,35 @@ time are kept in seconds (`heldFor`, `every`), whatever a file writes.
 | `event` | `event: mains.lost` with `from: station` | when the part filling a role raises an event its description declares |
 | `becomes` | `becomes: station.charge < 15 %`, with `for: 2 min` | when a condition turns true — and, with `for` (`heldFor`), has stayed true that long; reads and comparisons only |
 
-Any trigger may carry an `id` (`id: low`) — letters and digits, starting
-with a lowercase letter, unique within the rule — that what it does reads
-back as `run.trigger`. So one automation does one thing when a level is
-crossed one way and another the other way, each side with its own level and
-its own hold, and no level written twice:
+Any trigger may say what it does itself, under `do` (`then` in the data,
+one of `TRIGGER_FIELDS`): a run it starts takes those steps in place of the
+automation's own. So one automation does one thing when a level is crossed
+one way and another the other way, each side with its own level and its own
+hold, said where it is:
 
 ```text
 when:
-  - id: low
-    becomes: station.charge < 5 %
+  - becomes: station.charge < 5 %
     for: 2 min
-  - id: high
-    becomes: station.charge >= 30 %
+    do:
+      - turn on: charger
+  - becomes: station.charge >= 30 %
     for: 2 min
-do:
-  - switch: charger
-    on: run.trigger == "low"
+    do:
+      - turn off: charger
 ```
+
+A trigger without steps of its own takes the automation's. When several
+share them and the steps must still tell them apart, a trigger may carry a
+name, `id` (`id: low`) — letters and digits, starting with a lowercase
+letter, unique within the rule — that the steps read back as
+`run.trigger == "low"`.
 
 Any automation can also be played by a person or started by another: that
 is no trigger of its own. Played, it counts as started by the first of its
-conditions with an id that holds now — "do what you would do now" — and by
-none when none does.
+conditions that holds now — "do what you would do now", that trigger's steps
+— and by none when none does: then it takes the automation's own steps, and
+with none, it is not the time.
 
 ## What it does — steps
 

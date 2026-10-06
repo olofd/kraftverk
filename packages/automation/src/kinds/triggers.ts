@@ -1,11 +1,12 @@
 import { EVERY_SECONDS, HOLD_SECONDS } from '../clock.ts';
-import type { NamedTrigger, Trigger } from '../rule.ts';
+import type { Rule, RuleTrigger, Step, Trigger } from '../rule.ts';
 import type { FieldSpec, KindDocs, KindIcon, Say } from './spec.ts';
 
 /*
   What starts an automation, as data: each kind of trigger once — its fields,
-  its words, its place in the editor and in the reference. Everything that
-  handles triggers reads it from here.
+  its words, its place in the editor and in the reference — and the fields
+  every kind has besides: a name of its own, and steps of its own. Everything
+  that handles triggers reads it from here.
 */
 
 export type TriggerKind = 'at' | 'every' | 'event' | 'becomes';
@@ -107,12 +108,45 @@ const BECOMES: TriggerSpec<'becomes'> = {
   docs: {
     summary:
       'When a condition turns true — and, with `for`, has stayed true that long. Reads and comparisons only: it is looked at on every reading, and its hold survives a restart.',
-    examples: ['becomes: station.charge < 15 %\nfor: 2 min', 'id: low\nbecomes: station.charge < 5 %\nfor: 2 min'],
+    examples: ['becomes: station.charge < 15 %\nfor: 2 min', 'becomes: station.charge < 20 %\nfor: 2 min\ndo:\n  - turn on: charger'],
   },
 };
 
 /** Every kind of trigger, by its key: the table everything that handles triggers reads. */
 export const TRIGGER_KINDS: { readonly [K in TriggerKind]: TriggerSpec<K> } = { at: AT, every: EVERY, event: EVENT, becomes: BECOMES };
+
+/**
+ * The fields every trigger has, whatever its kind: after its own in a file,
+ * read, checked, written and drawn as theirs are.
+ */
+export const TRIGGER_FIELDS: readonly FieldSpec[] = [
+  {
+    data: ['id'],
+    key: 'id',
+    type: { type: 'id' },
+    required: false,
+    label: 'Its name',
+    help: 'For steps shared by several triggers that ask which one started them: run.trigger == "low".',
+  },
+  {
+    data: ['then'],
+    key: 'do',
+    type: { type: 'steps', sure: 'inherit' },
+    required: false,
+    label: 'Then',
+    help: 'What it does when this starts it. Without, the automation’s own steps.',
+  },
+];
+
+/** A trigger's fields: its kind's, its verb's first, then those every trigger has. */
+export const triggerFields = (trigger: Trigger): readonly FieldSpec[] => [...triggerSpec(trigger).fields, ...TRIGGER_FIELDS];
+
+/** What every trigger may have, for the reference: a page of its own, beside the kinds'. */
+export const TRIGGER_FIELDS_DOCS: KindDocs = {
+  summary:
+    'Every trigger may say what it does itself, under `do`: a run it starts takes those steps in place of the automation’s own — one automation, each side where it is said. And a name, `id`, that steps shared by several triggers read back as `run.trigger`.',
+  examples: ['becomes: station.charge < 20 %\nfor: 2 min\ndo:\n  - turn on: charger', 'id: low\nbecomes: station.charge < 20 %'],
+};
 
 /** The order the editor offers them in. */
 export const TRIGGER_KIND_ORDER: readonly TriggerKind[] = ['at', 'every', 'becomes', 'event'];
@@ -125,10 +159,35 @@ export function triggerKind(trigger: Trigger): TriggerKind {
 }
 
 /**
- * What a trigger's state is kept by: its id, or — one with none — its place
- * among its rule's triggers, "#2". Ids never start with "#".
+ * What a trigger is known by — its state kept, the run it starts told which
+ * started it: its id, or — one with none — its place among its rule's
+ * triggers, "#2". Ids never start with "#".
  */
-export const triggerKey = (trigger: NamedTrigger, index: number): string => trigger.id ?? `#${index}`;
+export const triggerKey = (trigger: RuleTrigger, index: number): string => trigger.id ?? `#${index}`;
+
+/** The trigger a key names, or null: none did, or it is no longer there. */
+export const triggerOf = (rule: Pick<Rule, 'when'>, key: string | null): RuleTrigger | null =>
+  key === null ? null : (rule.when.find((trigger, index) => triggerKey(trigger, index) === key) ?? null);
+
+/**
+ * What a run does: the steps of the trigger that started it — or, one with
+ * none of its own, a person's play, another automation's start — the rule's.
+ */
+export const stepsOf = (rule: Pick<Rule, 'when' | 'then'>, key: string | null): readonly Step[] => {
+  const own = triggerOf(rule, key)?.then;
+  return own?.length ? own : rule.then;
+};
+
+/**
+ * Every list of steps a rule holds, where it is and whether what is in it
+ * may wait: the rule's own, each trigger's, and what it does if a step fails —
+ * what a walk over everything it may do visits.
+ */
+export const stepListsOf = (rule: Pick<Rule, 'when' | 'then' | 'otherwise'>): { at: string; steps: readonly Step[]; sure: boolean }[] => [
+  ...rule.when.flatMap((trigger, index) => (trigger.then ? [{ at: `when[${index}].then`, steps: trigger.then, sure: true }] : [])),
+  { at: 'then', steps: rule.then, sure: true },
+  { at: 'otherwise', steps: rule.otherwise ?? [], sure: false },
+];
 
 /** A trigger's description. */
 export const triggerSpec = (trigger: Trigger): TriggerSpec => TRIGGER_KINDS[triggerKind(trigger)] as unknown as TriggerSpec;

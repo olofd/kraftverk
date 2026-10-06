@@ -1,4 +1,4 @@
-import type { StepLine } from '@kraftverk/automation';
+import type { RuleSteps } from '@kraftverk/automation';
 import type { AutomationRun, ConditionState, RunLog } from '@kraftverk/api-contract';
 import type { ClockTimer } from '@kraftverk/device-sdk';
 import type { LiveMessage } from '@kraftverk/holder';
@@ -165,7 +165,7 @@ export class AutomationEngine {
   }
 
   /** Its steps in words, numbered and nested, as its card shows them. */
-  steps(automation: AutomationRecord): { steps: StepLine[]; otherwise: StepLine[] } {
+  steps(automation: AutomationRecord): RuleSteps {
     return this.#context.steps(automation);
   }
 

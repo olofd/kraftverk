@@ -2,7 +2,7 @@ import { secondsText } from '../describe.ts';
 import { EXPR_KIND_ORDER, EXPR_KINDS } from './exprs.ts';
 import type { FieldSpec } from './spec.ts';
 import { STEP_KIND_ORDER, STEP_KINDS, type StepSpec } from './steps.ts';
-import { TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './triggers.ts';
+import { TRIGGER_FIELDS, TRIGGER_FIELDS_DOCS, TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './triggers.ts';
 
 /*
   The language's reference, made from its own description (REFERENCE.md):
@@ -38,6 +38,8 @@ function holds(field: FieldSpec, fields: readonly FieldSpec[]): string {
     }
     case 'name':
       return 'a name its part declares';
+    case 'id':
+      return 'a name of its own, unique in the automation: letters and digits, from a lowercase letter';
     case 'args':
       return 'each argument by its name: a value, or an expression';
     case 'steps':
@@ -67,15 +69,15 @@ export function referenceMarkdown(): string {
     '',
     '## What starts it — triggers',
     '',
-    'Each trigger is one item under `when`. Any of them may carry an `id`',
-    '(`id: low`), which what the automation does reads back as',
-    '`run.trigger == "low"`.',
+    'Each trigger is one item under `when`, and any of them may say what it',
+    'does itself (below).',
     '',
   ];
   for (const kind of TRIGGER_KIND_ORDER) {
     const spec = TRIGGER_KINDS[kind];
     lines.push(...kindPage(`### \`${kind}\` — ${spec.label}`, spec.docs.summary, spec.fields, spec.docs.examples, 'when'));
   }
+  lines.push(...kindPage('### Every trigger — what it does, and its name', TRIGGER_FIELDS_DOCS.summary, TRIGGER_FIELDS, TRIGGER_FIELDS_DOCS.examples, 'when'));
   lines.push(
     '## What it does — steps',
     '',

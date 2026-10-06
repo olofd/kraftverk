@@ -228,7 +228,7 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
   /** A draft, checked and said — nothing kept: what the editor shows as its owner builds. */
   const draftView = (draft: AutomationDraft, self: AutomationId | null): AutomationDraftView => {
     const result = checked(draft, self);
-    const unsaid = { sentence: '', when: [], steps: [], otherwise: [], takesSteps: false, names: {} };
+    const unsaid = { sentence: '', when: [], steps: [], whenSteps: [], otherwise: [], takesSteps: false, names: {} };
     const found = { problems: result.problems, areas: result.areas };
     if (result.problems[0] === NOT_A_RULE) return { ...found, ...unsaid };
     try {

@@ -77,8 +77,8 @@ export type Expr =
  *
  * - `trigger`: the id of the trigger that started it. A run played by hand,
  *   or started by another automation, counts as started by the first of its
- *   conditions with an id that holds now — "do what you would do now". The
- *   empty text, `""`, when none with an id did: known, so a rule can tell.
+ *   conditions that holds now — "do what you would do now". The empty text,
+ *   `""`, when none with an id did: known, so a rule can tell.
  */
 export const RUN_FACTS = ['trigger'] as const;
 
@@ -118,10 +118,15 @@ export type Trigger =
   | { becomes: Expr; heldFor?: Expr };
 
 /**
- * A trigger, with an id of its own when what the rule does asks which one
- * started it (`run.trigger`): `low`, `high`. Unique within the rule.
+ * A trigger as a rule holds it: its kind, and what every kind may have
+ * besides (`TRIGGER_FIELDS`, kinds/triggers.ts) — `then`, steps of its own,
+ * what a run it starts does in place of the rule's: "when the charge is
+ * below 20 %, turn the charger on; when it is 40 %, turn it off", one
+ * automation, each side said where it is. And `id`, a name of its own when
+ * what a run does asks which one started it (`run.trigger`): `low`, `high`.
+ * Unique within the rule.
  */
-export type NamedTrigger = Trigger & { id?: string };
+export type RuleTrigger = Trigger & { id?: string; then?: readonly Step[] };
 
 /** A trigger's id: letters and digits, starting with a lowercase letter, as a role's name — `low`, `aboveHigh`. */
 export const TRIGGER_ID = /^[a-z][a-zA-Z0-9]{0,31}$/;
@@ -194,10 +199,13 @@ export type Rule = {
   roles: Readonly<Record<string, RoleSpec>>;
   params: ConfigSchema;
   /** Any one of these starts a run. */
-  when: readonly NamedTrigger[];
+  when: readonly RuleTrigger[];
   /** Must be true for it to act. Unknown is not true: nothing is done, and the run says why. */
   if?: Expr;
-  /** What it does, step by step. */
+  /**
+   * What it does, step by step — when what started it has no steps of its
+   * own (`stepsOf`): a trigger without, a person's play, another automation.
+   */
   then: readonly Step[];
   /**
    * If a step does not succeed — or a person stops it — these, each tried

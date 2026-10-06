@@ -5,8 +5,8 @@ import { ruleUses } from '../reads.ts';
 import { mapChildren } from '../kinds/exprs.ts';
 import { fieldValue, withField, type FieldSpec } from '../kinds/spec.ts';
 import { branchesOf, STEP_KIND_ORDER, STEP_KINDS, stepSpec, type StepKind, type StepReader, type StepSpec } from '../kinds/steps.ts';
-import { TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerSpec } from '../kinds/triggers.ts';
-import { isAutomationRole, TRIGGER_ID, type Expr, type NamedTrigger, type RoleSpec, type Rule, type Step, type Trigger } from '../rule.ts';
+import { stepListsOf, TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerFields } from '../kinds/triggers.ts';
+import { isAutomationRole, TRIGGER_ID, type Expr, type RuleTrigger, type RoleSpec, type Rule, type Step } from '../rule.ts';
 import { parseExpr, printExpr, standardUnit, type PrintContext, type WrittenUnit } from './expr.ts';
 
 /*
@@ -199,30 +199,24 @@ class Reader {
     };
   }
 
-  triggers(data: Data, path: Path): NamedTrigger[] {
+  triggers(data: Data, path: Path): RuleTrigger[] {
     if (data === undefined || data === null) return [];
     if (!Array.isArray(data)) return this.fail('Expected a list of what starts it', path);
     return data.map((each, index) => this.trigger(each, [...path, index]));
   }
 
-  trigger(data: Data, path: Path): NamedTrigger {
+  trigger(data: Data, path: Path): RuleTrigger {
     if (!isRecord(data)) return this.fail('Expected a trigger: at, every, event or becomes', path);
-    // An id of its own, that what it does can ask after: "started by low".
-    if ('id' in data) {
-      const { id, ...rest } = data;
-      if (typeof id !== 'string' || !TRIGGER_ID.test(id)) return this.fail('A trigger\'s id is letters and digits, starting with a lowercase letter: "low"', [...path, 'id']);
-      return { ...this.trigger(rest, path), id };
-    }
-    // Its kind by its verb, and each of its fields by what it holds (kinds/triggers.ts).
+    // Its kind by its verb, and each of its fields — its kind's, and those every trigger has — by what it holds (kinds/triggers.ts).
     const kind = TRIGGER_KIND_ORDER.find((each) => each in data);
     if (!kind) return this.fail(`Not a trigger: ${Object.keys(data).map((key) => `"${key}"`).join(', ')}. A trigger is ${TRIGGER_KIND_ORDER.join(', ')}`, path);
-    const spec = TRIGGER_KINDS[kind];
-    const keys = spec.fields.map((field) => field.key);
-    for (const key of Object.keys(data)) if (!keys.includes(key)) this.fail(`"${key}" is not part of this trigger: it takes ${[...keys, 'id'].map((each) => `"${each}"`).join(', ')}`, [...path, key]);
-    return spec.fields.reduce<Trigger>((trigger, field) => {
+    const fields = [...TRIGGER_KINDS[kind].fields, ...TRIGGER_FIELDS];
+    const keys = fields.map((field) => field.key);
+    for (const key of Object.keys(data)) if (!keys.includes(key)) this.fail(`"${key}" is not part of this trigger: it takes ${keys.map((each) => `"${each}"`).join(', ')}`, [...path, key]);
+    return fields.reduce<RuleTrigger>((trigger, field) => {
       if (!(field.key in data)) return field.required ? this.fail(`"${kind}" needs "${field.key}": ${field.label.toLowerCase()}`, path) : trigger;
       return withField(trigger, field, this.field(field, data[field.key], [...path, field.key]));
-    }, {} as Trigger);
+    }, {} as RuleTrigger);
   }
 
   /** One field of a construct, by what it holds (kinds/spec.ts). */
@@ -242,6 +236,9 @@ class Reader {
       case 'event':
       case 'name':
         return this.name(data, path, field.label.toLowerCase());
+      case 'id':
+        if (typeof data !== 'string' || !TRIGGER_ID.test(data)) return this.fail('A name of its own is letters and digits, starting with a lowercase letter: "low"', path);
+        return data;
       case 'steps':
         return this.steps(data, path);
       case 'args':
@@ -322,8 +319,7 @@ function usedCapabilities(rule: RuleBody, role: string): string[] {
       for (const branch of branchesOf(step)) walk(branch.steps);
     }
   };
-  walk(rule.then);
-  walk(rule.otherwise ?? []);
+  for (const list of stepListsOf(rule)) walk(list.steps);
   const uses = ruleUses({ roles: {}, params: { fields: {} }, when: rule.when, ...(rule.if !== undefined ? { if: rule.if } : {}), then: rule.then, ...(rule.otherwise !== undefined ? { otherwise: rule.otherwise } : {}) });
   const add = (capability: string | null) => void (capability && used.add(capability));
   for (const read of uses.reads) if (read.role === role) add(CAPABILITY_OF(`read:${read.means}`));
@@ -443,11 +439,10 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>, context: Pri
     }
     return written;
   };
-  const trigger = (each: NamedTrigger): Record<string, unknown> => (each.id ? { id: each.id, ...unnamed(each) } : unnamed(each));
-  // Each of its fields by what it holds, in its kind's order (kinds/triggers.ts).
-  const unnamed = (each: Trigger): Record<string, unknown> => {
+  // Each of its fields by what it holds: its kind's, in their order, then those every trigger has (kinds/triggers.ts).
+  const trigger = (each: RuleTrigger): Record<string, unknown> => {
     const written: Record<string, unknown> = {};
-    for (const field of triggerSpec(each).fields) {
+    for (const field of triggerFields(each)) {
       const value = fieldValue(each, field);
       if (value !== undefined) written[field.key] = fieldText(field, value);
     }
@@ -469,6 +464,7 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>, context: Pri
       case 'automation':
       case 'event':
       case 'name':
+      case 'id':
         return value;
       case 'steps':
         return (value as readonly Step[]).map(step);

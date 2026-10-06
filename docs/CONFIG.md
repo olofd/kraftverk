@@ -87,6 +87,10 @@ describes.
   - `every: 15 min`
   - `event: mains.lost` with `from: station`
   - `becomes: <condition>`, with `for: 2 min` (at most a week)
+  - any of them with `do: [steps]` of its own, which a run it starts takes
+    in place of the automation's — "when the charge is below 20 %, turn
+    the charger on; when it is 40 %, off", one automation — and with a
+    name, `id: low`, which shared steps read back as `run.trigger`
 - **Only when** (`only if: <condition>`).
 - **What it does** (`do:`), and what it does if a step does not succeed or it
   is stopped (`if a step fails:`):

@@ -1,5 +1,5 @@
 import type { ConditionState } from '@kraftverk/api-contract';
-import { capitalise, checkBinding, describeExpr, describeSteps, evaluate, evaluateNow, isAutomationRole, partRoles, secondsText, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type StepLine, type Write } from '@kraftverk/automation';
+import { capitalise, checkBinding, describeExpr, describeSteps, evaluate, evaluateNow, isAutomationRole, partRoles, secondsText, triggerKey, triggerOf, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type RuleSteps, type Step, type Write } from '@kraftverk/automation';
 import { attributeMeaning, capabilityIn, clockTime, isCurrent, isScalar, readingOf, REAL_CLOCK, standardMeaning, unitOf, type CapabilityName, type Clock, type Value } from '@kraftverk/device-sdk';
 
 import type { AutomationEngineDeps, AutomationRecord, EngineDevice } from './model.ts';
@@ -28,18 +28,20 @@ export class RuleContext {
   constructor(private deps: ContextDeps) {}
 
   /**
-   * What a run started by hand counts as started by: the first of its
-   * conditions with an id that holds now, holds aside — "do what you would
-   * do now". Null when none does.
+   * What a run started by hand counts as started by, by its key: the first
+   * of its conditions that holds now, holds aside — "do what you would do
+   * now", its steps the ones that trigger has. Null when none does.
    */
   startedByNow(automation: AutomationRecord, rule: Rule): string | null {
     const scope = this.scope(automation, rule);
-    return rule.when.find((trigger) => trigger.id && 'becomes' in trigger && evaluateNow(trigger.becomes, scope) === true)?.id ?? null;
+    const index = rule.when.findIndex((trigger) => 'becomes' in trigger && evaluateNow(trigger.becomes, scope) === true);
+    return index < 0 ? null : triggerKey(rule.when[index]!, index);
   }
 
   /**
    * What a rule is evaluated against: its settings, the parts filling its
-   * roles as they are now, and the trigger that started the run, if one did.
+   * roles as they are now, and the trigger that started the run, by its
+   * key, if one did.
    */
   scope(automation: AutomationRecord, rule: Rule, now = this.now(), trigger: string | null = null): RuleScope {
     const part = (role: string): EngineDevice | null => {
@@ -50,7 +52,7 @@ export class RuleContext {
     return {
       clock: () => clockTime(now, automation.timeZone),
       // No trigger with an id started it: that is known, and said as no id at all.
-      run: (fact) => (fact === 'trigger' ? (trigger ?? '') : null),
+      run: (fact) => (fact === 'trigger' ? (triggerOf(rule, trigger)?.id ?? '') : null),
       // An automation's own rule has no settings: its values are in its blocks. A recipe's are its defaults.
       param: (name) => {
         const field = rule.params.fields[name];
@@ -111,7 +113,7 @@ export class RuleContext {
   }
 
   /** Its steps in words, numbered and nested, as its card shows them. */
-  steps(automation: AutomationRecord): { steps: StepLine[]; otherwise: StepLine[] } {
+  steps(automation: AutomationRecord): RuleSteps {
     const rule = automation.rule;
     const scope = this.scope(automation, rule);
     return describeSteps(rule, this.settled(automation, rule), (role) => scope.name(role), this.vocabulary(automation));
@@ -216,10 +218,10 @@ export class RuleContext {
     return { binding, role: command.role, name, capability: command.capability, command: command.command, args, what };
   }
 
-  /** What a rule of commands and settings alone would change, each evaluated: an unknown one is not guessed. */
-  async plan(automation: AutomationRecord, rule: Rule, scope: RuleScope): Promise<Planned[] | { unknown: string }> {
+  /** What steps of commands and settings alone would change, each evaluated: an unknown one is not guessed. */
+  async plan(automation: AutomationRecord, steps: readonly Step[], scope: RuleScope): Promise<Planned[] | { unknown: string }> {
     const planned: Planned[] = [];
-    for (const step of rule.then) {
+    for (const step of steps) {
       if ('command' in step) {
         const action = await this.planCommand(automation, step.command, scope);
         if ('unknown' in action) return action;

@@ -277,13 +277,21 @@ function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (rol
   return { text, lines, briefs };
 }
 
+/** A rule's steps in words: its own, each trigger's, and what it does if a step does not succeed. */
+export type RuleSteps = {
+  steps: StepLine[];
+  /** Each trigger's own steps, by its place under `when`: empty, it takes the rule's. */
+  whenSteps: StepLine[][];
+  otherwise: StepLine[];
+};
+
 /**
  * A rule's steps in words, numbered and nested — what the app shows a
- * sequence as — and what it does if a step does not succeed.
+ * sequence as — each trigger's own, and what it does if a step does not succeed.
  */
-export function describeSteps(rule: Rule, params: Readonly<Record<string, Value>>, name: (role: string) => string, vocabulary?: RuleVocabulary): { steps: StepLine[]; otherwise: StepLine[] } {
+export function describeSteps(rule: Rule, params: Readonly<Record<string, Value>>, name: (role: string) => string, vocabulary?: RuleVocabulary): RuleSteps {
   const { lines } = wording(rule, params, name, vocabulary);
-  return { steps: lines(rule.then), otherwise: lines(rule.otherwise) };
+  return { steps: lines(rule.then), whenSteps: rule.when.map((trigger) => lines(trigger.then)), otherwise: lines(rule.otherwise) };
 }
 
 /**
@@ -297,15 +305,19 @@ export function describeRule(rule: Rule & { sentence?: string }, params: Readonl
 
   const { text, briefs } = wording(rule, params, name, vocabulary);
   // Its triggers as their own lines say them, mid-sentence.
-  const when = describeTriggers(rule, params, name, vocabulary)
-    .map((line) => line.charAt(0).toLowerCase() + line.slice(1))
-    .join(', or ');
-  // No trigger: it is played, or started — the sentence is what it does.
-  const opening = [when, rule.if ? `if ${text(rule.if)}` : ''].filter(Boolean).join(', ');
+  const triggers = describeTriggers(rule, params, name, vocabulary).map((line) => line.charAt(0).toLowerCase() + line.slice(1));
+  const only = rule.if ? `if ${text(rule.if)}` : '';
   // A rule still being built may have no step yet: said so, not as an empty clause.
-  const does = briefs(rule.then);
-  const sentence = `${opening ? `${opening}, ` : ''}${does.length ? does.join(', then ') : 'nothing yet'}.`;
-  return capitalise(sentence);
+  const clause = (when: string[], steps: readonly Step[] | undefined): string => {
+    const does = briefs(steps);
+    const opening = [when.join(', or '), only].filter(Boolean).join(', ');
+    return `${opening ? `${opening}, ` : ''}${does.length ? does.join(', then ') : 'nothing yet'}`;
+  };
+  // Each trigger with steps of its own says them beside it; the rest — or none, played or started — the rule's.
+  const own = rule.when.flatMap((trigger, index) => (trigger.then?.length ? [clause([triggers[index]!], trigger.then)] : []));
+  const rest = triggers.filter((_, index) => !rule.when[index]!.then?.length);
+  const shared = rest.length || !own.length ? [clause(rest, rule.then)] : rule.then.length ? [clause(['started by hand or by another automation'], rule.then)] : [];
+  return capitalise(`${[...own, ...shared].join('; ')}.`);
 }
 
 /** A sentence begun as one: "turn the heater on" is "Turn the heater on". */

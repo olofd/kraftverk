@@ -4,7 +4,7 @@ import { RUN_FACTS } from '../rule.ts';
 import { EXPR_KIND_ORDER } from './exprs.ts';
 import type { FieldSpec } from './spec.ts';
 import { STEP_KIND_ORDER, STEP_KINDS } from './steps.ts';
-import { TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './triggers.ts';
+import { TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './triggers.ts';
 
 /*
   The shape a rule is kept in, as one line of text: every kind of trigger and
@@ -24,4 +24,4 @@ const kindsShape = <K extends string>(order: readonly K[], table: { readonly [k 
 
 /** How a rule is kept, as text: what a database's fingerprint carries beside its SQL. */
 export const ruleShape = (): string =>
-  [`when ${kindsShape(TRIGGER_KIND_ORDER, TRIGGER_KINDS)}`, `do ${kindsShape(STEP_KIND_ORDER, STEP_KINDS)}`, `expr ${[...EXPR_KIND_ORDER].sort().join(',')}`, `run ${RUN_FACTS.join(',')}`, `means ${Object.keys(STANDARD_MEANINGS).sort().join(',')}`].join('; ');
+  [`when ${kindsShape(TRIGGER_KIND_ORDER, TRIGGER_KINDS)} any(${TRIGGER_FIELDS.map(fieldShape).join(',')})`, `do ${kindsShape(STEP_KIND_ORDER, STEP_KINDS)}`, `expr ${[...EXPR_KIND_ORDER].sort().join(',')}`, `run ${RUN_FACTS.join(',')}`, `means ${Object.keys(STANDARD_MEANINGS).sort().join(',')}`].join('; ');

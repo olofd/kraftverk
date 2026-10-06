@@ -40,9 +40,10 @@ language — the *rule* — and code only exists where data cannot reach: in
 type Rule = {
   roles:  Record<string, RoleSpec>;   // what each part it works with must offer
   params: ConfigSchema;               // a recipe's settings; an automation's are empty — its values are in its blocks
-  when:   Trigger[];                  // any of these starts a run on its own; none, and it runs when started
+  when:   RuleTrigger[];              // any of these starts a run on its own; none, and it runs when started
   if?:    Expr;                       // must be true; unknown means "do nothing, and say why"
-  then:   Step[];                     // in order: commands, and — a sequence — waits, choices (SEQUENCES.md)
+  then:   Step[];                     // in order: commands, and — a sequence — waits, choices (SEQUENCES.md);
+                                      // what a run does when what started it has no steps of its own
   otherwise?: Step[];                 // if a step does not succeed, or it is stopped
 };
 
@@ -51,6 +52,11 @@ type Trigger =
   | { every: Expr }                                // every so many minutes, on the clock from midnight
   | { event: { role: string; event: string } }     // something a device said happened
   | { becomes: Expr; heldFor?: Expr };      // a condition turning true, and staying true
+
+type RuleTrigger = Trigger & {
+  then?: Step[];                                   // what a run it starts does, in place of the rule's
+  id?: string;                                     // a name shared steps read back as run.trigger
+};
 
 type Expr =
   | { value: Value }                               // a literal
@@ -172,9 +178,9 @@ product still gets them.
   stays below a low level, off when it reaches a high one. A station fed by a
   smart plug gets a charge window of its own this way: on below 15 %, off at
   50 %, beneath the lowest AC charge limit the station's own settings allow.
-  One rule with two `becomes` edges; its command sets the charger to "below
-  the high level?", so falling low turns it on, reaching high turns it off,
-  and nothing clicks in between.
+  One rule with two `becomes` edges, each with what it does beside it:
+  falling low turns the charger on, reaching high turns it off, and nothing
+  clicks in between.
 - **When mains power is lost** — on `acInput`'s own `mains.lost`, from any
   station that raises it.
 - **In the cheapest hours** — switch something on in the day's cheapest

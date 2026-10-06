@@ -985,7 +985,7 @@ describe('a battery kept between two levels', () => {
     plug.on = false;
     const window = context.make('standard.charge-between', roles, levels, 'act');
     station.soc = 15;
-    expect((await engine.run(window, { check: true })).outcome).toBe('idle');
+    expect(await engine.run(window, { check: true })).toMatchObject({ outcome: 'idle', summary: 'Not now: none of what starts it holds' });
     station.soc = 4;
     expect((await engine.run(window, { check: true })).summary).toContain('Would turn Heater plug on');
     station.soc = 31;

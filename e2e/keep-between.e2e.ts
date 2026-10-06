@@ -56,7 +56,8 @@ test('a station kept between 5 and 30 % by the plug that feeds it, round and rou
   // The shared recipe as the app copies it, at the owner's levels and holds.
   const copied = await (await api.post('/api/automations/recipes/standard.charge-between/copy', { data: { params: { low: LOW, lowFor: 120, high: HIGH, highFor: 120 } } })).json();
   const rule = copied.rule ?? copied;
-  expect(rule.when.map((trigger: { id?: string }) => trigger.id)).toEqual(['low', 'high']);
+  // Each edge with what it does beside it: on below the low level, off at the high one.
+  expect(rule.when.map((trigger: { then?: { command: { args: { on: { value: boolean } } } }[] }) => trigger.then?.map((step) => step.command.args.on.value))).toEqual([[true], [false]]);
   const name = unique('Keep the P280 between 5 and 30 %');
   const made = await confirmed(api, 'POST', '/api/automations', {
     name,

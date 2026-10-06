@@ -1,5 +1,5 @@
 import type { AutomationRun, RunLog, RunStep } from '@kraftverk/api-contract';
-import { branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, fieldValue, negation, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepSpec, takesSteps, type Command, type Expr, type Rule, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
+import { branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, fieldValue, negation, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepsOf, stepSpec, takesSteps, type Command, type Expr, type Rule, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
 import { attributeMeaning, readingOf, type AutomationId } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
@@ -46,7 +46,7 @@ export type LiveRun = {
   wake: Set<() => void>;
   /** How often its rule may switch each role's part, at most: what it tells the gateway. */
   allowance: Record<string, number>;
-  /** The id of the trigger that started it, what `startedBy` asks; null when none with an id did. */
+  /** The key of the trigger that started it (`triggerKey`): its steps, and what `run.trigger` asks. Null when none did. */
   trigger: string | null;
   /** When it last changed something — switched a part, changed a setting: what is judged after is read after. 0, not yet. By this server's clock. */
   changedAt: number;
@@ -229,9 +229,9 @@ export class Runs {
       chain?: readonly AutomationId[];
       onBegun?: (run: AutomationRun) => void;
       /**
-       * The id of the trigger that started it, what `startedBy` asks: null,
-       * one without an id did. Not given — played, asked, started by
-       * another — it is the first of its conditions that holds now.
+       * The key of the trigger that started it (`triggerKey`): its steps are
+       * the ones it takes. Not given — played, asked, started by another — it
+       * is the first of its conditions that holds now; null, none.
        */
       trigger?: string | null;
     } = {}
@@ -283,15 +283,19 @@ export class Runs {
       return over('failed', `Could not decide: ${(error as Error).message}`);
     }
 
+    // What it does: what started it says, or the rule. Nothing at all — played between two edges that each say — is not now.
+    const steps = stepsOf(rule, trigger);
+    if (!steps.length) return over('idle', 'Not now: none of what starts it holds');
+
     // It acts when it is let act — or when a person played it, or another automation's run started it: the
     // mode says what it does on its own, not what it does when asked. Only asked what it would do, or only
     // watching on its own: what it would do, said once — why it did not act is the run's own why and outcome.
     const acts = !options.check && (automation.mode === 'act' || Boolean(options.askedBy) || from !== null);
     if (!acts) {
-      const steps = await this.#wouldDo(automation, rule, scope);
-      if ('unknown' in steps) return over('unknown', `Could not tell what to send ${steps.unknown}`);
-      const said = steps.filter((step) => step.depth === 0).map((step) => `${lowerFirst(step.what)}${step.outcome === 'already' ? ' (already so)' : ''}`);
-      return over('would-act', `Would ${said.join(', then ')}`, steps, actsOn(automation, rule));
+      const would = await this.#wouldDo(automation, rule, steps, scope);
+      if ('unknown' in would) return over('unknown', `Could not tell what to send ${would.unknown}`);
+      const said = would.filter((step) => step.depth === 0).map((step) => `${lowerFirst(step.what)}${step.outcome === 'already' ? ' (already so)' : ''}`);
+      return over('would-act', `Would ${said.join(', then ')}`, would, actsOn(automation, rule));
     }
 
     // Automations take turns with a part: one a run of another chain holds is not changed under it, and this
@@ -322,7 +326,7 @@ export class Runs {
       stoppedBy: null,
       gone: false,
       wake: new Set(),
-      allowance: this.#allowance(rule, scope),
+      allowance: this.#allowance(steps, rule.otherwise ?? [], scope),
       trigger,
       changedAt: 0,
       changedOrder: 0,
@@ -344,7 +348,7 @@ export class Runs {
 
     let walked: Walked;
     try {
-      walked = await this.#walk(live, rule.then, 0, null, 'then');
+      walked = await this.#walk(live, steps, 0, null, 'then');
       if (walked !== 'ok' && rule.otherwise?.length) {
         await this.#walk(live, rule.otherwise, 0, walked === 'stopped' ? `After it was stopped by ${live.stoppedBy}` : 'After a step did not succeed', 'otherwise');
       }
@@ -420,7 +424,7 @@ export class Runs {
    * its tries, both ways of a choice. What it tells the gateway, which holds
    * it to its own ceiling besides.
    */
-  #allowance(rule: Rule, scope: RuleScope): Record<string, number> {
+  #allowance(steps: readonly Step[], otherwise: readonly Step[], scope: RuleScope): Record<string, number> {
     const counts: Record<string, number> = {};
     const count = (steps: readonly Step[], times: number): void => {
       for (const step of steps) {
@@ -436,8 +440,8 @@ export class Runs {
         for (const branch of branchesOf(step)) count(branch.steps, times * repeats);
       }
     };
-    count(rule.then, 1);
-    count(rule.otherwise ?? [], 1);
+    count(steps, 1);
+    count(otherwise, 1);
     return counts;
   }
 
@@ -733,7 +737,7 @@ export class Runs {
    * as they stand now, and one already so said to be — as far as it can be
    * told before the steps before it have run.
    */
-  async #wouldDo(automation: AutomationRecord, rule: Rule, scope: RuleScope): Promise<RunStep[] | { unknown: string }> {
+  async #wouldDo(automation: AutomationRecord, rule: Rule, list: readonly Step[], scope: RuleScope): Promise<RunStep[] | { unknown: string }> {
     const at = this.#context.now().toISOString();
     const settled = this.#context.settled(automation, rule);
     const steps: RunStep[] = [];
@@ -769,7 +773,7 @@ export class Runs {
       }
       return null;
     };
-    return (await visit(rule.then)) ?? steps;
+    return (await visit(list)) ?? steps;
   }
 
   /** In `seconds` of a step, as an instant. */

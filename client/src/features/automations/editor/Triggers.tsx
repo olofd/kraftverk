@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerSpec, type Expr, type Trigger, type TriggerSpec } from '@kraftverk/automation';
+import { TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerSpec, triggerSteps, type Expr, type RuleTrigger, type TriggerSpec } from '@kraftverk/automation';
 import { capitalise, haptic, Icon, IconLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
 import { useTone } from '../../../components/tone';
+import { BlockList } from './Blocks';
 import { blankCondition, ConditionField } from './Condition';
 import { useEditor } from './context';
 import { Fields } from './Field';
@@ -13,8 +14,9 @@ import { Fields } from './Field';
 /*
   When an automation runs on its own (docs/AUTOMATION-EDITOR.md): at a time
   on chosen days, every so many minutes, when something holds (for a while),
-  or when a device says something happened. None at all is an automation you start — and any can
-  be started with ▶.
+  or when a device says something happened — each with what it does beside
+  it, if it does something of its own. None at all is an automation you
+  start — and any can be started with ▶.
 */
 
 /** The kinds to add, as the language describes them (kinds/triggers.ts): in its order, with its words and marks. */
@@ -22,8 +24,8 @@ const KINDS = TRIGGER_KIND_ORDER.map((kind) => TRIGGER_KINDS[kind] as unknown as
 
 /**
  * Its triggers: each one line — what starts it, in its own words — opened to
- * change it, one at a time; a way to remove it, and a way to add one, which
- * opens as it is added.
+ * change it, one at a time; what it does of its own beneath it; a way to
+ * remove it, and a way to add one, which opens as it is added.
  */
 export function Triggers() {
   const tone = useTone();
@@ -31,9 +33,9 @@ export function Triggers() {
   const when = editor.draft.rule.when;
   const [adding, setAdding] = useState(false);
   const [opened, setOpened] = useState<number | null>(null);
-  const put = (next: readonly Trigger[]) => editor.change((draft) => ({ ...draft, rule: { ...draft.rule, when: next } }));
-  // A trigger changed keeps its id: what asks which started the run still means it.
-  const set = (index: number, trigger: Trigger) => put(when.map((one, at) => (at === index ? (one.id ? { ...trigger, id: one.id } : trigger) : one)));
+  const put = (next: readonly RuleTrigger[]) => editor.change((draft) => ({ ...draft, rule: { ...draft.rule, when: next } }));
+  // A trigger changed keeps its id and its steps: its fields are its kind's, and the rest is the trigger's still.
+  const set = (index: number, trigger: RuleTrigger) => put(when.map((one, at) => (at === index ? trigger : one)));
 
   return (
     <YStack gap="$2">
@@ -70,6 +72,15 @@ export function Triggers() {
               <Button width={44} height={44} chromeless circular aria-label={`Remove trigger ${index + 1}`} icon={<Icon name="x" size={16} color={tone('$muted')} />} onPress={() => (haptic(), setOpened(null), put(when.filter((_, at) => at !== index)))} />
             </XStack>
             {open ? <TriggerFields trigger={trigger} set={(next) => set(index, next)} /> : null}
+            {/* What it does of its own, beneath it — or, opened, a way to give it some. */}
+            {trigger.then?.length || open ? (
+              <YStack gap="$2" paddingLeft="$3" borderLeftWidth={2} borderColor="$borderColor">
+                <Text fontSize={13} color="$muted" lineHeight={18}>
+                  {trigger.then?.length ? 'Then' : 'Then what the automation does — or steps of its own'}
+                </Text>
+                <BlockList path={triggerSteps(index)} label={`What trigger ${index + 1} does`} />
+              </YStack>
+            ) : null}
           </YStack>
         );
       })}
@@ -108,7 +119,7 @@ export function Triggers() {
 }
 
 /** A trigger's fields, each drawn by what it holds — its kind's own list (kinds/triggers.ts), not one form a kind. */
-function TriggerFields({ trigger, set }: { trigger: Trigger; set: (trigger: Trigger) => void }) {
+function TriggerFields({ trigger, set }: { trigger: RuleTrigger; set: (trigger: RuleTrigger) => void }) {
   return <Fields fields={triggerSpec(trigger).fields} construct={trigger} set={set} />;
 }
 

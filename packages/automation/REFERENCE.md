@@ -8,9 +8,8 @@ grammar of expressions, units and the rules a run keeps are in
 
 ## What starts it — triggers
 
-Each trigger is one item under `when`. Any of them may carry an `id`
-(`id: low`), which what the automation does reads back as
-`run.trigger == "low"`.
+Each trigger is one item under `when`, and any of them may say what it
+does itself (below).
 
 ### `at` — At a time
 
@@ -73,9 +72,10 @@ when:
 
 ```yaml
 when:
-  - id: low
-    becomes: station.charge < 5 %
+  - becomes: station.charge < 20 %
     for: 2 min
+    do:
+      - turn on: charger
 ```
 
 ### `event` — When a device says so
@@ -91,6 +91,29 @@ When the part filling a role raises an event its description declares: a station
 when:
   - event: mains.lost
     from: station
+```
+
+### Every trigger — what it does, and its name
+
+Every trigger may say what it does itself, under `do`: a run it starts takes those steps in place of the automation’s own — one automation, each side where it is said. And a name, `id`, that steps shared by several triggers read back as `run.trigger`.
+
+| Word | Holds | |
+|---|---|---|
+| `id` | a name of its own, unique in the automation: letters and digits, from a lowercase letter | if you like |
+| `do` | steps | if you like |
+
+```yaml
+when:
+  - becomes: station.charge < 20 %
+    for: 2 min
+    do:
+      - turn on: charger
+```
+
+```yaml
+when:
+  - id: low
+    becomes: station.charge < 20 %
 ```
 
 ## What it does — steps

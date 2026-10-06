@@ -6,8 +6,9 @@ import type { Value } from '@kraftverk/device-sdk';
 import { checkBinding, checkRule } from './check.ts';
 import { describeRule, describeTriggers } from './describe.ts';
 import { evaluate, evaluateNow, type RuleScope } from './evaluate.ts';
+import { stepsOf } from './kinds/triggers.ts';
 import { chargeBetween, lowBattery, mainsLost, STANDARD_RECIPES } from './recipes.ts';
-import type { Command, Expr } from './rule.ts';
+import type { Command, Expr, Step } from './rule.ts';
 
 /*
   The shared vocabulary's recipes: written in library capabilities and
@@ -29,8 +30,8 @@ describe('the shared recipes', () => {
   "Charge between two levels": a station fed by a plug, the plug switched on
   once the station has stayed below 15 % for a while and off once it has
   stayed at 50 % or above — a charge window below the lowest limit the
-  station's own settings allow. Each side its own trigger, with its own id
-  and hold; the one step asks which started it, and reads no level itself.
+  station's own settings allow. Each side its own trigger, with its own hold
+  and what it does beside it; neither reads the other's level.
 */
 describe('charging between two levels', () => {
   const station: DeviceDescription = {
@@ -45,17 +46,18 @@ describe('charging between two levels', () => {
     attributes: [{ key: 'relay', label: 'Power', value: { type: 'boolean' }, means: 'on' }],
   };
   const params = { low: 15, lowFor: 120, high: 50, highFor: 180 };
-  /** As a run sees it: the charge, the settings, and the id of the trigger that started it ("" — none did). */
-  const scope = (soc: Value, overrides: Record<string, Value> = {}, trigger = ''): RuleScope => ({
+  /** As a run sees it: the charge and the settings. */
+  const scope = (soc: Value, overrides: Record<string, Value> = {}): RuleScope => ({
     param: (name) => ({ ...params, ...overrides })[name as keyof typeof params] ?? null,
     read: (_role, means) => (means === 'charge' && typeof soc === 'number' ? { value: soc, label: 'Charge', unit: '%' } : null),
     reachable: () => ({ reachable: true, detail: 'connected' }),
     name: (role) => (role === 'battery' ? 'Garage P280' : 'ATORCH plug'),
     clock: () => '12:00',
-    run: (fact) => (fact === 'trigger' ? trigger : null),
+    run: () => '',
   });
   const [falls, reaches] = chargeBetween.when.map((trigger) => (trigger as { becomes: Expr }).becomes) as [Expr, Expr];
-  const on = (chargeBetween.then[0] as { command: Command }).command.args.on!;
+  /** What a run started by the trigger at this place turns the charger to. */
+  const turns = (steps: readonly Step[]) => steps.map((step) => ((step as { command: Command }).command.args.on as { value: boolean }).value);
 
   test('is filled by a station and the plug that feeds it', () => {
     const bound = (role: string) =>
@@ -65,17 +67,18 @@ describe('charging between two levels', () => {
     expect(checkBinding(chargeBetween, bound)).toEqual([]);
   });
 
-  test('falling below the low level turns the charger on; reaching the high level turns it off', async () => {
-    expect(chargeBetween.when.map((trigger) => trigger.id)).toEqual(['low', 'high']);
+  test('falling below the low level turns the charger on; reaching the high level turns it off — each said beside its trigger', () => {
     expect(evaluateNow(falls, scope(12))).toBe(true);
-    expect(await evaluate(on, scope(12, {}, 'low'))).toBe(true);
+    expect(turns(stepsOf(chargeBetween, '#0'))).toEqual([true]);
     expect(evaluateNow(reaches, scope(50))).toBe(true);
-    expect(await evaluate(on, scope(50, {}, 'high'))).toBe(false);
+    expect(turns(stepsOf(chargeBetween, '#1'))).toEqual([false]);
+    // No ids, no question of which started it: each knows what it does.
+    expect(chargeBetween.when.map((trigger) => trigger.id)).toEqual([undefined, undefined]);
+    expect(JSON.stringify(chargeBetween)).not.toContain('"run"');
   });
 
-  test('each side holds for its own time, and the step reads no level: the two can never disagree', () => {
+  test('each side holds for its own time', () => {
     expect(chargeBetween.when.map((trigger) => ('becomes' in trigger ? trigger.heldFor : null))).toEqual([{ param: 'lowFor' }, { param: 'highFor' }]);
-    expect(JSON.stringify(on)).not.toContain('charge');
   });
 
   test('in between, neither edge is true: it charges all the way up, and runs all the way down', () => {
@@ -88,9 +91,10 @@ describe('charging between two levels', () => {
   test('does nothing when the charge is not known, nothing played between the two, and nothing with a window upside down', async () => {
     expect(evaluateNow(falls, scope(null))).toBeNull();
     expect(evaluateNow(reaches, scope(null))).toBeNull();
-    expect(await evaluate(chargeBetween.if!, scope(12, {}, 'low'))).toBe(true);
-    expect(await evaluate(chargeBetween.if!, scope(30, {}, ''))).toBe(false);
-    expect(await evaluate(chargeBetween.if!, scope(12, { low: 60, high: 50 }, 'low'))).toBe(false);
+    // Played with neither edge holding: there are no steps of its own to take.
+    expect(stepsOf(chargeBetween, null)).toEqual([]);
+    expect(await evaluate(chargeBetween.if!, scope(12))).toBe(true);
+    expect(await evaluate(chargeBetween.if!, scope(12, { low: 60, high: 50 }))).toBe(false);
   });
 
   test('reads as what it does', () => {
