@@ -1,3 +1,4 @@
+import type { BridgeHost, BridgeSpec } from './bridge.ts';
 import type { CapabilityId, CommandResult } from './capabilities.ts';
 import type { CategoryId } from './categories.ts';
 import type { Clock } from './clock.ts';
@@ -67,8 +68,8 @@ export type IdentifyContext = {
 export interface DeviceType<Config extends ConfigValues = ConfigValues> {
   /** Namespaced and stable forever: `acme.plug`, `acme.weather`. Saved devices name it. */
   readonly id: string;
-  /** A service has no hardware: weather, prices. Shown in a section of its own. */
-  readonly kind: 'hardware' | 'service';
+  /** What a person calls it: hardware; a service, with none — weather, prices; or an account, a sign-in to someone's cloud. Each shown in a section of its own. */
+  readonly kind: DeviceKind;
   readonly meta: DeviceTypeMeta;
   /** Choices kraftverk keeps about each device: a profile, a location. Never secrets. */
   readonly config: ConfigSchema;
@@ -114,7 +115,20 @@ export interface DeviceType<Config extends ConfigValues = ConfigValues> {
    * generic can reason about them. A session implements the ones it can run.
    */
   readonly tools?: Readonly<Record<string, ToolSpec>>;
+
+  /**
+   * Other devices are reached through one of this type: its members — the
+   * scooters on an account, the plugs behind a gateway. Its sessions offer
+   * them (`DeviceSession.bridge`); a member's way names this type in its
+   * `through`. Absent for a type nothing is reached through.
+   */
+  readonly bridge?: BridgeSpec;
 }
+
+/** What a person calls a kind of thing: a device, a service, or an account. */
+export type DeviceKind = 'hardware' | 'service' | 'account';
+
+export const DEVICE_KINDS: readonly DeviceKind[] = ['hardware', 'service', 'account'];
 
 /** A command to one part of a device: `switch.set({ on: true })` on `outlet.ac`. */
 export type CommandRequest = {
@@ -224,6 +238,8 @@ export interface DeviceSession {
    * holds. A session that reports as often as it can already need not have it.
    */
   wantFresh?(until: number): void;
+  /** For a type that is a bridge: who is behind it, and a channel to each. Every session of a bridge has it, its simulator's included. */
+  readonly bridge?: BridgeHost;
   close(): Promise<void>;
 }
 
@@ -322,7 +338,9 @@ export type ConnectionMethodView = Omit<ConnectionMethod, 'steps'>;
  */
 export type DeviceTypeView = {
   id: string;
-  kind: 'hardware' | 'service';
+  kind: DeviceKind;
+  /** Whether other devices are reached through one of this type. */
+  bridge: boolean;
   meta: DeviceTypeMeta;
   description: DeviceDescription;
   capabilities: readonly CapabilityId[];
@@ -337,6 +355,7 @@ export const describeDeviceType = (type: DeviceType<any>): DeviceTypeView => {
   return {
     id: type.id,
     kind: type.kind,
+    bridge: type.bridge !== undefined,
     meta: type.meta,
     description,
     capabilities: deviceCapabilities(description),

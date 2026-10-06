@@ -337,6 +337,7 @@ test('this app holds its way only while nothing above it reaches the device, and
     methodLabel: 'Bus',
     transport: 'bus',
     heldBy: { kind: 'node', id: me, name: 'Chrome on a test' },
+    through: null,
     address: 'lamp-1',
     priority: 1,
     reachable: null,

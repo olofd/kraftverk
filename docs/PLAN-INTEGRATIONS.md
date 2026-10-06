@@ -1134,6 +1134,13 @@ bridge is (`packages/store/src/holding.ts`). A bridge type's simulator brings
 simulated members, as the contract requires a simulator of every type.
 *Done when*, in the hub's tests, a simulated bridge's two members open
 through it, go offline with it, and follow it to another node.
+**Done 2026-10-06.** A member rides a transport of its own, `bridge`, which
+is no package: its bridge's open session (`BridgeHost`) opens its channel,
+and its protocol rides that by a binding, guarded, as over any transport. A
+connection record is held by a node or goes through a bridge — a union the
+compiler holds every reader to, and the schema each row. Sync opens in
+rounds, so a member opens with its bridge in one pass. `sighting_ignored`
+moved to step 4, where members are offered.
 
 **Step 4 · Bridges in the app and the API.**
 Members not yet added are offered on the add screen ("Found through …");

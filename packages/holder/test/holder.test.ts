@@ -171,6 +171,7 @@ const connection = (id: string, priority: number, reachable: boolean | null, hel
   methodLabel: id,
   transport: 'bus',
   heldBy,
+  through: null,
   address: id,
   priority,
   reachable,

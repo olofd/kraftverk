@@ -31,6 +31,7 @@ export * from './links.ts';
 export * from './channel.ts';
 export * from './transport.ts';
 export * from './protocol.ts';
+export * from './bridge.ts';
 export * from './connection.ts';
 export * from './device-type.ts';
 export * from './integration.ts';

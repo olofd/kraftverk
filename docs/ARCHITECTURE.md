@@ -82,9 +82,11 @@ One word for each thing, in code, in docs and on screen.
 | **Server** | The HTTP entrance of a reachable node — its address, its accounts — not a kind of node. On screen, "your server" is the always-on node most people have. | `http://nas.local:3000` |
 | **Device** | One thing the user added: an instance of a device type, with its own name, config and identity. | "Garage P280", "Heater plug" |
 | **Identity** | A device's own permanent id, read from the device. What makes one station found two ways a single device. | `sydpower:AABBCC001122` |
-| **Connection** | One way a device is reached: a method, the node that holds it and an address, with its own secrets, kept on that node. A device may have several; one is in use at a time. | Garage P280 over Wi-Fi, held by the NAS |
+| **Connection** | One way a device is reached: a method, the node that holds it — or the bridge it goes through — and an address, with its own secrets, kept on that node. A device may have several; one is in use at a time. | Garage P280 over Wi-Fi, held by the NAS |
+| **Bridge** | A device through which others are reached — its members: a role, not a kind. A member's way goes through it, over its open session, and is held wherever it is (PLAN-INTEGRATIONS.md §4.3). | A NIU account and its scooters; a Zigbee gateway and its plugs |
 | **Sighting** | Something a transport can see that no connection claims. Live state, never stored. | "A power station is connected to this server" |
 | **Service** | A device type with `kind: 'service'`: no hardware. Added and shown the same way, in its own section. | "Weather (Open-Meteo)" |
+| **Account** | A device type with `kind: 'account'`: a sign-in to someone's cloud, usually a bridge to the devices on it. Not a person's account in kraftverk. | "Family iCloud", "NIU account" |
 | **Description** | What a device is, as data: its parts, their attributes, and its events. Declared by its type, or reported by the device. | — |
 | **Part** | The device itself (`main`), or one of what it has several of, as a Matter endpoint is. | `main`, `outlet.ac`, `pack.1` |
 | **Attribute** | A value a part reports, with a stable key, a type and — where one applies — a standard meaning. | `soc` meaning `charge` |

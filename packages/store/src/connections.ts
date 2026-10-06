@@ -11,21 +11,23 @@ import type { SecretsAtRest } from './secrets.ts';
  * a node that follows it — your phone — is one device with two connections.
  *
  * A connection names its device type's method, the transport it rides, which
- * node holds it — the master, or one that follows it — and the address that
- * transport knows the device by. Its secrets live beside it, sealed; the ones
- * of a connection held by a node that follows never reach the master at all.
+ * node holds it — the master, or one that follows it — or the bridge it goes
+ * through, and the address that transport, or that bridge, knows the device
+ * by. Its secrets live beside it, sealed; the ones of a connection held by a
+ * node that follows never reach the master at all.
  */
 
-export type ConnectionRecord = {
+/** Who has a connection in hand: a node of the home, or — for a member of a bridge — the bridge device, wherever that is held. */
+export type ConnectionHolding = { heldBy: NodeId; through: null } | { heldBy: null; through: SavedDeviceId };
+
+export type ConnectionRecord = ConnectionHolding & {
   id: ConnectionId;
   deviceId: SavedDeviceId;
   /** One of the device type's connection methods: `wifi`. */
   method: string;
-  /** The method's transport, copied here for the address rule: `mqtt`. */
+  /** The method's transport, copied here for the address rule: `mqtt`; `bridge` through a bridge. */
   transport: string;
-  /** The node that holds it: the master, or a node that follows it. */
-  heldBy: NodeId;
-  /** What the transport knows the device by: a MAC, an IP, a browser's handle. */
+  /** What the transport knows the device by: a MAC, an IP, a browser's handle; a member's key within its bridge. */
   address: string;
   /** 0 is preferred; higher numbers are fallbacks. */
   priority: number;
@@ -42,7 +44,8 @@ type Row = {
   device_id: string;
   method: string;
   transport: string;
-  held_by: string;
+  held_by: string | null;
+  through: string | null;
   address: string;
   priority: number;
   config: string;
@@ -51,12 +54,16 @@ type Row = {
   last_connected_at: string | null;
 };
 
+/** Held by a node, or through a bridge: the schema holds a row to exactly one. */
+const holdingOf = (row: Pick<Row, 'held_by' | 'through'>): ConnectionHolding =>
+  row.through !== null ? { heldBy: null, through: savedDeviceId(row.through) } : { heldBy: nodeId(row.held_by!), through: null };
+
 const toRecord = (row: Row): ConnectionRecord => ({
   id: connectionId(row.id),
   deviceId: savedDeviceId(row.device_id),
   method: row.method,
   transport: row.transport,
-  heldBy: nodeId(row.held_by),
+  ...holdingOf(row),
   address: row.address,
   priority: row.priority,
   config: JSON.parse(row.config) as Record<string, unknown>,
@@ -97,23 +104,30 @@ export class ConnectionStore {
     return row ? toRecord(row) : null;
   }
 
-  add(input: {
-    deviceId: SavedDeviceId;
-    method: string;
-    transport: string;
-    heldBy: NodeId;
-    address: string;
-    config?: Record<string, unknown>;
-    priority?: number;
-    secretsExportable?: boolean;
-  }): ConnectionRecord {
+  /** The connections that go through a bridge device: its members' ways to it. */
+  through(bridgeId: SavedDeviceId): ConnectionRecord[] {
+    return this.#db.query<Row, [string]>('SELECT * FROM device_connection WHERE through = ? ORDER BY created_at').all(bridgeId).map(toRecord);
+  }
+
+  add(
+    input: {
+      deviceId: SavedDeviceId;
+      method: string;
+      transport: string;
+      address: string;
+      config?: Record<string, unknown>;
+      priority?: number;
+      secretsExportable?: boolean;
+    } & ({ heldBy: NodeId; through?: null } | { heldBy?: null; through: SavedDeviceId })
+  ): ConnectionRecord {
     const existing = this.forDevice(input.deviceId);
+    const holding: ConnectionHolding = input.through ? { heldBy: null, through: input.through } : { heldBy: input.heldBy!, through: null };
     const record: ConnectionRecord = {
       id: connectionId(newId('c')),
       deviceId: input.deviceId,
       method: input.method,
       transport: input.transport,
-      heldBy: input.heldBy,
+      ...holding,
       address: input.address,
       // A new way to reach a device comes after the ones it already has.
       priority: input.priority ?? (existing.length ? Math.max(...existing.map((c) => c.priority)) + 1 : 0),
@@ -124,9 +138,9 @@ export class ConnectionStore {
     };
     this.#db
       .query(
-        'INSERT INTO device_connection (id, device_id, method, transport, held_by, address, priority, config, secrets_exportable, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO device_connection (id, device_id, method, transport, held_by, through, address, priority, config, secrets_exportable, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
       )
-      .run(record.id, record.deviceId, record.method, record.transport, record.heldBy, record.address, record.priority, JSON.stringify(record.config), record.secretsExportable ? 1 : 0, record.createdAt);
+      .run(record.id, record.deviceId, record.method, record.transport, record.heldBy, record.through, record.address, record.priority, JSON.stringify(record.config), record.secretsExportable ? 1 : 0, record.createdAt);
     return record;
   }
 
@@ -163,19 +177,33 @@ export class ConnectionStore {
    * holds it, never change; its secrets, which only the node holding it has,
    * stay.
    */
-  mirror(record: Pick<ConnectionRecord, 'id' | 'deviceId' | 'method' | 'transport' | 'heldBy' | 'address' | 'priority' | 'config' | 'secretsExportable' | 'createdAt'>): void {
+  mirror(record: ConnectionHolding & Pick<ConnectionRecord, 'id' | 'deviceId' | 'method' | 'transport' | 'address' | 'priority' | 'config' | 'secretsExportable' | 'createdAt'>): void {
     this.#db
       .query(
-        `INSERT INTO device_connection (id, device_id, method, transport, held_by, address, priority, config, secrets_exportable, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO device_connection (id, device_id, method, transport, held_by, through, address, priority, config, secrets_exportable, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET address = excluded.address, priority = excluded.priority, config = excluded.config, secrets_exportable = excluded.secrets_exportable`
       )
-      .run(record.id, record.deviceId, record.method, record.transport, record.heldBy, record.address, record.priority, JSON.stringify(record.config), record.secretsExportable ? 1 : 0, record.createdAt);
+      .run(record.id, record.deviceId, record.method, record.transport, record.heldBy, record.through, record.address, record.priority, JSON.stringify(record.config), record.secretsExportable ? 1 : 0, record.createdAt);
   }
 
   /** The device answered through this connection. */
   touch(id: string): void {
     this.#db.query('UPDATE device_connection SET last_connected_at = ? WHERE id = ?').run(new Date().toISOString(), id);
+  }
+
+  /**
+   * Which device already is this member of this bridge, if any: a member's key
+   * is one thing behind one bridge, so two devices may not both claim it.
+   */
+  member(bridgeId: SavedDeviceId, key: string): { deviceId: SavedDeviceId; connectionId: string } | null {
+    const row = this.#db
+      .query<{ id: string; device_id: string }, [string, string]>(
+        `SELECT c.id, c.device_id FROM device_connection c JOIN device d ON d.id = c.device_id
+         WHERE c.through = ? AND c.address = ? AND d.removed_at IS NULL`
+      )
+      .get(bridgeId, key);
+    return row ? { deviceId: row.device_id as SavedDeviceId, connectionId: row.id } : null;
   }
 
   /**

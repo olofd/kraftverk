@@ -137,23 +137,34 @@ export const SCHEMA = `
     PRIMARY KEY (device_id, key)
   );
 
-  /* How a device is reached: one row per way, each held by a node of the home. */
+  /*
+    How a device is reached: one row per way. Each is held by a node of the
+    home, or goes through a bridge — another device the way's members are
+    reached through (docs/PLAN-INTEGRATIONS.md §4.3): then it is held wherever
+    that device is, rides the bridge's own transport, and its address is its
+    key within the bridge. Never both, never neither.
+  */
   CREATE TABLE device_connection (
     id                TEXT PRIMARY KEY,
     device_id         TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
     method            TEXT NOT NULL,
     transport         TEXT NOT NULL,
-    held_by           TEXT NOT NULL REFERENCES node (id) ON DELETE CASCADE,
+    held_by           TEXT REFERENCES node (id) ON DELETE CASCADE,
+    through           TEXT REFERENCES device (id) ON DELETE CASCADE,
     address           TEXT NOT NULL,
     priority          INTEGER NOT NULL DEFAULT 0,
     config            TEXT NOT NULL DEFAULT '{}',
     /* Whether its secrets may leave in an export as plain text: its owner's choice, warned against, off unless chosen. */
     secrets_exportable INTEGER NOT NULL CHECK (secrets_exportable IN (0, 1)),
     created_at        TEXT NOT NULL,
-    last_connected_at TEXT
+    last_connected_at TEXT,
+    CHECK ((held_by IS NULL) <> (through IS NULL)),
+    CHECK ((through IS NOT NULL) = (transport = 'bridge')),
+    CHECK (through IS NULL OR through <> device_id)
   );
   CREATE INDEX device_connection_address ON device_connection (transport, address);
-  CREATE UNIQUE INDEX device_connection_once ON device_connection (device_id, method, held_by);
+  CREATE INDEX device_connection_through ON device_connection (through) WHERE through IS NOT NULL;
+  CREATE UNIQUE INDEX device_connection_once ON device_connection (device_id, method, coalesce(held_by, through));
 
   /* The secrets of the connections this database's node holds, sealed when a key is given. A connection another node holds has none here. */
   CREATE TABLE connection_secret (

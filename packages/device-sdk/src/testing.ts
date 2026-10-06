@@ -243,6 +243,23 @@ export async function checkDeviceTypeContract(type: DeviceType<any>, options: Co
       }
     }
 
+    // A bridge's simulator brings members, as its real sessions do, and opens a channel to each.
+    if (type.bridge) {
+      if (!session.bridge) problems.push('it is a bridge, but its session offers no members (`bridge`)');
+      else {
+        const members = await eventually(() => session.bridge!.members().length > 0, settleMs);
+        if (!members) problems.push(`it is a bridge, but its simulator brought no members within ${settleMs} ms`);
+        for (const member of session.bridge.members()) {
+          if (!member.key?.trim()) problems.push('a member behind it has no key');
+          try {
+            await (await session.bridge.open(member.key)).close();
+          } catch (error) {
+            problems.push(`member "${member.key}" could not be opened: ${(error as Error).message}`);
+          }
+        }
+      }
+    } else if (session.bridge) problems.push('its session offers members (`bridge`), but its type does not say it is a bridge');
+
     // Every tool it runs is one its type declares; every one that only reads answers in the type it declares.
     const declaredTools = type.tools ?? {};
     for (const [name, run] of Object.entries(session.tools ?? {})) {

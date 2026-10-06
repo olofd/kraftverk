@@ -359,7 +359,10 @@ export class Follower {
     const mine = list.filter((device) => device.connections.some((connection) => this.#mine(connection, me)));
     const kept = mine.map((device) => ({
       record: recordOf(device),
-      ways: device.connections.filter((connection) => this.#mine(connection, me)).map((way) => ({ ...way, heldBy: way.heldBy.id, deviceId: device.id, createdAt: device.addedAt })),
+      // A way through a bridge is mirrored as one: held wherever the bridge is, here when this node holds it.
+      ways: device.connections
+        .filter((connection) => this.#mine(connection, me))
+        .map(({ through, ...way }) => ({ ...way, ...(through ? { heldBy: null, through: through.id } : { heldBy: way.heldBy.id, through: null }), deviceId: device.id, createdAt: device.addedAt })),
     }));
     const holdNow = mine.filter((device) => toHold(device, me)).map((device) => device.id);
     // As it was last written, nothing is written again: a screen reading the list every few seconds costs a comparison, not a rewrite.

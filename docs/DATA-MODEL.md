@@ -326,6 +326,7 @@ erDiagram
   device ||--o{ device_connection : "is reached by"
   device_connection ||--o{ connection_secret : "needs"
   node ||--o{ device_connection : "holds"
+  device ||--o{ device_connection : "is the bridge of"
   node |o--|| home : "is the master of"
   device ||--o{ device_kv : "remembers"
   device ||--o{ sample : "recorded"
@@ -371,8 +372,9 @@ erDiagram
     text device_id FK "d-3f9a2c61b0e43f9a"
     text method "wifi · a ConnectionMethod id of the device's type"
     text transport "mqtt · copied from the method, for the address rule"
-    text held_by FK "n-51d0e7a2c9f351d0 · the node that holds it: the master, or a node that follows it"
-    text address "AABBCC001122 · 192.0.2.41 · a browser's Bluetooth handle"
+    text held_by FK "n-51d0e7a2c9f351d0 · the node that holds it: the master, or a node that follows it · null through a bridge"
+    text through FK "null · d-7c2e… · the bridge it goes through, held wherever that is; then transport is bridge"
+    text address "AABBCC001122 · 192.0.2.41 · a browser's Bluetooth handle · a member's key within its bridge"
     int priority "0 = preferred · 1 = the fallback"
     json config "{} · the method's own choices · {protocolVersion: 3.4}"
     int secrets_exportable "0 · 1: its secrets may leave in plain text, its owner's choice"
@@ -630,7 +632,7 @@ joined; elsewhere it is plain text, null.
 | `device` | The thing you added, and the key its history hangs on. | step 10 |
 | `device.identity` | So the same physical device is recognised however it was found, and so re-adding a removed one can bring its history back. | step 7, or at the first connection after *Save anyway* |
 | `device.removed_at` | So Remove doesn't destroy years of history. | Remove |
-| `device_connection` | A device can be reached more than one way, from more than one place. Your station over Wi-Fi from the server *and* over Bluetooth from your phone is one device with two connections. | step 10, or *Add another way to reach it* |
+| `device_connection` | A device can be reached more than one way, from more than one place. Your station over Wi-Fi from the server *and* over Bluetooth from your phone is one device with two connections. A way is held by a node, or goes **through** a bridge — another device, such as an account its scooters are reached through — and is then held wherever that device is, its address the member's key within it (PLAN-INTEGRATIONS.md §4.3). Never both. | step 10, or *Add another way to reach it* |
 | `connection_secret` | Credentials belong to a way of reaching the device (the Tuya local key is part of *tuya-local over lan*), not to the device. | step 6 |
 | `home` | The home this database keeps — one: what every node and device here is part of, and what its people call it. | when the database is made |
 | `node` | Every kraftverk node of the home — the hub running somewhere: the one this database belongs to (`self`), the home's master, and the nodes that follow it, the always-on machine among them. Each declares what it is — always on, reachable, trusted — which is how the master is chosen, and what a connection's holder names: "Bluetooth, from Olof's iPhone". | when the database is made (its own); when another joins |

@@ -98,7 +98,8 @@ export class DeviceTypeRegistry {
   checkConnections(installed: { protocol(id: string): Protocol | null; transport(id: string): TransportDefinition | null }): void {
     this.#warnings.clear();
     for (const type of this.#types.values()) {
-      const problems = connectionProblems(type, installed);
+      // A way through a bridge goes through an installed type that is one.
+      const problems = connectionProblems(type, { ...installed, type: (id) => this.get(id) });
       if (!problems.length) continue;
       this.#warnings.set(type.id, problems);
       console.warn(`[devices] ${type.id}:\n  - ${problems.join('\n  - ')}`);

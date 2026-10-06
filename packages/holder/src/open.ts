@@ -1,12 +1,15 @@
 import {
   checkValue,
+  isBridged,
   isSimulated,
   openChannel,
+  openThroughBridge,
   REAL_CLOCK,
   SIMULATED_TRANSPORT,
   simulatedMethodOf,
   validateConfig,
   type Channel,
+  type BridgeHost,
   type Clock,
   type ClockTimer,
   type ConnectionHealth,
@@ -56,6 +59,8 @@ export type OpenInput = {
   device: { id: SavedDeviceId; name: string; config: Record<string, unknown> };
   /** The connection to open; null, or a simulated one, opens the type's simulator. */
   connection: { method: string; transport: string; address: string; config: Record<string, unknown> } | null;
+  /** For a connection through a bridge: the bridge's open session, which opens the channel. Null when it is not open here. */
+  bridge?: BridgeHost | null;
   secret: (field: string) => string | null;
   protocols: { get(id: string): Protocol | null | undefined };
   transports: TransportSource;
@@ -141,7 +146,10 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
     if (input.connection && !isSimulated(input.connection)) {
       const method = type.connections.find((candidate) => candidate.id === input.connection!.method);
       if (!method) throw new OpenRefused(`${type.meta.name} no longer has a way called "${input.connection.method}"`, 'error');
-      channel = await openChannel(input.transports, input.protocols.get(method.protocol), input.connection);
+      if (isBridged(input.connection)) {
+        if (!input.bridge) throw new OpenRefused(`${device.name} is reached through a bridge that is not open here`, 'error');
+        channel = await openThroughBridge(input.bridge, input.protocols.get(method.protocol), input.connection);
+      } else channel = await openChannel(input.transports, input.protocols.get(method.protocol), input.connection);
       connection = {
         method: method.id,
         protocol: method.protocol,

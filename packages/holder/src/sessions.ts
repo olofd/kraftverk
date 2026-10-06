@@ -1,5 +1,6 @@
 import {
   attributeMeaning,
+  isBridged,
   isSimulated,
   REAL_CLOCK,
   methodOf,
@@ -77,16 +78,17 @@ export type HolderDevice = {
   info: DeviceInfo | null;
 };
 
-/** One way a device is reached. */
+/** One way a device is reached: held by a node, or through a bridge — another device, wherever that is open. */
 export type HolderConnection = {
   id: string;
   method: string;
   transport: string;
   address: string;
   config: Record<string, unknown>;
-  /** The node that holds it. */
-  heldBy: string;
-};
+} & ({ heldBy: string; through: null } | { heldBy: null; through: SavedDeviceId });
+
+/** How deep bridges may stand behind bridges: an account behind a gateway behind a hub is as deep as a home goes. */
+const BRIDGE_DEPTH = 4;
 
 export type SessionManagerDeps = {
   /** Where it runs: what a method's transport opens here. */
@@ -161,11 +163,14 @@ type Open = {
   connection: HolderConnection;
   /** What it was opened with, so a change reopens it. */
   fingerprint: string;
+  /** Which opening of the device this is: a member reopens when its bridge does. */
+  epoch: number;
   detach: () => void;
 };
 
 export class SessionManager {
   #open = new Map<SavedDeviceId, Open>();
+  #epoch = 0;
   #refusals = new Map<SavedDeviceId, Refusal>();
   /** When each connection went down, and which have failed over and are passed over for a while. */
   #failover = new Failover();
@@ -276,6 +281,20 @@ export class SessionManager {
 
   async #sync(records: readonly HolderDevice[]): Promise<void> {
     this.#records = new Map(records.map((record) => [record.id, record]));
+    // In rounds: a member opens once its bridge has, in this same sync; a bridge behind a bridge, one round later.
+    for (let round = 0; round <= BRIDGE_DEPTH; round++) {
+      const bridgesOpened = await this.#syncRound(records);
+      if (!bridgesOpened) break;
+    }
+
+    // Nobody waits on a check: what goes wrong is said, never left unhandled.
+    this.#watch ??= this.#clock.setInterval(() => void this.check().catch((error: unknown) => this.deps.log?.(`checking the sessions failed: ${(error as Error).message}`)), WATCH_MS);
+    this.#pulse ??= this.#clock.setInterval(() => this.pulse(), PULSE_MS);
+    this.deps.onChange?.();
+  }
+
+  /** One round of bringing the sessions in line: returns whether a bridge opened that a device waits on. */
+  async #syncRound(records: readonly HolderDevice[]): Promise<boolean> {
     const wanted = new Map<SavedDeviceId, { record: HolderDevice; connection: HolderConnection }>();
 
     for (const record of records) {
@@ -301,18 +320,29 @@ export class SessionManager {
       if (!records.some((record) => record.id === id && !record.removedAt)) this.#refusals.delete(id);
     }
 
-    // Each isolated: one device that will not open must not keep the others shut.
-    await Promise.all([...wanted.values()].filter(({ record }) => !this.#open.has(record.id)).map(({ record, connection }) => this.#openDevice(record, connection)));
+    // Each isolated: one device that will not open must not keep the others shut. What is reached
+    // directly first; then what goes through a bridge, once the bridge stands — a bridge closed and
+    // reopened above has a new session, which its members open over.
+    const opening = [...wanted.values()].filter(({ record }) => !this.#open.has(record.id));
+    await Promise.all(opening.filter(({ connection }) => connection.through === null).map(({ record, connection }) => this.#openDevice(record, connection)));
+    await Promise.all(
+      opening.filter(({ connection }) => connection.through !== null && this.#open.get(connection.through)?.opened.session.bridge).map(({ record, connection }) => this.#openDevice(record, connection))
+    );
 
-    // Nobody waits on a check: what goes wrong is said, never left unhandled.
-    this.#watch ??= this.#clock.setInterval(() => void this.check().catch((error: unknown) => this.deps.log?.(`checking the sessions failed: ${(error as Error).message}`)), WATCH_MS);
-    this.#pulse ??= this.#clock.setInterval(() => this.pulse(), PULSE_MS);
-    this.deps.onChange?.();
+    // A bridge that opened just now, which a device not open yet goes through: another round.
+    const bridges = new Set(opening.map(({ record }) => record.id).filter((id) => this.#open.get(id)?.opened.session.bridge));
+    return records.some((record) => !record.removedAt && !this.#open.has(record.id) && this.deps.connections(record.id).some((connection) => connection.through !== null && bridges.has(connection.through)));
   }
 
-  /** What it was opened with: a change to any of it reopens it. */
+  /** Whether a way is this holder's to use: one it holds, or one through a bridge it has open. */
+  #mine(connection: HolderConnection): boolean {
+    return connection.through !== null ? this.#open.get(connection.through)?.opened.session.bridge !== undefined : this.deps.holds(connection);
+  }
+
+  /** What it was opened with: a change to any of it reopens it — through a bridge, a new opening of the bridge too. */
   #fingerprint(record: HolderDevice, connection: HolderConnection): string {
-    return JSON.stringify([record.typeId, record.config, connection.id, connection.address, connection.config, [...(this.deps.secretFields?.(connection.id) ?? [])].sort(), this.deps.readOnly()]);
+    const bridge = connection.through !== null ? (this.#open.get(connection.through)?.epoch ?? null) : null;
+    return JSON.stringify([record.typeId, record.config, connection.id, connection.address, connection.config, [...(this.deps.secretFields?.(connection.id) ?? [])].sort(), this.deps.readOnly(), bridge]);
   }
 
   /**
@@ -360,7 +390,7 @@ export class SessionManager {
     if (!all.length) return { refusal: { status: 'unconfigured', detail: 'Nothing can reach this device yet: add a way to reach it' } };
 
     const reasons: string[] = [];
-    const mine = all.filter((connection) => this.deps.holds(connection));
+    const mine = all.filter((connection) => this.#mine(connection));
     for (const connection of mine) {
       if (this.#failover.avoided(connection.id) && mine.length > 1) continue;
       const method = methodOf(type, connection.method);
@@ -373,7 +403,8 @@ export class SessionManager {
         reasons.push(unfit);
         continue;
       }
-      if (isSimulated(connection)) return { connection };
+      // A simulator reaches nothing; a member rides its bridge, which is open here.
+      if (isSimulated(connection) || isBridged(connection)) return { connection };
       await this.deps.transports.start?.(connection.transport);
       const available = this.deps.transports.available?.(connection.transport) ?? { ok: true };
       if (!available.ok) {
@@ -383,10 +414,18 @@ export class SessionManager {
       return { connection };
     }
 
-    const other = all.find((connection) => !this.deps.holds(connection));
-    if (!mine.length && other) {
-      const who = this.deps.nodeName?.(other.heldBy) ?? 'another node';
-      return { refusal: { status: 'offline', detail: `Held by ${who}, not by ${this.deps.node.name}` } };
+    if (!mine.length) {
+      // Through a bridge that is not open here: it is held wherever the bridge is.
+      const bridged = all.find((connection) => connection.through !== null);
+      if (bridged?.through) {
+        const bridge = this.#records.get(bridged.through)?.name ?? 'its bridge';
+        return { refusal: { status: 'offline', detail: `Reached through ${bridge}, which is not open on ${this.deps.node.name}` } };
+      }
+      const other = all.find((connection) => connection.heldBy !== null && !this.deps.holds(connection));
+      if (other?.heldBy) {
+        const who = this.deps.nodeName?.(other.heldBy) ?? 'another node';
+        return { refusal: { status: 'offline', detail: `Held by ${who}, not by ${this.deps.node.name}` } };
+      }
     }
     return { refusal: { status: 'error', detail: reasons[0] ?? 'None of its connections can be used here' } };
   }
@@ -405,6 +444,8 @@ export class SessionManager {
         device: record,
         // A simulated one opens its type's simulator in its place, in every holder.
         connection,
+        // A member's channel is its bridge's to open.
+        bridge: connection.through !== null ? (this.#open.get(connection.through)?.opened.session.bridge ?? null) : null,
         secret: (field) => this.deps.secret(connection.id, field),
         protocols: this.deps.protocols,
         transports: this.deps.transports,
@@ -435,7 +476,7 @@ export class SessionManager {
         clock: this.#clock,
       });
 
-      const entry: Open = { opened, connection, fingerprint: this.#fingerprint(record, connection), detach: () => {} };
+      const entry: Open = { opened, connection, fingerprint: this.#fingerprint(record, connection), epoch: ++this.#epoch, detach: () => {} };
       // A simulator has no channel: it is there, and stays there.
       const noteState = (connected: boolean) => {
         this.#failover.note(connection.id, connected);
@@ -509,7 +550,7 @@ export class SessionManager {
       this.#describe(id);
       if (!(await this.#verify(id)) || isSimulated(open.connection)) continue;
       const record = this.#records.get(id);
-      const others = this.deps.connections(id).filter((connection) => this.deps.holds(connection) && connection.id !== open.connection.id);
+      const others = this.deps.connections(id).filter((connection) => this.#mine(connection) && connection.id !== open.connection.id);
       const down = this.#failover.downFor(open.connection.id);
       if (record && this.#failover.due(open.connection.id, others.length > 0)) {
         this.deps.log?.(`${record.name}: ${open.connection.method} has been down for ${Math.round((down ?? 0) / 1000)} s; trying its next connection`);
@@ -527,6 +568,11 @@ export class SessionManager {
     this.#changes.forget(deviceId);
     if (!open) return;
     open.detach();
+    // What is reached through it goes first: its channels are the bridge's.
+    const members = [...this.#open].filter(([, other]) => other.connection.through === deviceId).map(([id]) => id);
+    await Promise.all(members.map((id) => this.close(id)));
+    const bridge = this.#records.get(deviceId)?.name ?? 'its bridge';
+    for (const id of members) this.#refusals.set(id, { status: 'offline', detail: `Reached through ${bridge}, which closed` });
     // The channel is this manager's: it opened it, so it closes it.
     await open.opened.close();
   }

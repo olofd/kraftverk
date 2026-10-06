@@ -1,3 +1,4 @@
+import { BRIDGE_TRANSPORT } from './bridge.ts';
 import type { Channel } from './channel.ts';
 import type { DeviceDescription, DeviceInfo } from './description.ts';
 import { PLATFORMS, type NodeNeeds, type Platform } from './node.ts';
@@ -77,6 +78,12 @@ export type ConnectionMethod = {
   needs?: NodeNeeds;
   /** Steps of the type's own for this method, after those its layers supply. */
   steps?: readonly SetupStep[];
+  /**
+   * The bridge types it is reached through, when its transport is the
+   * bridge's (`BRIDGE_TRANSPORT`): a scooter through its account. Its
+   * address is then the member's key within the bridge.
+   */
+  through?: readonly string[];
 };
 
 /**
@@ -125,7 +132,8 @@ export const isSimulated = (connection: { readonly transport: string }): boolean
  * entry for. A simulated one reaches nothing, and is held anywhere.
  */
 export function platformsOf(method: ConnectionMethod, transport: Pick<TransportDefinition, 'platforms'> | null): Platform[] {
-  if (isSimulated(method)) return [...PLATFORMS];
+  // A simulator reaches nothing; a bridge's member is held wherever its bridge is.
+  if (isSimulated(method) || method.transport === BRIDGE_TRANSPORT) return [...PLATFORMS];
   return [...(transport?.platforms ?? [])];
 }
 

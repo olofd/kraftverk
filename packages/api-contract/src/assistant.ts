@@ -1,4 +1,4 @@
-import type { CapabilityId, ConfigSchema, ConnectionHealth, LinkKind, SavedDeviceId, Value } from '@kraftverk/device-sdk';
+import type { CapabilityId, ConfigSchema, ConnectionHealth, DeviceKind, LinkKind, SavedDeviceId, Value } from '@kraftverk/device-sdk';
 
 /*
   What an assistant is told of a home (docs/ARCHITECTURE.md, the assistant):
@@ -26,7 +26,7 @@ export type WorldDevice = {
   id: SavedDeviceId;
   name: string;
   type: string;
-  kind: 'hardware' | 'service';
+  kind: DeviceKind;
   status: ConnectionHealth['status'];
   detail: string;
   parts: WorldPart[];

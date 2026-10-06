@@ -256,7 +256,7 @@ for (const driver of DRIVERS) {
         info: null,
         picture: null,
       };
-      const way = { id: connectionId('c-0000000000aa'), deviceId: theirs.id, method: 'bluetooth', transport: 'ble', heldBy: HERE, address: 'AA', priority: 1, config: {}, secretsExportable: false, createdAt: theirs.addedAt };
+      const way = { id: connectionId('c-0000000000aa'), deviceId: theirs.id, method: 'bluetooth', transport: 'ble', heldBy: HERE, through: null, address: 'AA', priority: 1, config: {}, secretsExportable: false, createdAt: theirs.addedAt };
 
       test('is kept by its own id, held here, and brought up to date without losing what only this holder has', () => {
         catalog.mirror(theirs);

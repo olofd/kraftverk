@@ -119,8 +119,21 @@ export class DeviceViews {
       server is trying.
     */
     const reachable = (connection: ConnectionRecord): boolean | null => {
-      if (connection.heldBy !== this.deps.self) return latest?.connectionId === connection.id ? true : null;
-      return opened?.id === connection.id ? this.deps.sessions.reachable(record.id) : null;
+      // This node's open one says itself; another's, by its fresh readings.
+      if (opened?.id === connection.id) return this.deps.sessions.reachable(record.id);
+      if (connection.heldBy === this.deps.self) return null;
+      return latest?.connectionId === connection.id ? true : null;
+    };
+    /*
+      Which node has a way in hand: its own for one it holds; for one through a
+      bridge, whichever holds the bridge — this one when the bridge is open
+      here, else the node its preferred way is held by.
+    */
+    const holderOf = (connection: ConnectionRecord, depth = 0): NodeId => {
+      if (connection.heldBy !== null) return connection.heldBy;
+      if (this.deps.sessions.inUse(connection.through) || depth >= 4) return this.deps.self;
+      const preferred = (joined.connections.get(connection.through) ?? [])[0];
+      return preferred ? holderOf(preferred, depth + 1) : this.deps.self;
     };
     const ordered = joined.connections.get(record.id) ?? [];
     const activeId = activeConnection(
@@ -133,13 +146,15 @@ export class DeviceViews {
 
     const connections = ordered.map((connection): ConnectionView => {
       const method = type ? methodOf(type, connection.method) : null;
-      const holder = joined.nodes.get(connection.heldBy);
+      const heldBy = holderOf(connection);
+      const holder = joined.nodes.get(heldBy);
       return {
         id: connection.id,
         method: connection.method,
         methodLabel: method?.label ?? connection.method,
         transport: connection.transport,
-        heldBy: { kind: connection.heldBy === this.deps.master() ? 'master' : 'node', id: connection.heldBy, name: holder?.name ?? 'Another node' },
+        heldBy: { kind: heldBy === this.deps.master() ? 'master' : 'node', id: heldBy, name: holder?.name ?? 'Another node' },
+        through: connection.through !== null ? { id: connection.through, name: names.get(connection.through) ?? 'A removed device' } : null,
         address: connection.address,
         priority: connection.priority,
         reachable: reachable(connection),

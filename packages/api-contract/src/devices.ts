@@ -1,4 +1,4 @@
-import type { Availability, CapabilityId, CategorySpec, ConnectionHealth, ConnectionId, DescriptionSource, DeviceDescription, DeviceInfo, DeviceTypeMeta, DeviceTypeView, IntegrationInfo, LinkEnd, LinkId, LinkKind, NodeId, Placement, Reading, SavedDeviceId, ToolSpec, TransportDefinition, TypeSource, Value } from '@kraftverk/device-sdk';
+import type { Availability, CapabilityId, CategorySpec, ConnectionHealth, ConnectionId, DescriptionSource, DeviceKind, DeviceDescription, DeviceInfo, DeviceTypeMeta, DeviceTypeView, IntegrationInfo, LinkEnd, LinkId, LinkKind, NodeId, Placement, Reading, SavedDeviceId, ToolSpec, TransportDefinition, TypeSource, Value } from '@kraftverk/device-sdk';
 
 /*
   The devices you have, as a home answers for them: a device with its
@@ -19,6 +19,12 @@ export type ConnectionView = {
    * `node` of the home — a phone, a browser, another machine.
    */
   heldBy: { kind: HeldBy | 'node'; id: NodeId; name: string };
+  /**
+   * The bridge it goes through, for a member of one — a scooter through its
+   * account: then `heldBy` is whichever node holds the bridge, and
+   * `address` is the member's key within it. Null for a way a node holds itself.
+   */
+  through: { id: SavedDeviceId; name: string } | null;
   address: string;
   priority: number;
   /** Whether it reaches the device right now; null when nobody is trying it. */
@@ -59,7 +65,7 @@ export type DeviceView = {
   identity: string | null;
   addedAt: string;
   removedAt: string | null;
-  kind: 'hardware' | 'service';
+  kind: DeviceKind;
   meta: Pick<DeviceTypeMeta, 'name' | 'brand' | 'icon' | 'support'> & { category: string };
   /** What it is: its parts, their attributes — settings among them — and its events. Its own when it reports one. */
   description: DeviceDescription;

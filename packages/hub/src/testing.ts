@@ -257,3 +257,4 @@ export const MACHINE_NODE = { id: nodeId('n-00000000000000a1'), name: 'Test mach
 
 /** A node in someone's hand, as a browser or a phone is: on while open, reaching out, trusted with nothing that must stay put. */
 export const APP_NODE = { id: nodeId('n-00000000000000b2'), name: 'Chrome on a test', alwaysOn: false, reachable: false, trusted: false };
+export * from './testing-bridge.ts';
