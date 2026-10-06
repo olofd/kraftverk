@@ -645,6 +645,7 @@ reached — is never taken for true.
 | What the run knows | `run.trigger == "low"` · `run.event.voltage < 200 V` | What the run knows of itself: `run.trigger`, the id of the trigger that started it — `""` when none with an id did; `run.event`, the event a device raised that started it, and `run.event.voltage`, what it carried, as its device declares it — unknown when no event did. |
 | Time of day | `time between 23:00 and 05:00` | Whether the owner’s clock is between two times of day, from the first up to the second — across midnight when the second comes first. |
 | The sun | `sunset` · `30 min before sunset` · `time between sunset and sunrise` · `time between 1 h after sunrise and setting.lead before sunset` | When the sun rises or sets where the home is, on the automation’s clock — or so long before or after, a minute to twelve hours: a time of day, as `07:00` is, for `at` and `time between`. Unknown until the home has a place, and on a day the sun does not cross the horizon. |
+| Across a group | `any(c in chargers: c.power > 10 W)` · `count(c in chargers: c reachable) < 2` · `sum(c in chargers: c.power ?? 0 W) > 2 kW` | Something of each part of a group, taken together — `all`, `any`, `count`, `sum`, `average`, `lowest`, `highest` — each part called by a name of its own within it, as a role is. Unknown while it is for a part, unless one part settles it; `??` gives a part that may not say a value of its own. |
 | Ask a package | `acme.weather.sunny(forecast, day = "tomorrow")` | A function a package contributes, over the part filling a role: what the forecast says of tomorrow, the price’s rank. Only where a run may wait for its answer. |
 | A function of the language | `min(station.charge, 80 %)` · `clamp(charger.power, 0 W, 2 kW)` | One of the language’s own functions — min, max, clamp, round, floor, ceil, abs — on numbers, each with its unit; the answer in the first one’s unit. |
 | A comparison | `station.charge < 15 %` | Two values compared: `<`, `<=`, `>`, `>=`, `==`, `!=`. Unknown when either is. |
@@ -670,6 +671,20 @@ Each takes numbers, each with its unit, and answers in the first one’s unit. U
 | `floor(x)` — Round down | `floor(station.charge)` | A number rounded down to a whole one, in its own unit. |
 | `ceil(x)` — Round up | `ceil(station.charge)` | A number rounded up to a whole one, in its own unit. |
 | `abs(x)` — Size | `abs(meter.power)` | How large a number is, whichever way: −5 W is 5 W. |
+
+### Across a group
+
+Each takes something of each part of a group — `name in group:`, the name what is said of each calls it — and takes them together. Unknown while it is for a part, unless one part settles it; numbers in the first one’s unit.
+
+| Function | Written | Is |
+|---|---|---|
+| `all(x in group: …)` — All of them | `all(c in chargers: c.power < 5 W)` | Whether something holds for every part of a group: one that does not is enough to say no; with none that does not, one that cannot tell leaves it unknown. |
+| `any(x in group: …)` — Any of them | `any(c in chargers: c.power > 10 W)` · `any(c in chargers: not c reachable)` | Whether something holds for at least one part of a group: one that does is enough; with none that does, one that cannot tell leaves it unknown. |
+| `count(x in group: …)` — How many | `count(c in chargers: c.power > 10 W) >= 2` | How many parts of a group something holds for: a plain number — unknown while it cannot be told for one. |
+| `sum(x in group: …)` — The sum | `sum(c in chargers: c.power) > 2 kW` · `sum(c in chargers: c.power ?? 0 W)` | A number of each part of a group, added up, in the first one’s unit — each converted to it. Unknown while one is not known: `?? 0 W` counts one that is not as nothing. |
+| `average(x in group: …)` — The average | `average(b in batteries: b.charge) < 30 %` | The average of a number of each part of a group, in the first one’s unit. Unknown while one is not known. |
+| `lowest(x in group: …)` — The lowest | `lowest(b in batteries: b.charge) < 10 %` | The lowest of a number of each part of a group, in the first one’s unit. Unknown while one is not known. |
+| `highest(x in group: …)` — The highest | `highest(c in chargers: c.power) > 1 kW` | The highest of a number of each part of a group, in the first one’s unit. Unknown while one is not known. |
 
 ### Over the time just gone
 

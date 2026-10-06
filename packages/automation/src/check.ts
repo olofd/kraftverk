@@ -5,6 +5,7 @@ import { secondsText } from './describe.ts';
 import { evaluateNow, settledScope } from './evaluate.ts';
 import { BUILTIN_ORDER, BUILTINS, isBuiltin } from './kinds/builtins.ts';
 import { HISTORY_ORDER, HISTORY_SECONDS, isHistoryFn } from './kinds/history.ts';
+import { ACROSS_FNS, ACROSS_ORDER, isAcrossFn } from './kinds/across.ts';
 import { isSunEvent, SUN_OFFSET_SECONDS } from './sun.ts';
 import { expressionsIn } from './kinds/exprs.ts';
 import { fieldValue, type FieldSpec } from './kinds/spec.ts';
@@ -320,6 +321,32 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         }
       });
       return { type: 'boolean' };
+    }
+    if ('across' in expr) {
+      if (!isAcrossFn(expr.across)) {
+        problems.push(`${where}: "${String(expr.across)}" is not a way of taking a group's parts together: ${ACROSS_ORDER.join(', ')}`);
+        return { type: 'unknown' };
+      }
+      const spec = ACROSS_FNS[expr.across];
+      const group = roles[expr.group];
+      if (!expr.group) problems.push(`${where}: which group?`);
+      else if (!group) problems.push(`${where}: there is no role "${expr.group}"`);
+      else if (!isGroupRole(group)) problems.push(`${where}: ${expr.group} is ${isAutomationRole(group) ? 'an automation' : 'one part'}, not several`);
+      // A name of its own for each part: not a role's, an outer one's, nor a word of the language.
+      const named = CAMEL_NAME.test(expr.as) && !roles[expr.as] && !scoped[expr.as] && !KEYWORDS.has(expr.as);
+      if (!named) problems.push(`${where}: "${expr.as}" names something already, or nothing — call each part otherwise`);
+      // A package is asked once, for one part: not of each part of a group.
+      if ([...expressionsIn(expr.of)].some((each) => 'call' in each)) problems.push(`${where}.of: a package's function is not asked of each part of a group`);
+      const outer = scoped;
+      if (named && group && isGroupRole(group)) scoped = { ...outer, [expr.as]: memberRole(group) };
+      const got = shape(expr.of, `${where}.of`, { ...options, calls: true });
+      scoped = outer;
+      if (spec.takes === 'condition') {
+        if (!fits({ type: 'boolean' }, got)) problems.push(`${where}.of: ${expr.across} asks whether something holds of each part, not ${said(got)}`);
+        return expr.across === 'count' ? { type: 'number', unit: null } : { type: 'boolean' };
+      }
+      if (!fits({ type: 'number', unit: null }, got)) problems.push(`${where}.of: ${expr.across} takes a number of each part, not ${said(got)}`);
+      return got.type === 'number' ? got : { type: 'number', unit: null };
     }
     if ('sun' in expr) {
       if (!isSunEvent(expr.sun)) problems.push(`${where}: "${String(expr.sun)}" is not when the sun rises or sets: sunrise, sunset`);

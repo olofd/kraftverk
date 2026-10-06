@@ -1,5 +1,6 @@
 import { isUnit, type Unit, type Value } from '@kraftverk/device-sdk';
 
+import { isAcrossFn } from '../kinds/across.ts';
 import { BUILTIN_ORDER, isBuiltin } from '../kinds/builtins.ts';
 import { HISTORY_ORDER, isHistoryFn } from '../kinds/history.ts';
 import { isSunEvent } from '../sun.ts';
@@ -323,6 +324,19 @@ export function parseExpr(text: string): Parsed {
       }
     }
     if (KEYWORDS.has(token.value)) throw new Failure(`"${token.value}" cannot start a value`, token.at);
+    // Each part of a group, taken together: "any(c in chargers: c.power > 10 W)" — a name for each part, its group, what is said of each.
+    if (isSymbol('(') && isAcrossFn(token.value) && tokens[index + 1]?.kind === 'name' && isWord('in', tokens[index + 2])) {
+      next();
+      const each = next();
+      if (each.kind !== 'name' || !NAME.test(each.value)) throw new Failure('Expected a name for each part', each.at);
+      next();
+      const group = next();
+      if (group.kind !== 'name' || !NAME.test(group.value)) throw new Failure(`Expected the group after "${each.value} in"`, group.at);
+      expect(':', `":" and what is said of each: "${token.value}(${each.value} in ${group.value}: ${each.value}.power > 10 W)"`);
+      const of = ternary();
+      expect(')', `a ")" to close ${token.value}(`);
+      return { across: token.value, as: each.value, group: group.value, of };
+    }
     // A reading over the time just gone: "average(station.charge, 1 h)" — what it reads, then how long.
     if (isSymbol('(') && isHistoryFn(token.value)) {
       next();
@@ -482,6 +496,10 @@ function print(expr: Expr, need: number): string {
       return `${name} = ${print(arg, LEVEL.ternary)}`;
     });
     return `${expr.call}(${[roleText(expr.role), ...args].join(', ')})`;
+  }
+  if ('across' in expr) {
+    if (!isAcrossFn(expr.across) || !NAME.test(expr.as) || !NAME.test(expr.group)) throw new Unprintable();
+    return `${expr.across}(${expr.as} in ${expr.group}: ${print(expr.of, LEVEL.ternary)})`;
   }
   if ('history' in expr) {
     if (!isHistoryFn(expr.history) || !NAME.test(expr.of.role) || !MEANING.test(expr.of.means)) throw new Unprintable();

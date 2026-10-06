@@ -31,6 +31,9 @@ export type HistoryFn = 'average' | 'lowest' | 'highest' | 'change' | 'ago';
 /** When the sun crosses the horizon (`SUN_EVENTS`, sun.ts). */
 export type SunEvent = 'sunrise' | 'sunset';
 
+/** The ways a group's parts are taken together (`ACROSS_FNS`, kinds/across.ts). */
+export type AcrossFn = 'all' | 'any' | 'count' | 'sum' | 'average' | 'lowest' | 'highest';
+
 /** Every comparison. */
 export const COMPARE_OPS: readonly CompareOp[] = ['lt', 'le', 'gt', 'ge', 'eq', 'ne'];
 
@@ -66,6 +69,14 @@ export type Expr =
    * the sun does not cross the horizon.
    */
   | { sun: SunEvent; offset?: { by: Expr; before: boolean } }
+  /**
+   * Something of each part of a group, taken together: whether it holds for
+   * all of them, any, how many — or their sum, average, lowest or highest.
+   * `of` is said of each part, called `as` within it as a role is:
+   * `any(c in chargers: c.power > 10 W)`. Unknown while it is for a part,
+   * unless one part settles it.
+   */
+  | { across: AcrossFn; as: string; group: string; of: Expr }
   /** A function a package contributes, over the part filling a role: `acme.weather.sunny(forecast, day = "tomorrow")`. */
   | { call: string; role: string; args?: Readonly<Record<string, Expr>> }
   /** One of the language's own functions (`BUILTINS`, kinds/builtins.ts): `round(x)`, `clamp(x, 0 W, 2 kW)`, `max(a, b, c)`. */

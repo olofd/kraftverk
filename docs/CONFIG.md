@@ -143,6 +143,10 @@ describes.
     `average(station.charge, 1 h)`, `lowest(…)`, `highest(…)`,
     `change(station.charge, 30 min)` (how much it changed), `ago(…, 10 min)`
     (what it was then) — a minute to two weeks, a number or a setting;
+  - something of each part of a group, taken together:
+    `any(c in chargers: c.power > 10 W)`, `all(…)`, `count(…)`,
+    `sum(c in chargers: c.power ?? 0 W)`, `average(…)`, `lowest(…)`,
+    `highest(…)` — each part called by a name of its own within it;
   - the sun, where the home is (`home: location`): `sunrise`, `sunset`,
     `30 min before sunset` — a time of day, for `at:` and
     `time between sunset and sunrise`; unknown until the home has a location;

@@ -1,4 +1,4 @@
-import { capitalise, describeTriggers, evaluateNow, secondsNow, EVERY_SECONDS, HOLD_SECONDS, readsRole, runsOn, secondsText, slotOf, stepsOf, takesSteps, triggerKey, triggerKind, type RuleTrigger, type Rule, type Trigger } from '@kraftverk/automation';
+import { bindingsOf, capitalise, describeTriggers, evaluateNow, secondsNow, EVERY_SECONDS, HOLD_SECONDS, readsRole, runsOn, secondsText, slotOf, stepsOf, takesSteps, triggerKey, triggerKind, type RuleTrigger, type Rule, type Trigger } from '@kraftverk/automation';
 import { dayAfter, localTime, MAIN_PART, zonedInstant, type ClockTimer } from '@kraftverk/device-sdk';
 import type { LiveMessage } from '@kraftverk/holder';
 
@@ -88,7 +88,8 @@ export class Triggers {
       const byDevice = new Map<string, AutomationRecord[]>();
       for (const automation of this.deps.store.list()) {
         if (!automation.rule.when.some((trigger) => 'event' in trigger || 'becomes' in trigger)) continue;
-        for (const device of new Set(Object.values(automation.roles).map((binding) => binding.device))) {
+        // Every part it uses — each of a group's too: what it reads across a group moves it.
+        for (const device of new Set(Object.keys(automation.rule.roles).flatMap((role) => bindingsOf(automation, role).map((binding) => binding.device)))) {
           byDevice.set(device, [...(byDevice.get(device) ?? []), automation]);
         }
       }
@@ -183,7 +184,7 @@ export class Triggers {
           if (!takesSteps(rule)) await going;
         }
         if (message.kind === 'readings' && 'becomes' in trigger) {
-          const watched = Object.entries(automation.roles).some(([role, binding]) => binding.device === message.deviceId && readsRole(rule, role));
+          const watched = Object.keys(rule.roles).some((role) => readsRole(rule, role) && bindingsOf(automation, role).some((binding) => binding.device === message.deviceId));
           if (watched) this.#becomes(automation, rule, trigger, index);
         }
       }

@@ -8,3 +8,4 @@ export * from './exprs.ts';
 export * from './builtins.ts';
 export * from './parts.ts';
 export * from './history.ts';
+export * from './across.ts';

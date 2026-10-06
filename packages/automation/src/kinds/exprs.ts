@@ -11,7 +11,7 @@ import type { KindDocs } from './spec.ts';
   one left out.
 */
 
-export type ExprKind = 'value' | 'param' | 'memory' | 'read' | 'history' | 'sun' | 'call' | 'apply' | 'compare' | 'math' | 'negate' | 'if' | 'either' | 'in' | 'all' | 'any' | 'not' | 'reachable' | 'within' | 'run';
+export type ExprKind = 'value' | 'param' | 'memory' | 'read' | 'history' | 'sun' | 'across' | 'call' | 'apply' | 'compare' | 'math' | 'negate' | 'if' | 'either' | 'in' | 'all' | 'any' | 'not' | 'reachable' | 'within' | 'run';
 
 /** An expression of one kind. */
 export type ExprOf<K extends ExprKind> = K extends ExprKind ? Extract<Expr, Record<K, unknown>> : never;
@@ -123,6 +123,16 @@ export const EXPR_KINDS: { readonly [K in ExprKind]: ExprSpec<K> } = {
     rebuild: (_expr, [from, to]) => ({ within: { from: from!, to: to! } }),
     docs: { summary: 'Whether the owner’s clock is between two times of day, from the first up to the second — across midnight when the second comes first.', examples: ['time between 23:00 and 05:00'] },
   },
+  across: {
+    kind: 'across',
+    label: 'Across a group',
+    children: (expr) => [expr.of],
+    rebuild: (expr, [of]) => ({ ...expr, of: of! }),
+    docs: {
+      summary: 'Something of each part of a group, taken together — `all`, `any`, `count`, `sum`, `average`, `lowest`, `highest` — each part called by a name of its own within it, as a role is. Unknown while it is for a part, unless one part settles it; `??` gives a part that may not say a value of its own.',
+      examples: ['any(c in chargers: c.power > 10 W)', 'count(c in chargers: c reachable) < 2', 'sum(c in chargers: c.power ?? 0 W) > 2 kW'],
+    },
+  },
   sun: {
     kind: 'sun',
     label: 'The sun',
@@ -141,7 +151,7 @@ export const EXPR_KINDS: { readonly [K in ExprKind]: ExprSpec<K> } = {
 };
 
 /** The order the reference lists them in. */
-export const EXPR_KIND_ORDER: readonly ExprKind[] = ['value', 'param', 'memory', 'read', 'history', 'reachable', 'run', 'within', 'sun', 'call', 'apply', 'compare', 'in', 'math', 'negate', 'if', 'either', 'all', 'any', 'not'];
+export const EXPR_KIND_ORDER: readonly ExprKind[] = ['value', 'param', 'memory', 'read', 'history', 'reachable', 'run', 'within', 'sun', 'across', 'call', 'apply', 'compare', 'in', 'math', 'negate', 'if', 'either', 'all', 'any', 'not'];
 
 /** Which kind an expression is — by its key; one of no kind is an error, never taken for another. */
 export function exprKind(expr: Expr): ExprKind {

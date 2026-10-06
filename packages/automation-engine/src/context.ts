@@ -1,5 +1,5 @@
 import type { ConditionState } from '@kraftverk/api-contract';
-import { bindingsOf, capitalise, sunTimes, type HistoryPoint, groupRoles, listed, memoryOf, settingOf, checkBinding, describeExpr, describeSteps, evaluateNow, measure, numberIn, secondsNow, isAutomationRole, partRoles, secondsText, triggerKey, triggerOf, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type RuleSteps, type Step, type Write } from '@kraftverk/automation';
+import { bindingsOf, capitalise, isGroupRole, memberRole, sunTimes, type HistoryPoint, groupRoles, listed, memoryOf, settingOf, checkBinding, describeExpr, describeSteps, evaluateNow, measure, numberIn, secondsNow, isAutomationRole, partRoles, secondsText, triggerKey, triggerOf, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type RuleSteps, type Step, type Write } from '@kraftverk/automation';
 import { attributeMeaning, capabilityIn, clockTime, localTime, MAIN_PART, isCurrent, isScalar, readingOf, REAL_CLOCK, standardMeaning, unitIn, type CapabilityName, type Clock, type Value } from '@kraftverk/device-sdk';
 
 import type { AutomationEngineDeps, AutomationRecord, EngineDevice } from './model.ts';
@@ -95,6 +95,14 @@ export class RuleContext {
         const reading = device.device ? readingOf(device.device.readings(), attribute.key) : null;
         if (reading && typeof reading.value === 'number' && isCurrent(attribute, reading, to)) points.push({ at: Math.max(Date.parse(reading.at), points.at(-1)?.at ?? from), value: reading.value });
         return points.length ? { points, from, to, unit: unitIn(attribute), label: standardMeaning(means)?.label ?? attribute.label } : null;
+      },
+      // Each part of a group: what an expression is evaluated against for it, the part called as its name says.
+      members: (group, as) => {
+        const spec = rule.roles[group];
+        const parts = automation.groups[group];
+        if (!spec || !isGroupRole(spec) || !parts) return null;
+        const one = memberRole(spec);
+        return parts.map((binding) => this.scope({ ...automation, roles: { ...automation.roles, [as]: binding } }, { ...rule, roles: { ...rule.roles, [as]: one } }, now, trigger, event));
       },
       // Today's, on the automation's clock, where the home is — moved as it says.
       sun: (event, offset) => {

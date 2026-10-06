@@ -3,6 +3,7 @@ import { UNITS, type Dimension } from '@kraftverk/device-sdk';
 import { secondsText } from '../describe.ts';
 import { BUILTIN_ORDER, BUILTINS } from './builtins.ts';
 import { EXPR_KIND_ORDER, EXPR_KINDS } from './exprs.ts';
+import { ACROSS_FNS, ACROSS_ORDER } from './across.ts';
 import { HISTORY_FNS, HISTORY_ORDER, HISTORY_SECONDS } from './history.ts';
 import { RULE_PART_DOCS } from './parts.ts';
 import type { FieldSpec } from './spec.ts';
@@ -147,6 +148,19 @@ export function referenceMarkdown(): string {
   for (const name of BUILTIN_ORDER) {
     const spec = BUILTINS[name];
     lines.push(`| \`${name}(${spec.params.join(', ')})\` — ${spec.label} | ${spec.docs.examples.map((example) => `\`${example}\``).join(' · ')} | ${spec.docs.summary} |`);
+  }
+  lines.push(
+    '',
+    '### Across a group',
+    '',
+    'Each takes something of each part of a group — `name in group:`, the name what is said of each calls it — and takes them together. Unknown while it is for a part, unless one part settles it; numbers in the first one’s unit.',
+    '',
+    '| Function | Written | Is |',
+    '|---|---|---|'
+  );
+  for (const name of ACROSS_ORDER) {
+    const spec = ACROSS_FNS[name];
+    lines.push(`| \`${name}(x in group: …)\` — ${spec.label} | ${spec.docs.examples.map((example) => `\`${example}\``).join(' · ')} | ${spec.docs.summary} |`);
   }
   lines.push(
     '',

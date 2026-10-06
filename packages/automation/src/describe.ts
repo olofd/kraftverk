@@ -3,6 +3,7 @@ import { capabilitySpec, enumLabel, isCapability, standardMeaning, type ConfigSc
 import type { RuleVocabulary } from './check.ts';
 import { WEEKDAYS, type Weekday } from './clock.ts';
 import { evaluateNow, measureNow, secondsNow, settledChoice, settledScope, shown } from './evaluate.ts';
+import { ACROSS_FNS } from './kinds/across.ts';
 import { BUILTINS } from './kinds/builtins.ts';
 import { HISTORY_FNS } from './kinds/history.ts';
 import { SUN_EVENTS } from './sun.ts';
@@ -149,6 +150,14 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
       case 'within': {
         const { from, to } = (expr as ExprOf<'within'>).within;
         return `it is between ${text(from)} and ${text(to)}`;
+      }
+      case 'across': {
+        // What is said of each part, each called as its name says — "each charger’s power is above 10 W" — then of the group.
+        const { across: fn, as, group, of } = expr as ExprOf<'across'>;
+        const spec = rule.roles[group];
+        const roles = spec && isGroupRole(spec) ? { ...rule.roles, [as]: memberRole(spec) } : rule.roles;
+        const each = describeExpr({ ...rule, roles }, of, params, (role) => (role === as ? eachSaid(as) : name(role)), vocabulary);
+        return ACROSS_FNS[fn].words(name(group), each);
       }
       case 'sun': {
         // "sunset", "30 min before sunset".

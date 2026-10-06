@@ -3,8 +3,8 @@ import { capabilitySpec, isCapability, type CapabilityNeed } from '@kraftverk/de
 import { expressionsIn, mapChildren } from './kinds/exprs.ts';
 import { EXPRESSION_FIELDS, fieldValue, withField, type FieldSpec } from './kinds/spec.ts';
 import { branchesOf, stepSpec } from './kinds/steps.ts';
-import { stepListsOf, triggerSpec } from './kinds/triggers.ts';
-import type { Command, Expr, Rule, Step, Write } from './rule.ts';
+import { stepListsOf, triggerFields, triggerSpec } from './kinds/triggers.ts';
+import type { Command, Expr, Rule, RuleTrigger, Step, Write } from './rule.ts';
 
 /*
   What a rule reads and changes, by role: what its conditions read, what its
@@ -21,6 +21,8 @@ import type { Command, Expr, Rule, Step, Write } from './rule.ts';
  */
 export function eachAsGroup(rule: Rule): Rule {
   const renamed = (expr: Expr, names: Readonly<Record<string, string>>): Expr => {
+    // Across a group, its name for each part is the group, within what is said of each.
+    if ('across' in expr) return { ...expr, of: renamed(expr.of, { ...names, [expr.as]: expr.group }) };
     const inner = mapChildren(expr, (child) => renamed(child, names));
     if ('read' in inner && names[inner.read.role]) return { ...inner, read: { ...inner.read, role: names[inner.read.role]! } };
     if ('history' in inner && names[inner.of.role]) return { ...inner, of: { ...inner.of, role: names[inner.of.role]! } };
@@ -43,9 +45,18 @@ export function eachAsGroup(rule: Rule): Rule {
         return done;
       }, step);
     });
+  // A trigger's own expressions — what it waits for to hold — and its own steps.
+  const trigger = (each: RuleTrigger): RuleTrigger => {
+    const fields = triggerFields(each).reduce<RuleTrigger>((done, field) => {
+      const value = fieldValue(each, field);
+      return value !== undefined && EXPRESSION_FIELDS.has(field.type.type) ? withField(done, field, renamed(value as Expr, {})) : done;
+    }, each);
+    return fields.then ? { ...fields, then: steps(fields.then, {}) } : fields;
+  };
   return {
     ...rule,
-    when: rule.when.map((trigger) => (trigger.then ? { ...trigger, then: steps(trigger.then, {}) } : trigger)),
+    when: rule.when.map(trigger),
+    ...(rule.if ? { if: renamed(rule.if, {}) } : {}),
     then: steps(rule.then, {}),
     ...(rule.otherwise ? { otherwise: steps(rule.otherwise, {}) } : {}),
   };

@@ -8,6 +8,7 @@ import { ruleFromConfig, ruleToConfig } from '../text/rules.ts';
 import { fieldSchema } from './schema.ts';
 import { parseExpr } from '../text/expr.ts';
 import { BUILTIN_ORDER, BUILTINS } from './builtins.ts';
+import { ACROSS_FNS, ACROSS_ORDER } from './across.ts';
 import { HISTORY_FNS, HISTORY_ORDER } from './history.ts';
 import { EXPR_KIND_ORDER, EXPR_KINDS, exprKind, expressionsIn, mapChildren } from './exprs.ts';
 import { RULE_PART_DOCS } from './parts.ts';
@@ -142,6 +143,18 @@ describe('the steps, as data', () => {
         const parsed = parseExpr(example);
         if (!parsed.ok) throw new Error(`${name}: ${example}: ${parsed.error.message}`);
         expect({ example, calls: [...expressionsIn(parsed.expr)].some((each) => 'apply' in each && each.apply === name) }).toEqual({ example, calls: true });
+      }
+    }
+  });
+
+  test('every way of taking a group together has examples, each one of its own', () => {
+    for (const name of ACROSS_ORDER) {
+      const spec = ACROSS_FNS[name];
+      expect(spec.docs.examples.length).toBeGreaterThan(0);
+      for (const example of spec.docs.examples) {
+        const parsed = parseExpr(example);
+        if (!parsed.ok) throw new Error(`${name}: ${example}: ${parsed.error.message}`);
+        expect({ example, takes: [...expressionsIn(parsed.expr)].some((each) => 'across' in each && each.across === name) }).toEqual({ example, takes: true });
       }
     }
   });

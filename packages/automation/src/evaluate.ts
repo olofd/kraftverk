@@ -2,6 +2,7 @@ import { checkValue, isScalar, valueTypeOf, type ConfigSchema, type ScalarValue,
 
 import { inWindow, minutesOf } from './clock.ts';
 import type { Evaluation } from './functions.ts';
+import { ACROSS_FNS } from './kinds/across.ts';
 import { BUILTINS } from './kinds/builtins.ts';
 import { HISTORY_FNS, type HistoryPoint } from './kinds/history.ts';
 import type { SunEvent } from './rule.ts';
@@ -106,6 +107,8 @@ export type RuleScope = {
   history?(role: string, means: string, seconds: number): { points: readonly HistoryPoint[]; from: number; to: number; unit: Unit | null; label: string } | null;
   /** When the sun rises or sets today where the home is — moved by `offset` seconds — as a time of day, "HH:MM", on the automation's clock. Absent, or null, where it cannot be known. */
   sun?(event: SunEvent, offset: number): string | null;
+  /** What an expression is evaluated against for each part of a group, in order — that part called `as`, as a role is. Absent, or null, where the parts are not known. */
+  members?(group: string, as: string): readonly RuleScope[] | null;
   /** How a role's part is named: "Garage station". */
   name(role: string): string;
   /** The time of day on the owner's clock, as "HH:MM"; null where there is none. */
@@ -243,6 +246,19 @@ export function measureNow(expr: Expr, scope: RuleScope, trace: string[] = [], a
     case 'run': {
       const { run: fact, field } = expr as ExprOf<'run'>;
       return scope.run?.(fact, field) ?? plain(null);
+    }
+    case 'across': {
+      // Each part's answer, then all of them together — numbers in the first one's unit, each converted to it.
+      const { across: fn, as, group, of } = expr as ExprOf<'across'>;
+      const spec = ACROSS_FNS[fn];
+      const members = scope.members?.(group, as) ?? null;
+      if (!members?.length) return plain(null);
+      const each = members.map((member) => measureNow(of, member, trace, answers));
+      if (spec.takes === 'condition') return plain(spec.of(each.map((one) => (typeof one.value === 'boolean' ? one.value : null))));
+      const unit = each.find((one) => typeof one.value === 'number' && one.unit)?.unit ?? null;
+      const numbers = each.map((one) => (typeof one.value !== 'number' ? null : unit && one.unit && one.unit !== unit ? convert(one.value, one.unit, unit) : one.value));
+      const value = spec.of(numbers);
+      return typeof value === 'number' ? { value: tidy(value), unit } : plain(value);
     }
     case 'sun': {
       const { sun: event, offset } = expr as ExprOf<'sun'>;
@@ -458,6 +474,7 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
       case 'run':
       case 'memory':
       case 'sun':
+      case 'across':
         return settled;
       default: {
         const unknown: never = kind;

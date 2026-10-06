@@ -1108,6 +1108,39 @@ describe('a battery kept between two levels', () => {
   });
 });
 
+describe('across a group', () => {
+  test('a condition over its parts is looked at as any part reports — and runs when it turns true', async () => {
+    db.exec('DELETE FROM automation');
+    const context = setup();
+    const { engine, station, sent, store, readingsMoved } = context;
+    const rule: Rule = {
+      roles: { batteries: { group: true, label: 'Batteries', capabilities: ['battery'] }, plug: { label: 'Plug', capabilities: ['switch'] } },
+      params: { fields: {} },
+      when: [{ becomes: { across: 'any', as: 'b', group: 'batteries', of: { compare: 'lt', left: { read: { role: 'b', means: 'charge' } }, right: { value: 20, unit: '%' } } } }],
+      then: [{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
+    };
+    expect(checkRule(rule, { fn: () => null })).toEqual([]);
+    const made = store.create({ name: 'Any low', rule, madeFrom: null, roles: { plug: { device: PLUG, part: 'main' } }, groups: { batteries: [{ device: STATION, part: 'main' }] }, starts: {}, timeZone: ZONE, recheckMinutes: null });
+    store.update(made.id, { mode: 'act' });
+    expect(engine.roleProblems(store.get(made.id)!)).toEqual([]);
+    station.soc = 40;
+    engine.start();
+    try {
+      readingsMoved();
+      await settle();
+      expect(sent).toEqual([]);
+      // A part of the group reports: the condition is looked at again, and now holds.
+      station.soc = 15;
+      readingsMoved();
+      await settle();
+      expect(sent.map((intent) => intent.args.on)).toEqual([true]);
+      expect(sent[0]!.reason).toContain('Garage P280: Charge 15 %');
+    } finally {
+      engine.stop();
+    }
+  });
+});
+
 describe('by the sun', () => {
   /** A made-up home at Greenwich, its automations on the Stockholm clock. */
   const GREENWICH = { latitude: 51.4779, longitude: 0 };
