@@ -12,14 +12,23 @@ import { ErrorLine, PRIMARY, StepFrame, type StepProps } from './StepFrame';
 /** How often what can be seen is read again, while a device is being chosen. */
 const SEEN_AGAIN_MS = 2000;
 
-export function ChooseStep({ flow, step, onNext, onBack, presetAddress }: StepProps & { step: Extract<SetupStepView, { kind: 'choose' }>; presetAddress?: string }) {
+export function ChooseStep({
+  flow,
+  step,
+  onNext,
+  onBack,
+  presetAddress,
+  presetThrough,
+}: StepProps & { step: Extract<SetupStepView, { kind: 'choose' }>; presetAddress?: string; presetThrough?: string }) {
   const [sightings, setSightings] = useState<SightingView[]>([]);
   const [manual, setManual] = useState('');
   const { busy, error, setError: setError, attempt } = useAttempt();
   const theme = useTheme();
 
+  // Through a bridge: its members, from the bridge's own list — never typed, never a chooser.
+  const behind = step.transport === 'bridge';
   const pick = useCallback(
-    async (choice: { address: string } | { manual: string }) => {
+    async (choice: { address: string; through?: string } | { manual: string }) => {
       await attempt(async () => {
         await flow.choose(choice);
         onNext();
@@ -45,11 +54,12 @@ export function ChooseStep({ flow, step, onNext, onBack, presetAddress }: StepPr
     };
   }, [flow, step.discovery]);
 
-  // Found near you: that one, once the list has it.
+  // Found near you: that one, once the list has it — behind the bridge it was found behind.
   useEffect(() => {
     if (!presetAddress || busy || flow.address) return;
-    if (sightings.some((sighting) => sighting.address === presetAddress)) void pick({ address: presetAddress });
-  }, [busy, flow.address, pick, presetAddress, sightings]);
+    const found = sightings.find((sighting) => sighting.address === presetAddress && (!presetThrough || sighting.through?.id === presetThrough));
+    if (found) void pick({ address: found.address, ...(found.through ? { through: found.through.id } : {}) });
+  }, [busy, flow.address, pick, presetAddress, presetThrough, sightings]);
 
   const openChooser = (showAll: boolean) => {
     haptic();
@@ -64,7 +74,7 @@ export function ChooseStep({ flow, step, onNext, onBack, presetAddress }: StepPr
   return (
     <StepFrame
       title={step.title}
-      description={flow.address ? undefined : step.discovery === 'list' ? 'Devices on your network that could be it. Choose yours.' : undefined}
+      description={flow.address ? undefined : behind ? 'The devices behind it that could be this one. Choose yours.' : step.discovery === 'list' ? 'Devices on your network that could be it. Choose yours.' : undefined}
       onBack={onBack}
       next={flow.address ? { label: `Use ${flow.address}`, onPress: onNext } : undefined}
     >
@@ -96,14 +106,16 @@ export function ChooseStep({ flow, step, onNext, onBack, presetAddress }: StepPr
             <XStack padding="$4" gap="$3" alignItems="center">
               <Spinner color="$accent" />
               <Text flex={1} fontSize={13} color="$muted" lineHeight={19}>
-                Looking… It appears here as soon as it can be seen. A device already connected to something else may stay quiet: type its address below.
+                {behind
+                  ? 'Asking what is behind it… Nothing yet: is it on the account, or paired with the gateway?'
+                  : 'Looking… It appears here as soon as it can be seen. A device already connected to something else may stay quiet: type its address below.'}
               </Text>
             </XStack>
           ) : (
             sightings.map((sighting, index) => (
-              <YStack key={sighting.address}>
+              <YStack key={`${sighting.through?.id ?? ''}-${sighting.address}`}>
                 {index > 0 ? <RowSeparator /> : null}
-                <Pressable disabled={busy || sighting.claimedBy !== null} onPress={() => void pick({ address: sighting.address })}>
+                <Pressable disabled={busy || sighting.claimedBy !== null} onPress={() => void pick({ address: sighting.address, ...(sighting.through ? { through: sighting.through.id } : {}) })}>
                   <Row
                     title={sighting.name}
                     subtitle={sighting.claimedBy ? `Already yours: ${sighting.claimedBy.name}` : (sighting.detail ?? sighting.address)}

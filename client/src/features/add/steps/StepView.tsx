@@ -28,6 +28,7 @@ export function StepView({
   onChecked,
   onNamed,
   presetAddress,
+  presetThrough,
 }: StepProps & {
   step: SetupStepView;
   onChecked: (outcome: CheckOutcome) => void;
@@ -35,6 +36,8 @@ export function StepView({
   onNamed: (name: string) => void;
   /** An address chosen before the flow started: "found near you". */
   presetAddress?: string;
+  /** For one found behind a bridge: that bridge. */
+  presetThrough?: string;
 }) {
   switch (step.kind) {
     case 'instructions':
@@ -48,7 +51,7 @@ export function StepView({
         </StepFrame>
       );
     case 'choose':
-      return <ChooseStep flow={flow} step={step} onNext={onNext} onBack={onBack} presetAddress={presetAddress} />;
+      return <ChooseStep flow={flow} step={step} onNext={onNext} onBack={onBack} presetAddress={presetAddress} presetThrough={presetThrough} />;
     case 'form':
       return <FormStep flow={flow} step={step} onNext={onNext} onBack={onBack} onNamed={onNamed} />;
     case 'discover':

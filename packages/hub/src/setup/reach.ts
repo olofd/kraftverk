@@ -1,5 +1,5 @@
 import type { CheckOutcome } from '@kraftverk/api-contract';
-import { openChannel, type Channel, type ConfigValues, type Identified, type OpenConnection, type Protocol, type TransportDefinition } from '@kraftverk/device-sdk';
+import { openChannel, openThroughBridge, type BridgeHost, type Channel, type ConfigValues, type Identified, type OpenConnection, type Platform, type Protocol, type SavedDeviceId, type TransportDefinition } from '@kraftverk/device-sdk';
 import { withTimeout } from '@kraftverk/holder';
 
 import type { TransportHost } from '../installed/transports.ts';
@@ -34,6 +34,36 @@ export const SIMULATED_REACH: Reach = {
   identify: async () => ({ outcome: { outcome: 'new', summary: 'Simulated: no hardware was read, and none will be.', identity: null } }),
 };
 
+/** Opens the channel to a draft's device, reads who it is with its type's `identify`, and lets go: the check, however it is reached. */
+async function readOnce(draft: Draft, platform: Platform, open: () => Promise<Channel>): Promise<{ identified: Identified } | { outcome: CheckOutcome }> {
+  const method = draft.method!;
+  let channel: Channel | null = null;
+  try {
+    channel = await open();
+    const connection: OpenConnection = {
+      method: method.id,
+      protocol: method.protocol,
+      transport: method.transport,
+      address: draft.address!,
+      channel,
+      config: draft.connection as ConfigValues,
+      secrets: { get: (field) => draft.secrets.get(field) ?? null },
+      platform,
+    };
+    const quiet = { info: () => {}, warn: (m: string) => console.warn(`[setup] ${m}`), error: (m: string) => console.error(`[setup] ${m}`) };
+    const identified = await withTimeout(
+      draft.type.identify(connection, { config: draft.device as ConfigValues, log: quiet, signal: AbortSignal.timeout(CHECK_TIMEOUT_MS) }),
+      `Reading the ${draft.type.meta.name}`,
+      CHECK_TIMEOUT_MS
+    );
+    return { identified };
+  } catch (error) {
+    return { outcome: { outcome: 'no-answer', summary: (error as Error).message, saveAnyway: draft.type.setup?.saveAnyway ?? null } };
+  } finally {
+    await channel?.close().catch(() => undefined);
+  }
+}
+
 /** A device, over its protocol and one of this home's transports. */
 export function overHardware(protocol: Protocol | null, transport: TransportDefinition | null, transports: TransportHost): Reach {
   return {
@@ -41,34 +71,26 @@ export function overHardware(protocol: Protocol | null, transport: TransportDefi
     transport,
     exclusive: transport?.exclusive !== false,
     strict: true,
-    /** Opened, asked who it is by its type's `identify`, and let go. */
-    async identify(draft) {
-      const method = draft.method!;
-      let channel: Channel | null = null;
-      try {
-        channel = await openChannel(transports, protocol, { transport: method.transport, address: draft.address! });
-        const connection: OpenConnection = {
-          method: method.id,
-          protocol: method.protocol,
-          transport: method.transport,
-          address: draft.address!,
-          channel,
-          config: draft.connection as ConfigValues,
-          secrets: { get: (field) => draft.secrets.get(field) ?? null },
-          platform: transports.platform,
-        };
-        const quiet = { info: () => {}, warn: (m: string) => console.warn(`[setup] ${m}`), error: (m: string) => console.error(`[setup] ${m}`) };
-        const identified = await withTimeout(
-          draft.type.identify(connection, { config: draft.device as ConfigValues, log: quiet, signal: AbortSignal.timeout(CHECK_TIMEOUT_MS) }),
-          `Reading the ${draft.type.meta.name}`,
-          CHECK_TIMEOUT_MS
-        );
-        return { identified };
-      } catch (error) {
-        return { outcome: { outcome: 'no-answer', summary: (error as Error).message, saveAnyway: draft.type.setup?.saveAnyway ?? null } };
-      } finally {
-        await channel?.close().catch(() => undefined);
-      }
-    },
+    identify: (draft) => readOnce(draft, transports.platform, () => openChannel(transports, protocol, { transport: draft.method!.transport, address: draft.address! })),
+  };
+}
+
+/**
+ * A member of a bridge, over its protocol and the bridge's open session
+ * (docs/PLAN-INTEGRATIONS.md §4.3). Its key is one member of one bridge: two
+ * devices you have cannot share it.
+ */
+export function throughBridge(protocol: Protocol | null, bridge: (id: SavedDeviceId) => BridgeHost | null, platform: Platform): Reach {
+  return {
+    protocol,
+    transport: null,
+    exclusive: true,
+    strict: true,
+    identify: (draft) =>
+      readOnce(draft, platform, async () => {
+        const host = draft.through ? bridge(draft.through) : null;
+        if (!host) throw new Error('What it is reached through is not open here');
+        return openThroughBridge(host, protocol, { address: draft.address! });
+      }),
   };
 }

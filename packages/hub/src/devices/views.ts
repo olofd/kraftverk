@@ -27,6 +27,8 @@ import type { DeviceTypeRegistry } from '../installed/types.ts';
 /** What every view in one answer is joined from, read once. */
 type Joined = {
   names: Map<SavedDeviceId, string>;
+  /** Each device's key: what a way through it names it by in a file. */
+  keys: Map<SavedDeviceId, string>;
   /** What each device is now, for naming the part a link reaches. */
   descriptions: Map<SavedDeviceId, DeviceDescription>;
   connections: Map<SavedDeviceId, ConnectionRecord[]>;
@@ -69,19 +71,23 @@ export class DeviceViews {
     return this.deps.catalog.removed().map((record) => this.#view(record, joined));
   }
 
-  /** One device, joined with only what its view names: its connections and their holders, and the devices its links reach. */
+  /** One device, joined with only what its view names: its connections and their holders, the bridges they go through, and the devices its links reach. */
   find(id: SavedDeviceId): DeviceView | null {
     const record = this.deps.catalog.get(id);
     if (!record) return null;
     const links = this.deps.links.forDevice(record.id);
-    const others = [...new Set(links.flatMap((link) => [link.source.device, link.target.device]))]
-      .filter((other) => other !== record.id)
-      .flatMap((other) => this.deps.catalog.active(other) ?? []);
     const connections = this.deps.connections.forDevice(record.id);
+    const bridges = [...new Set(connections.flatMap((connection) => (connection.through ? [connection.through] : [])))].flatMap((bridge) => this.deps.catalog.active(bridge) ?? []);
+    const others = [
+      ...[...new Set(links.flatMap((link) => [link.source.device, link.target.device]))].filter((other) => other !== record.id).flatMap((other) => this.deps.catalog.active(other) ?? []),
+      ...bridges,
+    ];
     return this.#view(record, {
       names: new Map([record, ...others].map((each) => [each.id, each.name])),
+      keys: new Map([record, ...others].map((each) => [each.id, each.key])),
       descriptions: new Map([record, ...others].map((each) => [each.id, this.deps.sessions.description(each)])),
-      connections: new Map([[record.id, connections]]),
+      // A bridge's own ways say which node holds what goes through it.
+      connections: new Map([[record.id, connections], ...bridges.map((bridge) => [bridge.id, this.deps.connections.forDevice(bridge.id)] as const)]),
       secrets: new Map(connections.map((connection) => [connection.id, this.deps.connections.secretFields(connection.id)])),
       links: new Map([[record.id, links]]),
       nodes: new Map(this.deps.nodes.all().map((node) => [node.id, node])),
@@ -95,6 +101,7 @@ export class DeviceViews {
     }
     return {
       names: new Map(active.map((record) => [record.id, record.name])),
+      keys: new Map(active.map((record) => [record.id, record.key])),
       descriptions: new Map(active.map((record) => [record.id, this.deps.sessions.description(record)])),
       connections: this.deps.connections.byDevice(),
       secrets: this.deps.connections.secretFieldsByConnection(),
@@ -154,7 +161,7 @@ export class DeviceViews {
         methodLabel: method?.label ?? connection.method,
         transport: connection.transport,
         heldBy: { kind: heldBy === this.deps.master() ? 'master' : 'node', id: heldBy, name: holder?.name ?? 'Another node' },
-        through: connection.through !== null ? { id: connection.through, name: names.get(connection.through) ?? 'A removed device' } : null,
+        through: connection.through !== null ? { id: connection.through, key: joined.keys.get(connection.through) ?? '', name: names.get(connection.through) ?? 'A removed device' } : null,
         address: connection.address,
         priority: connection.priority,
         reachable: reachable(connection),

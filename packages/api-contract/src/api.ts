@@ -10,7 +10,7 @@ import type { ConfigExported, ConfigExportRequest, ConfigSnapshotView, ImportAns
 import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, HomeElsewhere, LinkRecord, NewLink, PictureRef, ToolBody } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, ProblemView } from './live.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, HomeView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
-import type { CheckOutcome, DraftView, FoundView, HeldSetupInput, SaveInput, SightingView } from './setup.ts';
+import type { CheckOutcome, DraftView, FoundAt, FoundView, HeldSetupInput, SaveInput, SightingView } from './setup.ts';
 
 /*
   The one interface (docs/ARCHITECTURE.md, decision 24): everything a home
@@ -95,8 +95,13 @@ export interface KraftverkApi {
    * kept until the save.
    */
   setup: {
-    /** Begins one over a method of a type, held by whoever its way says (`ways`): the master, unless this node holds it for the master. */
-    start(input: { typeId: string; methodId?: string | null; holder?: HeldBy }): Promise<DraftView>;
+    /**
+     * Begins one over a method of a type, held by whoever its way says
+     * (`ways`): the master, unless this node holds it for the master. A way
+     * through a bridge may name the bridge (`through`); without it, every
+     * bridge open here it can go through is offered.
+     */
+    start(input: { typeId: string; methodId?: string | null; holder?: HeldBy; through?: string }): Promise<DraftView>;
     /** One a node that follows will hold, from what it learnt reading the device itself: never a secret. */
     startHeld(input: HeldSetupInput): Promise<DraftView>;
     get(id: string): Promise<DraftView>;
@@ -108,7 +113,7 @@ export interface KraftverkApi {
      * platform's own chooser (a browser's Bluetooth picker) — asked
      * straight from a person's tap; dismissed, nothing is chosen.
      */
-    choose(id: string, choice: { address: string } | { manual: string } | { chooser: { showAll?: boolean } }): Promise<DraftView>;
+    choose(id: string, choice: { address: string; through?: string } | { manual: string } | { chooser: { showAll?: boolean } }): Promise<DraftView>;
     update(id: string, values: { device?: ConfigValues; connection?: ConfigValues }): Promise<DraftView>;
     /** A step's helper — fetching a key — run where it is held; a secret it finds is kept there, and a placeholder answered. */
     action(id: string, step: string, action: string, input: ConfigValues, signal?: AbortSignal): Promise<SetupActionResult>;
@@ -118,8 +123,12 @@ export interface KraftverkApi {
     /** The device, its connection, its secrets and its links, in one go. */
     save(id: string, input: SaveInput): Promise<DeviceView>;
   };
-  /** What the transports see that nothing you have is reached by: "found near you". */
+  /** What the transports see, and the bridges open here have behind them, that nothing you have is reached by: "found near you". Ignored ones are listed, marked. */
   nearby(): Promise<FoundView[]>;
+  /** Not to be offered again: something found, by where it was found. */
+  ignoreFound(at: FoundAt): Promise<void>;
+  /** Offered again. */
+  unignoreFound(at: FoundAt): Promise<void>;
   transports: {
     /** What this home reaches devices over, each running or not, and why not. */
     list(): Promise<TransportList>;

@@ -11,13 +11,15 @@
 */
 
 /** The version this kraftverk writes. */
-export const CURRENT_VERSION = 4;
+export const CURRENT_VERSION = 5;
 
 /** Each version's document, as data, made into the next version's. */
 export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unknown>) => Record<string, unknown>>> = {
   1: (document) => ({ ...document, automations: renamedMeanings(document.automations, MEANINGS_1_TO_2) }),
   2: (document) => ({ ...document, automations: withoutRoleDescriptions(document.automations) }),
   3: (document) => ({ ...document, automations: inTextsOf(document.automations, plainerExpressions) }),
+  // Version 5 may say a way goes through another device (`through:`): nothing older does, so nothing changes.
+  4: (document) => document,
 };
 
 /**

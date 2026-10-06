@@ -4,7 +4,7 @@ import { ApiError, type Caller, type CheckOutcome, type DeviceView, type Kraftve
 import { plainSecrets, type SqlDatabase } from '@kraftverk/store';
 
 import { createHub, installedFrom, type Hub } from '../src/index.ts';
-import { busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE, testIntegration } from '../src/testing.ts';
+import { busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE, makeHubType, relayedLampType, relayProtocol, testIntegration, type HubWatch } from '../src/testing.ts';
 import { forecastContribution, forecastType, plugType, stationType } from './kinds.ts';
 import { testDatabase } from './home.ts';
 
@@ -34,6 +34,8 @@ const sealing = {
 export type TestHome = {
   hub: Hub;
   bus: FakeBus;
+  /** What is behind the test hub, when bridges were asked for. */
+  bridged: HubWatch;
   database: SqlDatabase;
   /** The home, asked as olof. */
   home: KraftverkApi;
@@ -48,14 +50,20 @@ export type TestHome = {
   stop(): Promise<void>;
 };
 
-/** A home with every test kind installed: the lamp on the bus, and the station, plug and forecast, simulated. */
-export async function aHome(options: { readOnly?: boolean } = {}): Promise<TestHome> {
+/**
+ * A home with every test kind installed: the lamp on the bus, and the
+ * station, plug and forecast, simulated. With `bridges`, also the test hub —
+ * an account, a bridge — and the lamp reached only through it.
+ */
+export async function aHome(options: { readOnly?: boolean; bridges?: boolean } = {}): Promise<TestHome> {
   const database = testDatabase();
   const bus = new FakeBus();
+  const hubType = makeHubType();
+  const bridging = options.bridges ? [{ type: hubType.type }, { type: relayedLampType }] : [];
   const installed = installedFrom(
     {
-      integrations: [testIntegration({ type: lampType }, { type: stationType }, { type: plugType }, { type: forecastType, automation: forecastContribution })],
-      protocols: [lampProtocol],
+      integrations: [testIntegration({ type: lampType }, { type: stationType }, { type: plugType }, { type: forecastType, automation: forecastContribution }, ...bridging)],
+      protocols: options.bridges ? [lampProtocol, relayProtocol] : [lampProtocol],
       transports: [{ definition: busDefinition, create: () => bus }],
     },
     { platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } }
@@ -97,6 +105,7 @@ export async function aHome(options: { readOnly?: boolean } = {}): Promise<TestH
   return {
     hub,
     bus,
+    bridged: hubType.watch,
     database,
     home,
     as: (caller) => copying(hub.as(caller)),

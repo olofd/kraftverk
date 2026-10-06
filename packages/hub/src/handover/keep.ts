@@ -67,7 +67,7 @@ export class KeepingCopy {
     // All of it is here already, as the master had it: there is nothing to bring, and it is not offered again.
     const held = this.#catalog.list().some((kept) => this.#connections.forDevice(kept.id).length > 0);
     if (nothingToDo(plan) && !held) this.#settings.set(KEPT, new Date().toISOString());
-    const ways = this.#catalog.list().flatMap((device) => this.#connections.forDevice(device.id).map(() => device.name));
+    const ways = this.#catalog.list().flatMap((device) => this.#connections.forDevice(device.id).filter((way) => way.through === null).map(() => device.name));
     return {
       ...plan,
       notes: [
@@ -87,6 +87,8 @@ export class KeepingCopy {
       const device = catalog.byKey(kept.key);
       if (!device) continue;
       for (const way of this.#connections.forDevice(kept.id)) {
+        // A way through a bridge came with the file, naming its bridge: only the ways this app held itself are its own to bring.
+        if (way.through !== null) continue;
         if (connections.forDevice(device.id).some((had) => had.method === way.method && had.heldBy === this.#hub.self.id)) continue;
         try {
           const added = connections.add({ deviceId: device.id, method: way.method, transport: way.transport, heldBy: this.#hub.self.id, address: way.address, config: way.config });

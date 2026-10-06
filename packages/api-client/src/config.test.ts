@@ -28,8 +28,8 @@ const plug = {
     attributes: [{ key: 'power', label: 'Power', value: { type: 'number', unit: 'W' }, means: 'power' }],
   },
   connections: [
-    { id: 'c-1', method: 'lan', methodLabel: 'Home network', heldBy: { kind: 'master', id: 'n-00000000000000a1', name: 'Test machine' }, address: '192.0.2.10#a4c1380000000001', priority: 0, secrets: ['localKey'], secretsExportable: false, config: { deviceId: 'made-up-id' } },
-    { id: 'c-2', method: 'bluetooth', methodLabel: 'Bluetooth', heldBy: { kind: 'node', id: 'n-00000000000000b2', name: 'A phone' }, address: 'AA:BB', priority: 1, secrets: [], secretsExportable: false, config: {} },
+    { id: 'c-1', method: 'lan', methodLabel: 'Home network', heldBy: { kind: 'master', id: 'n-00000000000000a1', name: 'Test machine' }, through: null, address: '192.0.2.10#a4c1380000000001', priority: 0, secrets: ['localKey'], secretsExportable: false, config: { deviceId: 'made-up-id' } },
+    { id: 'c-2', method: 'bluetooth', methodLabel: 'Bluetooth', heldBy: { kind: 'node', id: 'n-00000000000000b2', name: 'A phone' }, through: null, address: 'AA:BB', priority: 1, secrets: [], secretsExportable: false, config: {} },
   ],
 } as unknown as DeviceView;
 
@@ -40,7 +40,7 @@ const VOCABULARY: Vocabulary = {
       name: 'Acme plug',
       settings: { fields: { profile: { type: 'enum', title: 'Profile', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }], default: 'a' } } },
       parts: ['main'],
-      methods: [{ id: 'lan', label: 'Home network', fixedAddress: null, settings: { fields: { deviceId: { type: 'string', title: 'Device id', required: true } } }, secrets: { fields: { localKey: { type: 'string', title: 'Local key', required: true, presentation: 'secret' } } } }],
+      methods: [{ id: 'lan', label: 'Home network', fixedAddress: null, settings: { fields: { deviceId: { type: 'string', title: 'Device id', required: true } } }, secrets: { fields: { localKey: { type: 'string', title: 'Local key', required: true, presentation: 'secret' } } }, through: [] }],
     },
   ],
   linkKinds: ['feeds'],

@@ -1151,6 +1151,12 @@ members. The file gains `through:` on a connection: version 5, migrated from
 4 (no entry changes), with a fixture.
 *Done when* a simulated account and its members are added end to end, in the
 app's tests on the fast clock.
+**Done 2026-10-06, end to end in the hub's tests.** Setup through a bridge
+reads a member over the bridge's session (a reach of its own beside hardware
+and simulated); members are found near you, can be ignored and offered again
+(`sighting_ignored`, named as a connection is: transport, bridge, address);
+the file writes `through:` and imports a bridge before what goes through it.
+The app's own run of it waits for a real account to add: step 5's NIU.
 
 **Step 5 · NIU on an account.**
 `niu.account`, the NIU integration's: kind account, a bridge; the account

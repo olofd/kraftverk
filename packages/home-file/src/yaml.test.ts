@@ -87,6 +87,7 @@ describe('a configuration file', () => {
     expect(document!.home.policy).toEqual({ loadWatts: 50, reserveSoc: 20 });
     expect(document!.devices['smart-plug']!.connect[0]).toEqual({
       via: 'lan',
+      through: null,
       address: '192.0.2.10#a4c1380000000001',
       settings: { deviceId: 'bf7c0000000000000000zp', protocolVersion: '3.4' },
       secrets: { localKey: { secret: 'smart-plug-key' } },
@@ -150,8 +151,8 @@ automations:
 
   test('YAML that is not YAML, a missing version, and one written by a newer kraftverk', () => {
     expect(readConfig('devices: [').problems[0]).toMatchObject({ line: 1 });
-    expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 4" at its top');
-    expect(readConfig('kraftverk: 9').problems[0]).toMatchObject({ message: 'It was written by a newer kraftverk (version 9); this one reads up to version 4', line: 1, column: 12 });
+    expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 5" at its top');
+    expect(readConfig('kraftverk: 9').problems[0]).toMatchObject({ message: 'It was written by a newer kraftverk (version 9); this one reads up to version 5', line: 1, column: 12 });
   });
 });
 

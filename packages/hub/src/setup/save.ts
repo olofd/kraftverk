@@ -76,7 +76,7 @@ function deviceFor(deps: SaveDeps, draft: Draft, input: SaveRequest, deviceConfi
     const onTheirWord = checked.outcome === 'new' && checked.identity === null;
     if (!same && !first && !onTheirWord) throw new ApiError('conflict', `That is a different device, not ${existing.name}`);
     if (first && checked.identity) deps.catalog.update(existing.id, { identity: checked.identity });
-    if (deps.connections.forDevice(existing.id).some((c) => c.method === method.id && c.heldBy === draft.heldBy)) {
+    if (deps.connections.forDevice(existing.id).some((c) => c.method === method.id && (draft.through ? c.through === draft.through : c.heldBy === draft.heldBy))) {
       throw new ApiError('conflict', `${existing.name} is already reached this way`);
     }
     return { record: existing, kind: 'device.connection-added' };
@@ -103,13 +103,17 @@ export function writeSaved(deps: SaveDeps, draft: Draft, input: SaveRequest, con
   const address = draft.address!;
   const { record, kind } = deviceFor(deps, draft, input, config.device);
 
-  // An exclusive address belongs to one device.
-  if (draft.reach.exclusive && draft.heldBy === deps.self) {
+  // An exclusive address belongs to one device; a member's key, to one member of its bridge.
+  if (draft.through) {
+    const claim = deps.connections.member(draft.through, address);
+    if (claim && claim.deviceId !== record.id) throw new ApiError('conflict', 'Another device you have is already that one behind it');
+  } else if (draft.reach.exclusive && draft.heldBy === deps.self) {
     const claim = deps.connections.claimant(method.transport, address);
     if (claim && claim.deviceId !== record.id) throw new ApiError('conflict', 'Another device you have is already reached at that address');
   }
 
-  const saved = deps.connections.add({ deviceId: record.id, method: method.id, transport: method.transport, heldBy: draft.heldBy, address, config: config.connection, secretsExportable: draft.heldBy === deps.self && input.secretsExportable === true });
+  const holding = draft.through ? { through: draft.through } : { heldBy: draft.heldBy };
+  const saved = deps.connections.add({ deviceId: record.id, method: method.id, transport: method.transport, ...holding, address, config: config.connection, secretsExportable: draft.heldBy === deps.self && input.secretsExportable === true });
   if (draft.secrets.size) deps.connections.setSecrets(saved.id, Object.fromEntries(draft.secrets));
 
   for (const link of input.links ?? []) {

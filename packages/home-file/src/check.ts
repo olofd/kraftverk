@@ -52,6 +52,14 @@ export function checkDocument(document: ConfigDocument, vocabulary: Vocabulary, 
     else if (value < spec.min || value > spec.max) problem(`${spec.label} is from ${spec.min} to ${spec.max} ${spec.unit}`, ['home', 'policy', name]);
   }
 
+  // A device by its key — in the file, or one the server has — its type, and whether it has a part.
+  const deviceOf = (key: string): { name: string; type: string; parts: string[] } | null => {
+    const own: DeviceEntry | undefined = document.devices[key];
+    if (own) return { name: own.name, type: own.type, parts: types.get(own.type)?.parts ?? [MAIN_PART] };
+    const there = vocabulary.devices.find((device) => device.key === key);
+    return there ? { name: there.name, type: there.type, parts: there.parts } : null;
+  };
+
   // Each device.
   for (const [key, device] of Object.entries(document.devices)) {
     const path: Path = ['devices', key];
@@ -69,6 +77,16 @@ export function checkDocument(document: ConfigDocument, vocabulary: Vocabulary, 
         return;
       }
       if (way.address === null && !method.fixedAddress) problem(`${method.label} needs an address: where it is found`, at);
+      // Through a bridge: which one, by its key, of a type it can go through — in the file, or one the server has.
+      if (method.through.length) {
+        if (way.through === null) problem(`${method.label} goes through a device: name it under "through"`, at);
+        else {
+          const bridge = deviceOf(way.through);
+          if (!bridge) problem(`There is no device "${way.through}", in the file or on the server`, [...at, 'through']);
+          else if (!method.through.includes(bridge.type)) problem(`${method.label} goes through ${method.through.map((id) => types.get(id)?.name ?? id).join(' or ')}, and ${bridge.name} is not one`, [...at, 'through']);
+          else if (way.through === key) problem('A device is not reached through itself', [...at, 'through']);
+        }
+      } else if (way.through !== null) problem(`${method.label} goes through nothing: "through" is for a way through another device`, [...at, 'through']);
       settings(method.settings, way.settings, [...at, 'settings'], method.label);
       for (const field of Object.keys(way.secrets)) if (!(field in method.secrets.fields)) problem(`${method.label} keeps no secret "${field}"`, [...at, 'secrets', field]);
       for (const [field, spec] of Object.entries(method.secrets.fields)) {
@@ -82,13 +100,7 @@ export function checkDocument(document: ConfigDocument, vocabulary: Vocabulary, 
     });
   }
 
-  // A device by its key — in the file, or one the server has — and whether it has a part.
-  const deviceOf = (key: string): { name: string; parts: string[] } | null => {
-    const own: DeviceEntry | undefined = document.devices[key];
-    if (own) return { name: own.name, parts: types.get(own.type)?.parts ?? [MAIN_PART] };
-    const there = vocabulary.devices.find((device) => device.key === key);
-    return there ? { name: there.name, parts: there.parts } : null;
-  };
+
   const part = (ref: { device: string; part: string }, path: Path) => {
     const device = deviceOf(ref.device);
     if (!device) problem(`There is no device "${ref.device}", in the file or on the server`, path);

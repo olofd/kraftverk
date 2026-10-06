@@ -16,6 +16,7 @@ import {
   deviceStore,
   EventStore,
   holding,
+  IgnoredSightings,
   LinkStore,
   policyValues,
   setPolicyValue,
@@ -140,6 +141,8 @@ export class Hub {
   readonly views: DeviceViews;
   readonly setup: SetupService;
   readonly nearby: Nearby;
+  /** What a person said not to offer again: found on a transport, or behind a bridge. */
+  readonly ignored: IgnoredSightings;
   readonly sampler: Sampler;
   readonly changeLog: ChangeLog;
   /** What the people using it are looking at, said by their apps. */
@@ -224,7 +227,8 @@ export class Hub {
 
     this.heldReadings = new HeldReadings(this.history);
     this.views = new DeviceViews({ catalog, types, sessions, connections, links, nodes, transports, heldReadings: this.heldReadings, self: self.id, master: () => this.home.get()!.masterId, readOnly: options.readOnly });
-    this.nearby = new Nearby({ types, protocols, transports, connections });
+    this.ignored = new IgnoredSightings(this.db);
+    this.nearby = new Nearby({ types, protocols, transports, connections, catalog, sessions, ignored: this.ignored });
     this.sampler = new Sampler({ history: this.history, audit: this.audit, events }, this.views);
     this.changeLog = new ChangeLog(this.history, this.bus, (id) => {
       const device = catalog.active(id);

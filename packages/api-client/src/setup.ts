@@ -68,9 +68,9 @@ export class SetupFlow {
     const address = this.#draft.address;
     if (!address) return null;
     const seen = (await this.api.setup.sightings(this.#draft.id)).find((sighting) => sighting.address === address);
-    return seen ?? { address, name: 'The device you chose', detail: null, identity: null, seenAt: new Date().toISOString(), rssi: null, claimedBy: null };
+    return seen ?? { address, name: 'The device you chose', detail: null, identity: null, seenAt: new Date().toISOString(), rssi: null, claimedBy: null, through: null };
   }
-  async choose(choice: { address: string } | { manual: string }): Promise<void> {
+  async choose(choice: { address: string; through?: string } | { manual: string }): Promise<void> {
     this.#draft = await this.api.setup.choose(this.#draft.id, choice);
   }
   async update(values: { device?: ConfigValues; connection?: ConfigValues }): Promise<void> {

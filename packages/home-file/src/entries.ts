@@ -113,6 +113,8 @@ export type DeviceSource = { typeId: string; name: string; identity: string | nu
 /** One way a device is reached, as an entry is written from it: its secrets as asked for — by name, sealed, or plain — and whether its method fixes the address. */
 export type WaySource = {
   method: string;
+  /** The key of the device it goes through, for a way through a bridge. */
+  through: string | null;
   address: string;
   config: Readonly<Record<string, unknown>>;
   secrets: Record<string, SecretValue>;
@@ -138,6 +140,6 @@ export function deviceEntryFrom(device: DeviceSource, ways: readonly WaySource[]
     identity: device.identity,
     picture: device.picture,
     settings: scalars(device.config),
-    connect: ways.map((way) => ({ via: way.method, address: way.fixedAddress ? null : way.address, settings: scalars(way.config), secrets: way.secrets, exportable: way.exportable })),
+    connect: ways.map((way) => ({ via: way.method, through: way.through, address: way.fixedAddress ? null : way.address, settings: scalars(way.config), secrets: way.secrets, exportable: way.exportable })),
   };
 }

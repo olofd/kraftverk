@@ -172,6 +172,8 @@ export function followerApi(h: Follower): KraftverkApi {
           typeId: draft.typeId,
           methodId: draft.methodId!,
           address: draft.address!,
+          // A member of a bridge this node holds: its way goes through that bridge.
+          ...(draft.through ? { through: draft.through } : {}),
           identified:
             'identified' in read
               ? { identity: read.identified.identity, model: read.identified.model, name: read.identified.name, summary: read.identified.summary, config: read.identified.config }
@@ -204,6 +206,8 @@ export function followerApi(h: Follower): KraftverkApi {
     },
 
     nearby: () => home.nearby(),
+    ignoreFound: (at) => home.ignoreFound(at),
+    unignoreFound: (at) => home.unignoreFound(at),
 
     transports: {
       /** The master's, and this node's own: what it holds the master's ways over, here. */

@@ -53,7 +53,8 @@ export function Connections({ device }: { device: DeviceView }) {
                 <XStack alignItems="center" justifyContent="space-between" gap="$2">
                   <YStack flex={1} gap={2}>
                     <Text fontSize={15} fontWeight="600" color="$color">
-                      {connection.methodLabel}, {reach.of(connection.heldBy)}
+                      {/* Through a bridge: reached wherever the bridge is — named by the bridge, not a node. */}
+                      {connection.through ? `${connection.methodLabel}, through ${connection.through.name}` : `${connection.methodLabel}, ${reach.of(connection.heldBy)}`}
                     </Text>
                     <Text fontSize={12} color="$muted">
                       {connection.inUse
@@ -61,7 +62,7 @@ export function Connections({ device }: { device: DeviceView }) {
                         : connection.lastConnectedAt
                           ? `Standing by · last connected ${new Date(connection.lastConnectedAt).toLocaleString()}`
                           : 'Standing by'}
-                      {` · ${connection.address}`}
+                      {connection.through ? '' : ` · ${connection.address}`}
                       {connection.secrets.length ? ` · ${secretWords(connection.secrets)} kept` : ''}
                     </Text>
                   </YStack>

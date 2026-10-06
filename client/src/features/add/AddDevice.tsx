@@ -29,13 +29,13 @@ import { Ways, type Way } from './Ways';
  * house → saved. Every step that touches the device runs where the connection
  * will be held: the home — a server, or the app's own — or this app, for a
  * server. `?attach=<id>` adds another way to
- * reach a device you have; `?type=&method=&address=` comes from "Found near you".
+ * reach a device you have; `?type=&method=&address=` comes from "Found near you" — with `&through=` for one found behind a bridge.
  */
 
 type Stage = 'category' | 'type' | 'method' | 'steps' | 'finish';
 
 export function AddDevice() {
-  const params = useLocalSearchParams<{ type?: string; method?: string; address?: string; attach?: string }>();
+  const params = useLocalSearchParams<{ type?: string; method?: string; address?: string; through?: string; attach?: string }>();
   const { devices, refresh } = useDevices();
   const { api, role } = useHome();
   const reach = useReach();
@@ -239,6 +239,7 @@ export function AddDevice() {
             flow={flow}
             step={flow.plan[stepIndex]!}
             presetAddress={params.address}
+            presetThrough={params.through}
             onNext={next}
             onBack={back}
             onChecked={setOutcome}

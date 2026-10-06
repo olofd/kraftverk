@@ -1,6 +1,9 @@
 import { ApiError, type CheckOutcome, type DraftView, type HeldSetupInput, type SightingView } from '@kraftverk/api-contract';
 import {
+  BRIDGE_TRANSPORT,
+  isBridged,
   nodeId,
+  savedDeviceId,
   findStep,
   isSecretField,
   isSimulated,
@@ -12,6 +15,7 @@ import {
   type Identified,
   type NodeId,
   type NodeTraits,
+  type SavedDeviceId,
   type ScopedHttp,
   type SetupActionResult,
   type SetupChoice,
@@ -26,7 +30,8 @@ import type { DeviceTypeRegistry } from '../installed/types.ts';
 import { unref } from '../timers.ts';
 import { connectionSchema } from '../installed/connection-schema.ts';
 import { DRAFT_TTL_MS, viewOf, type Draft, type SaveRequest } from './draft.ts';
-import { overHardware, SIMULATED_REACH } from './reach.ts';
+import { membersOnOffer, openBridges, type MemberOffer } from '../devices/members.ts';
+import { overHardware, SIMULATED_REACH, throughBridge } from './reach.ts';
 import { saveable, writeSaved } from './save.ts';
 
 export type { SaveRequest } from './draft.ts';
@@ -99,7 +104,7 @@ export class SetupService {
    * Begins setting up a device of `typeId`, over `methodId`, held by this
    * home. Refused when the method's transport cannot be used here, saying why.
    */
-  async start(input: { typeId: string; methodId?: string | null; by: string }): Promise<DraftView> {
+  async start(input: { typeId: string; methodId?: string | null; by: string; through?: string }): Promise<DraftView> {
     const type = this.deps.types.get(input.typeId);
     if (!type) throw new ApiError('not-found', `Nothing installed here knows what "${input.typeId}" is`);
 
@@ -109,9 +114,21 @@ export class SetupService {
     // Simulated: nothing to reach, so no protocol and no transport — only the type's own steps, then its simulator.
     let reach = SIMULATED_REACH;
     let transport = null;
+    let through: SavedDeviceId | null = null;
     const unfit = unfitFor(method, this.#traits(this.deps.self));
     if (unfit) throw new ApiError('conflict', `${method.label}: ${unfit}`);
-    if (!isSimulated(method)) {
+    if (isBridged(method)) {
+      // Through a bridge: one open here is the transport, and its members are what is found.
+      const protocol = this.deps.protocols.get(method.protocol);
+      if (!protocol?.bindings[BRIDGE_TRANSPORT]) throw new ApiError('conflict', `${platformWords(this.deps.transports.platform).this} cannot reach a ${type.meta.name} by ${method.label}: it needs updating`);
+      const bridges = openBridges(this.deps, method.through).filter((bridge) => !input.through || bridge.id === input.through);
+      if (!bridges.length) {
+        const which = (method.through ?? []).map((id) => this.deps.types.get(id)?.meta.name ?? id).join(' or ');
+        throw new ApiError('conflict', `A ${type.meta.name} is reached through ${which}: add that first, or open it here`);
+      }
+      through = bridges.length === 1 ? bridges[0]!.id : null;
+      reach = throughBridge(protocol, (id) => this.deps.sessions.get(id)?.bridge ?? null, this.deps.transports.platform);
+    } else if (!isSimulated(method)) {
       const protocol = this.deps.protocols.get(method.protocol);
       if (!protocol?.bindings[method.transport]) throw new ApiError('conflict', `${platformWords(this.deps.transports.platform).this} cannot reach a ${type.meta.name} by ${method.label}: it needs updating`);
       transport = await this.deps.transports.start(method.transport);
@@ -128,6 +145,7 @@ export class SetupService {
       reach,
       plan: setupPlan({ type, method, protocol: reach.protocol, transport: reach.transport, platform: this.deps.transports.platform, values: transport?.values?.() ?? {} }),
       address: method.address ?? null,
+      through,
     });
 
     // What the transport can see, kept current for as long as the draft lives.
@@ -169,6 +187,8 @@ export class SetupService {
       reach: overHardware(protocol, this.deps.transports.definition(method.transport), this.deps.transports),
       plan: [],
       address: input.address,
+      // A member it holds through a bridge it holds: the way goes through that bridge.
+      through: input.through ? savedDeviceId(input.through) : null,
     });
     draft.device = { ...(input.device ?? {}) };
     draft.connection = Object.fromEntries(Object.entries(input.connection ?? {}).filter(([field]) => !secret.has(field)));
@@ -193,9 +213,22 @@ export class SetupService {
     this.#sweepWhileNeeded();
   }
 
-  /** What the transport sees that this device's protocol recognises, each marked when it is already yours. */
+  /** What the transport sees that this device's protocol recognises — or, through a bridge, its members — each marked when it is already yours. */
   sightings(id: string): SightingView[] {
     const draft = this.#draft(id);
+    if (draft.method && isBridged(draft.method)) {
+      const now = new Date().toISOString();
+      return this.#members(draft).map(({ bridge, member, claimedBy }) => ({
+        address: member.key,
+        name: member.name ?? member.key,
+        detail: [member.model, `through ${bridge.name}`].filter(Boolean).join(' · '),
+        identity: member.identity,
+        seenAt: now,
+        rssi: null,
+        claimedBy,
+        through: { id: bridge.id, name: bridge.name },
+      }));
+    }
     const binding = draft.reach.protocol?.bindings[draft.method!.transport];
     if (!binding) return [];
     return draft.sightings.flatMap((sighting): SightingView[] => {
@@ -212,6 +245,7 @@ export class SetupService {
           seenAt: sighting.seenAt,
           rssi: sighting.rssi ?? null,
           claimedBy: claimed ? { id: claimed.id, name: claimed.name } : null,
+          through: null,
         },
       ];
     });
@@ -223,8 +257,19 @@ export class SetupService {
    * picker, which shows only after a person's tap, so it is asked straight
    * from one. Dismissed, nothing is chosen.
    */
-  async choose(id: string, input: { address?: string; manual?: string; chooser?: { showAll?: boolean } }): Promise<DraftView> {
+  async choose(id: string, input: { address?: string; through?: string; manual?: string; chooser?: { showAll?: boolean } }): Promise<DraftView> {
     const draft = this.#draft(id);
+    if (draft.method && isBridged(draft.method)) {
+      // A member, from its bridge's own list: never typed, never picked in a chooser.
+      const offer = input.address === undefined ? null : (this.#members(draft).find(({ bridge, member }) => member.key === input.address && (!input.through || bridge.id === input.through)) ?? null);
+      if (!offer) throw new ApiError('invalid', 'That device is not behind it any more; choose again');
+      draft.address = offer.member.key;
+      draft.through = offer.bridge.id;
+      draft.identityHint = offer.member.identity;
+      draft.checked = null;
+      this.#touch(draft);
+      return viewOf(draft);
+    }
     const binding = draft.reach.protocol?.bindings[draft.method!.transport];
     if (!binding) throw new ApiError('invalid', 'This method has nothing to choose');
 
@@ -326,7 +371,7 @@ export class SetupService {
     if (!draft.address) throw new ApiError('invalid', 'Choose the device first');
 
     if (draft.reach.exclusive) {
-      const claim = this.deps.connections.claimant(method.transport, draft.address);
+      const claim = draft.through ? this.deps.connections.member(draft.through, draft.address) : this.deps.connections.claimant(method.transport, draft.address);
       const claimed = claim ? this.deps.catalog.active(claim.deviceId) : null;
       if (claimed) return this.#checked(draft, { outcome: 'yours', summary: `This is your ${claimed.name}, already reached this way.`, device: { id: claimed.id, name: claimed.name } });
     }
@@ -382,7 +427,12 @@ export class SetupService {
 
   // --- internals ----------------------------------------------------------------------
 
-  #newDraft(start: Pick<Draft, 'by' | 'heldBy' | 'type' | 'method' | 'reach' | 'plan' | 'address'>): Draft {
+  /** The members a draft through a bridge may be: of every bridge open here its way goes through, each saying which. */
+  #members(draft: Draft): MemberOffer[] {
+    return membersOnOffer(this.deps, draft.method?.through);
+  }
+
+  #newDraft(start: Pick<Draft, 'by' | 'heldBy' | 'type' | 'method' | 'reach' | 'plan' | 'address' | 'through'>): Draft {
     const draft: Draft = {
       id: `s-${randomHex(8)}`,
       ...start,

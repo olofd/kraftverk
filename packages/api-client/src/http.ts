@@ -169,6 +169,8 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
     },
 
     nearby: async () => (await get<{ found: FoundView[] }>('/found')).found,
+    ignoreFound: async (at) => void (await call('POST', '/found/ignored', at)),
+    unignoreFound: async (at) => void (await call('POST', '/found/offered', at)),
 
     transports: {
       list: () => get('/transports'),

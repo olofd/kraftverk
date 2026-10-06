@@ -44,6 +44,7 @@ export function followerRoutes(deps: AppDeps): Hono {
           typeId: z.string().min(1).max(80),
           methodId: z.string().min(1).max(40),
           address: z.string().min(1).max(200),
+          through: z.string().min(1).max(40).optional(),
           identified: z
             .object({
               identity: z.string().min(1).max(120).nullable(),

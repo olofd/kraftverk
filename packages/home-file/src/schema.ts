@@ -103,6 +103,7 @@ function deviceSchema(types: readonly VocabularyType[]): Schema {
           additionalProperties: false,
           properties: {
             via: { type: 'string' },
+            through: { type: 'string', description: 'The key of the device it is reached through — an account, a gateway — when its way goes through one; its address is then its key there.' },
             address: { type: 'string' },
             settings: { type: 'object' },
             secrets: { type: 'object' },

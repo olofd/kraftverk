@@ -487,6 +487,22 @@ export const SCHEMA = `
   );
   CREATE INDEX automation_run_reach_by_time ON automation_run_reach (run_id, at);
 
+  /*
+    What a person said not to offer again: something a transport sees, or a
+    member behind a bridge, they do not mean to add. Found again, it is listed
+    among the ignored, where it can be brought back. Named as a connection
+    names a device: its transport and address, and — for a member — its
+    bridge, the device it is behind.
+  */
+  CREATE TABLE sighting_ignored (
+    transport  TEXT NOT NULL,
+    through    TEXT REFERENCES device (id) ON DELETE CASCADE,
+    address    TEXT NOT NULL,
+    ignored_at TEXT NOT NULL,
+    CHECK ((through IS NOT NULL) = (transport = 'bridge'))
+  );
+  CREATE UNIQUE INDEX sighting_ignored_once ON sighting_ignored (transport, coalesce(through, ''), address);
+
   /* What a transport keeps between runs, its own: a Bluetooth bond, a Matter fabric, a broker's credentials. */
   CREATE TABLE transport_kv (
     transport TEXT NOT NULL,

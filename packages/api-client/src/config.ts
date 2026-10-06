@@ -78,12 +78,14 @@ export function draftOfEntry(entry: AutomationEntry, devices: readonly DeviceVie
 export function deviceYaml(device: DeviceView, vocabulary: Vocabulary | null): { text: string; secrets: number; heldElsewhere: number } {
   const type = vocabulary?.types.find((each) => each.id === device.typeId);
   const ways = [...device.connections].sort((a, b) => a.priority - b.priority);
-  const masters = ways.filter((way) => way.heldBy.kind === 'master');
+  // The master's, and those through a bridge: a configuration names those; another node's own it does not.
+  const masters = ways.filter((way) => way.heldBy.kind === 'master' || way.through !== null);
   const entry = deviceEntryFrom(
     // The view says its type's first picture by name; a file leaves it out.
     { ...device, picture: device.picture === 'type:0' ? null : device.picture },
     masters.map((way) => ({
       method: way.method,
+      through: way.through?.key ?? null,
       address: way.address,
       config: way.config,
       secrets: Object.fromEntries(way.secrets.map((field) => [field, { secret: `${device.key}.${field}` }])),

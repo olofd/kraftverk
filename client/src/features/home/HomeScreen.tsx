@@ -51,6 +51,8 @@ export function HomeScreen() {
   const problemCount = useAnswer(() => api.problems(PROBLEMS_SHOWN), [api, heard.count]).value?.length ?? null;
   const hardware = devices.filter((device) => device.kind === 'hardware');
   const services = devices.filter((device) => device.kind === 'service');
+  // Sign-ins to someone's cloud, and what is reached through each: an account's members are among the devices above.
+  const accounts = devices.filter((device) => device.kind === 'account');
   // Every device here shows its readings: while this page is in front, the home reads them more often.
   useShowing(devices.map((device) => ({ kind: 'device', id: device.id })));
 
@@ -115,6 +117,12 @@ export function HomeScreen() {
         <YStack gap="$3">
           <SectionLabel>Services</SectionLabel>
           <DeviceList devices={services} />
+        </YStack>
+      ) : null}
+      {accounts.length > 0 ? (
+        <YStack gap="$3">
+          <SectionLabel>Accounts</SectionLabel>
+          <DeviceList devices={accounts} />
         </YStack>
       ) : null}
 

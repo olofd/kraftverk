@@ -129,8 +129,14 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
     const type = deps.types.get(device.typeId);
     const ways: WaySource[] = [];
     for (const connection of deps.connections.forDevice(device.id)) {
-      if (connection.heldBy !== deps.self) {
+      if (connection.heldBy !== null && connection.heldBy !== deps.self) {
         notes.push(`${device.name} is also reached by an app, which keeps that way and its keys itself: left out`);
+        continue;
+      }
+      // Through a bridge: named by its key, as a file names any device — one it carries, or one the home it goes to has.
+      const bridge = connection.through !== null ? deps.catalog.active(connection.through) : null;
+      if (connection.through !== null && !bridge) {
+        notes.push(`${device.name} is reached through a device that is gone: that way is left out`);
         continue;
       }
       const method = type ? methodsOf(type).find((each) => each.id === connection.method) : undefined;
@@ -139,7 +145,7 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
         const value = await secret(device, connection, field);
         if (value) secrets[field] = value;
       }
-      ways.push({ method: connection.method, address: connection.address, config: connection.config, secrets, exportable: connection.secretsExportable, fixedAddress: Boolean(method?.address) });
+      ways.push({ method: connection.method, through: bridge?.key ?? null, address: connection.address, config: connection.config, secrets, exportable: connection.secretsExportable, fixedAddress: Boolean(method?.address) });
     }
     document.devices[device.key] = deviceEntryFrom(device, ways);
   }

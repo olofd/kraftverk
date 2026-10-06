@@ -8,6 +8,7 @@ import { Controls } from './Controls';
 import { DeviceShell } from './DeviceShell';
 import { Events } from './Events';
 import { History } from './History';
+import { Members } from './Members';
 import { Energy, Overview, Parts, Readings } from './Readings';
 import { screensFor } from './registry';
 import { RemovedDevice } from './RemovedDevice';
@@ -55,6 +56,8 @@ function Dashboard({ device }: { device: DeviceView }) {
           <Parts device={device} />
         </>
       )}
+      {/* What is reached through it, for an account or a gateway: the ones you have, and those behind it to add. */}
+      <Members device={device} />
       <History device={device} />
       <Events device={device} />
       {/* At the bottom, for every device alike: the automations it takes part in, and a new one made from here. */}

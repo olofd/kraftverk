@@ -23,6 +23,8 @@ export type SightingView = {
   rssi: number | null;
   /** A device you already have is reached at this address. */
   claimedBy: { id: SavedDeviceId; name: string } | null;
+  /** For a member of a bridge: the bridge it is behind — its address is its key there. Null for what a transport sees. */
+  through: { id: SavedDeviceId; name: string } | null;
 };
 
 /** One setup, part-way through, in the home. */
@@ -34,6 +36,8 @@ export type DraftView = {
   methodId: string | null;
   plan: SetupStepView[];
   address: string | null;
+  /** For a member of a bridge: the bridge it is reached through, once chosen. */
+  through: SavedDeviceId | null;
   device: Record<string, unknown>;
   connection: Record<string, unknown>;
   /** Secret fields held so far, by name. */
@@ -62,17 +66,29 @@ export type HeldSetupInput = {
   typeId: string;
   methodId: string;
   address: string;
+  /** For a member of a bridge the node holds: the bridge, whose key `address` is. */
+  through?: string;
   identified: { identity: string | null; model: string | null; name?: string; summary: string; config?: ConfigValues } | null;
   failure?: string;
   device?: ConfigValues;
   connection?: ConfigValues;
 };
 
-/** "Found near you": something a transport sees that nothing you have is reached by. */
+/**
+ * Where something was found: on a transport at an address; or behind a bridge,
+ * by its key there. What a found thing is ignored, and brought back, by.
+ */
+export type FoundAt = { transport: string; through: string | null; address: string };
+
+/** "Found near you": something a transport sees, or a member behind a bridge, that nothing you have is reached by. */
 export type FoundView = {
   transport: string;
   protocol: string;
   address: string;
+  /** For a member of a bridge: the bridge it is behind. */
+  through: { id: SavedDeviceId; name: string } | null;
+  /** Said not to be offered again: listed apart, where it can be brought back. */
+  ignored: boolean;
   name: string;
   detail: string | null;
   identity: string | null;

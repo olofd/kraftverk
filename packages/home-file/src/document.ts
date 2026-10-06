@@ -38,9 +38,11 @@ export const holdsSealed = (text: string): boolean => /sealed:v\d+:/.test(text);
 /**
  * One way a device is reached: a method of its type, the address there, its
  * settings, its secrets — and whether its owner lets those secrets leave in
- * plain text (`exportable: true`, written only when so).
+ * plain text (`exportable: true`, written only when so). A way through a
+ * bridge names the bridge by its key (`through: family-account`), and its
+ * address is its key there (docs/PLAN-INTEGRATIONS.md §4.3).
  */
-export type ConnectEntry = { via: string; address: string | null; settings: Record<string, Scalar>; secrets: Record<string, SecretValue>; exportable: boolean };
+export type ConnectEntry = { via: string; through: string | null; address: string | null; settings: Record<string, Scalar>; secrets: Record<string, SecretValue>; exportable: boolean };
 
 export type DeviceEntry = {
   type: string;
@@ -169,7 +171,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
           problem('Expected a way to reach it: via, address, settings, secrets', at);
           continue;
         }
-        for (const field of Object.keys(way)) if (!['via', 'address', 'settings', 'secrets', 'exportable'].includes(field)) problem(`"${field}" is not part of a way to reach it: via, address, settings, secrets and exportable`, [...at, field]);
+        for (const field of Object.keys(way)) if (!['via', 'through', 'address', 'settings', 'secrets', 'exportable'].includes(field)) problem(`"${field}" is not part of a way to reach it: via, through, address, settings, secrets and exportable`, [...at, field]);
         if (way.exportable !== undefined && typeof way.exportable !== 'boolean') problem('"exportable" is true or false: whether its secrets may leave in plain text', [...at, 'exportable']);
         const via = text(way.via, [...at, 'via'], 'how it is reached ("via: lan")');
         const secrets: Record<string, SecretValue> = {};
@@ -184,7 +186,9 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
             }
         }
         if (way.address !== undefined && way.address !== null && typeof way.address !== 'string') problem('An address is text', [...at, 'address']);
-        if (via) connect.push({ via, address: typeof way.address === 'string' ? way.address : null, settings: scalars(way.settings, [...at, 'settings']), secrets, exportable: way.exportable === true });
+        if (way.through !== undefined && way.through !== null && typeof way.through !== 'string') problem('"through" is the key of the device it is reached through', [...at, 'through']);
+        const through = typeof way.through === 'string' && way.through.trim() ? way.through.trim() : null;
+        if (via) connect.push({ via, through, address: typeof way.address === 'string' ? way.address : null, settings: scalars(way.settings, [...at, 'settings']), secrets, exportable: way.exportable === true });
       }
       const optional = (field: 'identity' | 'picture') => (entry[field] === undefined || entry[field] === null ? null : typeof entry[field] === 'string' ? entry[field] : (problem(`"${field}" is text`, [...path, field]), null));
       if (type && name) devices[key] = { type, name, identity: optional('identity'), picture: optional('picture'), settings: scalars(entry.settings, [...path, 'settings']), connect };
@@ -267,6 +271,7 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
           ? {
               connect: device.connect.map((way) => ({
                 via: way.via,
+                ...(way.through !== null ? { through: way.through } : {}),
                 ...(way.address !== null ? { address: way.address } : {}),
                 ...(Object.keys(way.settings).length ? { settings: way.settings } : {}),
                 ...(Object.keys(way.secrets).length

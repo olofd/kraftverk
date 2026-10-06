@@ -1,3 +1,4 @@
+import { BRIDGE_TRANSPORT } from './bridge.ts';
 import type { ConnectionMethod } from './connection.ts';
 import type { DeviceLogger, DeviceType, ScopedHttp } from './device-type.ts';
 import type { Platform } from './node.ts';
@@ -258,6 +259,9 @@ export function setupPlan(input: SetupPlanInput): SetupStepView[] {
       discovery,
       manual: binding?.parseAddress ? (binding.addressLabel ?? 'Address') : null,
     });
+  } else if (method?.transport === BRIDGE_TRANSPORT) {
+    // Through a bridge: which of its members it is, from the bridge's own list. Never typed.
+    steps.push({ id: 'choose', kind: 'choose', title: `Find your ${type.meta.name}`, transport: BRIDGE_TRANSPORT, discovery: 'list', manual: null });
   }
 
   if (credentials && !protocol?.credentials?.first) steps.push(credentials);

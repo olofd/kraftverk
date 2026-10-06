@@ -581,6 +581,12 @@ erDiagram
     text value "{loadWatts: 10, reserveSoc: 20}"
     text updated_at "2026-09-01T10:00:00Z"
   }
+  sighting_ignored {
+    text transport "lan · ble · bridge"
+    text through FK "null · d-7c2e… · the bridge a member was found behind"
+    text address "192.0.2.41 · lamp-0001"
+    text ignored_at "2026-10-06T19:00:00Z"
+  }
   transport_kv {
     text transport PK "ble · matter · mqtt"
     text key PK "bond.AABBCC001122"
@@ -646,6 +652,7 @@ joined; elsewhere it is plain text, null.
 | `last_heard` | In an app with a server: what the server last said, by what was asked — its devices, its automations, the home's values — with when. What the app shows, read only and saying so, while the server cannot be reached. Empty on a server. | as the server answers |
 | `send_queue` | In an app holding ways for a server: what it owes the server — readings, events, timeline entries, what a session kept — in order, kept across a restart and gone once the server has it. Empty on a server. | as the app's sessions and gateway work |
 | `home_setting` | What this node has settled for the home it keeps, by a name the schema lists: the policy values, and in an app whether its own home moved to a server or a server's copy was brought in. | when set |
+| `sighting_ignored` | What a person said not to offer again: something a transport sees, or a member behind a bridge. Named as a connection names a device — transport, bridge, address — and listed apart, where it can be offered again. | *Not mine* on something found |
 | `transport_kv` | What a transport keeps between runs — a Bluetooth bond, a Matter fabric — its own and no other's. | by the transport |
 | `meta` | What the database is: the schema it was made with, when, and by which version — what the set-aside message reports. | when the database is made |
 | `audit.resource_kind` | What an entry is about, as a kind and an id together, so the timeline can be asked for one device's, one automation's, one account's. | with every entry |

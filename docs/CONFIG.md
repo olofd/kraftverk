@@ -19,7 +19,7 @@ and check a file with the same code.
 
 ```yaml
 # yaml-language-server: $schema=http://<your server>/api/config/schema.json
-kraftverk: 4                      # the document's version: required
+kraftverk: 5                      # the document's version: required
 
 home:
   clock: Europe/Stockholm          # what an automation that says no clock keeps time in
@@ -41,6 +41,20 @@ devices:
         address: 192.0.2.10#a4c1380000000001
         settings: { deviceId: bf7c0000000000000000zp }
         secrets: { localKey: !secret smart-plug.localKey }
+  family-account:                 # an account: a device that others are reached through
+    type: acme.account
+    name: Family account
+    connect:
+      - via: cloud
+        settings: { account: someone@example.com }
+        secrets: { password: !secret family-account.password }
+  hall-lamp:
+    type: acme.lamp
+    name: Hall lamp
+    connect:
+      - via: account
+        through: family-account   # the device it is reached through, by its key
+        address: lamp-0001        # its key there
 
 links:
   - feeds: { from: ac-in-meter, to: garage-station.input.ac }
@@ -358,6 +372,7 @@ nothing wrong — and write back the same.
 | 2 | Each standard meaning is one word: `station.battery.soc` is `station.charge`, `charger.power.draw` is `charger.power`, `meaning: battery.chargeLimit` is `meaning: chargeLimit` |
 | 3 | A role under `uses` has no `description`: what a recipe says for whoever fills a role stays with the recipe |
 | 4 | A setting is `setting.low`, not `$low`; a package's function is called by its id alone, without `call` |
+| 5 | A way may go `through` another device — an account, a gateway — named by its key, its address then its key there. Nothing older says so, so nothing changes |
 
 ## Importing
 

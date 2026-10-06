@@ -14,6 +14,7 @@ import {
   validateConfig,
   type AutomationId,
   type ConfigValues,
+  type NodeId,
   type PolicyValueName,
   type SavedDeviceId,
 } from '@kraftverk/device-sdk';
@@ -23,11 +24,12 @@ import {
   readConfig,
   type AutomationEntry,
   type ConfigDocument,
+  type ConnectEntry,
   type DeviceEntry,
   type SecretValue,
   isSealed,
 } from '@kraftverk/home-file';
-import { isConstraintError, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
+import { isConstraintError, type ConnectionRecord, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
 
 import type { Checked } from '../automations/drafts.ts';
 import { secretFieldsOf } from '../installed/connection-schema.ts';
@@ -215,11 +217,13 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     entry.connect.forEach((way, index) => {
       const method = methodsOf(type).find((each) => each.id === way.via)!;
       const address = way.address ?? method.address ?? '';
+      // A member's key is one member of its bridge — a bridge the file brings is new, and claimed by nothing yet.
+      const bridge = way.through !== null ? (deps.catalog.byKey(way.through)?.id ?? null) : null;
       // An address belongs to one device where its transport says so — never a simulator's, which every simulated device shares — as setup decides it.
       const exclusive = !isSimulated(method) && deps.transports.definition(method.transport)?.exclusive !== false;
-      const claim = exclusive ? deps.connections.claimant(method.transport, address) : null;
-      if (claim && claim.deviceId !== existing?.id) problem(`Another device you have is already reached at ${address}`, ['devices', key, 'connect', index, 'address']);
-      const had = existing ? deps.connections.forDevice(existing.id).find((connection) => connection.heldBy === deps.self && connection.method === way.via) : undefined;
+      const claim = way.through !== null ? (bridge ? deps.connections.member(bridge, address) : null) : exclusive ? deps.connections.claimant(method.transport, address) : null;
+      if (claim && claim.deviceId !== existing?.id) problem(way.through !== null ? `Another device you have is already ${address} behind ${way.through}` : `Another device you have is already reached at ${address}`, ['devices', key, 'connect', index, 'address']);
+      const had = existing ? governed(deps, existing.id).find((connection) => sameWay(deps, connection, way)) : undefined;
       for (const [field, spec] of secretFieldsOf(method, deps.protocols.get(method.protocol) ?? null)) {
         const given = way.secrets[field];
         const value = given ? valueOf(given) : null;
@@ -427,9 +431,9 @@ function deviceChanges(deps: ImportDeps, existing: DeviceRecord, entry: DeviceEn
   if (entry.picture !== existing.picture && entry.picture !== null) changes.push('its picture');
   const settings = [...new Set([...Object.keys(existing.config), ...Object.keys(entry.settings)])].filter((name) => existing.config[name] !== entry.settings[name] && entry.settings[name] !== undefined);
   if (settings.length) changes.push(`settings: ${settings.join(', ')}`);
-  const ways = deps.connections.forDevice(existing.id).filter((connection) => connection.heldBy === deps.self);
+  const ways = governed(deps, existing.id);
   entry.connect.forEach((way, index) => {
-    const had = ways.find((connection) => connection.method === way.via);
+    const had = ways.find((connection) => sameWay(deps, connection, way));
     if (!had) changes.push(`reached ${way.via} as well`);
     else {
       if (way.address !== null && had.address !== way.address) changes.push(`${way.via}: at ${way.address}, not ${had.address}`);
@@ -526,8 +530,8 @@ export function writeImport(deps: ImportDeps, id: string, by: string, choices: I
 
   try {
     deps.db.transaction(() => {
-      // Devices: added, changed, removed.
-      for (const item of view.devices) {
+      // Devices: added, changed, removed — a bridge before what is reached through it.
+      for (const item of bridgesFirst(view.devices, document)) {
         if (!devicesIn(item.key)) continue;
         if (item.action === 'remove') {
           const device = deps.catalog.byKey(item.key);
@@ -658,11 +662,11 @@ function writeDevice(deps: ImportDeps, key: string, entry: DeviceEntry, opened: 
   else device = deps.catalog.update(device.id, { name: entry.name, config, ...(entry.identity !== null ? { identity: entry.identity } : {}) })!;
   if (entry.picture !== null && entry.picture !== device.picture) deps.catalog.setPicture(device.id, entry.picture);
 
-  const ways = deps.connections.forDevice(device.id).filter((connection) => connection.heldBy === deps.self);
+  const ways = governed(deps, device.id);
   entry.connect.forEach((way, index) => {
     const method = methodsOf(type).find((each) => each.id === way.via)!;
     const address = way.address ?? method.address ?? '';
-    const had = ways.find((connection) => connection.method === way.via);
+    const had = ways.find((connection) => sameWay(deps, connection, way));
     const secrets: Record<string, string> = {};
     for (const [field] of secretFieldsOf(method, deps.protocols.get(method.protocol) ?? null)) {
       const value = opened.get(secretKey(key, index, field)) ?? given[`${key}.${field}`];
@@ -676,9 +680,42 @@ function writeDevice(deps: ImportDeps, key: string, entry: DeviceEntry, opened: 
     const exportable = way.exportable && (!had || had.secretsExportable || deps.connections.secretFields(had.id).every((field) => field in secrets));
     const connection = had
       ? deps.connections.update(had.id, { address, config: way.settings, priority: index, secretsExportable: exportable })!
-      : deps.connections.add({ deviceId: device!.id, method: way.via, transport: method.transport, heldBy: deps.self, address, config: way.settings, priority: index, secretsExportable: exportable });
+      : deps.connections.add({ deviceId: device!.id, method: way.via, transport: method.transport, ...holdingOf(deps, way), address, config: way.settings, priority: index, secretsExportable: exportable });
     if (Object.keys(secrets).length) deps.connections.setSecrets(connection.id, secrets);
   });
-  for (const had of ways) if (!entry.connect.some((way) => way.via === had.method)) deps.connections.remove(had.id);
+  for (const had of ways) if (!entry.connect.some((way) => sameWay(deps, had, way))) deps.connections.remove(had.id);
+}
+
+/**
+ * The devices of a plan in the order they are written: a bridge the file
+ * brings before what the file reaches through it, however deep — so a way
+ * through it names a device that is there.
+ */
+function bridgesFirst<T extends { key: string }>(items: readonly T[], document: ConfigDocument): T[] {
+  const depth = (key: string, seen: ReadonlySet<string> = new Set()): number => {
+    const bridges = (document.devices[key]?.connect ?? []).flatMap((way) => (way.through !== null && way.through in document.devices && !seen.has(way.through) ? [way.through] : []));
+    return bridges.length ? 1 + Math.max(...bridges.map((bridge) => depth(bridge, new Set([...seen, key])))) : 0;
+  };
+  return items.map((item, index) => ({ item, index, depth: depth(item.key) })).sort((a, b) => a.depth - b.depth || a.index - b.index).map(({ item }) => item);
+}
+
+/** The ways a file speaks for: those this node holds, and those through a bridge — never another node's own. */
+function governed(deps: ImportDeps, deviceId: SavedDeviceId): ConnectionRecord[] {
+  return deps.connections.forDevice(deviceId).filter((connection) => connection.heldBy === deps.self || connection.through !== null);
+}
+
+/** Whether a way the home has is the one a file's entry names: its method, and — through a bridge — that bridge. */
+function sameWay(deps: ImportDeps, connection: ConnectionRecord, way: ConnectEntry): boolean {
+  if (connection.method !== way.via) return false;
+  if (way.through === null) return connection.through === null;
+  return connection.through !== null && connection.through === deps.catalog.byKey(way.through)?.id;
+}
+
+/** Who has a way the file brings in hand: this node, or the bridge it names — written before it, as the file's bridges are. */
+function holdingOf(deps: ImportDeps, way: ConnectEntry): { heldBy: NodeId } | { through: SavedDeviceId } {
+  if (way.through === null) return { heldBy: deps.self };
+  const bridge = deps.catalog.byKey(way.through);
+  if (!bridge) throw new ApiError('invalid', `There is no device "${way.through}" to reach it through`);
+  return { through: bridge.id };
 }
 

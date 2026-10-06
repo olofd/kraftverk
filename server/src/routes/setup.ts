@@ -19,7 +19,10 @@ export function setupRoutes(deps: AppDeps): Hono {
   const api = new Hono();
 
   api.post('/', async (c) => {
-    const input = await body(c, z.object({ typeId: z.string().min(1).max(80), methodId: z.string().min(1).max(40).nullable().optional(), holder: z.enum(['master', 'this-node']).optional() }).strict());
+    const input = await body(
+      c,
+      z.object({ typeId: z.string().min(1).max(80), methodId: z.string().min(1).max(40).nullable().optional(), holder: z.enum(['master', 'this-node']).optional(), through: z.string().min(1).max(40).optional() }).strict()
+    );
     return c.json(await homeFor(deps, c).setup.start(input));
   });
 
@@ -36,7 +39,8 @@ export function setupRoutes(deps: AppDeps): Hono {
     const input = await body(
       c,
       z.union([
-        z.object({ address: z.string().min(1).max(200) }).strict(),
+        // A member of a bridge says which bridge: its key is one there.
+        z.object({ address: z.string().min(1).max(200), through: z.string().min(1).max(40).optional() }).strict(),
         z.object({ manual: z.string().min(1).max(200) }).strict(),
         // Where the transports list what they see, there is no chooser: the home says so.
         z.object({ chooser: z.object({ showAll: z.boolean().optional() }).strict() }).strict(),

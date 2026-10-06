@@ -1,5 +1,5 @@
 import type { CheckOutcome, DraftView, SaveInput } from '@kraftverk/api-contract';
-import type { NodeId, ConnectionMethod, DeviceType, Identified, SetupStepView, Sighting } from '@kraftverk/device-sdk';
+import type { NodeId, ConnectionMethod, DeviceType, Identified, SavedDeviceId, SetupStepView, Sighting } from '@kraftverk/device-sdk';
 
 import type { Reach } from './reach.ts';
 
@@ -23,6 +23,8 @@ export type Draft = {
   reach: Reach;
   plan: SetupStepView[];
   address: string | null;
+  /** The bridge it is reached through, for a member of one: its address is then its key there. Null otherwise, or until chosen. */
+  through: SavedDeviceId | null;
   identityHint: string | null;
   device: Record<string, unknown>;
   connection: Record<string, unknown>;
@@ -48,6 +50,7 @@ export function viewOf(draft: Draft): DraftView {
     methodId: draft.method?.id ?? null,
     plan: draft.plan,
     address: draft.address,
+    through: draft.through,
     device: draft.device,
     connection: draft.connection,
     secrets: [...draft.secrets.keys()],

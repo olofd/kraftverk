@@ -24,7 +24,7 @@ export type ConnectionView = {
    * account: then `heldBy` is whichever node holds the bridge, and
    * `address` is the member's key within it. Null for a way a node holds itself.
    */
-  through: { id: SavedDeviceId; name: string } | null;
+  through: { id: SavedDeviceId; key: string; name: string } | null;
   address: string;
   priority: number;
   /** Whether it reaches the device right now; null when nobody is trying it. */

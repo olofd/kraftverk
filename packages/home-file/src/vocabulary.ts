@@ -28,6 +28,8 @@ export type VocabularyMethod = {
   settings: ConfigSchema;
   /** Its protocol's secret credentials. */
   secrets: ConfigSchema;
+  /** The bridge types it goes through, for a way through one: the device it names under `through` is one. Empty otherwise. */
+  through: string[];
 };
 
 export type VocabularyType = { id: string; name: string; settings: ConfigSchema; methods: VocabularyMethod[]; parts: string[] };
@@ -70,6 +72,7 @@ export function vocabularyOf(
           fixedAddress: method.address ?? null,
           settings: { fields: { ...split(credentials, false).fields, ...(method.config?.fields ?? {}) } },
           secrets: split(credentials, true),
+          through: [...(method.through ?? [])],
         };
       }),
     })),

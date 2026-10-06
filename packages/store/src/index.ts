@@ -18,6 +18,7 @@ export * from './audit.ts';
 export * from './policy.ts';
 export * from './catalog.ts';
 export * from './connections.ts';
+export * from './ignored.ts';
 export * from './links.ts';
 export * from './events.ts';
 export * from './nodes.ts';

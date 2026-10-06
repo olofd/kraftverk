@@ -1,4 +1,5 @@
 import { ApiError, type KraftverkApi, type TransportView } from '@kraftverk/api-contract';
+import { savedDeviceId } from '@kraftverk/device-sdk';
 
 import type { Hub } from '../node/hub.ts';
 
@@ -8,12 +9,15 @@ import type { Hub } from '../node/hub.ts';
   by, as everything that uses a home asks.
 */
 
-export function transportsApi(hub: Hub): Pick<KraftverkApi, 'nearby' | 'transports'> {
+export function transportsApi(hub: Hub): Pick<KraftverkApi, 'nearby' | 'ignoreFound' | 'unignoreFound' | 'transports'> {
   const { nearby } = hub;
   const { transports } = hub.installed;
   return {
     /** "Found near you": what can be seen that nothing you have is reached by. The first ask starts watching. */
     nearby: async () => nearby.list(),
+    /** Not offered again: kept by where it was found, so seen again it is known. */
+    ignoreFound: async (at) => hub.ignored.ignore({ ...at, through: at.through === null ? null : savedDeviceId(at.through) }),
+    unignoreFound: async (at) => hub.ignored.unignore({ ...at, through: at.through === null ? null : savedDeviceId(at.through) }),
 
     transports: {
       /** What this home can reach devices over: each transport, whether it runs, what it can see, its diagnostics by name. */

@@ -48,6 +48,22 @@ describe('what a file means', () => {
     const text = DOCUMENT.replace('charger: smart-plug', 'charger: hall-lamp').replace('supply: garage-station.outlet.ac', 'supply: cellar-station');
     expect(readConfig(text, check).problems.map((problem) => problem.message)).toEqual(['There is no device "cellar-station", in the file or on the server']);
   });
+
+  test('a way through a device names it, and it is one of the kind that way goes through', () => {
+    const lamp = (way: string) =>
+      DOCUMENT.replace(
+        'links:',
+        `  family-account:\n    type: acme.account\n    name: Family account\n    connect:\n      - via: cloud\n        settings: { account: someone@example.com }\n        secrets: { password: !secret smart-plug-key }\n  hall:\n    type: acme.lamp\n    name: Hall\n    connect:\n      - via: account\n${way}\n\nlinks:`
+      );
+    const problems = (way: string) => readConfig(lamp(way), check).problems.map((problem) => problem.message);
+    expect(problems('        through: family-account\n        address: lamp-0001')).toEqual([]);
+    expect(problems('        address: lamp-0001')).toEqual(['Through the account goes through a device: name it under "through"']);
+    expect(problems('        through: smart-plug\n        address: lamp-0001')).toEqual(['Through the account goes through Acme account, and Smart plug is not one']);
+    expect(problems('        through: nobody\n        address: lamp-0001')).toEqual(['There is no device "nobody", in the file or on the server']);
+    expect(readConfig(DOCUMENT.replace('      - via: ble\n', '      - via: ble\n        through: smart-plug\n'), check).problems.map((problem) => problem.message)).toEqual([
+      'Bluetooth goes through nothing: "through" is for a way through another device',
+    ]);
+  });
 });
 
 describe('one automation’s own YAML', () => {
