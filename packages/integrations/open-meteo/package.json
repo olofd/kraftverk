@@ -1,13 +1,22 @@
 {
-  "name": "@kraftverk/service-open-meteo",
+  "name": "@kraftverk/integration-open-meteo",
   "version": "0.2.0",
   "private": true,
-  "description": "Weather from Open-Meteo, as a service: the forecast for a place, with no account and no key.",
+  "description": "Open-Meteo as a platform: its weather forecast for a place as a service, with no account and no key, and what the forecast brings to automations.",
   "type": "module",
   "main": "src/type.ts",
   "kraftverk": {
-    "deviceType": "./src/type.ts",
-    "automation": "./src/automation.ts"
+    "integration": {
+      "id": "open-meteo",
+      "name": "Open-Meteo",
+      "types": [
+        {
+          "id": "open-meteo.weather",
+          "entry": "./src/type.ts",
+          "automation": "./src/automation.ts"
+        }
+      ]
+    }
   },
   "exports": {
     ".": "./src/type.ts",

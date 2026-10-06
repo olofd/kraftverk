@@ -1,0 +1,30 @@
+{
+  "name": "@kraftverk/integration-sydpower",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sydpower as a platform: the power stations on its stack — AFERIY, FOSSiBOT, ABOK, Eco Play — and the two ways one is reached, Wi-Fi through this home's broker and Bluetooth.",
+  "type": "module",
+  "main": "src/index.ts",
+  "kraftverk": {
+    "integration": {
+      "id": "sydpower",
+      "name": "Sydpower",
+      "types": []
+    }
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node ../../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kraftverk/device-sdk": "*",
+    "@kraftverk/protocol-sydpower": "*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

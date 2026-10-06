@@ -4,14 +4,18 @@
  *
  * Two checks, each held by a baseline that may only shrink:
  *
- * - **The dependency rule.** The core never imports a device type, a service, a
- *   protocol or a transport; a device type never reaches into the app or a
- *   transport; a protocol knows no product; protocols and device code import no
- *   platform built-in. A new import that breaks it fails the build.
- * - **The leak count.** Words that mean one product — every device, service
- *   and protocol package's folder name and brand, and the words it lists in
- *   its package.json (`kraftverk.words`) — counted per file wherever that
- *   package is not: in the core, and in a package that does not depend on it.
+ * - **The dependency rule.** The core never imports an integration, a device
+ *   package, a protocol or a transport; neither of the first two reaches into
+ *   the app or a transport; an integration names no product, and a device
+ *   package builds only on the integration it names (docs/PLAN-INTEGRATIONS.md
+ *   §1); a protocol knows no product; protocols, integrations and device
+ *   packages import no platform built-in. A new import that breaks it fails
+ *   the build.
+ * - **The leak count.** Words that mean one product or platform — every
+ *   integration, device and protocol package's folder name and brand, and the
+ *   words it lists in its package.json (`kraftverk.words`) — counted per file
+ *   wherever that package is not: in the core, and in a package that does not
+ *   depend on it.
  *   A count that rises fails the build. The words are derived from what is
  *   installed, so the next package is held to it the day it arrives.
  *
@@ -43,7 +47,7 @@ const TEST = /\.test\.(ts|tsx)$|(^|\/)test\//;
 
 // --- where a file belongs ----------------------------------------------------
 
-/** The core: knows no device type, service or protocol. */
+/** The core: knows no integration, device package or protocol. */
 const CORE = ['server/src/', 'client/src/', 'client/app/'];
 /** A core package's folder: the server, the app and these know no product. */
 const isCorePackage = (file) => /^packages\/[^/]+\//.test(file) && corePackageOf(file) !== null;
@@ -73,7 +77,7 @@ const MAY_IMPORT = {
 /** The edges among the core packages: the rest is shared. */
 const EDGE_PACKAGES = new Set(['api-client', 'ui']);
 const SHARED_PACKAGES = Object.keys(MAY_IMPORT).filter((name) => !EDGE_PACKAGES.has(name));
-/** What a device type may import of the core: the contract, and the language to declare recipes in. */
+/** What an integration or a device package may import of the core: the contract, and the language to declare recipes in. */
 const DEVICE_MAY_IMPORT = new Set(['device-sdk', 'automation']);
 
 /**
@@ -100,13 +104,16 @@ const packageRoot = (file, parents) => {
   return null;
 };
 
-const DEVICE_PARENTS = ['packages/devices/', 'packages/services/'];
+const INTEGRATION_PARENTS = ['packages/integrations/'];
+const DEVICE_PARENTS = ['packages/devices/'];
 const PROTOCOL_PARENTS = ['packages/protocols/'];
 const TRANSPORT_PARENTS = ['packages/transports/'];
 
 function areaOf(file) {
   if (GENERATED.some((prefix) => file.startsWith(prefix))) return { kind: 'generated' };
   if (CORE.some((prefix) => file.startsWith(prefix)) || isCorePackage(file)) return { kind: 'core' };
+  const integration = packageRoot(file, INTEGRATION_PARENTS);
+  if (integration) return { kind: 'integration', root: integration };
   const device = packageRoot(file, DEVICE_PARENTS);
   if (device) return { kind: 'device', root: device };
   const protocol = packageRoot(file, PROTOCOL_PARENTS);
@@ -120,9 +127,9 @@ function areaOf(file) {
 
 /**
  * Transports are not here: Bluetooth and MQTT are technologies the core may
- * name. A device, a service or a protocol is a product the core must not.
+ * name. A platform, a product or a protocol is one the core must not.
  */
-const WORD_PARENTS = [...DEVICE_PARENTS, ...PROTOCOL_PARENTS];
+const WORD_PARENTS = [...INTEGRATION_PARENTS, ...DEVICE_PARENTS, ...PROTOCOL_PARENTS];
 
 const escape = (word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Case-insensitive; a hyphen may be written or left out (`open-meteo`, `OpenMeteo`). */
@@ -153,7 +160,15 @@ function productPackages() {
         }
         for (const match of source.matchAll(/\bbrand:\s*'([^']+)'/g)) words.add(match[1]);
       }
-      found.push({ root, name: json.name, dependencies: new Set(Object.keys({ ...json.dependencies, ...json.peerDependencies })), words: [...words] });
+      found.push({
+        root,
+        name: json.name,
+        dependencies: new Set(Object.keys({ ...json.dependencies, ...json.peerDependencies })),
+        words: [...words],
+        // An integration's id; a device package's, the integration it is built on.
+        integrationId: json.kraftverk?.integration?.id ?? null,
+        builtOn: json.kraftverk?.device?.integration ?? null,
+      });
     }
   }
   return found;
@@ -172,7 +187,7 @@ for (const product of PRODUCTS) {
 /** The words a file may not use: those of every product package it neither is nor depends on. */
 function forbiddenFor(file, area) {
   if (area.kind === 'core') return PRODUCTS;
-  if (area.kind !== 'device' && area.kind !== 'protocol') return [];
+  if (area.kind !== 'integration' && area.kind !== 'device' && area.kind !== 'protocol') return [];
   const own = PRODUCTS.find((product) => product.root === area.root);
   return PRODUCTS.filter((product) => product.root !== area.root && !own?.dependencies.has(product.name));
 }
@@ -196,9 +211,9 @@ function leakPattern(products, area) {
 
 // --- the dependency rule ---------------------------------------------------
 
-/** Workspace packages that are device types, services, protocols or transports. */
-const PRODUCT_PACKAGE = /^@kraftverk\/(device-(?!sdk)|service-|protocol-|transport-)/;
-const PRODUCT_PATH = /^packages\/(devices|services|protocols|transports)\//;
+/** Workspace packages that are integrations, device packages, protocols or transports. */
+const PRODUCT_PACKAGE = /^@kraftverk\/(integration-|device-(?!sdk)|protocol-|transport-)/;
+const PRODUCT_PATH = /^packages\/(integrations|devices|protocols|transports)\//;
 /** What server-safe device code may not pull in: it runs inside the server. */
 const UI_ONLY = /^(react|react-native|tamagui|@tamagui\/|expo|@expo\/|@kraftverk\/(ui|api-client))(\/|$)/;
 /** Platform built-ins: I/O. Pure code runs in the app as well as on the server. */
@@ -235,7 +250,7 @@ function violation(file, area, specifier) {
 
   switch (area.kind) {
     case 'core': {
-      if (PRODUCT_PACKAGE.test(specifier)) return 'the core imports a device type, service, protocol or transport';
+      if (PRODUCT_PACKAGE.test(specifier)) return 'the core imports an integration, a device package, a protocol or a transport';
       if (target && PRODUCT_PATH.test(target)) return 'the core reaches into a product package';
       if (SHARED_CORE.test(file) && shipped && BUILT_IN.test(specifier)) return 'shared core imports a platform built-in: the app runs it too';
       // The layers: a core package imports only what the table lets it, by name, never by a path.
@@ -249,14 +264,29 @@ function violation(file, area, specifier) {
       return null;
     }
 
+    case 'integration':
     case 'device': {
-      if (target && !target.startsWith(area.root)) return 'a device type reaches outside its package';
-      if (/^@kraftverk\/(server|client)(\/|$)/.test(specifier)) return 'a device type imports the app';
-      if (/^@kraftverk\/transport-/.test(specifier)) return 'a device type imports a transport: it is handed a connection';
+      const what = area.kind === 'integration' ? 'an integration' : 'a device package';
+      if (target && !target.startsWith(area.root)) return `${what} reaches outside its package`;
+      if (/^@kraftverk\/(server|client)(\/|$)/.test(specifier)) return `${what} imports the app`;
+      if (/^@kraftverk\/transport-/.test(specifier)) return `${what} imports a transport: it is handed a connection`;
+      if (/^@kraftverk\/device-(?!sdk)/.test(specifier)) {
+        return area.kind === 'integration' ? 'an integration imports a device package: a platform names no product' : 'a device package imports another device package: it builds on its integration';
+      }
+      const own = PRODUCTS.find((product) => product.root === area.root);
+      const integration = /^@kraftverk\/integration-([^/]+)/.exec(specifier)?.[1];
+      if (area.kind === 'integration' && integration && integration !== own?.integrationId) return 'an integration imports another integration';
+      if (area.kind === 'device') {
+        if (integration && integration !== own?.builtOn) return `a device package imports the integration "${integration}", which it is not built on`;
+        // The protocols its platform speaks, and no other: a product is reached only through its platform.
+        const protocol = /^@kraftverk\/protocol-[^/]+/.exec(specifier)?.[0];
+        const platform = PRODUCTS.find((product) => product.integrationId !== null && product.integrationId === own?.builtOn);
+        if (protocol && !platform?.dependencies.has(protocol)) return `a device package speaks ${protocol}, which its integration is not built on`;
+      }
       const serverSafe = file.startsWith(`${area.root}src/`);
       // Of the core, the contract and the language; its screens add the kit and the API.
       const core = /^@kraftverk\/([^/]+)/.exec(specifier)?.[1];
-      if (core && core in MAY_IMPORT && !DEVICE_MAY_IMPORT.has(core) && (serverSafe || !EDGE_PACKAGES.has(core))) return `a device type imports ${core}: of the core, only the SDK and the language`;
+      if (core && core in MAY_IMPORT && !DEVICE_MAY_IMPORT.has(core) && (serverSafe || !EDGE_PACKAGES.has(core))) return `${what} imports ${core}: of the core, only the SDK and the language`;
       if (serverSafe && UI_ONLY.test(specifier)) return 'server-side device code imports UI';
       // Its own screens included: what the server loads never depends on a package's page.
       if (serverSafe && target && target.startsWith(`${area.root}ui/`)) return "server-side device code imports its package's screens";
@@ -371,8 +401,8 @@ const PLATFORM_MODULE = new RegExp(
 );
 
 /**
- * Each shared package — the core's, and every protocol, device type and
- * service — bundled for a browser with every dependency, and read for a
+ * Each shared package — the core's, and every protocol, integration and
+ * device package — bundled for a browser with every dependency, and read for a
  * platform module: a dependency that needs Node fails here, which no
  * typecheck sees. Bun swaps Node's modules for stand-ins in a browser build,
  * and marks them: a polyfill is a section `// node:crypto`, an emptied one
@@ -384,7 +414,7 @@ const STAND_IN = /^\/\/ node:[\w/]+$|=\s*\(\(\) => \(\{\}\)\);/m;
 function platformInBundles() {
   const roots = [
     ...SHARED_PACKAGES.map((name) => `packages/${name}/`),
-    ...execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', 'packages/protocols/*/package.json', 'packages/devices/*/package.json', 'packages/services/*/package.json'], { cwd: ROOT, encoding: 'utf8' })
+    ...execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', 'packages/protocols/*/package.json', 'packages/integrations/*/package.json', 'packages/devices/*/package.json'], { cwd: ROOT, encoding: 'utf8' })
       .split('\n')
       .map((line) => line.trim())
       .filter(Boolean)
@@ -400,18 +430,22 @@ function platformInBundles() {
       } catch {
         continue; // planned, not made yet
       }
-      const entry = (typeof manifest.exports?.['.'] === 'string' ? manifest.exports['.'] : null) ?? manifest.main;
-      if (!entry) continue;
-      const outfile = resolve(out, `${root.replace(/\//g, '_')}.js`);
-      try {
-        execFileSync(process.execPath, [resolve(ROOT, 'scripts/run-bun.mjs'), 'build', resolve(ROOT, root, entry), '--target=browser', `--outfile=${outfile}`], { cwd: ROOT, stdio: 'pipe' });
-      } catch (error) {
-        found.push(`${root}: does not bundle for a browser — ${String(error.stderr ?? error.message).trim().split('\n').slice(-3).join(' ')}`);
-        continue;
+      // Its main entry, and every type an integration or a device package lists: each runs in the app as it is.
+      const main = (typeof manifest.exports?.['.'] === 'string' ? manifest.exports['.'] : null) ?? manifest.main;
+      const listed = [...(manifest.kraftverk?.integration?.types ?? []), ...(manifest.kraftverk?.device?.types ?? [])].map((type) => type.entry);
+      const entries = [...new Set([main, ...listed].filter(Boolean))];
+      for (const [index, entry] of entries.entries()) {
+        const outfile = resolve(out, `${root.replace(/\//g, '_')}${index}.js`);
+        try {
+          execFileSync(process.execPath, [resolve(ROOT, 'scripts/run-bun.mjs'), 'build', resolve(ROOT, root, entry), '--target=browser', `--outfile=${outfile}`], { cwd: ROOT, stdio: 'pipe' });
+        } catch (error) {
+          found.push(`${root}${entry.slice(2)}: does not bundle for a browser — ${String(error.stderr ?? error.message).trim().split('\n').slice(-3).join(' ')}`);
+          continue;
+        }
+        const bundle = readFileSync(outfile, 'utf8');
+        const match = PLATFORM_MODULE.exec(bundle) ?? STAND_IN.exec(bundle);
+        if (match) found.push(`${root}${entry.slice(2)}: its browser bundle needs a platform module (${match[0].trim()}) — a dependency needs Node or Bun`);
       }
-      const bundle = readFileSync(outfile, 'utf8');
-      const match = PLATFORM_MODULE.exec(bundle) ?? STAND_IN.exec(bundle);
-      if (match) found.push(`${root}: its browser bundle needs a platform module (${match[0].trim()}) — a dependency needs Node or Bun`);
     }
   } finally {
     rmSync(out, { recursive: true, force: true });

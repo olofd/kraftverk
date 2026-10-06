@@ -1,4 +1,4 @@
-# Elpriset just nu — Sweden's electricity prices
+# @kraftverk/integration-elprisetjustnu — Sweden's electricity prices
 
 ## What it is
 
@@ -16,8 +16,9 @@ its prices.
 
 ## Where it fits
 
-A service: a device type of kind `service`, found the way device types
-are, over the HTTPS transport.
+An integration (docs/PLAN-INTEGRATIONS.md §1) whose one type is a service:
+a device type of kind `service`, over the HTTPS transport. Prices are the
+platform's, not a product, so no device package builds on it.
 
 ## Why a package of its own
 

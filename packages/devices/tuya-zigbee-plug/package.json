@@ -2,11 +2,19 @@
   "name": "@kraftverk/device-tuya-zigbee-plug",
   "version": "0.1.0",
   "private": true,
-  "description": "A 16 A Zigbee energy plug paired with a Tuya Zigbee gateway, reached through the gateway on the home network with no cloud: its data layout on the Tuya socket type.",
+  "description": "A 16 A Zigbee energy plug paired with a Tuya Zigbee gateway, a product on Tuya: its datapoint layout on the Tuya socket, reached through the gateway on the home network with no cloud.",
   "type": "module",
   "main": "src/type.ts",
   "kraftverk": {
-    "deviceType": "./src/type.ts"
+    "device": {
+      "integration": "tuya",
+      "types": [
+        {
+          "id": "tuya.zigbee-plug",
+          "entry": "./src/type.ts"
+        }
+      ]
+    }
   },
   "exports": {
     ".": "./src/type.ts",
@@ -18,7 +26,7 @@
   },
   "dependencies": {
     "@kraftverk/device-sdk": "*",
-    "@kraftverk/device-tuya-plug": "*",
+    "@kraftverk/integration-tuya": "*",
     "@kraftverk/protocol-tuya-local": "*"
   },
   "devDependencies": {

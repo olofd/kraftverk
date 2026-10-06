@@ -14,7 +14,7 @@ import { SESSION_COOKIE } from './auth/routes.ts';
 import { Accounts } from './auth/accounts.ts';
 import { CLIENT_IP_HEADER, EXPOSURE_HEADER, ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
-import { busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE } from '@kraftverk/hub/testing';
+import { busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE, TEST_INTEGRATION, TEST_SOURCE } from '@kraftverk/hub/testing';
 import { openDatabase } from './platform/database.ts';
 import { MCP_BATCH_MAX } from './routes/assistant.ts';
 import { originAllowed } from './routes/live.ts';
@@ -63,7 +63,8 @@ async function build(options: { readOnly?: boolean; file: string }): Promise<Ser
   const types = new DeviceTypeRegistry();
   protocols.install(lampProtocol);
   transports.install(busDefinition, { create: () => bus });
-  types.install(lampType);
+  types.installIntegration(TEST_INTEGRATION);
+  types.install(lampType, TEST_SOURCE);
   await transports.startAll(['bus']);
 
   // As index.ts builds a home — but not started: only the bus runs, and nothing reaches a radio or the network.

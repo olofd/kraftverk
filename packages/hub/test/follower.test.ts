@@ -5,7 +5,7 @@ import { connectionId, nodeId, savedDeviceId } from '@kraftverk/device-sdk';
 import { plainSecrets, type SqlDatabase } from '@kraftverk/store';
 
 import { createFollower, createHub, installedFrom, masterFitness, shouldLead, type Follower, type Hub } from '../src/index.ts';
-import { APP_NODE, busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE } from '../src/testing.ts';
+import { APP_NODE, busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE, testIntegration } from '../src/testing.ts';
 import { testDatabase } from './home.ts';
 
 /*
@@ -30,7 +30,7 @@ const sealing = {
 /** What the app installs where it runs: the lamp, and a bus only it reaches. */
 const appInstalled = (bus: FakeBus) =>
   installedFrom(
-    { types: [{ type: lampType }], protocols: [lampProtocol], transports: [{ definition: { ...busDefinition, platforms: ['web'], discovery: { web: 'list' } }, create: () => bus }] },
+    { integrations: [testIntegration({ type: lampType })], protocols: [lampProtocol], transports: [{ definition: { ...busDefinition, platforms: ['web'], discovery: { web: 'list' } }, create: () => bus }] },
     { platform: 'web', context: { env: {}, log: () => {}, audit: () => {} } }
   );
 
@@ -44,7 +44,7 @@ afterEach(async () => {
 async function server(): Promise<{ hub: Hub; home: KraftverkApi }> {
   const database = testDatabase();
   const installed = installedFrom(
-    { types: [{ type: lampType }], protocols: [lampProtocol], transports: [{ definition: { ...busDefinition, platforms: ['web'], discovery: { web: 'list' } }, create: null }] },
+    { integrations: [testIntegration({ type: lampType })], protocols: [lampProtocol], transports: [{ definition: { ...busDefinition, platforms: ['web'], discovery: { web: 'list' } }, create: null }] },
     { platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } }
   );
   const hub = createHub({ database, secrets: plainSecrets, sealing, installed, node: MACHINE_NODE, readOnly: () => false, http: NO_NETWORK });
@@ -139,7 +139,7 @@ test('a way that needs a trusted node: held by the master that is one, never set
   const kept = { ...lampType, id: 'test.kept-lamp', connections: lampType.connections.map((method) => ({ ...method, needs: { trusted: 'its key stays at home' } })) };
   const installed = (platform: 'system' | 'web') =>
     installedFrom(
-      { types: [{ type: kept }], protocols: [lampProtocol], transports: [{ definition: { ...busDefinition, platforms: ['system', 'web'], discovery: { system: 'list', web: 'list' } }, create: () => new FakeBus() }] },
+      { integrations: [testIntegration({ type: kept })], protocols: [lampProtocol], transports: [{ definition: { ...busDefinition, platforms: ['system', 'web'], discovery: { system: 'list', web: 'list' } }, create: () => new FakeBus() }] },
       { platform, context: { env: {}, log: () => {}, audit: () => {} } }
     );
   // An app alone: its own home's master, and not trusted with it.

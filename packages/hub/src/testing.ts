@@ -11,7 +11,10 @@ import {
   type Sighting,
   type Transport,
   type TransportDefinition,
+  type TypeSource,
 } from '@kraftverk/device-sdk';
+
+import type { InstalledIntegration, InstalledType } from './installed/from.ts';
 
 /**
  * A device type, a protocol and a transport of the tests' own: a lamp on a
@@ -239,6 +242,15 @@ export function makeLampType(): { type: ReturnType<typeof defineDeviceType<LampC
 }
 
 export const lampType = makeLampType().type;
+
+/** The platform a test's own types are on: `test`, whose namespace they are all in. */
+export const TEST_INTEGRATION = { id: 'test', name: 'Test' } as const;
+
+/** Where a test's type comes from: the test platform's own. */
+export const TEST_SOURCE: TypeSource = { integration: TEST_INTEGRATION, product: false };
+
+/** A test's types, as one integration's own: what `installedFrom` is given. */
+export const testIntegration = (...types: InstalledType[]): InstalledIntegration => ({ ...TEST_INTEGRATION, types, products: [] });
 
 /** A node that is always on, reachable and trusted, as a machine on the network is: what a test's home runs as. */
 export const MACHINE_NODE = { id: nodeId('n-00000000000000a1'), name: 'Test machine', alwaysOn: true, reachable: true, trusted: true };

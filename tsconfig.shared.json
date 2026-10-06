@@ -6,8 +6,8 @@
     "packages/device-sdk/everywhere.d.ts",
     "packages/*/src/**/*.ts",
     "packages/protocols/*/src/**/*.ts",
-    "packages/devices/*/src/**/*.ts",
-    "packages/services/*/src/**/*.ts"
+    "packages/integrations/*/src/**/*.ts",
+    "packages/devices/*/src/**/*.ts"
   ],
   "exclude": ["packages/api-client/**", "packages/ui/**", "**/*.test.ts", "**/src/testing.ts", "**/node_modules/**"]
 }

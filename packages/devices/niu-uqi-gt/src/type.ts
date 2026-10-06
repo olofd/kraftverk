@@ -1,4 +1,4 @@
-import { defineNiuScooter } from '@kraftverk/device-niu-scooter';
+import { defineNiuScooter } from '@kraftverk/integration-niu';
 
 /**
  * The NIU UQi GT — the GT Sport, as it is sold in some markets — as a model

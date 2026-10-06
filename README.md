@@ -133,7 +133,7 @@ Readings arrive as they change over one socket. History at a minute for two week
 | 🔌 | **Tuya and Smart Life energy plugs**, protocol 3.3, 3.4 and 3.5 | Home network | Once, to fetch the local key | ![community](https://img.shields.io/badge/-community-0969da) |
 | 🔌 | **ATORCH S1W**, S1WP and S1BW, plug with a meter and a display | Home network | Once, to fetch the local key | ![experimental](https://img.shields.io/badge/-experimental-d29922) [notes](docs/ATORCH-S1W.md) |
 | 🌤️ | **Open-Meteo**, weather forecasts for planning around the sun | HTTPS, no account | Always, it is a web service | ![verified](https://img.shields.io/badge/-verified-2ea44f) |
-| 🏷️ | **[Elpriset just nu](packages/services/elprisetjustnu/README.md)**, Sweden's electricity prices, for the cheapest hours | HTTPS, no account | Always, it is a web service | ![verified](https://img.shields.io/badge/-verified-2ea44f) |
+| 🏷️ | **[Elpriset just nu](packages/integrations/elprisetjustnu/README.md)**, Sweden's electricity prices, for the cheapest hours | HTTPS, no account | Always, it is a web service | ![verified](https://img.shields.io/badge/-verified-2ea44f) |
 
 **Verified**: confirmed on real hardware by someone who owns one. **Community**: works for its author, not checked here. **Experimental**: built from published work; expect surprises. Every device type can also be added **Simulated**.
 
@@ -142,10 +142,12 @@ Ways to reach a device today: Bluetooth LE, the home network, an MQTT broker kra
 ## Add your own device
 
 ```bash
-npm run new:device -- acme-plug
+npm run new:protocol -- acme
+npm run new:integration -- acme
+npm run new:device -- acme-plug acme
 ```
 
-That is a working package with a simulator that already keeps the contract, and the server finds it at start. Then make it true:
+That is a protocol, a platform that speaks it, and a product on that platform — working packages with a simulator that already keeps the contract, which the server finds at start. A product on a platform kraftverk already knows is the last line alone, naming that integration. Then make it true:
 
 ```ts
 export default defineDeviceType<Config>({
@@ -163,8 +165,8 @@ export default defineDeviceType<Config>({
     ],
   }),
 
-  // How it is reached: a protocol over a transport, and whether that needs the internet.
-  connections: [{ id: 'lan', label: 'Home network', protocol: 'tuya-local', transport: 'lan', reach: 'local' }],
+  // How it is reached: its platform's ways in — a protocol over a transport, and whether that needs the internet.
+  connections: ACME_WAYS,
 
   async identify(connection) { /* read it once: who is it? */ },
   async createSession(ctx) { /* readings, and the commands its parts take */ },

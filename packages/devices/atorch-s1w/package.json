@@ -2,14 +2,22 @@
   "name": "@kraftverk/device-atorch-s1w",
   "version": "0.2.0",
   "private": true,
-  "description": "The ATORCH S1W / S1WP / S1BW as a smart plug: its data layout on the Tuya socket type, and its own screens.",
+  "description": "The ATORCH S1W / S1WP / S1BW, a product on Tuya: its datapoint layout on the Tuya socket, and its own screens.",
   "type": "module",
   "main": "src/type.ts",
   "kraftverk": {
-    "deviceType": "./src/type.ts",
-    "ui": "./ui/index.ts",
-    "assets": {
-      "images": ["./assets/image-1.png"]
+    "device": {
+      "integration": "tuya",
+      "types": [
+        {
+          "id": "atorch.s1w",
+          "entry": "./src/type.ts",
+          "ui": "./ui/index.ts",
+          "images": [
+            "./assets/image-1.png"
+          ]
+        }
+      ]
     }
   },
   "exports": {
@@ -24,7 +32,7 @@
   },
   "dependencies": {
     "@kraftverk/device-sdk": "*",
-    "@kraftverk/device-tuya-plug": "*",
+    "@kraftverk/integration-tuya": "*",
     "@kraftverk/protocol-tuya-local": "*"
   },
   "peerDependencies": {

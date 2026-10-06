@@ -2,24 +2,30 @@
   "name": "@kraftverk/device-aferiy-p280",
   "version": "0.1.0",
   "private": true,
-  "description": "The AFERIY P280 as a device type: what it measures, what it can do, what it remembers, how to set one up — and the screens that are specific to it.",
+  "description": "The AFERIY P280, a product on the Sydpower platform: what it measures, what it can do, what it remembers — and the screens that are its own.",
   "type": "module",
   "main": "src/index.ts",
   "kraftverk": {
-    "deviceType": "./src/type.ts",
-    "ui": "./ui/index.ts",
+    "device": {
+      "integration": "sydpower",
+      "types": [
+        {
+          "id": "aferiy.p280",
+          "entry": "./src/type.ts",
+          "ui": "./ui/index.ts",
+          "images": [
+            "./assets/image-1.png"
+          ]
+        }
+      ]
+    },
     "words": [
       "p280",
       "StationStatus",
       "StationSettings",
       "gridRelay",
       "core.station"
-    ],
-    "assets": {
-      "images": [
-        "./assets/image-1.png"
-      ]
-    }
+    ]
   },
   "exports": {
     ".": "./src/index.ts",
@@ -38,6 +44,7 @@
   },
   "dependencies": {
     "@kraftverk/device-sdk": "*",
+    "@kraftverk/integration-sydpower": "*",
     "@kraftverk/protocol-sydpower": "*"
   },
   "peerDependencies": {

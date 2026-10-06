@@ -4,7 +4,7 @@ import { isCurrent, type HttpChannel } from '@kraftverk/device-sdk';
 import { checkDeviceTypeContract, fakeConnection } from '@kraftverk/device-sdk/testing';
 import { md5Hex, NIU_ACCOUNT, NIU_API, parseState } from '@kraftverk/protocol-niu-cloud';
 
-import scooter, { chargingEventOf, confirmedSince, isParked, readingsOf, withoutPlace } from '../src/type.ts';
+import scooter, { chargingEventOf, confirmedSince, isParked, readingsOf, withoutPlace } from '../src/scooter.ts';
 
 /**
  * The NIU scooter keeps the device-type contract, and reads what NIU's cloud

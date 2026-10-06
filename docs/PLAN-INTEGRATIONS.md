@@ -1105,6 +1105,9 @@ product get in. Type ids, protocols, transports, the database and the file do
 not change.
 *Done when* the same devices run as before, each of today's packages is on
 one side of the line, and the checks hold the line.
+**Done 2026-10-06.** The P280's ways in became `SYDPOWER_WAYS`; a product
+speaks only protocols its integration depends on; the scaffolds make a
+protocol, a platform and a product on it that pass every check as made.
 
 **Step 2 · The catalogue and the integrations page.**
 Brands as records; `gen:catalogue` in place of `gen:devices`, one catalogue

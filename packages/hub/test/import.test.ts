@@ -16,7 +16,7 @@ import { restoreFrom } from '../src/configuration/restore.ts';
 import type { PassphraseSealing } from '../src/configuration/seal.ts';
 import { ProtocolRegistry } from '../src/installed/protocols.ts';
 import { DeviceTypeRegistry } from '../src/installed/types.ts';
-import { LAMP, lampProtocol, lampType, MACHINE_NODE } from '../src/testing.ts';
+import { LAMP, lampProtocol, lampType, MACHINE_NODE, TEST_INTEGRATION, TEST_SOURCE } from '../src/testing.ts';
 import { testDatabase } from './home.ts';
 
 /*
@@ -57,7 +57,8 @@ beforeEach(() => {
   location = null;
   db = testDatabase();
   const types = new DeviceTypeRegistry();
-  types.install(lampType);
+  types.installIntegration(TEST_INTEGRATION);
+  types.install(lampType, TEST_SOURCE);
   const protocols = new ProtocolRegistry();
   protocols.install(lampProtocol);
   const catalog = new DeviceCatalog(db);
@@ -306,7 +307,8 @@ automations:
         async createSimulator() {
           throw new Error('not in this test');
         },
-      })
+      }),
+      TEST_SOURCE
     );
     expect(refused).toEqual([]);
     const text = (limit: string) =>

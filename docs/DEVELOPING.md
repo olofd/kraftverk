@@ -90,8 +90,8 @@ packages/device-sdk/     the contract: categories, capabilities, links, connecti
 packages/gateway/        the action gateway's rules, run by whoever holds a connection
 packages/protocols/      sydpower (the station), tuya-local (the plugs), open-meteo — pure
 packages/transports/     mqtt (the broker), ble, lan, https — one entry per place it runs
-packages/devices/        aferiy-p280, tuya-plug, atorch-s1w — what each device is
-packages/services/       open-meteo — weather, a service
+packages/integrations/   sydpower, tuya, niu, open-meteo, elprisetjustnu — each platform: its ways in, its builder, its services
+packages/devices/        aferiy-p280, atorch-s1w, tuya-zigbee-plug, niu-uqi-gt — each product, on its integration
 packages/ui/             shared interface primitives, used by the app and by devices
 packages/api-client/     every API endpoint, and the shapes the server sends
 client/                  Expo app (iOS + web)

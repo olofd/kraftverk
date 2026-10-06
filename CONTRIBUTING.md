@@ -17,12 +17,16 @@ from what kraftverk assumes.
 
 ```bash
 npm install
-npm run new:device -- acme-plug
+npm run new:protocol -- acme
+npm run new:integration -- acme
+npm run new:device -- acme-plug acme
 npm test --workspace @kraftverk/device-acme-plug
 ```
 
-That is a working package — a simulator that keeps the contract — which the
-server finds at start. [docs/ADDING-A-DEVICE.md](docs/ADDING-A-DEVICE.md)
+That is a protocol, a platform that speaks it, and a product on it —
+working packages, a simulator that keeps the contract — which the server
+finds at start. A product on a platform kraftverk already knows is the
+`new:device` line alone, naming that integration. [docs/ADDING-A-DEVICE.md](docs/ADDING-A-DEVICE.md)
 walks through making it true: what it is, what it measures, how it is reached,
 who it is, its session, its simulator, its tests. A device that deserves more
 than the generic pages ships its own screens in the same package.

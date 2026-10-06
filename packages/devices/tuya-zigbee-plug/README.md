@@ -1,11 +1,11 @@
-# Tuya Zigbee plug
+# @kraftverk/device-tuya-zigbee-plug — the Tuya Zigbee plug
 
 ## What it is
 
 A 16 A Zigbee plug that measures power, paired with a **Tuya Zigbee gateway**
 in the Smart Life app — reached through that gateway on the home network,
-with no cloud. Built on the Tuya socket type ([`tuya-plug`](../tuya-plug)),
-as the ATORCH is: a data layout, and the way it is reached.
+with no cloud. A product on the [Tuya integration](../../integrations/tuya/README.md),
+as the ATORCH is: a data layout on its socket, and the way it is reached.
 
 Mapped on the owner's plug, sold as "Smart Zigbee Plug Socket 3680W 16A Power
 Energy Monitoring" (and as working with Zigbee2MQTT, where the type is the
@@ -20,11 +20,12 @@ for a while.
   through its Tuya gateway on the home network — and what was found mapping
   it, below.
 - **Does not:** speak Tuya (`@kraftverk/protocol-tuya-local`) or hold the
-  socket's session (`@kraftverk/device-tuya-plug`).
+  socket's session (`@kraftverk/integration-tuya`).
 
 ## Where it fits
 
-A family on the generic Tuya socket, as the ATORCH is.
+A device package (docs/PLAN-INTEGRATIONS.md §1): a product on the Tuya
+integration, `@kraftverk/integration-tuya`, as the ATORCH is.
 
 ## Why a package of its own
 

@@ -1,33 +1,40 @@
-# NIU scooter
+# @kraftverk/integration-niu — NIU's scooters
 
 ## What it is
 
-A NIU electric scooter, read from **NIU's cloud** with the owner's NIU account:
-its charge, whether it is charging, its range, odometer and state. The first
-use: a smart plug in front of its charger stops it at a limit, with the shared
-"Charge between two levels" automation — this scooter's battery, that plug.
+NIU as a platform: electric scooters read from **NIU's cloud** with the
+owner's NIU account — their charge, whether they are charging, range,
+odometer and state. The first use: a smart plug in front of a scooter's
+charger stops it at a limit, with the shared "Charge between two levels"
+automation — this scooter's battery, that plug.
 
-The common NIU scooter: a model with a package of its own builds on it
-(below). Support is `experimental` until a model has been mapped.
+It holds what every NIU scooter shares: `defineNiuScooter`, which builds a
+model's type from what the model says about itself; and the generic NIU
+scooter (`niu.scooter`), the one a model nobody has described falls back
+to. A model with a device package of its own is built on this (below).
+Support is `experimental` until a model has been mapped.
 
 ## What it does — and does not
 
-- **Does:** reads a NIU scooter from NIU's cloud with its owner's account —
-  charge, charging, range, odometer, state — as a vehicle; the base a model
-  builds on.
-- **Does not:** control the scooter (it is read only), speak NIU's API
+- **Does:** read a NIU scooter from NIU's cloud with its owner's account —
+  charge, charging, range, odometer, state — as a vehicle; the builder a
+  model is made with; the generic scooter and its screens, which models
+  reuse.
+- **Does not:** know a model — each is a device package that names this
+  integration — control the scooter (it is read only), speak NIU's API
   (`@kraftverk/protocol-niu-cloud`), or charge it — a plug in front of its
   charger and an automation do.
 
 ## Where it fits
 
-A device type over the internet (the HTTPS transport, NIU's hosts only),
-and the base of model packages such as `@kraftverk/device-niu-uqi-gt`.
+An integration (docs/PLAN-INTEGRATIONS.md §1), over the internet: the HTTPS
+transport, NIU's hosts only. It imports the SDK and NIU's protocol; device
+packages for NIU's models import it — for one, `@kraftverk/device-niu-uqi-gt`.
 
 ## Why a package of its own
 
-Because what NIU's scooters report, and how, is NIU's: it stays out of the
-core, and each model adds only what is its own.
+Because what NIU's scooters report, and how, is NIU's platform: written once
+here, and each model adds only what is its own.
 
 ## How it is reached
 
@@ -121,13 +128,13 @@ This package is the **common** NIU scooter: how any scooter NIU's cloud
 speaks for is reached and read. It claims no model, and has no picture of
 its own — the NIU brand, on its icon.
 
-A model gets **a package of its own**, built on this one with
+A model gets **a device package of its own**, built on this integration with
 `defineNiuScooter({ id, meta })`: its name, the model names NIU's account
 gives it (the check step offers the model's type for a scooter reporting one
 of them), its pictures, and — as it is mapped — what only that model does.
 It inherits everything else, and keeps what is still in common.
 
-- [`niu-uqi-gt`](../niu-uqi-gt/README.md) — the UQi GT and GT Sport, being
+- [`niu-uqi-gt`](../../devices/niu-uqi-gt/README.md) — the UQi GT and GT Sport, being
   mapped on a 2019 GT Sport.
 
 ## Charging it to a limit

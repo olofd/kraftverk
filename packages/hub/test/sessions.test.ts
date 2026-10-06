@@ -5,7 +5,7 @@ import { LiveBus, type LiveMessage, SessionManager } from '@kraftverk/holder';
 import { AuditLog, ConnectionStore, DeviceCatalog, deviceStore, holding, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
 
 import { DeviceTypeRegistry, ProtocolRegistry, TransportHost } from '../src/index.ts';
-import { busDefinition, FakeBus, LAMP, lampProtocol, makeLampType, MACHINE_NODE } from '../src/testing.ts';
+import { busDefinition, FakeBus, LAMP, lampProtocol, makeLampType, MACHINE_NODE, TEST_INTEGRATION, TEST_SOURCE } from '../src/testing.ts';
 
 /** The lamp these tests open, and what they see of its sessions. */
 const { type: lampType, watch } = makeLampType();
@@ -36,7 +36,8 @@ const build = (options: { readOnly?: boolean; bus?: LiveBus } = {}) => {
   const transports = new TransportHost({ platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } });
   expect(transports.install(busDefinition, { create: () => bus })).toEqual([]);
   const types = new DeviceTypeRegistry();
-  expect(types.install(lampType)).toEqual([]);
+  expect(types.installIntegration(TEST_INTEGRATION)).toEqual([]);
+  expect(types.install(lampType, TEST_SOURCE)).toEqual([]);
   return new SessionManager({
     platform: 'system',
     node: { id: MACHINE_NODE.id, name: MACHINE_NODE.name },

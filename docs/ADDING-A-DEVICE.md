@@ -5,30 +5,44 @@ follows is [`ARCHITECTURE.md`](ARCHITECTURE.md); the data model and the add
 flow a person walks through are [`DATA-MODEL.md`](DATA-MODEL.md). This is the
 practical part.
 
-A device is supported by up to three packages, one per layer:
+A device is supported by up to four packages, one per layer
+([PLAN-INTEGRATIONS.md](PLAN-INTEGRATIONS.md) §1):
 
 | Layer | Folder | What it knows | Example |
 | --- | --- | --- | --- |
 | **Transport** | `packages/transports/` | How to move bytes or messages to a device, and find devices. One implementation per place it runs: `server`, `web`, `native` | `ble`, `lan`, `mqtt`, `https` |
 | **Protocol** | `packages/protocols/` | What the bytes mean: framing, crypto, discovery packets, credentials, the one guard nobody may get around. Pure: no I/O | `sydpower`, `tuya-local` |
-| **Device type** | `packages/devices/`, `packages/services/` | What the product is: its category, its description — parts, attributes, events — and how it is reached: its protocol over a transport | `aferiy-p280`, `atorch-s1w` |
+| **Integration** | `packages/integrations/` | A platform: how things on it are reached — its protocol over a transport, ready to use — and set up; the builder its products are made with; its services, and the generic type a product nobody described falls back to. Names no product | `sydpower`, `tuya`, `niu`, `open-meteo` |
+| **Device package** | `packages/devices/` | A product on a platform: its category, its description — parts, attributes, events — its models, pictures and screens. Built on its integration | `aferiy-p280`, `atorch-s1w` |
 
-Most new products need only a device type: a Tuya plug with a different data
-layout is a profile on the generic Tuya socket, a new Sydpower station is a
-type over the existing protocol. A new protocol comes with a family of
-products, and a new transport is rare.
+Most new products need only a device package: a Tuya plug with a different
+data layout is a profile on Tuya's socket, a new Sydpower station a product
+reached the Sydpower ways. A new platform comes with an integration — and
+often a protocol — and a new transport is rare. A service with no product
+behind it, such as a weather forecast, is its integration's own type.
 
 ## Start
 
+A product on a platform kraftverk knows:
+
 ```bash
-npm run new:device -- acme-plug
+npm run new:device -- acme-plug tuya
 npm install
 npm test --workspace @kraftverk/device-acme-plug
 ```
 
-That package already keeps the device-type contract, as a simulator, and the
-server finds it at start with no other change. `npm run new:protocol` and
-`npm run new:transport` do the same for the other two layers.
+A product on a platform it does not, from the bottom:
+
+```bash
+npm run new:protocol -- acme
+npm run new:integration -- acme
+npm run new:device -- acme-plug acme
+npm install
+```
+
+Each package already keeps its contract — a device package as a simulator,
+reached its integration's ways — and the server finds it at start with no
+other change. `npm run new:transport` does the same for the last layer.
 
 ## Make it true
 
@@ -141,11 +155,12 @@ own page. A type's first picture stands for it where no device is chosen yet —
 the add screen — and only where the type is known: a device found on the
 network that might be one of several types gets none.
 
-**A model of a family** — one NIU among NIU scooters, one Tuya socket among
-Tuya sockets — is a package of its own, built on the family's
-(`defineNiuScooter`, `defineTuyaSocket`): its name, the model names it reports
-(the check step offers it for a device reporting one), its pictures, and what
-only it does. It inherits the rest. The family's package claims no model.
+**A model on a platform** — one NIU among NIU scooters, one Tuya socket among
+Tuya sockets — is a device package of its own, built with its integration's
+builder (`defineNiuScooter`, `defineTuyaSocket`): its name, the model names it
+reports (the check step offers it for a device reporting one), its pictures,
+and what only it does. It inherits the rest. The integration's generic type
+claims no model.
 
 ### What it brings to automations
 
@@ -153,8 +168,8 @@ A device's package decides what automations can do with it
 ([AUTOMATIONS.md](AUTOMATIONS.md); the language is
 [`@kraftverk/automation`](../packages/automation/README.md)). Three things,
 all optional. Recipes and functions are the package's own entry beside its
-type — `"kraftverk": { "deviceType": "./src/type.ts", "automation":
-"./src/automation.ts" }` — whose default export is
+type — `"types": [{ "id": "acme.plug", "entry": "./src/type.ts",
+"automation": "./src/automation.ts" }]` in its manifest — whose default export is
 `defineContribution({ recipes, functions })` from `@kraftverk/automation`;
 the device contract itself knows nothing of automations.
 
@@ -185,24 +200,29 @@ installed package's functions when it starts.
 
 `npm run check:architecture` runs in CI and fails on:
 
-- a device type importing a transport, the server or the app — it is handed
-  an open connection;
-- a protocol, or a device type's `src/`, importing a Node or Bun built-in —
-  both run in the app too;
+- an integration or a device package importing a transport, the server or
+  the app — each is handed an open connection;
+- an integration importing a device package or another integration — a
+  platform names no product;
+- a device package importing another device package, an integration it is
+  not built on, or a protocol its integration is not built on;
+- a protocol, or an integration's or a device package's `src/`, importing a
+  Node or Bun built-in — all run in the app too;
 - a transport importing anything from kraftverk but the SDK, or its web or
   native entry reaching its server one;
 - the core naming a product;
-- a device type importing more of the core than the SDK and the automation
-  language;
+- an integration or a device package importing more of the core than the
+  SDK and the automation language;
 - a package without a README that says, under these headings, what it is,
   what it does and does not, where it fits, and why it is a package of its
   own: `## What it is`, `## What it does — and does not`,
-  `## Where it fits`, `## Why a package of its own`. `npm run new:device`
-  writes them for you to fill in; what you find mapping the device goes
+  `## Where it fits`, `## Why a package of its own`. The `new:` scripts
+  write them for you to fill in; what you find mapping the device goes
   below them.
 
-A family may build on another device type by its package name — the ATORCH
-S1W is the Tuya socket with a profile.
+A device package builds on its integration by the integration's package
+name — the ATORCH S1W is Tuya's socket with a profile — and never on another
+device package.
 
 ## Safety
 

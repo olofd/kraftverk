@@ -3,7 +3,7 @@ import type { KraftverkApi } from '@kraftverk/api-contract';
 import { createFollower, createHub, installedFrom, passphraseSealing, type Follower, type Hub, type Installed } from '@kraftverk/hub';
 import { AuditLog, createSchema, NodeStore, prepareDatabase, schemaStateOf, transportStore, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
-import { DEVICE_TYPES, PROTOCOLS, TRANSPORTS } from '../../generated/installed';
+import { INTEGRATIONS, PROTOCOLS, TRANSPORTS } from '../../generated/installed';
 import { appHttp } from '../http';
 import type { ThisNode } from '../node';
 
@@ -44,7 +44,7 @@ const log = (level: 'info' | 'warn' | 'error', message: string) => console[level
 /** What the app installed (its generated registry), with each transport made as this place makes it; what a transport records goes to `record`. */
 function appInstalled(place: AppPlace, record: (entry: Parameters<AuditLog['record']>[0]) => void): Installed {
   return installedFrom(
-    { types: DEVICE_TYPES, protocols: PROTOCOLS, transports: TRANSPORTS.map((definition) => ({ definition, create: place.transport(definition) })) },
+    { integrations: INTEGRATIONS, protocols: PROTOCOLS, transports: TRANSPORTS.map((definition) => ({ definition, create: place.transport(definition) })) },
     {
       platform: place.platform,
       context: { env: {}, log, audit: (entry) => record({ at: new Date().toISOString(), ...entry }) },

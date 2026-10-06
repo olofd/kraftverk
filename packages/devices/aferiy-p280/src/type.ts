@@ -1,4 +1,5 @@
 import { defineDeviceType, type OpenConnection } from '@kraftverk/device-sdk';
+import { SYDPOWER_WAYS } from '@kraftverk/integration-sydpower';
 import { linkOver, parseMac, readInputRegisters, stationIdentity } from '@kraftverk/protocol-sydpower';
 
 import { mainsWatcher } from './automation.ts';
@@ -50,25 +51,8 @@ export default defineDeviceType({
   },
   describe: () => describeStation(),
   tools: STATION_TOOLS,
-  connections: [
-    {
-      id: 'wifi',
-      label: 'Wi-Fi',
-      description: 'Always on: history and automations keep running. The station must be set to use this server’s broker.',
-      protocol: 'sydpower',
-      transport: 'mqtt',
-      reach: 'local',
-      recommended: true,
-    },
-    {
-      id: 'bluetooth',
-      label: 'Bluetooth',
-      description: 'Within about 10 m of whatever holds it. The station takes one Bluetooth connection at a time.',
-      protocol: 'sydpower',
-      transport: 'ble',
-      reach: 'local',
-    },
-  ],
+  // Reached the ways every Sydpower station is: its platform's.
+  connections: SYDPOWER_WAYS,
   setup: {
     saveAnyway: 'A station that is asleep, or not on Wi-Fi yet, connects when it wakes — its card says so until then.',
   },

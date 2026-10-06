@@ -33,6 +33,7 @@ export * from './transport.ts';
 export * from './protocol.ts';
 export * from './connection.ts';
 export * from './device-type.ts';
+export * from './integration.ts';
 export * from './setup.ts';
 export * from './validate.ts';
 export * from './time.ts';

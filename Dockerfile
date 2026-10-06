@@ -42,7 +42,7 @@ COPY --from=sources /manifests ./
 FROM manifests AS deps
 
 # The server, and every package it finds at startup: protocols, transports,
-# device types and services each bring their own dependencies — the MQTT
+# integrations and device packages each bring their own dependencies — the MQTT
 # transport its broker (aedes). A parent folder selects every workspace in it,
 # so a package added there is installed with no change here.
 #
@@ -67,7 +67,7 @@ FROM manifests AS deps
 RUN npm ci --omit=dev --omit=optional --ignore-scripts \
       --workspace server --workspace packages/device-sdk \
       --workspace packages/protocols --workspace packages/transports \
-      --workspace packages/devices --workspace packages/services \
+      --workspace packages/integrations --workspace packages/devices \
       --include-workspace-root \
  && mkdir -p server/node_modules \
  && if find packages -mindepth 2 -maxdepth 4 -type d -name node_modules | grep .; then \

@@ -49,10 +49,11 @@ empty: the core names no product, and every device is found, not listed.
   before a package from outside (ARCHITECTURE.md, step 32).
 - **The layers are packages**: `packages/transports` (mqtt with the broker,
   ble with system, web and native entries, lan, https), `packages/protocols`
-  (sydpower, tuya-local, open-meteo, elprisetjustnu, niu-cloud), `packages/devices`
-  (aferiy-p280, tuya-plug, atorch-s1w, tuya-zigbee-plug, niu-scooter,
-  niu-uqi-gt), `packages/services` (open-meteo, elprisetjustnu) and
-  `packages/gateway`. The server finds them at start; the app binds them in
+  (sydpower, tuya-local, open-meteo, elprisetjustnu, niu-cloud),
+  `packages/integrations` — each platform: sydpower, tuya, niu, open-meteo,
+  elprisetjustnu — `packages/devices` — each product on one: aferiy-p280,
+  atorch-s1w, tuya-zigbee-plug, niu-uqi-gt (docs/PLAN-INTEGRATIONS.md §1) —
+  and `packages/gateway`. The server finds them at start; the app binds them in
   through `client/src/generated/registry.ts`.
 - **The device model** (2026-09-29, ARCHITECTURE.md §4.2, steps 23–26 and
   35): a device is described by parts, attributes and events; capabilities are
@@ -275,7 +276,7 @@ package. Two installed copies mean two theme contexts and silently broken
 styling.
 
 **Metro and npm need the workspace globs.** `packages/*` does not reach nested
-package folders (`packages/devices/*`, and the others ARCHITECTURE.md §3 adds);
+package folders (`packages/integrations/*`, `packages/devices/*`, and the others ARCHITECTURE.md §3 adds);
 each is listed in the root `package.json`. `client/metro.config.js` also stubs
 optional native modules, which is what lets the app build without
 `react-native-ble-plx` installed.
@@ -313,7 +314,8 @@ npm test                     # the whole repo
 npm run typecheck            # every workspace
 npm run check:architecture   # the dependency rule, the leak ratchet, the app's generated registry
 npm run gen:devices          # regenerate the app's registry after adding a package
-npm run new:device -- name    # start a device type (new:protocol, new:transport too)
+npm run new:integration -- name           # start a platform (new:protocol, new:transport too)
+npm run new:device -- name integration     # start a product on one
 npm run scan:tuya            # find Tuya plugs — no credentials needed
 npm run keys:tuya            # fetch their local keys (scan a QR code with the Smart Life app)
 ```

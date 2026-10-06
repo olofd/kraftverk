@@ -1,0 +1,36 @@
+{
+  "name": "@kraftverk/integration-tuya",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Tuya as a platform: energy sockets reached on the home network with the Tuya local protocol and no cloud — the builder a socket product is made with, and the generic plug a socket nobody has described falls back to.",
+  "type": "module",
+  "main": "src/index.ts",
+  "kraftverk": {
+    "integration": {
+      "id": "tuya",
+      "name": "Tuya",
+      "types": [
+        {
+          "id": "tuya.plug",
+          "entry": "./src/plug.ts"
+        }
+      ]
+    }
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./plug": "./src/plug.ts"
+  },
+  "scripts": {
+    "test": "node ../../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kraftverk/device-sdk": "*",
+    "@kraftverk/protocol-tuya-local": "*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

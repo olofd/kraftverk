@@ -1,17 +1,20 @@
 import { checkContribution, type AutomationContribution } from '@kraftverk/automation';
-import { connectionProblems, validateDeviceType, type DeviceType, type Protocol, type TransportDefinition } from '@kraftverk/device-sdk';
+import { connectionProblems, sourceProblem, validateDeviceType, type DeviceType, type IntegrationInfo, type Protocol, type TransportDefinition, type TypeSource } from '@kraftverk/device-sdk';
 
 import type { Contributed } from '@kraftverk/automation-engine';
 
 import type { Refused } from './protocols.ts';
 
 /**
- * The device types installed on this server, found rather than listed.
+ * The integrations installed where the home runs, and the device types they
+ * and the device packages on them declare — found rather than listed.
  *
- * A device type is a package (docs/ARCHITECTURE.md §3): one that says
- * `"kraftverk": { "deviceType": "./src/type.ts" }` in its package.json, under
- * `packages/devices` or `packages/services`. Adding one is adding the package —
- * nothing here names a product, and nothing needs editing.
+ * An integration teaches a platform and a device package one product on it
+ * (docs/PLAN-INTEGRATIONS.md §1): each says so in its package.json's
+ * `kraftverk` section, under `packages/integrations` or `packages/devices`.
+ * Adding one is adding the package — nothing here names a product, and
+ * nothing needs editing. Every type keeps where it came from: the platform it
+ * is on, and whether it is a product on it or the platform's own.
  *
  * Every type is checked against the contract before it is accepted. One that
  * fails is refused and the reasons kept, so a broken package is a line in the
@@ -27,24 +30,52 @@ import type { Refused } from './protocols.ts';
  */
 
 export class DeviceTypeRegistry {
+  #integrations = new Map<string, IntegrationInfo>();
   #types = new Map<string, DeviceType<any>>();
+  #sources = new Map<string, TypeSource>();
   #refused: Refused[] = [];
   #warnings = new Map<string, string[]>();
   #contributed: Contributed[] = [];
 
+  /** Accepts an integration, before its types: one id is one platform. */
+  installIntegration(integration: IntegrationInfo, source = integration.id): string[] {
+    if (this.#integrations.has(integration.id)) {
+      const problems = [`another package already is the integration "${integration.id}"`];
+      this.refuse(source, problems);
+      return problems;
+    }
+    this.#integrations.set(integration.id, integration);
+    return [];
+  }
+
   /**
-   * Accepts one type, if it keeps the contract. What finding a package does,
-   * and how a test brings a type of its own.
+   * Accepts one type, if it keeps the contract and comes from an installed
+   * integration — as its own, in its namespace, or as a product on it. What
+   * finding a package does, and how a test brings a type of its own.
    */
-  install(type: DeviceType<any>, source = type.id): string[] {
+  install(type: DeviceType<any>, from: TypeSource, source = type.id): string[] {
     const problems = validateDeviceType(type);
+    const misplaced = type.id ? sourceProblem(type.id, from) : null;
+    if (misplaced) problems.push(misplaced);
+    if (!this.#integrations.has(from.integration.id)) problems.push(`its integration "${from.integration.id}" is not installed`);
     if (!problems.length && this.#types.has(type.id)) problems.push(`another package already provides ${type.id}`);
     if (problems.length) {
       this.refuse(source, problems);
       return problems;
     }
     this.#types.set(type.id, type);
+    this.#sources.set(type.id, from);
     return [];
+  }
+
+  /** The installed integrations, in the order they were installed. */
+  integrations(): IntegrationInfo[] {
+    return [...this.#integrations.values()];
+  }
+
+  /** Where an installed type came from: its platform, and whether it is a product on it. */
+  sourceOf(id: string): TypeSource | null {
+    return this.#sources.get(id) ?? null;
   }
 
   /** Accepts what an installed type's package brings to automations, if it keeps the rules. */
@@ -99,6 +130,6 @@ export class DeviceTypeRegistry {
   /** Keeps a package that was found and turned away, and why: one that would not load, say. */
   refuse(source: string, problems: string[]): void {
     this.#refused.push({ source, problems });
-    console.warn(`[devices] ${source} is not a usable device type:\n  - ${problems.join('\n  - ')}`);
+    console.warn(`[devices] ${source} is refused:\n  - ${problems.join('\n  - ')}`);
   }
 }

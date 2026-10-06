@@ -7,22 +7,22 @@
 
 import type { DeviceAssets, DeviceUi } from '../features/devices/registry';
 
-import deviceAferiyP280Ui from '@kraftverk/device-aferiy-p280/ui';
-import deviceAtorchS1wUi from '@kraftverk/device-atorch-s1w/ui';
-import deviceNiuScooterUi from '@kraftverk/device-niu-scooter/ui';
-import deviceNiuUqiGtUi from '@kraftverk/device-niu-uqi-gt/ui';
+import niuScooterUi from '@kraftverk/integration-niu/ui';
+import niuUqiGtUi from '@kraftverk/device-niu-uqi-gt/ui';
+import aferiyP280Ui from '@kraftverk/device-aferiy-p280/ui';
+import atorchS1wUi from '@kraftverk/device-atorch-s1w/ui';
 
 /** Screens a device type ships, by device type id. */
 export const DEVICE_UI: Readonly<Record<string, DeviceUi>> = {
-  'aferiy.p280': deviceAferiyP280Ui,
-  'atorch.s1w': deviceAtorchS1wUi,
-  'niu.scooter': deviceNiuScooterUi,
-  'niu.uqi-gt': deviceNiuUqiGtUi,
+  'niu.scooter': niuScooterUi,
+  'niu.uqi-gt': niuUqiGtUi,
+  'aferiy.p280': aferiyP280Ui,
+  'atorch.s1w': atorchS1wUi,
 };
 
 /** Pictures a device type ships, by device type id. */
 export const DEVICE_ASSETS: Readonly<Record<string, DeviceAssets>> = {
+  'niu.uqi-gt': { images: [require('@kraftverk/device-niu-uqi-gt/assets/image-1.png'), require('@kraftverk/device-niu-uqi-gt/assets/image-2.png'), require('@kraftverk/device-niu-uqi-gt/assets/image-3.png')] },
   'aferiy.p280': { images: [require('@kraftverk/device-aferiy-p280/assets/image-1.png')] },
   'atorch.s1w': { images: [require('@kraftverk/device-atorch-s1w/assets/image-1.png')] },
-  'niu.uqi-gt': { images: [require('@kraftverk/device-niu-uqi-gt/assets/image-1.png'), require('@kraftverk/device-niu-uqi-gt/assets/image-2.png'), require('@kraftverk/device-niu-uqi-gt/assets/image-3.png')] },
 };

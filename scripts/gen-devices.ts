@@ -7,15 +7,18 @@
  * download code. So this finds every installed package and writes the files
  * importing them, each for where it runs (docs/PLAN-SHARED-CORE.md, phase 6):
  *
- *   installed.ts       what a hub installs: device types and what they bring
- *                      to automations, protocols, transport definitions — no
- *                      React, so a browser's worker builds a hub from it
+ *   installed.ts       what a hub installs: integrations, with their own types
+ *                      and the products the device packages on them declare,
+ *                      and what those bring to automations; protocols;
+ *                      transport definitions — no React, so a browser's
+ *                      worker builds a hub from it
  *   transports.ts      each transport's entry for a phone
  *   transports.web.ts  each transport's entry for a browser's page
  *   registry.ts        the screens and pictures device types ship
  *
  * The app runs the same code the server does, and these are the only files
- * in it that import a device, protocol or transport.
+ * in it that import an integration, a device package, a protocol or a
+ * transport.
  *
  *   npm run gen:devices              write them
  *   npm run gen:devices -- --check   fail if one is out of date (CI)
@@ -25,6 +28,8 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { deviceManifestProblems, integrationManifestProblems, type DeviceManifest, type IntegrationManifest, type PackageTypeEntry } from '@kraftverk/device-sdk';
+
 const ROOT = resolve(import.meta.dirname, '..');
 const GENERATED = resolve(ROOT, 'client/src/generated');
 
@@ -32,19 +37,16 @@ type Manifest = {
   name: string;
   exports?: Record<string, string>;
   kraftverk?: {
-    deviceType?: string;
-    /** What the package brings to automations: its recipes and functions. */
-    automation?: string;
-    ui?: string;
-    /** Pictures of the device as it looks, in order: the first is shown unless its owner picks another. */
-    assets?: { images?: string[] };
+    integration?: IntegrationManifest;
+    device?: DeviceManifest;
     protocol?: string;
     transport?: { definition?: string; system?: string; web?: string; native?: string };
   };
 };
 
-/** The import specifier a package exports a file under, or a clear failure. */
+/** The import specifier a package exports a file under, or a clear failure. Another package's export by name is its own specifier. */
 function exported(manifest: Manifest, file: string): string {
+  if (file.startsWith('@kraftverk/')) return file;
   const key = Object.entries(manifest.exports ?? {}).find(([, target]) => target === file)?.[0];
   if (!key) throw new Error(`${manifest.name} must export ${file} in its package.json "exports"`);
   return key === '.' ? manifest.name : `${manifest.name}${key.slice(1)}`;
@@ -52,6 +54,10 @@ function exported(manifest: Manifest, file: string): string {
 
 const local = (name: string, suffix = '') =>
   name.replace(/^@kraftverk\//, '').replace(/[^a-zA-Z0-9]+(.)/g, (_, c: string) => c.toUpperCase()) + suffix;
+
+const fail = (message: string): never => {
+  throw new Error(message);
+};
 
 function packages(parent: string): { dir: string; manifest: Manifest }[] {
   const root = resolve(ROOT, parent);
@@ -118,32 +124,59 @@ const screens: Written = { file: 'registry.ts', what: 'The screens and pictures 
 const onPhone: Written = { file: 'transports.ts', what: 'Each transport as a phone runs it.', imports: [], body: [] };
 const onPage: Written = { file: 'transports.web.ts', what: "Each transport as a browser's page runs it.", imports: [], body: [] };
 
-const types: string[] = [];
+const platforms: string[] = [];
+let typeCount = 0;
 const uis: string[] = [];
 const pictures: string[] = [];
 const protocols: string[] = [];
 const definitions: string[] = [];
 const entries = { native: [] as string[], web: [] as string[] };
 
-for (const { dir, manifest } of [...packages('packages/devices'), ...packages('packages/services')]) {
-  const { deviceType, ui, assets, automation } = manifest.kraftverk ?? {};
-  if (!deviceType) continue;
-  const type = ((await import(pathToFileURL(resolve(dir, deviceType)).href)) as { default?: { id?: string } }).default;
-  if (!type?.id) throw new Error(`${manifest.name}: its deviceType entry has no default export with an id`);
-  installed.imports.push(`import ${local(manifest.name, 'Type')} from '${exported(manifest, deviceType)}';`);
-  if (automation) installed.imports.push(`import ${local(manifest.name, 'Automation')} from '${exported(manifest, automation)}';`);
-  types.push(`  { type: ${local(manifest.name, 'Type')}, automation: ${automation ? local(manifest.name, 'Automation') : 'null'} },`);
-  if (ui) {
-    screens.imports.push(`import ${local(manifest.name, 'Ui')} from '${exported(manifest, ui)}';`);
-    uis.push(`  '${type.id}': ${local(manifest.name, 'Ui')},`);
+/** One type a package lists: imported for the hub, its screens and pictures for the app; its line in the integration's list. */
+async function typeLine(dir: string, manifest: Manifest, entry: PackageTypeEntry): Promise<string> {
+  const type = ((await import(pathToFileURL(resolve(dir, entry.entry)).href)) as { default?: { id?: string } }).default;
+  if (type?.id !== entry.id) fail(`${manifest.name}: ${entry.entry} is "${type?.id}", but the manifest lists it as "${entry.id}"`);
+  typeCount += 1;
+  installed.imports.push(`import ${local(entry.id, 'Type')} from '${exported(manifest, entry.entry)}';`);
+  if (entry.automation) installed.imports.push(`import ${local(entry.id, 'Automation')} from '${exported(manifest, entry.automation)}';`);
+  if (entry.ui) {
+    screens.imports.push(`import ${local(entry.id, 'Ui')} from '${exported(manifest, entry.ui)}';`);
+    uis.push(`  '${entry.id}': ${local(entry.id, 'Ui')},`);
   }
-  if (assets?.images?.length) {
-    for (const image of assets.images) checkImage(manifest, dir, image);
+  if (entry.images?.length) {
+    for (const image of entry.images) checkImage(manifest, dir, image);
     // require, not import: Metro makes each file an asset of the build, on the web and on a phone alike.
-    const required = assets.images.map((image) => `require('${exported(manifest, image)}')`).join(', ');
-    pictures.push(`  '${type.id}': { images: [${required}] },`);
+    const required = entry.images.map((image) => `require('${exported(manifest, image)}')`).join(', ');
+    pictures.push(`  '${entry.id}': { images: [${required}] },`);
   }
+  return `{ type: ${local(entry.id, 'Type')}, automation: ${entry.automation ? local(entry.id, 'Automation') : 'null'} }`;
 }
+
+// Each product, under the platform it names: a device package whose integration is not installed fails here, as it is refused there.
+const productsOn = new Map<string, { dir: string; manifest: Manifest; device: DeviceManifest }[]>();
+for (const { dir, manifest } of packages('packages/devices')) {
+  const device = manifest.kraftverk?.device;
+  if (!device) continue;
+  const problems = deviceManifestProblems(device);
+  if (problems.length) fail(`${manifest.name}: ${problems.join('; ')}`);
+  productsOn.set(device.integration, [...(productsOn.get(device.integration) ?? []), { dir, manifest, device }]);
+}
+
+for (const { dir, manifest } of packages('packages/integrations')) {
+  const integration = manifest.kraftverk?.integration;
+  if (!integration) continue;
+  const problems = integrationManifestProblems(integration);
+  if (problems.length) fail(`${manifest.name}: ${problems.join('; ')}`);
+  const own: string[] = [];
+  for (const entry of integration.types) own.push(await typeLine(dir, manifest, entry));
+  const products: string[] = [];
+  for (const product of productsOn.get(integration.id) ?? []) {
+    for (const entry of product.device.types) products.push(await typeLine(product.dir, product.manifest, entry));
+  }
+  productsOn.delete(integration.id);
+  platforms.push(`  { id: '${integration.id}', name: '${integration.name.replace(/[\\']/g, '\\$&')}', types: [${own.join(', ')}], products: [${products.join(', ')}] },`);
+}
+for (const [id, products] of productsOn) fail(`${products.map((product) => product.manifest.name).join(', ')}: built on "${id}", which is not installed`);
 
 for (const { manifest } of packages('packages/protocols')) {
   const entry = manifest.kraftverk?.protocol;
@@ -169,14 +202,14 @@ for (const { dir, manifest } of packages('packages/transports')) {
 }
 
 installed.body = [
-  "import type { AutomationContribution } from '@kraftverk/automation';",
-  "import type { DeviceType, Protocol, TransportDefinition } from '@kraftverk/device-sdk';",
+  "import type { Protocol, TransportDefinition } from '@kraftverk/device-sdk';",
+  "import type { InstalledIntegration } from '@kraftverk/hub';",
   '',
   ...installed.imports,
   '',
-  '/** Every installed device type, and what its package brings to automations beside it: the same code the server runs. */',
-  'export const DEVICE_TYPES: readonly { type: DeviceType<any>; automation: AutomationContribution | null }[] = [',
-  ...types,
+  '/** Every installed integration, its own types and the products on it, each with what it brings to automations: the same code the server runs. */',
+  'export const INTEGRATIONS: readonly InstalledIntegration[] = [',
+  ...platforms,
   '];',
   '',
   'export const PROTOCOLS: readonly Protocol[] = [',
@@ -222,7 +255,7 @@ for (const [platform, written] of [['native', onPhone], ['web', onPage]] as cons
 }
 
 const files = [installed, screens, onPhone, onPage].map((written) => ({ path: resolve(GENERATED, written.file), source: [...HEADER(written.what), ...written.body].join('\n'), file: written.file }));
-const summary = `${types.length} device type(s), ${uis.length} with screens, ${pictures.length} with a picture, ${protocols.length} protocol(s), ${definitions.length} transport(s)`;
+const summary = `${platforms.length} integration(s), ${typeCount} device type(s), ${uis.length} with screens, ${pictures.length} with a picture, ${protocols.length} protocol(s), ${definitions.length} transport(s)`;
 
 if (process.argv.includes('--check')) {
   const stale = files.filter(({ path, source }) => {

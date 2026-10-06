@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { MAIN_PART, readingOf } from '@kraftverk/device-sdk';
 import { checkDeviceTypeContract, simulatorContext } from '@kraftverk/device-sdk/testing';
 
-import plug from '../src/type.ts';
+import plug from '../src/plug.ts';
 
 describe('the generic Tuya plug', () => {
   test('keeps the device-type contract', async () => {

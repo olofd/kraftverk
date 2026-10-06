@@ -6,10 +6,11 @@ import { TransportHost, type TransportHostOptions } from './transports.ts';
 import { DeviceTypeRegistry } from './types.ts';
 
 /**
- * What is installed where a home runs: its device types (and what their
- * packages bring to automations), protocols and transports. The place fills
- * them — the server from its disk, the app from its generated registry, a
- * test with what it brings — and the hub runs what is in them.
+ * What is installed where a home runs: its integrations and the device types
+ * they and the device packages on them declare (and what those bring to
+ * automations), protocols and transports. The place fills them — the server
+ * from its disk, the app from its generated registry, a test with what it
+ * brings — and the hub runs what is in them.
  */
 export type Installed = {
   types: DeviceTypeRegistry;
@@ -17,13 +18,28 @@ export type Installed = {
   transports: TransportHost;
 };
 
+/** One device type, and what its package brings to automations beside it. */
+export type InstalledType = { type: DeviceType<any>; automation?: AutomationContribution | null };
+
+/**
+ * One integration as installed (docs/PLAN-INTEGRATIONS.md §1): the platform,
+ * its own types — accounts, gateways, services, the generic one — and the
+ * products the device packages built on it declare.
+ */
+export type InstalledIntegration = {
+  id: string;
+  name: string;
+  types: readonly InstalledType[];
+  products: readonly InstalledType[];
+};
+
 /**
  * What a place has installed, as lists — an app's generated registry, a
  * test's own — rather than found on a disk as the server finds it.
  */
 export type InstalledLists = {
-  /** Each device type, and what its package brings to automations beside it. */
-  types: readonly { type: DeviceType<any>; automation?: AutomationContribution | null }[];
+  /** Each integration, with its own types and the products on it. */
+  integrations: readonly InstalledIntegration[];
   protocols: readonly Protocol[];
   /**
    * Each transport's definition, and how it is made where the hub runs: its
@@ -44,12 +60,26 @@ export function installedFrom(lists: InstalledLists, host: TransportHostOptions)
   const transports = new TransportHost(host);
   for (const { definition, create } of lists.transports) transports.install(definition, create ? { create } : null);
   const types = new DeviceTypeRegistry();
-  for (const { type, automation } of lists.types) {
-    if (types.install(type).length) continue;
-    if (automation) types.contribute(type, automation);
-  }
+  for (const integration of lists.integrations) installIntegration(types, integration);
   types.checkConnections({ protocol: (id) => protocols.get(id), transport: (id) => transports.definition(id) });
   return { types, protocols, transports };
+}
+
+/**
+ * One integration into a registry: the platform, the products on it, then
+ * its own types, each with what it brings to automations. Products come
+ * first because that is the order a person is offered them in: the
+ * platform's generic type is the one to take when no product is yours.
+ */
+export function installIntegration(types: DeviceTypeRegistry, integration: InstalledIntegration, source = integration.id): void {
+  const info = { id: integration.id, name: integration.name };
+  if (types.installIntegration(info, source).length) return;
+  for (const [entries, product] of [[integration.products, true], [integration.types, false]] as const) {
+    for (const { type, automation } of entries) {
+      if (types.install(type, { integration: info, product }, `${source} (${type.id ?? 'a type'})`).length) continue;
+      if (automation) types.contribute(type, automation, `${source} (${type.id})`);
+    }
+  }
 }
 
 /**

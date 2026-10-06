@@ -1,10 +1,10 @@
-# AFERIY P280 — and the Sydpower family
+# @kraftverk/device-aferiy-p280 — the AFERIY P280
 
 ## What it is
 
-The device type for Sydpower-stack power stations, developed and verified
-against an **AFERIY P280**: local control over Wi-Fi (through kraftverk's own
-MQTT broker) or Bluetooth LE, **without the vendor cloud**.
+The AFERIY P280, a product on the Sydpower platform — developed and verified
+against a real one: local control over Wi-Fi (through kraftverk's own MQTT
+broker) or Bluetooth LE, **without the vendor cloud**.
 
 > **Unofficial.** Not affiliated with, endorsed by, or supported by AFERIY,
 > Sydpower, Fossibot or any related company. Those names appear only to identify
@@ -13,18 +13,21 @@ MQTT broker) or Bluetooth LE, **without the vendor cloud**.
 ## What it does — and does not
 
 - **Does:** the station as a device type — its parts (battery, inputs,
-  outlets, expansion packs), its settings with their safe ranges, its methods
-  over kraftverk's MQTT broker and over Bluetooth, its simulator, and its own
-  screens (dashboard, energy flow, registers).
-- **Does not:** speak its protocol (`@kraftverk/protocol-sydpower`), open a
-  connection (the holder and the transports), or decide when to switch (the
-  gateway and automations).
+  outlets, expansion packs), its registers, its settings with their safe
+  ranges, its simulator, and its own screens (dashboard, energy flow,
+  registers).
+- **Does not:** say how a Sydpower station is reached — over kraftverk's
+  MQTT broker and over Bluetooth, its integration's ways
+  (`@kraftverk/integration-sydpower`) — speak its protocol
+  (`@kraftverk/protocol-sydpower`), open a connection (the holder and the
+  transports), or decide when to switch (the gateway and automations).
 
 ## Where it fits
 
-A device type (docs/ARCHITECTURE.md §3): it imports the SDK and its
-protocol; its `ui/` the kit and the API client. The server finds it by its
-package.json (`deviceType`, `ui`); the app through the generated registry.
+A device package (docs/PLAN-INTEGRATIONS.md §1): a product on the Sydpower
+integration. It imports the SDK, that integration and its protocol; its
+`ui/` the kit and the API client. The server finds it by its package.json
+(`kraftverk.device`); the app through the generated registry.
 
 ## Why a package of its own
 

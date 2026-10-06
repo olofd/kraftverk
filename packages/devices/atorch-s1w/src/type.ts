@@ -1,5 +1,5 @@
 import type { ProfileDatapoint, SocketProfile } from '@kraftverk/protocol-tuya-local';
-import { defineTuyaSocket } from '@kraftverk/device-tuya-plug';
+import { defineTuyaSocket } from '@kraftverk/integration-tuya';
 import type { Unit } from '@kraftverk/device-sdk';
 
 /**

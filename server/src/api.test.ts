@@ -8,7 +8,7 @@ import { httpApi, serverApi } from '@kraftverk/api-client/http';
 import { nodeId, savedDeviceId } from '@kraftverk/device-sdk';
 import { createHub, DeviceTypeRegistry, passphraseSealing, ProtocolRegistry, TransportHost, type Hub } from '@kraftverk/hub';
 import { apiOver, serveApi } from '@kraftverk/message-port';
-import { busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE } from '@kraftverk/hub/testing';
+import { busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE, TEST_INTEGRATION, TEST_SOURCE } from '@kraftverk/hub/testing';
 
 import { createApp } from './app.ts';
 import { SESSION_COOKIE } from './auth/routes.ts';
@@ -52,7 +52,8 @@ beforeAll(async () => {
   const transports = new TransportHost({ platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } });
   transports.install(busDefinition, { create: () => bus });
   const types = new DeviceTypeRegistry();
-  types.install(lampType);
+  types.installIntegration(TEST_INTEGRATION);
+  types.install(lampType, TEST_SOURCE);
   await transports.startAll(['bus']);
   hub = createHub({
     database,

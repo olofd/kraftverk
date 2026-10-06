@@ -1,9 +1,9 @@
-# NIU UQi GT
+# @kraftverk/device-niu-uqi-gt — the NIU UQi GT
 
 ## What it is
 
 The NIU UQi GT — sold as the **UQi GT Sport** in some markets — as a model of
-its own. Built on the common [NIU scooter](../niu-scooter/README.md), which
+its own: a product on the [NIU integration](../../integrations/niu/README.md), which
 says how it is reached (NIU's cloud, with the owner's NIU account) and what
 it reports. This package adds its name, the model names NIU's account gives
 it, and its pictures; what only this model does is added here as it is
@@ -17,12 +17,14 @@ charger (5.2 A), 45 km/h. No Bluetooth: NIU's cloud is the only way in.
 
 - **Does:** the UQi GT as a model: its names, the model names NIU gives
   it, its pictures, and what only it does as that is mapped.
-- **Does not:** say how it is reached or what a NIU scooter reports — the
-  common NIU scooter does.
+- **Does not:** say how it is reached or what a NIU scooter reports — its
+  integration does.
 
 ## Where it fits
 
-A model package on `@kraftverk/device-niu-scooter`, by its name.
+A device package (docs/PLAN-INTEGRATIONS.md §1): a product on the NIU
+integration, `@kraftverk/integration-niu`, made with its builder and shown
+with its screens.
 
 ## Why a package of its own
 

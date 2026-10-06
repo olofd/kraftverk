@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 
 import { checkDeviceTypeContract } from '@kraftverk/device-sdk/testing';
-import common from '@kraftverk/device-niu-scooter';
+import common from '@kraftverk/integration-niu/scooter';
 
 import uqiGt from '../src/type.ts';
 

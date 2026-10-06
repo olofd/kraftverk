@@ -4,22 +4,23 @@ import { checkDeviceTypeContract } from '@kraftverk/device-sdk/testing';
 
 import { DeviceTypeRegistry, ProtocolRegistry, TransportHost } from '@kraftverk/hub';
 
-import { discoverDeviceTypes, discoverProtocols, discoverTransports } from './packages.ts';
+import { discoverIntegrations, discoverProtocols, discoverTransports } from './packages.ts';
 
 /*
   Every installed package keeps its contract (docs/ARCHITECTURE.md, step 15).
 
   Found the way the server finds them at start, so a package added tomorrow is
   checked here with no edit: its manifest is read, it loads, and it is valid —
-  a protocol by validateProtocol, a transport by validateTransportDefinition, a
-  device type or service by the contract suite, and every connection method
-  names an installed protocol with a binding for an installed transport.
+  a protocol by validateProtocol, a transport by validateTransportDefinition, an
+  integration and every device package on it by their manifests and every type
+  they declare by the contract suite, and every connection method names an
+  installed protocol with a binding for an installed transport.
 */
 
 const protocols = new ProtocolRegistry();
 const transports = new TransportHost({ platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } });
 const types = new DeviceTypeRegistry();
-await Promise.all([discoverProtocols(protocols), discoverTransports(transports), discoverDeviceTypes(types)]);
+await Promise.all([discoverProtocols(protocols), discoverTransports(transports), discoverIntegrations(types)]);
 types.checkConnections({ protocol: (id) => protocols.get(id), transport: (id) => transports.definition(id) });
 
 describe('installed packages', () => {
@@ -31,6 +32,15 @@ describe('installed packages', () => {
   test('every transport is valid', () => {
     expect(transports.refused).toEqual([]);
     expect(transports.definitions().length).toBeGreaterThan(0);
+  });
+
+  test('every integration loads, with its own types and the products on it', () => {
+    expect(types.refused).toEqual([]);
+    expect(types.integrations().length).toBeGreaterThan(0);
+    for (const type of types.all()) {
+      const source = types.sourceOf(type.id);
+      expect(source && types.integrations().some((integration) => integration.id === source.integration.id)).toBe(true);
+    }
   });
 
   test('every device type loads, and every method it declares can be made', () => {
