@@ -84,6 +84,17 @@ describe('the configuration kept beside the database', () => {
     expect(readFileSync(`${file}.1`, 'utf8')).not.toContain('porch-lamp:');
   });
 
+  test('a home that does not check against what is installed is not written: the copy before it is left as it is', async () => {
+    const before = readFileSync(file, 'utf8');
+    // A way its type no longer has: left in the database, as by an update that moved it without carrying it over.
+    const attic = hub.catalog.add({ typeId: 'test.lamp', name: 'Attic lamp', description: LAMP });
+    const gone = hub.connections.add({ deviceId: attic.id, method: 'gone', transport: 'bus', heldBy: MACHINE_NODE.id, address: 'lamp-9' });
+    await expect(snapshot.write()).rejects.toThrow(/does not check, so the copy kept before is left as it is: devices\.attic-lamp\.connect\.0\.via/);
+    expect(readFileSync(file, 'utf8')).toBe(before);
+    hub.connections.remove(gone.id);
+    hub.catalog.remove(attic.id);
+  });
+
   test('a restore is made from a copy set aside first, of which the last five are kept', async () => {
     const folder = join(dir, 'copies');
     mkdirSync(folder, { recursive: true });

@@ -20,6 +20,7 @@
     "@kraftverk/device-sdk": "*",
     "@kraftverk/gateway": "*",
     "@kraftverk/holder": "*",
+    "@kraftverk/home-file": "*",
     "@noble/ciphers": "^2.4.0",
     "@noble/hashes": "^2.4.0"
   },

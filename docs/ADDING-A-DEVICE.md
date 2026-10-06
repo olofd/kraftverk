@@ -233,7 +233,10 @@ before it. The integration says how: a `FileMigration` in the module its
 manifest names (`"migrations": "./src/migrations.ts"`), from the file's
 version before the change, finding its entries by what is installed — the
 types reached through its account — never by naming a product. The NIU
-integration's is the example, with its test.
+integration's is the example, with its test. The migration raises the
+file's version, and with it the database's fingerprint: a home kept in an
+older database is set aside and brought in again through its file, so the
+migration is what carries every home over — none keeps the old way.
 
 ## Safety
 

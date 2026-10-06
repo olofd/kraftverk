@@ -117,9 +117,12 @@ export class ConfigSnapshot {
   write(): Promise<boolean> {
     const previous = this.#writing ?? Promise.resolve(false);
     const next = previous.catch(() => false).then(() => this.#write());
-    this.#writing = next.finally(() => {
-      if (this.#writing === next) this.#writing = null;
+    const settled = next.finally(() => {
+      if (this.#writing === settled) this.#writing = null;
     });
+    // Its failure is the caller's, through `next`: the queue only waits for it, and is not left a rejection nobody hears.
+    settled.catch(() => {});
+    this.#writing = settled;
     return next;
   }
 

@@ -66,7 +66,7 @@ const MAY_IMPORT = {
   'api-contract': ['device-sdk', 'automation', 'gateway', 'home-file'],
   holder: ['device-sdk', 'gateway', 'api-contract'],
   'automation-engine': ['device-sdk', 'automation', 'gateway', 'api-contract', 'holder'],
-  store: ['device-sdk', 'automation', 'gateway', 'api-contract', 'holder', 'automation-engine'],
+  store: ['device-sdk', 'automation', 'gateway', 'home-file', 'api-contract', 'holder', 'automation-engine'],
   hub: ['device-sdk', 'automation', 'gateway', 'home-file', 'api-contract', 'holder', 'automation-engine', 'store'],
   // A home and a transport over a message port: served on one side, the same interface on the other.
   'message-port': ['device-sdk', 'automation', 'gateway', 'home-file', 'api-contract'],

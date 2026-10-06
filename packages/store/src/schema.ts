@@ -1,4 +1,5 @@
 import { ruleShape } from '@kraftverk/automation';
+import { CURRENT_VERSION } from '@kraftverk/home-file';
 
 /**
  * The database, as one definition (AGENTS.md, docs/ARCHITECTURE.md §9
@@ -584,13 +585,21 @@ export const SCHEMA = `
  * (\`ruleShape\`), which the SQL's \`rule TEXT\` does not show — hashed to a
  * positive 31-bit number. Any change to what the schema says, or to how a
  * rule is kept, changes it; a reworded comment does not.
+ *
+ * And the configuration document's version: a database holds a home as that
+ * version says one is — its devices' ways, an account a device of its own —
+ * so a home of another version is not used as it is, but set aside and
+ * carried over through its kept file, whose migrations make it this version's
+ * (docs/CONFIG.md). Without it, a way an integration's migration moved would
+ * be left in the database as it was, and written back to the kept file under
+ * the new version, where no migration would ever see it again.
  */
 export function schemaFingerprint(schema = SCHEMA): number {
   const statements = `${schema
     .replace(/\/\*[\s\S]*?\*\//g, ' ')
     .replace(/--[^\n]*/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim()} -- rules: ${ruleShape()}`;
+    .trim()} -- rules: ${ruleShape()} -- home: ${CURRENT_VERSION}`;
   let hash = 0x811c9dc5;
   for (let index = 0; index < statements.length; index++) hash = Math.imul(hash ^ statements.charCodeAt(index), 0x01000193) >>> 0;
   return (hash & 0x7fffffff) || 1;

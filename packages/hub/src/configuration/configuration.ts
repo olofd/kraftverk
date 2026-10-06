@@ -2,7 +2,7 @@ import { ApiError, type ConfigExported, type ConfigExportRequest, type ImportAns
 import type { AuditRecord } from '@kraftverk/device-sdk';
 import { Confirmations, subjectOf } from '@kraftverk/gateway';
 import type { LiveBus } from '@kraftverk/holder';
-import { configJsonSchema, PASSPHRASE_MIN, readConfig, writeConfig, type Vocabulary } from '@kraftverk/home-file';
+import { checkDocument, configJsonSchema, PASSPHRASE_MIN, readConfig, writeConfig, type Vocabulary } from '@kraftverk/home-file';
 
 import { exportConfig, homeVocabulary } from './export.ts';
 import { keptPlan, PendingPlans, planImport, startWritten, writeImport, type ImportDeps, type ImportMode } from './import.ts';
@@ -170,10 +170,16 @@ export class Configuration {
    * every secret sealed with this home's key. `before`: the copy as it is
    * now, whose seals are kept while they still open to the same value, so a
    * home that has not changed is not written again for a fresh seal.
+   *
+   * Refused — the copy before it left as it is — when what the home holds
+   * does not check against what is installed: a way its type no longer has
+   * would be written under this version, and a restore could not read it.
    */
   async kept(before: string | null): Promise<string> {
     const keptBefore = before ? (readConfig(before).document?.secrets ?? {}) : {};
     const { document } = await exportConfig(this.#deps, { secrets: 'kept', keptBefore });
+    const issues = checkDocument(document, this.vocabulary(), { hasSecret: () => true });
+    if (issues.length) throw new Error(`What the home holds does not check, so the copy kept before is left as it is: ${issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ')}`);
     return writeConfig(document, { heading: KEPT_HEADING });
   }
 

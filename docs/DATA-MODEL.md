@@ -774,7 +774,13 @@ The database is one definition, `packages/store/src/schema.ts` — not a chain
 of migrations (ARCHITECTURE.md §4.5, decision 21: strict version 1 while
 kraftverk is in research and development). A database made by any other schema
 is set aside beside itself, untouched, and a new one is started; history from
-an older schema is not carried over. When there is a production state to
+an older schema is not carried over. The fingerprint also covers the
+configuration document's version (CONFIG.md): a home held as an older version
+holds it — a way an integration has since moved, an account not yet a device
+— so its database is set aside too, and the home carried over through the
+file kept beside it, whose migrations bring it up to date. That file is never
+written over with a home that does not check against what is installed.
+When there is a production state to
 protect, this section becomes the rules for changing a schema that holds it.
 
 ---
