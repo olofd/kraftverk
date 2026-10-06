@@ -1,6 +1,6 @@
 import { ApiError, type AutomationDraftView, type AutomationView, type Rehearsal } from '@kraftverk/api-contract';
 import { capabilitiesOf, meetsNeed, partName, partsOf, savedDeviceId, validateConfig, type AutomationId, type Value } from '@kraftverk/device-sdk';
-import { changedRoles, checkBinding, checkRule, describeRule, describeSteps, describeTriggers, inlineParams, isAutomationRole, problemArea, problemPlace, SEQUENCE_LIMITS, takesSteps, writtenAttribute, type AutomationDraft, type BoundPart, type ProblemArea, type RoleBinding, type Rule, type RuleVocabulary } from '@kraftverk/automation';
+import { changedRoles, checkBinding, checkRule, describeRule, describeSteps, describeTriggers, isAutomationRole, problemArea, problemPlace, SEQUENCE_LIMITS, takesSteps, withSettings, writtenAttribute, type AutomationDraft, type BoundPart, type ProblemArea, type RoleBinding, type Rule, type RuleVocabulary } from '@kraftverk/automation';
 
 import type { AutomationStore, DeviceCatalog, EventStore, HistoryStore } from '@kraftverk/store';
 import type { SessionManager } from '@kraftverk/holder';
@@ -38,7 +38,7 @@ export type Checked = {
 
 /** Problems by where they are: a list each, as an editor groups them. */
 const byArea = (placed: readonly { text: string; area: ProblemArea }[]): Record<ProblemArea, string[]> => {
-  const areas: Record<ProblemArea, string[]> = { uses: [], when: [], onlyIf: [], does: [], fails: [], other: [] };
+  const areas: Record<ProblemArea, string[]> = { uses: [], settings: [], when: [], onlyIf: [], does: [], fails: [], other: [] };
   for (const { text, area } of placed) if (!areas[area].includes(text)) areas[area].push(text);
   return areas;
 };
@@ -186,7 +186,6 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
       push: (...texts: string[]) => placed.push(...texts.map((text) => ({ text, area: 'other' as const }))),
       uses: (text: string) => placed.push({ text, area: 'uses' }),
     };
-    if (Object.keys(rule.params.fields).length) problems.push('An automation has no settings of its own: its values are in its blocks');
 
     const bound = new Map<string, BoundPart>();
     for (const [role, spec] of Object.entries(rule.roles)) {
@@ -259,9 +258,9 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
   };
 
   /**
-   * A recipe copied into a rule of its own, its settings — held to their
-   * schema — written into its blocks: what an assistant proposes, as the app
-   * starts from one.
+   * A recipe copied into a rule of its own, its settings kept at the values
+   * given — held to their schema — or the recipe's: what an assistant
+   * proposes, as the app starts from one.
    */
   const copied = (recipeId: string, params: Record<string, unknown>): Rule => {
     const recipe = library.recipe(recipeId);
@@ -269,7 +268,7 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
     const settings = validateConfig(recipe.params, params);
     if (!settings.ok) throw new ApiError('invalid', settings.issues.map((issue) => issue.message).join('; '));
     const { id: _id, label: _label, description: _description, sentence: _sentence, ...rule } = recipe;
-    return inlineParams(rule, settings.value as Record<string, Value>);
+    return withSettings(rule, settings.value as Record<string, Value>);
   };
 
   return { view, checked, draftView, rehearsed, roleName, copied };

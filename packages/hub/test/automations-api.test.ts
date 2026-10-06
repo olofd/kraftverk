@@ -159,9 +159,9 @@ describe('automations', () => {
     expect(filled).toMatchObject({ problems: [], when: ['Every day at 07:00'], names: { forecast: 'Weather', switch: 'Heater plug' } });
     expect(filled.sentence).toStartWith('Every day at 07:00, if ');
 
-    // Its own settings are its blocks: a rule with settings is no automation's.
+    // A setting holds the value it runs with: one without is said where it is.
     expect((await draft({ rule: { ...rule, params: { fields: { x: { type: 'number', title: 'X' } } } }, roles: { forecast: whole(weather), switch: whole(plug) } })).problems).toEqual([
-      'An automation has no settings of its own: its values are in its blocks',
+      'Setting: it has no value',
     ]);
     // Not a rule at all: said so, and nothing else.
     expect(await draft({ rule: { then: 'nothing' } as unknown as Rule })).toMatchObject({ problems: ['That is not a rule: it needs roles, settings, triggers and steps'], steps: [] });

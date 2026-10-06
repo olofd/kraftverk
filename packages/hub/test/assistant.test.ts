@@ -106,9 +106,11 @@ describe('an assistant', () => {
     );
     expect(proposal.content[0]!.text).toContain('It acts on its own only once a person lets it, in the app');
     expect(proposal.content[0]!.text).toContain('Rehearsed from');
-    // Copied from the recipe: its own rule, its settings written into its blocks.
+    // Copied from the recipe: its own rule, its settings kept at the values asked for, each set in one place.
     const made = await t.home.automations.list();
-    expect(made).toEqual([expect.objectContaining({ name: 'My charge window', mode: 'watch', rule: expect.objectContaining({ params: { fields: {} } }), madeFrom: expect.objectContaining({ id: 'standard.charge-between' }) })]);
+    expect(made).toEqual([expect.objectContaining({ name: 'My charge window', mode: 'watch', madeFrom: expect.objectContaining({ id: 'standard.charge-between' }) })]);
+    const settings = made[0]!.rule.params.fields;
+    expect(Object.fromEntries(Object.entries(settings).map(([key, field]) => [key, field.default]))).toEqual({ low: 15, lowFor: 120, high: 50, highFor: 0 });
 
     // A setting outside its range is refused, with the reason, and nothing is made.
     const wrong = await tool('propose', { name: 'Wrong', recipe: 'standard.charge-between', roles, params: { low: 1 } });

@@ -28,6 +28,15 @@ describe('the schema a file is checked against as it is typed', () => {
     expect(valid(schema, asData(DOCUMENT))).toEqual([]);
   });
 
+  test('an automation’s settings, short or long — and nothing a setting does not take', () => {
+    const data = asData(DOCUMENT);
+    const automation = Object.values(data.automations as Record<string, Record<string, unknown>>)[0]!;
+    automation.settings = { low: '20 %', high: { title: 'Stop charging at', value: '40 %', min: '10 %', max: '100 %', slider: true } };
+    expect(valid(schema, data)).toEqual([]);
+    automation.settings = { low: { value: '20 %', colour: 'red' } };
+    expect(valid(schema, data).length).toBeGreaterThan(0);
+  });
+
   test('a plug reached on the home network without its local key, or a device id, is not', () => {
     const data = asData(DOCUMENT);
     delete data.devices['smart-plug'].connect[0].secrets;

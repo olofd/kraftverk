@@ -7,6 +7,7 @@ import { branchesOf, STEP_KIND_ORDER, STEP_KINDS, stepSpec, type StepKind, type 
 import { stepListsOf, TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerFields } from '../kinds/triggers.ts';
 import { isAutomationRole, TRIGGER_ID, type Expr, type RuleTrigger, type RoleSpec, type Rule, type Step } from '../rule.ts';
 import { parseExpr, printExpr } from './expr.ts';
+import { settingsFromConfig, settingsToConfig } from './settings.ts';
 
 /*
   An automation's rule as a configuration file writes it (docs/CONFIG.md):
@@ -289,7 +290,7 @@ export type RuleEntry = {
   'only if'?: unknown;
   do?: unknown;
   'if a step fails'?: unknown;
-  params?: unknown;
+  settings?: unknown;
 };
 
 /**
@@ -302,7 +303,7 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
   const condition = 'only if' in entry ? tryRead(reader, () => reader.expr(entry['only if'], [...path, 'only if'])) : undefined;
   const then = tryRead(reader, () => reader.steps(entry.do, [...path, 'do'])) ?? [];
   const otherwise = 'if a step fails' in entry ? tryRead(reader, () => reader.steps(entry['if a step fails'], [...path, 'if a step fails'])) : undefined;
-  const params = 'params' in entry && isRecord(entry.params) ? (entry.params as Rule['params']) : { fields: {} };
+  const params = tryRead(reader, () => settingsFromConfig(entry.settings, [...path, 'settings'], (message, at) => reader.fail(message, at))) ?? { fields: {} };
 
   const steps: RuleBody = { when, ...(condition !== undefined && condition !== null ? { if: condition } : {}), then, ...(otherwise !== undefined && otherwise !== null ? { otherwise } : {}) };
   const roles: Record<string, RoleSpec> = {};
@@ -432,10 +433,10 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
 
   return {
     uses: usesOut,
+    ...(Object.keys(rule.params.fields).length ? { settings: settingsToConfig(rule.params) } : {}),
     ...(rule.when.length ? { when: rule.when.map(trigger) } : {}),
     ...(rule.if !== undefined ? { 'only if': expr(rule.if) } : {}),
     do: rule.then.map(step),
     ...(rule.otherwise !== undefined ? { 'if a step fails': rule.otherwise.map(step) } : {}),
-    ...(Object.keys(rule.params.fields).length ? { params: rule.params } : {}),
   };
 }

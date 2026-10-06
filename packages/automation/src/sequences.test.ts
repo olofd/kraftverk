@@ -47,10 +47,10 @@ describe('the language', () => {
     expect(checkRule(rule([{ wait: { for: { value: SEQUENCE_LIMITS.waitSeconds + 1, unit: 's' } } }]), NO_FUNCTIONS)).toEqual(['then[0].wait.for: from 1 s to 1 h']);
     expect(checkRule(rule([{ ensure: { condition: drawing!, within: { value: 20, unit: 's' }, tries: { value: 11 }, retry: [on] } }]), NO_FUNCTIONS)).toEqual(['then[0].ensure.tries: from 1 to 10']);
     // A setting with no maximum could be anything its form accepts.
-    const unbounded = rule([{ wait: { for: { param: 'long' } } }], { params: { fields: { long: { type: 'number', title: 'Long', unit: 's', min: 1 } } } });
+    const unbounded = rule([{ wait: { for: { param: 'long' } } }], { params: { fields: { long: { type: 'number', title: 'Long', unit: 's', min: 1, default: 60 } } } });
     expect(checkRule(unbounded, NO_FUNCTIONS)).toEqual(['then[0].wait.for: the setting "long" must be held between 1 s and 1 h']);
     // Minutes are not seconds.
-    const minutes = rule([{ wait: { for: { param: 'm' } } }], { params: { fields: { m: { type: 'number', title: 'M', unit: 'min', min: 1, max: 5 } } } });
+    const minutes = rule([{ wait: { for: { param: 'm' } } }], { params: { fields: { m: { type: 'number', title: 'M', unit: 'min', min: 1, max: 5, default: 2 } } } });
     expect(checkRule(minutes, NO_FUNCTIONS)).toEqual(['then[0].wait.for: expected a length of time, got a number in min']);
   });
 

@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { CapabilityName, Value } from '@kraftverk/device-sdk';
+import type { CapabilityName } from '@kraftverk/device-sdk';
 
 import { checkBinding, checkRule } from '../check.ts';
 import type { Weekday } from '../clock.ts';
-import { evaluateNow, inlineParams, type RuleScope } from '../evaluate.ts';
+import { evaluateNow, inlineParams, withSettings, type RuleScope } from '../evaluate.ts';
 import { STANDARD_RECIPES } from '../recipes.ts';
 import { isAutomationRole, type Expr, type Recipe, type Rule } from '../rule.ts';
 import { durationSeconds, durationText, ruleFromConfig, ruleToConfig, type Use } from './rules.ts';
@@ -16,10 +16,10 @@ import { durationSeconds, durationText, ruleFromConfig, ruleToConfig, type Use }
   the recipes make.
 */
 
-/** A recipe copied as the app copies one: its settings at their defaults, written into its blocks. */
+/** A recipe copied as the app copies one: its settings kept, at the recipe's values. */
 const copied = (recipe: Recipe): Rule => {
-  const defaults = Object.fromEntries(Object.entries(recipe.params.fields).map(([key, field]) => [key, ('default' in field ? field.default : null) as Value]));
-  return inlineParams(recipe, defaults);
+  const { id: _id, label: _label, description: _description, sentence: _sentence, ...rule } = recipe;
+  return withSettings(rule, {});
 };
 
 /** Each role filled: a part of a made-up device, or another automation. */
@@ -116,7 +116,8 @@ describe('a rule, written and read back', () => {
     expect(start.issues).toEqual([]);
     expect(checkRule(start.rule!, { fn: () => null })).toEqual([]);
     expect(start.uses).toEqual({ supply: { device: 'garage-p280', part: 'outlet.ac' }, charger: { device: 'smart-plug', part: 'main' } });
-    const recipe = copied(STANDARD_RECIPES.find((each) => each.id === 'standard.start-charging')!);
+    // Its settings written into its blocks, as a file of literal values says them.
+    const recipe = inlineParams(copied(STANDARD_RECIPES.find((each) => each.id === 'standard.start-charging')!), {});
     // What it does is the recipe's — but for "if it never starts charging", already chosen: switch both off.
     expect(start.rule!.then).toEqual(recipe.then);
   });

@@ -84,11 +84,13 @@ describe('roles', () => {
   });
 });
 
-test('a recipe copied: its settings at their defaults, written into its blocks — the owner’s to change', () => {
+test('a recipe copied: its settings kept, at the recipe’s values, read in its blocks — the owner’s to set, in one place', () => {
   const draft = draftOfRecipe(startCharging);
-  expect(draft.rule.params).toEqual({ fields: {} });
-  expect(draft.rule.then[1]).toEqual({ waitUntil: { condition: { reachable: 'charger' }, atMost: { value: 2, unit: 'min' } } });
+  expect(draft.rule.params).toEqual(startCharging.params);
+  expect(draft.rule.then[1]).toEqual({ waitUntil: { condition: { reachable: 'charger' }, atMost: { param: 'reachSeconds' } } });
   expect(checkRule(draft.rule, { fn: () => null })).toEqual([]);
+  // What a recipe says for whoever fills a role stays with it.
+  expect(Object.values(draft.rule.roles).some((role) => 'description' in role)).toBe(false);
 });
 
 test('stop after start: the parts another automation uses for the same roles are offered, when they fit', () => {

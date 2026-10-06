@@ -19,6 +19,17 @@ import { presentationOf, type ConfigField, type ConfigSchema, type ConfigValues 
  * Secrets are write-only by construction: the server never sends their values,
  * so the field shows whether one is stored and takes a replacement.
  */
+/**
+ * A number as a person reads it beside its unit: a length of time kept in
+ * seconds in the largest units that say it — "2 min", "1 h 30 min" — anything
+ * else as it is, "20 %".
+ */
+function amount(value: number, unit: string | undefined): string {
+  if (unit !== 's' || value < 60 || !Number.isInteger(value)) return `${value}${unit ? ` ${unit}` : ''}`;
+  const [hours, minutes, seconds] = [Math.floor(value / 3_600), Math.floor((value % 3_600) / 60), value % 60];
+  return [hours ? `${hours} h` : '', minutes ? `${minutes} min` : '', seconds ? `${seconds} s` : ''].filter(Boolean).join(' ');
+}
+
 export function SchemaForm({
   schema,
   values,
@@ -164,8 +175,8 @@ function Field({
           min={field.min}
           max={field.max}
           step={step}
-          format={(v) => `${v.toFixed(decimals)}${field.unit ? ` ${field.unit}` : ''}`}
-          ends={[`${field.min}${field.unit ? ` ${field.unit}` : ''}`, `${field.max}${field.unit ? ` ${field.unit}` : ''}`]}
+          format={(v) => amount(Number(v.toFixed(decimals)), field.unit)}
+          ends={[amount(field.min, field.unit), amount(field.max, field.unit)]}
           disabled={disabled}
           onCommit={(next) => onChange(name, Number(next.toFixed(decimals)))}
         />

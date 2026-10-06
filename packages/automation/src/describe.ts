@@ -33,6 +33,12 @@ const holdText = (held: Expr, text: (expr: Expr) => string): string => {
 };
 
 /** A setting as it reads in a sentence: an option's label, a number with its unit, seconds as a duration. */
+/** A setting's value as the rule runs with it: the one given — a form's, as it is set — or the rule's own. */
+const settingValue = (rule: Pick<Rule, 'params'>, params: Readonly<Record<string, Value>>, key: string): Value => {
+  const field = rule.params.fields[key];
+  return (params[key] ?? (field && 'default' in field ? field.default : undefined) ?? null) as Value;
+};
+
 export function paramText(schema: ConfigSchema, name: string, value: Value): string {
   const field = schema.fields[name];
   if (value === null || value === undefined) return '…';
@@ -63,7 +69,7 @@ export const whose = (name: string, thing: string): string => {
 
 /** One expression of a rule, in words, with its settings filled in: "Garage station's charge is below 15 %". */
 export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<string, Value>>, name: (role: string) => string, vocabulary?: RuleVocabulary): string {
-  const param = (key: string) => paramText(rule.params, key, params[key] ?? null);
+  const param = (key: string) => paramText(rule.params, key, settingValue(rule, params, key));
   /**
    * Which trigger started the run, compared with one's id: said as that
    * trigger — "it started because the station’s charge is below 40 % for 2 min".
@@ -228,6 +234,7 @@ export function describeTriggers(rule: Rule, params: Readonly<Record<string, Val
   const say: Say = {
     expr: text,
     duration: (expr) => holdText(expr, text),
+    seconds: (expr) => secondsNow(expr, settledScope(rule, params)),
     days: daysText,
     name,
     event: (role, event) => eventWords(rule, role, event),
@@ -354,13 +361,14 @@ export function describeSteps(rule: Rule, params: Readonly<Record<string, Value>
  * briefly, in order.
  */
 export function describeRule(rule: Rule & { sentence?: string }, params: Readonly<Record<string, Value>>, name: (role: string) => string, vocabulary?: RuleVocabulary): string {
-  const param = (key: string) => paramText(rule.params, key, params[key] ?? null);
+  const param = (key: string) => paramText(rule.params, key, settingValue(rule, params, key));
   if (rule.sentence) return rule.sentence.replace(/\{(\w+)\}/g, (_, key: string) => (key in rule.roles ? name(key) : param(key)));
 
   const { text, briefs } = wording(rule, params, name, vocabulary);
   // Its triggers as their own lines say them, mid-sentence.
   const triggers = describeTriggers(rule, params, name, vocabulary).map((line) => line.charAt(0).toLowerCase() + line.slice(1));
-  const only = rule.if ? `if ${text(rule.if)}` : '';
+  // A condition its settings alone make so — "20 % is below 40 %" — checks its settings, and is not what it waits for: unsaid.
+  const only = rule.if && evaluateNow(rule.if, settledScope(rule, params)) !== true ? `if ${text(rule.if)}` : '';
   // A rule still being built may have no step yet: said so, not as an empty clause.
   const clause = (when: string[], steps: readonly Step[] | undefined): string => {
     const does = briefs(steps);

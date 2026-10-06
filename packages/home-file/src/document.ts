@@ -214,7 +214,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         continue;
       }
       const own = ['name', 'mode', 'clock', 'recheck', 'home page', 'made from'];
-      const rules = ['uses', 'when', 'only if', 'do', 'if a step fails', 'params'];
+      const rules = ['uses', 'settings', 'when', 'only if', 'do', 'if a step fails'];
       for (const field of Object.keys(entry)) if (![...own, ...rules].includes(field)) problem(`"${field}" is not part of an automation: it has ${[...own, ...rules].join(', ')}`, [...path, field]);
       const name = text(entry.name, [...path, 'name'], 'its name');
       const mode = entry.mode === undefined ? 'watch' : AUTOMATION_MODES.includes(entry.mode as AutomationMode) ? (entry.mode as AutomationMode) : (problem('"mode" is off, watch or act', [...path, 'mode']), 'watch');
@@ -224,7 +224,6 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
       if (entry.recheck !== undefined && entry.recheck !== null && (recheck === null || recheck % 60 !== 0)) problem('"recheck" is how often it looks again, in whole minutes ("15 min")', [...path, 'recheck']);
       const homePlace = entry['home page'] === undefined || entry['home page'] === null ? null : Number.isInteger(entry['home page']) ? (entry['home page'] as number) : (problem('"home page" is its place among the shortcuts: 0, 1, 2 …', [...path, 'home page']), null);
       const madeFrom = typeof entry['made from'] === 'string' ? entry['made from'] : null;
-      // What each role reads is in the unit of the part filling it in this automation: roles of one name fill different parts in another.
       const read = ruleFromConfig(entry, path);
       issues.push(...read.issues);
       if (name && clock && read.rule) automations[key] = { name, mode, clock, recheckMinutes: recheck === null ? null : recheck / 60, homePlace, madeFrom, uses: read.uses, rule: read.rule };

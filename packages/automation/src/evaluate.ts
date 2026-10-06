@@ -289,8 +289,21 @@ export function settledChoice(rule: Rule, step: Extract<Step, { choose: unknown 
   return decided ? step.choose.then : (step.choose.else ?? []);
 }
 
-/** A rule an automation owns has no settings: every value is in its blocks. */
+/** A rule with no settings: every value is in its blocks. */
 export const NO_SETTINGS: ConfigSchema = { fields: {} };
+
+/**
+ * A recipe's rule as an automation keeps it: its settings kept — each at the
+ * value given, or the recipe's — read in its blocks as `setting.low`, so a
+ * level is set in one place and the rule reads as what it does; its roles
+ * without what the recipe said for whoever fills them.
+ */
+export function withSettings(rule: Rule, values: Readonly<Record<string, Value>>): Rule {
+  const fields = Object.fromEntries(
+    Object.entries(rule.params.fields).map(([key, field]) => [key, values[key] !== undefined && values[key] !== null ? ({ ...field, default: values[key] } as typeof field) : field])
+  );
+  return { ...rule, roles: automationRoles(rule.roles), params: { ...rule.params, fields } };
+}
 
 /**
  * A recipe's settings written into its blocks — each setting its plain value

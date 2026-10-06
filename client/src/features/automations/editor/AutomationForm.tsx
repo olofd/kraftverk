@@ -4,8 +4,8 @@ import { Button, Input, Spinner, Text, XStack, YStack } from 'tamagui';
 import type { AutomationSettings } from '@kraftverk/api-client/config';
 import { changeAutomation, describeError, withConfirmation, type AutomationDraftView, type AutomationView } from '@kraftverk/api-client';
 import { isAutomationRole, OTHERWISE, pruned, rolesOf, sameParts, THEN, type ProblemArea, type RoleBinding } from '@kraftverk/automation';
-import { capabilitiesOf, meetsNeed } from '@kraftverk/device-sdk';
-import { Card, haptic, Icon, SegmentedControl } from '@kraftverk/ui';
+import { capabilitiesOf, configDefaults, meetsNeed } from '@kraftverk/device-sdk';
+import { Card, haptic, Icon, SchemaForm, SegmentedControl } from '@kraftverk/ui';
 
 import { ErrorText } from '../../../components/ErrorText';
 import { Loading } from '../../../components/Loading';
@@ -288,6 +288,26 @@ function Editing({
           </YStack>
 
           <Uses problems={problems('uses')} />
+
+          {/* Its settings — a recipe's levels, each set once and read in its blocks as setting.low — when it has any. */}
+          {Object.keys(draft.rule.params.fields).length ? (
+            <Group icon="sliders" title="Settings">
+              <Problems list={problems('settings')} />
+              <Card>
+                <SchemaForm
+                  schema={draft.rule.params}
+                  values={configDefaults(draft.rule.params)}
+                  onChange={(name, value) =>
+                    editor.change((current) => {
+                      const field = current.rule.params.fields[name];
+                      if (!field || value === undefined) return current;
+                      return { ...current, rule: { ...current.rule, params: { ...current.rule.params, fields: { ...current.rule.params.fields, [name]: { ...field, default: value } as typeof field } } } };
+                    })
+                  }
+                />
+              </Card>
+            </Group>
+          ) : null}
 
           <Group icon="clock" title="When" summary={nothingStarts ? 'When started' : undefined}>
             <Problems list={problems('when')} />

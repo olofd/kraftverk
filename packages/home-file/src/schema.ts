@@ -195,6 +195,31 @@ function automationSchema(vocabulary: Vocabulary): Schema {
       recheck: { $ref: '#/$defs/duration' },
       'home page': { type: 'integer', minimum: 0, description: 'Its place among the home page’s shortcuts.' },
       'made from': { type: 'string', description: 'The recipe it was copied from.' },
+      settings: {
+        type: 'object',
+        description: 'Its settings, each by its name, read in its rule as setting.name: a value alone ("low: 20 %"), or with its title, range and how it is set.',
+        additionalProperties: {
+          anyOf: [
+            { type: ['number', 'boolean', 'string'], description: 'Its value: a number with its unit ("20 %", "2 min"), on or off, or a text.' },
+            {
+              type: 'object',
+              required: ['value'],
+              additionalProperties: false,
+              properties: {
+                title: { type: 'string', description: 'What the app calls it.' },
+                description: { type: 'string' },
+                value: { type: ['number', 'boolean', 'string'], description: 'Its value: a number with its unit, on or off, a text, or one of its options.' },
+                min: { type: ['number', 'string'], description: 'The least it may be, in its unit.' },
+                max: { type: ['number', 'string'], description: 'The most it may be, in its unit.' },
+                step: { type: ['number', 'string'], description: 'What it moves by, in its unit.' },
+                integer: { type: 'boolean', description: 'Whole numbers only.' },
+                slider: { type: 'boolean', description: 'Set with a slider.' },
+                options: { type: 'object', additionalProperties: { type: 'string' }, description: 'Each option by its value, with its words.' },
+              },
+            },
+          ],
+        },
+      },
       uses: {
         type: 'object',
         description: 'Each role, and what fills it: "device-key" or "device-key.part" — or { automation: key } for one a step starts. Empty (~) while nothing fills it yet.',

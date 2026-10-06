@@ -146,6 +146,30 @@ describes.
   device would do: say its `needs`. (A file kraftverk writes always does.)
   The app names a role from its label — `switch`, `battery`, `switch2` —
   so what it builds reads as a file written by hand would.
+- **Its settings** (`settings:`): each by its name, the value its rule runs
+  with, read in the rule as `setting.low` — a level set in one place. Short
+  when a value is all there is to say, long when it says more:
+
+  ```yaml
+  settings:
+    lowFor: 2 min
+    low:
+      title: Start charging below
+      value: 20 %
+      min: 5 %
+      max: 90 %
+      step: 5 %
+      slider: true
+  when:
+    - becomes: battery.charge < setting.low
+      for: setting.lowFor
+  ```
+
+  A number keeps its unit — a length of time is kept in seconds, anything
+  else in the unit its value is written in, its range converted to it; one
+  of some options lists them, `options: { eco: Save power, boost: Charge fast }`.
+  An automation copied from a recipe keeps the recipe's settings, at the
+  values its owner chose; the app sets them with a slider each.
 
 Anything text cannot say exactly — a list as a value — is kept as the rule's
 own data in its place; a file the server writes always reads back the same.

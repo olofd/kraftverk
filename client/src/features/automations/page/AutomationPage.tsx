@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import type { AutomationId } from '@kraftverk/device-sdk';
+import type { AutomationId, Value } from '@kraftverk/device-sdk';
 import { describeError, isRunEntry, type AutomationRun, type AutomationView, type Rehearsal } from '@kraftverk/api-client';
-import { describeExpr } from '@kraftverk/automation';
+import { describeExpr, paramText } from '@kraftverk/automation';
 import { capitalise, Card, haptic, Icon, RowSeparator, type IconName } from '@kraftverk/ui';
 
 import { ErrorText } from '../../../components/ErrorText';
@@ -106,6 +106,22 @@ function Page({ automation, onChanged, onEdit }: { automation: AutomationView; o
       {rehearsal ? (
         <Group icon="rewind" title="On the last week" summary="Nothing is sent">
           <Rehearsed rehearsal={rehearsal} onClose={() => setRehearsal(null)} />
+        </Group>
+      ) : null}
+
+      {/* Its settings, each as it reads: what Edit changes in one place. */}
+      {Object.keys(automation.rule.params.fields).length ? (
+        <Group icon="sliders" title="Settings">
+          {Object.entries(automation.rule.params.fields).map(([key, field]) => (
+            <XStack key={key} justifyContent="space-between" gap="$3">
+              <Text flex={1} fontSize={15} color="$muted" lineHeight={22}>
+                {field.title}
+              </Text>
+              <Text fontSize={15} fontWeight="600" color="$color" lineHeight={22}>
+                {paramText(automation.rule.params, key, (field.default ?? null) as Value)}
+              </Text>
+            </XStack>
+          ))}
         </Group>
       ) : null}
 

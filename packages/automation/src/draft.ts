@@ -1,7 +1,7 @@
-import { capabilitiesOf, capabilityIn, meetsNeed, partName, partsOf, type AutomationId, type CapabilityName, type DeviceDescription, type SavedDeviceId, type Value } from '@kraftverk/device-sdk';
+import { capabilitiesOf, capabilityIn, meetsNeed, partName, partsOf, type AutomationId, type CapabilityName, type DeviceDescription, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import { usedRoles } from './edit.ts';
-import { inlineParams, NO_SETTINGS } from './evaluate.ts';
+import { NO_SETTINGS, withSettings } from './evaluate.ts';
 import { isAutomationRole, type Rule } from './rule.ts';
 
 /*
@@ -127,11 +127,8 @@ export function sameParts(
 /** An automation built from nothing: no trigger, no step yet. */
 export const EMPTY_DRAFT: AutomationDraft = { rule: { roles: {}, params: NO_SETTINGS, when: [], then: [] }, roles: {}, starts: {} };
 
-/** A recipe's rule copied: its settings, at their defaults, written into its blocks; its roles still to fill. */
-export function draftOfRecipe(rule: Rule): AutomationDraft {
-  const defaults = Object.fromEntries(Object.entries(rule.params.fields).map(([key, field]) => [key, ('default' in field ? field.default : null) as Value]));
-  return { rule: inlineParams(rule, defaults), roles: {}, starts: {} };
-}
+/** A recipe's rule copied: its settings kept, at the recipe's values, for its owner to set; its roles still to fill. */
+export const draftOfRecipe = (rule: Rule): AutomationDraft => ({ rule: withSettings(rule, {}), roles: {}, starts: {} });
 
 /** Whether a rule has a part for a device: one of its roles a part of it can fill. What a device's page offers to start from. */
 export const ruleFits = (rule: Rule, device: { description: DeviceDescription; name: string }): boolean =>

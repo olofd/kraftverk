@@ -104,7 +104,7 @@ const BECOMES: TriggerSpec<'becomes'> = {
     },
   ],
   blank: () => ({ becomes: { compare: 'gt', left: { read: { role: '', means: '' } }, right: { value: 0 } } }),
-  words: (trigger, say) => `When ${say.expr(trigger.becomes)}${trigger.heldFor ? ` for ${say.duration(trigger.heldFor)}` : ''}`,
+  words: (trigger, say) => `When ${say.expr(trigger.becomes)}${trigger.heldFor && say.seconds(trigger.heldFor) !== 0 ? ` for ${say.duration(trigger.heldFor)}` : ''}`,
   docs: {
     summary:
       'When a condition turns true — and, with `for`, has stayed true that long. Reads and comparisons only: it is looked at on every reading, and its hold survives a restart.',

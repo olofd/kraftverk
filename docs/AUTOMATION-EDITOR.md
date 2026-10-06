@@ -263,8 +263,11 @@ recipe to start from), top to bottom:
    it — what a run it starts does, in place of the automation's — shown
    always when it has some, and offered when the trigger is opened. Under
    them: "You can always start it with ▶".
-3. **Only if** — an optional condition.
-4. **What it does** — the blocks, numbered and nested as the card shows
+3. **Settings** — when it has any (a recipe's, kept): each set as its
+   form says — a slider, a choice, a number in its unit — once, and read in
+   its blocks as `setting.low`.
+4. **Only if** — an optional condition.
+5. **What it does** — the blocks, numbered and nested as the card shows
    them: what a run does when what started it has no blocks of its own.
    When every trigger has its own, these are for when it is started by
    hand or by another automation, and the page says so.
@@ -286,9 +289,9 @@ recipe to start from), top to bottom:
        not" block lists.
      - **Start another automation**: which one, and whether to wait for
        it (at most how long).
-5. **If a step does not succeed, or you stop it** — blocks, of the kinds
+6. **If a step does not succeed, or you stop it** — blocks, of the kinds
    allowed there.
-6. **Check** — what the server says of the draft, as it changes: problems
+7. **Check** — what the server says of the draft, as it changes: problems
    first, each with the block it is about, then the sentence.
 
 **The condition editor** builds an expression without showing one:

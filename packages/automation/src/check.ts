@@ -2,6 +2,7 @@ import { attributeMeaning, CAMEL_NAME, capabilitySpec, checkValue, isCapability,
 
 import { CLOCK_TIME, minutesOf, WEEKDAYS, type Weekday } from './clock.ts';
 import { secondsText } from './describe.ts';
+import { evaluateNow, settledScope } from './evaluate.ts';
 import { BUILTIN_ORDER, BUILTINS, isBuiltin } from './kinds/builtins.ts';
 import { expressionsIn } from './kinds/exprs.ts';
 import { fieldValue, type FieldSpec } from './kinds/spec.ts';
@@ -509,6 +510,19 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
   }
 
   // Whatever starts it does something: its own steps, or the automation's.
+  // Each setting holds a value its field takes: what the rule runs with.
+  for (const [key, field] of Object.entries(params)) {
+    const value = 'default' in field ? field.default : undefined;
+    if (value === undefined || value === null) {
+      problems.push(`settings.${key}: it has no value`);
+      continue;
+    }
+    const checked = checkValue(valueTypeOf(field), value);
+    if (!checked.ok) problems.push(`settings.${key}: ${field.title} ${checked.problem}`);
+  }
+  // A condition its settings alone make false: it would never act — the settings are the mistake.
+  if (rule.if && evaluateNow(rule.if, settledScope(rule as Rule, {})) === false) problems.push('settings: with these settings it is never so that it may act');
+
   if (!rule.then?.length) {
     const without = (rule.when ?? []).flatMap((trigger, index) => (trigger.then?.length ? [] : [index]));
     if (!rule.when?.length) problems.push('then: it does nothing');
@@ -545,12 +559,13 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
 }
 
 /** Which part of an automation a problem is in, as an editor groups them: what it uses, what starts it, its condition, its steps, its fallback — or the whole. */
-export type ProblemArea = 'uses' | 'when' | 'onlyIf' | 'does' | 'fails' | 'other';
+export type ProblemArea = 'uses' | 'settings' | 'when' | 'onlyIf' | 'does' | 'fails' | 'other';
 
 /** Which part of a rule a problem `checkRule` found is in, from its path: "when[0].days" a trigger, "then[2]…" a step. */
 export function problemArea(problem: string): ProblemArea {
   const path = problem.slice(0, Math.max(0, problem.indexOf(': ')));
   if (/^roles\./.test(path)) return 'uses';
+  if (/^settings\b/.test(path)) return 'settings';
   if (/^when\b/.test(path)) return 'when';
   if (/^if\b/.test(path)) return 'onlyIf';
   if (/^then\b/.test(path)) return 'does';
@@ -573,6 +588,8 @@ export function problemPlace(problem: string, rule: Pick<Rule, 'roles'>): string
   const trigger = /^when\[(\d+)\]/.exec(path);
   if (trigger) return `Trigger ${Number(trigger[1]) + 1}: ${said}`;
   if (/^if\b/.test(path)) return `Only if: ${said}`;
+  const setting = /^settings(?:\.([A-Za-z0-9_-]+))?/.exec(path);
+  if (setting) return `${setting[1] ? 'Setting' : 'Settings'}: ${said}`;
   const root = /^(then|otherwise)(?:\[(\d+)\])?/.exec(path);
   if (!root) return problem;
   if (root[2] === undefined) return root[1] === 'then' ? `What it does: ${said}` : `If a step does not succeed: ${said}`;

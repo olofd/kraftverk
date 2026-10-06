@@ -101,7 +101,7 @@ A rule has:
 | Part | Text | What it is |
 |---|---|---|
 | `roles` | `uses:` | What it works on, by role: a part of a device that offers some capabilities, or another automation. Filled when the rule becomes an automation. |
-| `params` | — | A recipe's settings, read as `setting.name`. An automation of its own has them written into its blocks (`inlineParams`). |
+| `params` | `settings:` | Its settings: each a field of a form — title, unit, range — whose `default` is the value the rule runs with, read as `setting.name`. A recipe's are what each copy starts from; an automation keeps them (`withSettings`), its owner's to set in one place. `inlineParams` writes them into the blocks, for a rule read with its values in place. |
 | `when` | `when:` | What starts a run: any one trigger — each with steps of its own, if it has them (`do:` under it). Empty: it runs only when a person plays it or another automation starts it. |
 | `if` | `only if:` | Must be true for a run to act. Unknown is not true: nothing is done, and the run says why. |
 | `then` | `do:` | What it does, step by step — when what started it has no steps of its own. |

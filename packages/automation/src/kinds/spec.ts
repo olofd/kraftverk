@@ -91,6 +91,8 @@ export type Say = {
   expr(expr: Expr): string;
   /** A length of time: "2 min", "1 h 30 min" — or, when it is not written out, its expression. */
   duration(expr: Expr): string;
+  /** A length of time in seconds, as its settings make it — null when a reading decides it: "for 0 s" is no hold, and unsaid. */
+  seconds(expr: Expr): number | null;
   /** Days: "every day", "on weekdays", "on Mon and Fri". */
   days(days: readonly Weekday[] | undefined): string;
   /** What fills a role: "Garage station". */
