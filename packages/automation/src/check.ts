@@ -441,6 +441,12 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         steps(list, at, type.sure === false ? false : where.sure, where.depth + 1);
         return;
       }
+      case 'text':
+        if (typeof value !== 'string' || !value.trim()) problems.push(`${at}: say it in words`);
+        return;
+      case 'flag':
+        if (typeof value !== 'boolean') problems.push(`${at}: true or false`);
+        return;
       // A command's capability, command and arguments, a setting's key or meaning, and what a step remembers: their kind's own check, below.
       case 'name':
       case 'args':
@@ -557,7 +563,6 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
     });
   }
 
-  // Whatever starts it does something: its own steps, or the automation's.
   // What it remembers starts from a value its field takes.
   for (const [key, field] of Object.entries(memory)) {
     const value = 'default' in field ? field.default : undefined;
@@ -580,6 +585,7 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
   // A condition its settings alone make false: it would never act — the settings are the mistake.
   if (rule.if && evaluateNow(rule.if, settledScope(rule as Rule, {})) === false) problems.push('settings: with these settings it is never so that it may act');
 
+  // Whatever starts it does something: its own steps, or the automation's.
   if (!rule.then?.length) {
     const without = (rule.when ?? []).flatMap((trigger, index) => (trigger.then?.length ? [] : [index]));
     if (!rule.when?.length) problems.push('then: it does nothing');
@@ -683,12 +689,12 @@ export function checkBinding(rule: Rule, bound: (role: string) => BoundPart | nu
     if (!partsOf(part.description).some((candidate) => candidate.id === part.part)) problems.push(`${spec.label}: ${part.name} no longer has that part`);
     else if (!meetsNeed(spec, part.capabilities)) problems.push(`${spec.label}: ${part.name} cannot do that`);
   }
-  const { reads, events, writes } = ruleUses(rule);
+  const { reads, events, awaits, writes } = ruleUses(rule);
   for (const read of reads) {
     const part = bound(read.role);
     if (part && !attributeMeaning(part.description, part.part, read.means)) problems.push(`${rule.roles[read.role]?.label ?? read.role}: ${part.name} does not report ${read.means}`);
   }
-  for (const wanted of events) {
+  for (const wanted of [...events, ...awaits]) {
     const part = bound(wanted.role);
     const declared = part?.description.events?.find((event) => event.id === wanted.event && (event.part ?? MAIN_PART) === part.part);
     if (part && !declared) problems.push(`${rule.roles[wanted.role]?.label ?? wanted.role}: ${part.name} never says "${wanted.event}"`);

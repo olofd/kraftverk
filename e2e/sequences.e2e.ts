@@ -219,3 +219,40 @@ test('through the night: a window of the day, across midnight, is what starts it
   await expect(now.getByText('It is between 23:00 and 05:00', { exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'When' }).getByText('When it is between 23:00 and 05:00')).toBeVisible();
 });
+
+test('round after round, and a stop that says why: blocks within blocks, run to their end', async ({ page, request }) => {
+  const plug = await addSimulated(request, 'tuya.zigbee-plug', unique('Scooter plug'));
+  await page.goto('/automation/new');
+  await press(page, 'Nothing');
+  const name = unique('Blink');
+  await page.getByLabel('Name').fill(name);
+
+  // Twice round: the plug on, then off — two blocks within the repeat.
+  await page.getByRole('button', { name: 'Add a step: What it does' }).click();
+  await page.getByRole('button', { name: 'Add: Repeat' }).click();
+  await page.getByLabel('Times, at most').fill('2');
+  const round = 'Add a step: Repeat twice: Each round';
+  await page.getByRole('button', { name: round }).click();
+  await page.getByRole('button', { name: 'Add: Switch or send' }).click();
+  await pick(page, 'Which part', plug.name);
+  await page.getByRole('button', { name: round }).click();
+  await page.getByRole('button', { name: 'Add: Switch or send' }).click();
+  await page.getByRole('radio', { name: 'Off' }).last().click();
+
+  // Then the run ends, saying why.
+  await page.getByRole('button', { name: 'Add a step: What it does' }).click();
+  await page.getByRole('button', { name: 'Add: Stop here' }).click();
+  await page.getByLabel('Why', { exact: true }).fill('Blinked twice');
+
+  await expect(page.getByRole('listitem', { name: 'Repeat: Repeat twice' })).toBeVisible();
+  await expect(page.getByRole('listitem', { name: 'Stop here: Stop here: Blinked twice' })).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('It can run as it is');
+  await press(page, 'Create');
+
+  // Run: two rounds, and its own words as how it ended — after what it changed (a plug already on is not turned on).
+  const main = page.getByRole('main');
+  await main.getByRole('button', { name: `Start ${name}` }).click();
+  await answer(page, true);
+  await expect(main.getByRole('status').first()).toHaveText(new RegExp(`^Blinked twice — after it (turned ${plug.name} (on|off), )*turned ${plug.name} off · `), { timeout: 60_000 });
+  await expect(page.getByRole('region', { name: 'Activity' }).getByText('2 rounds').first()).toBeVisible();
+});

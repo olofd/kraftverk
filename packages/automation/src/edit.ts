@@ -17,8 +17,8 @@ export type ListRoot = 'then' | 'otherwise' | { when: number };
 /** Where a list of steps is: at the top of the rule, or within a step there. */
 export type ListPath = { root: ListRoot; trail: readonly { index: number; branch: Branch }[] };
 
-/** The lists a step holds, by the last word of where each is kept: a retry's, a choice's or a watch's two. */
-export type Branch = 'retry' | 'then' | 'else';
+/** The lists a step holds, by the last word of where each is kept: a retry's, a choice's or a watch's two, a repeat's or a try's steps, and what a try takes after a failure. */
+export type Branch = 'retry' | 'then' | 'else' | 'steps' | 'recover';
 
 /** A step's field that holds the list of a branch (kinds/steps.ts). */
 const branchField = (step: Step, branch: Branch): FieldSpec | undefined => stepSpec(step).fields.find((field) => field.type.type === 'steps' && field.data.at(-1) === branch);
@@ -131,6 +131,7 @@ export function usedRoles(rule: Rule): Set<string> {
   return new Set([
     ...uses.reads.map((read) => read.role),
     ...uses.events.map((event) => event.role),
+    ...uses.awaits.map((event) => event.role),
     ...uses.calls.map((call) => call.role),
     ...uses.reaches,
     ...uses.writes.map((write) => write.role),

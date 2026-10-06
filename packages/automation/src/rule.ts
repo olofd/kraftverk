@@ -213,7 +213,23 @@ export type Step =
    */
   | { start: { role: string; andWait?: Expr } }
   /** Remember a value — kept until a run remembers another, across runs and restarts: `remember: timesCharged`, `as: memory.timesCharged + 1`. */
-  | { remember: { name: string; value: Expr } };
+  | { remember: { name: string; value: Expr } }
+  /**
+   * Steps taken again and again: `times` rounds — or, with `until`, until it
+   * is so after a round, at most that many: still not so after the last, it
+   * does not succeed.
+   */
+  | { repeat: { times: Expr; until?: Expr; steps: readonly Step[] } }
+  /**
+   * Steps tried: one that does not succeed is the `recover` steps' to answer
+   * — none, and it goes on as if it had — and the run goes on. A stop is not
+   * caught.
+   */
+  | { try: { steps: readonly Step[]; recover?: readonly Step[] } }
+  /** The run ends here, saying why: as it went — or, `failed`, as not having succeeded, its `if a step fails` steps taken. */
+  | { stop: { why: string; failed?: boolean } }
+  /** Until the part filling a role raises an event — or the run stops, not having succeeded, once it has waited that long. */
+  | { waitFor: { role: string; event: string; atMost: Expr } };
 
 /** A role a part of a device fills: what it is called, and what it must offer. */
 export type PartRole = CapabilityNeed & { label: string };
@@ -292,6 +308,10 @@ export const SEQUENCE_LIMITS = {
   depth: 4,
   /** How many automations deep one may start another, counting the first: a chain stays one a person can follow. */
   chain: 4,
+  /** The most rounds a `repeat` takes. */
+  rounds: 100,
+  /** The most steps one run takes, rounds and branches counted: whatever it repeats, a run ends. Its `if a step fails` steps besides. */
+  steps: 500,
 } as const;
 
 /**

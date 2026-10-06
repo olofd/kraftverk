@@ -1,6 +1,6 @@
 import type { AutomationRun, RunLog, RunStep } from '@kraftverk/api-contract';
-import { branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, measure, paramText, toRemember, secondsNow, fieldValue, negation, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepsOf, stepSpec, takesSteps, type Command, type Expr, type Rule, type RoleBinding, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
-import { attributeMeaning, readingOf, type AutomationId } from '@kraftverk/device-sdk';
+import { branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, measure, paramText, toRemember, secondsNow, fieldValue, negation, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepsOf, stepSpec, takesSteps, type StepOf, type Command, type Expr, type Rule, type RoleBinding, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
+import { attributeMeaning, MAIN_PART, readingOf, type AutomationId } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
 import type { RuleContext, StartingEvent } from './context.ts';
@@ -65,9 +65,12 @@ export type LiveRun = {
   heard: Map<string, number>;
   /** Its log, for a run that takes steps: `look` keeps what its devices say now; `stop` ends it, after one last look. Null for a run that takes none. */
   log: { look: () => void; stop: () => void } | null;
+  /** Where its step count starts: what it may take is counted from its first step — and, apart, from the first of its `if a step fails` steps. */
+  budgetFrom: number;
 };
 
-type Walked = 'ok' | 'failed' | 'stopped';
+/** How steps came out: as they should, not, stopped by someone — or ended by a `stop` step, as it went. */
+type Walked = 'ok' | 'failed' | 'stopped' | 'ended';
 
 export class Runs {
   /** Automations running now: one run of the same automation at a time. */
@@ -341,6 +344,7 @@ export class Runs {
       changedOrder: 0,
       heard: new Map(),
       log: null,
+      budgetFrom: 0,
     };
     const stepped = takesSteps(rule);
     if (stepped) {
@@ -358,7 +362,9 @@ export class Runs {
     let walked: Walked;
     try {
       walked = await this.#walk(live, steps, 0, null, 'then');
-      if (walked !== 'ok' && rule.otherwise?.length) {
+      if ((walked === 'failed' || walked === 'stopped') && rule.otherwise?.length) {
+        // What it does after counts its steps apart: a run that took all it may still takes these.
+        live.budgetFrom = run.steps.length;
         await this.#walk(live, rule.otherwise, 0, walked === 'stopped' ? `After it was stopped by ${live.stoppedBy}` : 'After a step did not succeed', 'otherwise');
       }
     } catch (error) {
@@ -473,6 +479,11 @@ export class Runs {
     for (const step of steps) {
       if (stopping()) return 'stopped';
       const kind = stepKind(step);
+      // Whatever it repeats, a run ends: so many steps, and no more.
+      if (live.run.steps.length - live.budgetFrom >= SEQUENCE_LIMITS.steps) {
+        this.#add(live, { kind, depth, within, what: 'No more steps', outcome: 'failed', detail: `It has taken ${SEQUENCE_LIMITS.steps} steps, as many as one run may`, until: null });
+        return 'failed';
+      }
       let walked: Walked = 'ok';
       /** The step in words, as its plan shows it. */
       const what = () => describeSteps({ ...live.rule, then: [step], otherwise: [] }, this.#context.settled(live.automation, live.rule), (role) => scope().name(role), this.#context.vocabulary(live.automation)).steps[0]!.text;
@@ -485,6 +496,10 @@ export class Runs {
       else if ('write' in step) walked = await this.#write(live, step.write, depth, within, what());
       else if ('start' in step) walked = await this.#startStep(live, step.start, depth, within, what(), mode);
       else if ('remember' in step) walked = await this.#remember(live, step.remember, depth, within, what());
+      else if ('repeat' in step) walked = await this.#repeat(live, step.repeat, depth, within, what(), mode);
+      else if ('try' in step) walked = await this.#try(live, step.try, depth, within, what(), mode);
+      else if ('stop' in step) walked = this.#stop(live, step.stop, depth, within, what());
+      else if ('waitFor' in step) walked = await this.#waitFor(live, step.waitFor, depth, within, what(), mode === 'otherwise');
       else if ('wait' in step) {
         const seconds = this.#seconds(step.wait.for, scope(), SEQUENCE_LIMITS.waitSeconds) ?? 1;
         const entry = this.#add(live, { kind, depth, within, what: what(), outcome: 'waiting', detail: `For ${secondsText(seconds)}`, until: this.#after(seconds) });
@@ -556,6 +571,8 @@ export class Runs {
       }
 
       if (walked === 'ok') continue;
+      // Ended by a stop: nothing after it is taken, here or above.
+      if (walked === 'ended') return 'ended';
       if (mode === 'otherwise') {
         result = walked === 'failed' ? 'failed' : result;
         continue;
@@ -563,6 +580,87 @@ export class Runs {
       return walked;
     }
     return result;
+  }
+
+  /**
+   * Steps taken round after round: so many — or until it is so after a
+   * round, at most that many, and not succeeding if it never is. A round
+   * that does not succeed ends it, as it would the list it is in.
+   */
+  async #repeat(live: LiveRun, repeat: StepOf<'repeat'>['repeat'], depth: number, within: string | null, what: string, mode: 'then' | 'retry' | 'otherwise'): Promise<Walked> {
+    const scope = () => this.#context.scope(live.automation, live.rule, undefined, live.trigger, live.event);
+    const given = evaluateNow(repeat.times, scope());
+    const rounds = typeof given === 'number' ? Math.max(0, Math.min(SEQUENCE_LIMITS.rounds, Math.floor(given))) : 0;
+    const entry = this.#add(live, { kind: 'repeat', depth, within, what, outcome: 'waiting', detail: rounds ? `Round 1 of ${rounds}` : 'No rounds', until: null });
+    for (let round = 1; round <= rounds; round++) {
+      Object.assign(entry, { detail: `Round ${round} of ${rounds}` });
+      this.#moved(live);
+      const walked = await this.#walk(live, repeat.steps, depth + 1, `Round ${round}`, mode);
+      if (walked === 'stopped') return (this.#end(live, entry, 'stopped', `Stopped by ${live.stoppedBy} in round ${round}`), 'stopped');
+      if (walked === 'ended') return (this.#end(live, entry, 'done', `Ended in round ${round}`), 'ended');
+      if (walked === 'failed') return (this.#end(live, entry, 'failed', `Round ${round} did not succeed`), 'failed');
+      if (repeat.until) {
+        const trace: string[] = [];
+        const holds = await evaluate(repeat.until, scope(), trace).catch(() => null);
+        const saw = trace.length ? ` — ${[...new Set(trace)].join('; ')}` : '';
+        if (holds === true) return (this.#end(live, entry, 'met', `After ${round === 1 ? 'one round' : `${round} rounds`}${saw}`), 'ok');
+        if (round === rounds) return (this.#end(live, entry, 'not-met', `Still not so after ${rounds === 1 ? 'one round' : `${rounds} rounds`}${saw}`), 'failed');
+      }
+    }
+    this.#end(live, entry, 'done', rounds === 1 ? 'One round' : `${rounds} rounds`);
+    return 'ok';
+  }
+
+  /**
+   * Steps tried: one that does not succeed is answered by the steps taken
+   * after a failure — none, and it goes on as if it had succeeded. A stop,
+   * a person's or a step's, is not caught.
+   */
+  async #try(live: LiveRun, tried: StepOf<'try'>['try'], depth: number, within: string | null, what: string, mode: 'then' | 'retry' | 'otherwise'): Promise<Walked> {
+    const entry = this.#add(live, { kind: 'try', depth, within, what, outcome: 'waiting', detail: 'Trying', until: null });
+    const walked = await this.#walk(live, tried.steps, depth + 1, 'Try', mode);
+    if (walked === 'ok') return (this.#end(live, entry, 'done', 'It went as it should'), 'ok');
+    if (walked === 'stopped') return (this.#end(live, entry, 'stopped', `Stopped by ${live.stoppedBy}`), 'stopped');
+    if (walked === 'ended') return (this.#end(live, entry, 'done', 'Ended within it'), 'ended');
+    if (!tried.recover?.length) return (this.#end(live, entry, 'done', 'A step did not succeed — it goes on'), 'ok');
+    Object.assign(entry, { detail: 'A step did not succeed: taking the others' });
+    this.#moved(live);
+    const recovered = await this.#walk(live, tried.recover, depth + 1, 'If it fails', mode);
+    if (recovered === 'ok') return (this.#end(live, entry, 'done', 'A step did not succeed, and what it took after did'), 'ok');
+    if (recovered === 'stopped') return (this.#end(live, entry, 'stopped', `Stopped by ${live.stoppedBy}`), 'stopped');
+    if (recovered === 'ended') return (this.#end(live, entry, 'done', 'Ended within it'), 'ended');
+    this.#end(live, entry, 'failed', 'A step did not succeed, and neither did what it took after');
+    return 'failed';
+  }
+
+  /** The run ends here, saying why — as it went, or as not having succeeded. */
+  #stop(live: LiveRun, stop: StepOf<'stop'>['stop'], depth: number, within: string | null, what: string): Walked {
+    this.#add(live, { kind: 'stop', depth, within, what, outcome: stop.failed ? 'failed' : 'done', detail: stop.why, until: null });
+    return stop.failed ? 'failed' : 'ended';
+  }
+
+  /** Until the part filling a role raises an event — one raised after it began to wait — at most so long. */
+  async #waitFor(live: LiveRun, wait: StepOf<'waitFor'>['waitFor'], depth: number, within: string | null, what: string, regardless: boolean): Promise<Walked> {
+    const seconds = this.#seconds(wait.atMost, this.#context.scope(live.automation, live.rule, undefined, live.trigger, live.event), SEQUENCE_LIMITS.waitSeconds) ?? 1;
+    const binding = live.automation.roles[wait.role];
+    const entry = this.#add(live, { kind: 'waitFor', depth, within, what, outcome: 'waiting', detail: 'Waiting', until: this.#after(seconds) });
+    if (!binding) return (this.#end(live, entry, 'failed', 'No device fills its role'), 'failed');
+    const since = this.#context.clock.now();
+    let unsubscribe: (() => void) | undefined;
+    const heard = new Promise<void>((resolve) => {
+      unsubscribe = this.deps.bus?.subscribe((message) => {
+        if (message.kind === 'event' && message.deviceId === binding.device && (message.event.part ?? MAIN_PART) === binding.part && message.event.id === wait.event) resolve();
+      });
+    });
+    let came = false;
+    void heard.then(() => (came = true));
+    const slept = await this.#sleep(live, seconds, regardless, heard);
+    unsubscribe?.();
+    const after = secondsText(Math.max(0, Math.round((this.#context.clock.now() - since) / 1000)));
+    if (came) return (this.#end(live, entry, 'met', `After ${after}`), 'ok');
+    if (slept === 'stopped') return (this.#end(live, entry, 'stopped', `Stopped by ${live.stoppedBy}`), 'stopped');
+    this.#end(live, entry, 'timed-out', `Not in ${secondsText(seconds)}`);
+    return 'failed';
   }
 
   /** A value remembered — in its field's unit, one its field takes — for this run's later steps and later runs. */
@@ -752,7 +850,8 @@ export class Runs {
     const split = live.run.steps.findIndex((step) => step.depth === 0 && step.within?.startsWith('After'));
     const steps = split < 0 ? live.run.steps : live.run.steps.slice(0, split);
     const later = split < 0 ? [] : live.run.steps.slice(split);
-    const done = steps.filter((step) => ACTS.has(step.kind) && (step.outcome === 'done' || step.outcome === 'already' || step.outcome === 'unverified') && !step.within?.startsWith('Try'));
+    // What a retry did is no deed of its own: "Try 2 of 3".
+    const done = steps.filter((step) => ACTS.has(step.kind) && (step.outcome === 'done' || step.outcome === 'already' || step.outcome === 'unverified') && !/^Try \d+ of/.test(step.within ?? ''));
     // What it changed: what was already so is no deed of its own.
     const changed = done.filter((step) => step.outcome !== 'already').map((step) => lowerFirst(pastOf(step.what)));
     const made = steps.filter((step) => step.kind === 'ensure' && step.outcome === 'met').map((step) => step.detail);
@@ -760,8 +859,16 @@ export class Runs {
     const then = afterwards.length ? `; then ${afterwards.map((step) => lowerFirst(pastOf(step.what))).join(', ')}` : '';
     if (walked === 'stopped') return `Stopped by ${live.stoppedBy}${changed.length ? ` after it ${changed.join(', ')}` : ''}${then}`;
     if (walked === 'failed') {
-      const failing = steps.find((step) => step.depth === 0 && (step.outcome === 'timed-out' || step.outcome === 'failed' || step.outcome === 'refused')) ?? steps.find((step) => step.outcome === 'failed' || step.outcome === 'refused');
-      return `Did not succeed: ${failing ? `${lowerFirst(failing.what)} — ${lowerFirst(failing.detail)}` : 'a step did not'}${then}`;
+      // Why, in the step that did not: a step is kept as it begins, so the last that did not succeed is the innermost — a round's step, not the round.
+      const failing = steps.findLast((step) => step.outcome === 'timed-out' || step.outcome === 'not-met' || step.outcome === 'failed' || step.outcome === 'refused');
+      // A stop says why in its own words.
+      const said = failing?.kind === 'stop' ? failing.detail : failing ? `${lowerFirst(failing.what)} — ${lowerFirst(failing.detail)}` : 'a step did not';
+      return `Did not succeed: ${lowerFirst(said)}${then}`;
+    }
+    // Ended by a stop: why, in its own words — after what it changed.
+    if (walked === 'ended') {
+      const why = [...steps].reverse().find((step) => step.kind === 'stop')?.detail ?? 'Ended';
+      return `${capitalise(why)}${changed.length ? ` — after it ${changed.join(', ')}` : ''}`;
     }
     // What changed leads; what was already so is said once; what it made sure of is said as the reading it saw.
     const sure = made.map((detail) => {

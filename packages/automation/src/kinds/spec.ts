@@ -50,6 +50,10 @@ export type FieldType =
   | { type: 'id' }
   /** One of what the rule remembers, by its name: what a `remember` step sets. */
   | { type: 'memory' }
+  /** Words of the owner's own, said as written: why a run ended. */
+  | { type: 'text' }
+  /** Yes or no, written `true` or `false`: no, when it is not written. */
+  | { type: 'flag' }
   /** A command's arguments: each its name and an expression. */
   | { type: 'args' }
   /**
@@ -82,7 +86,7 @@ export type FieldSpec = {
 export type KindDocs = { summary: string; examples: readonly string[] };
 
 /** The marks the editor draws a kind with: names in the app's icon set. */
-export type KindIcon = 'clock' | 'repeat' | 'activity' | 'bell' | 'power' | 'sliders' | 'pause' | 'git-branch' | 'eye' | 'play-circle' | 'save';
+export type KindIcon = 'clock' | 'repeat' | 'activity' | 'bell' | 'power' | 'sliders' | 'pause' | 'git-branch' | 'eye' | 'play-circle' | 'save' | 'rotate-cw' | 'shield' | 'octagon';
 
 /**
  * How a sentence says the parts of a construct — what the describer hands a

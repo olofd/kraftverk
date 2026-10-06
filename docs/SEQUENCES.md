@@ -89,7 +89,12 @@ type Step =
       else?: Step[];                                        //   the moment it is not, or cannot be told
     } }
   | { write: { role: string; value: Expr } & ({ key: string } | { means: string }) }   // a setting the part keeps, by key or meaning
-  | { start: { role: string; andWait?: Expr } };        // another automation — waited for, at most so long
+  | { start: { role: string; andWait?: Expr } }         // another automation — waited for, at most so long
+  | { waitFor: { role: string; event: string; atMost: Expr } }       // until the part says something happened
+  | { repeat: { times: Expr; until?: Expr; steps: Step[] } }         // round after round — or until true, at most so many
+  | { try: { steps: Step[]; recover?: Step[] } }                     // a step that does not succeed answered, and on
+  | { stop: { why: string; failed?: boolean } }                      // the run ends here, saying why
+  | { remember: { name: string; value: Expr } };                     // a value kept for later runs
 
 type Rule = {
   roles; params;
@@ -104,8 +109,11 @@ type Rule = {
 Six kinds of step, each general, none about charging: **do** (a command),
 **pause**, **wait until**, **make sure** (with retries), **choose**, and
 **watch** — and, added with the editor, **change a setting** and **start
-another automation**. Steps nest — a choice and a watch hold steps — at most
-four deep.
+another automation**; and, with the language's second phase
+(docs/PLAN-AUTOMATION-LANGUAGE.md), **wait for an event**, **repeat**,
+**try**, **stop** and **remember**. Steps nest — a choice, a watch, a repeat
+and a try hold steps — at most four deep, and a run takes at most 500 steps
+(`SEQUENCE_LIMITS`), so whatever it repeats, it ends.
 A choice its settings alone decide — "if you chose to switch them off
 again" — is no step a person follows: it reads, is tried and runs as the
 steps it chose, in its place (`settledChoice`). Only a choice that turns on

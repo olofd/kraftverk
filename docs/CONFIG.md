@@ -103,10 +103,18 @@ describes.
   | `set: role` + `setting: key` or `meaning: chargeLimit` + `to: <value>` | change a setting |
   | `wait: 5 s` | a pause |
   | `wait until: <condition>` + `at most: 2 min` | until it holds — every wait has its limit |
+  | `wait for: mains.restored` + `from: role` + `at most: 30 min` | until the part says it |
   | `make sure: <condition>` + `within:` + `tries:` + `each time: [steps]` | retry until it holds |
   | `if: <condition>` + `then: [steps]` + `else: [steps]` | a choice |
   | `watch: <condition>` + `for: 5 s` + `if it stays so:` + `if not:` | watch, then choose |
+  | `repeat: 3` + `do: [steps]` — and `until: <condition>` | round after round: so many times, or until it holds, at most that many |
+  | `try: [steps]` + `if it fails: [steps]` | a step that does not succeed is answered, and the run goes on |
+  | `stop: Already charged` — and `failed: true` | the run ends here, saying why |
   | `start: role` + `and wait: 10 min` | start another automation |
+  | `remember: name` + `as: <value>` | remember a value for later runs |
+
+  Whatever it repeats, a run ends: at most 100 rounds a repeat, and 500
+  steps a run.
 
 - **Conditions and values** are expressions:
   - a reading: `role.meaning` — `charger.power`, `station.charge`;

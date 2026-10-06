@@ -212,6 +212,23 @@ do:
     at most: 2 min
 ```
 
+### `wait for` — Wait for an event
+
+Wait until the part filling a role raises an event its description declares — one raised after the step began — or stop, not having succeeded, once it has waited that long.
+
+| Word | Holds | |
+|---|---|---|
+| `wait for` | an event the part filling `from` declares: `mains.lost` | needed |
+| `from` | a role: what fills it is under `uses` | needed |
+| `at most` | a length of time, `2 min` — 1 s to 1 h; a number or a setting, never a reading | needed |
+
+```yaml
+do:
+  - wait for: mains.restored
+    from: station
+    at most: 30 min
+```
+
 ### `make sure` — Make sure
 
 Make sure a condition comes true within a time; if not, take the steps under `each time` and look again, at most `tries` times — then the run stops, not having succeeded.
@@ -270,6 +287,78 @@ do:
     for: 5 s
     if it stays so:
       - turn off: supply
+```
+
+### `repeat` — Repeat
+
+Take the steps under `do` again and again: `repeat` times — or, with `until`, until it is so after a round, at most that many; still not so after the last, the run stops, not having succeeded.
+
+| Word | Holds | |
+|---|---|---|
+| `repeat` | how many times, 1 to 100; a number or a setting | needed |
+| `until` | a condition: `station.charge < 15 %`, which may ask a package | if you like |
+| `do` | steps; at least one | needed |
+
+```yaml
+do:
+  - repeat: 3
+    do:
+      - turn on: charger
+      - wait: 10 s
+      - turn off: charger
+```
+
+```yaml
+do:
+  - repeat: 5
+    until: charger.power > 50 W
+    do:
+      - turn on: charger
+      - wait: 20 s
+```
+
+### `try` — Try
+
+Try the steps under `try`: one that does not succeed ends them, and the steps under `if it fails` are taken — none, and it goes on as if it had succeeded. The run goes on after it either way, unless what it took after a failure did not succeed. A stop is not caught.
+
+| Word | Holds | |
+|---|---|---|
+| `try` | steps; at least one | needed |
+| `if it fails` | steps — none that waits for what might not come | if you like |
+
+```yaml
+do:
+  - try:
+      - turn on: charger
+    if it fails:
+      - turn off: supply
+```
+
+```yaml
+do:
+  - try:
+      - wait until: charger reachable
+        at most: 1 min
+```
+
+### `stop` — Stop here
+
+End the run here, saying why: as it went — or, with `failed: true`, as not having succeeded, its `if a step fails` steps taken. Within `try`, a failure is the `if it fails` steps’ to answer.
+
+| Word | Holds | |
+|---|---|---|
+| `stop` | words of your own, said as written | needed |
+| `failed` | `true` or `false`; `false` when it is not written | if you like |
+
+```yaml
+do:
+  - stop: Already charged
+```
+
+```yaml
+do:
+  - stop: The charger did not answer
+    failed: true
 ```
 
 ### `start` — Start another automation

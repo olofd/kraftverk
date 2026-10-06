@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { checkRule, defineFunction, defineRecipe, inlineParams, withSettings, type Rule } from '@kraftverk/automation';
+import { checkRule, defineFunction, defineRecipe, inlineParams, SEQUENCE_LIMITS, withSettings, type Rule, type Step } from '@kraftverk/automation';
 import { MAIN_PART, REAL_CLOCK, savedDeviceId, zonedInstant, type AuditRecord, type DeviceDescription, type DeviceReader, type Value } from '@kraftverk/device-sdk';
 import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
@@ -1102,5 +1102,107 @@ describe('a battery kept between two levels', () => {
     expect(sent.map((intent) => intent.args.on)).toEqual([true, true]);
     expect(plug.on).toBe(true);
     engine.stop();
+  });
+});
+
+describe('how a run goes: round after round, tried, ended where it is, waiting for what a device says', () => {
+  const ON: Step = { command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { value: true } } } };
+  const OFF: Step = { command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { value: false } } } };
+  const COUNT: NonNullable<Rule['memory']> = { fields: { count: { type: 'number', title: 'Count', integer: true, min: 0, default: 0 } } };
+  const COUNT_ONE: Step = { remember: { name: 'count', value: { math: 'add', left: { memory: 'count' }, right: { value: 1 } } } };
+  /** An automation of these steps, let act, about the heater plug and the station's mains. */
+  const automation = (context: ReturnType<typeof setup>, then: readonly Step[], otherwise?: readonly Step[]) => {
+    const rule: Rule = {
+      roles: { plug: { label: 'Plug', capabilities: ['switch'] }, station: { label: 'Mains', capabilities: ['acInput'] } },
+      params: { fields: {} },
+      memory: COUNT,
+      when: [],
+      then,
+      ...(otherwise ? { otherwise } : {}),
+    };
+    expect(checkRule(rule, { fn: () => null })).toEqual([]);
+    const made = context.store.create({ name: 'Steps', rule, madeFrom: null, roles: { plug: { device: PLUG, part: 'main' }, station: { device: STATION, part: 'input.ac' } }, starts: {}, timeZone: ZONE, recheckMinutes: null });
+    return context.store.update(made.id, { mode: 'act' })!;
+  };
+  const OLOF = { askedBy: { actor: 'person' as const, name: 'olof' } };
+
+  test('so many rounds: each takes its steps', async () => {
+    const context = setup();
+    const run = await context.engine.run(automation(context, [{ repeat: { times: { value: 3 }, steps: [ON, OFF] } }]), OLOF);
+    expect(run.outcome).toBe('acted');
+    expect(context.sent.map((intent) => intent.args.on)).toEqual([true, false, true, false, true, false]);
+    expect(run.steps[0]).toMatchObject({ kind: 'repeat', outcome: 'done', detail: '3 rounds' });
+    expect(run.steps[1]).toMatchObject({ depth: 1, within: 'Round 1' });
+  });
+
+  test('until it is so after a round — or, never so, not succeeding, its fallback taken', async () => {
+    const context = setup();
+    const until = (most: number): Step => ({ repeat: { times: { value: most }, until: { compare: 'ge', left: { memory: 'count' }, right: { value: 2 } }, steps: [COUNT_ONE] } });
+    const met = await context.engine.run(automation(context, [until(5), ON]), OLOF);
+    expect(met.outcome).toBe('acted');
+    expect(met.steps[0]).toMatchObject({ kind: 'repeat', outcome: 'met', detail: 'After 2 rounds' });
+    expect(context.sent.map((intent) => intent.args.on)).toEqual([true]);
+
+    const never = await context.engine.run(automation(context, [until(1), ON], [OFF]), OLOF);
+    expect(never.outcome).toBe('failed');
+    expect(never.steps[0]).toMatchObject({ kind: 'repeat', outcome: 'not-met', detail: 'Still not so after one round' });
+    expect(context.sent.map((intent) => intent.args.on)).toEqual([true, false]);
+  });
+
+  test('tried: a step that does not succeed is answered by the others, and the run goes on', async () => {
+    const context = setup({ refuse: (intent) => (intent.args.on === true ? { outcome: 'refused', detail: 'Not now' } : null) });
+    const made = automation(context, [{ try: { steps: [ON], recover: [OFF] } }, COUNT_ONE]);
+    const answered = await context.engine.run(made, OLOF);
+    expect(answered.outcome).toBe('acted');
+    expect(answered.steps[0]).toMatchObject({ kind: 'try', outcome: 'done', detail: 'A step did not succeed, and what it took after did' });
+    expect(context.sent.map((intent) => intent.args.on)).toEqual([true, false]);
+    expect(context.store.memory(made.id)).toEqual({ count: 1 });
+
+    // Nothing to take after: it goes on as if it had succeeded.
+    const quiet = await context.engine.run(automation(context, [{ try: { steps: [ON] } }]), OLOF);
+    expect(quiet.outcome).toBe('acted');
+    expect(quiet.steps[0]).toMatchObject({ kind: 'try', outcome: 'done', detail: 'A step did not succeed — it goes on' });
+  });
+
+  test('a stop ends it there, saying why — as it went, or as not having succeeded', async () => {
+    const context = setup();
+    const ended = await context.engine.run(automation(context, [ON, { stop: { why: 'Enough for today' } }, OFF]), OLOF);
+    expect(ended.outcome).toBe('acted');
+    expect(ended.summary).toBe('Enough for today — after it turned Heater plug on');
+    expect(context.sent.map((intent) => intent.args.on)).toEqual([true]);
+
+    const failed = await context.engine.run(automation(context, [{ repeat: { times: { value: 3 }, steps: [ON, { stop: { why: 'The charger did not answer', failed: true } }] } }], [OFF]), OLOF);
+    expect(failed.outcome).toBe('failed');
+    expect(failed.summary).toBe('Did not succeed: the charger did not answer; then turned Heater plug off');
+    expect(context.sent.map((intent) => intent.args.on)).toEqual([true, true, false]);
+  });
+
+  test('waiting for what a device says: on, as soon as it does — and not succeeding if it does not in time', async () => {
+    const context = setup();
+    const going = context.engine.run(automation(context, [{ waitFor: { role: 'station', event: 'mains.lost', atMost: { value: 1, unit: 'min' } } }, ON]), OLOF);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(context.sent).toEqual([]);
+    // Another part saying it: not what it waits for.
+    context.bus.publish({ kind: 'event', deviceId: STATION, event: { id: 'mains.lost', level: 'warn', part: 'main', data: null, at: new Date().toISOString() } });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(context.sent).toEqual([]);
+    context.bus.publish({ kind: 'event', deviceId: STATION, event: { id: 'mains.lost', level: 'warn', part: 'input.ac', data: null, at: new Date().toISOString() } });
+    const run = await going;
+    expect(run.outcome).toBe('acted');
+    expect(run.steps[0]).toMatchObject({ kind: 'waitFor', outcome: 'met' });
+    expect(context.sent.map((intent) => intent.args.on)).toEqual([true]);
+
+    const late = await context.engine.run(automation(context, [{ waitFor: { role: 'station', event: 'mains.lost', atMost: { value: 1, unit: 's' } } }, ON]), OLOF);
+    expect(late.outcome).toBe('failed');
+    expect(late.steps[0]).toMatchObject({ kind: 'waitFor', outcome: 'timed-out', detail: 'Not in 1 s' });
+    expect(context.sent).toHaveLength(1);
+  });
+
+  test('whatever it repeats, a run ends: so many steps, and no more', async () => {
+    const context = setup();
+    const run = await context.engine.run(automation(context, [{ repeat: { times: { value: 100 }, steps: [{ repeat: { times: { value: 100 }, steps: [COUNT_ONE] } }] } }]), OLOF);
+    expect(run.outcome).toBe('failed');
+    expect(run.steps.length).toBeLessThanOrEqual(SEQUENCE_LIMITS.steps + 1);
+    expect(run.summary).toContain(`it has taken ${SEQUENCE_LIMITS.steps} steps, as many as one run may`);
   });
 });

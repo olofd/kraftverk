@@ -43,6 +43,10 @@ function holds(field: FieldSpec, fields: readonly FieldSpec[]): string {
       return 'a name of its own, unique in the automation: letters and digits, from a lowercase letter';
     case 'memory':
       return 'one of what it remembers, by its name: under `memory`';
+    case 'text':
+      return 'words of your own, said as written';
+    case 'flag':
+      return '`true` or `false`; `false` when it is not written';
     case 'args':
       return 'each argument by its name: a value, or an expression';
     case 'steps':

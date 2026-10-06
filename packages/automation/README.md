@@ -161,7 +161,8 @@ a command and a setting the forms a file writes them in — and the checker,
 the file's reader and writer, the JSON Schema, the editor's forms, the
 engine's dispatch and **[REFERENCE.md](REFERENCE.md)** are made from that.
 Lengths of time are in seconds, named as a file says them: `wait.for`,
-`waitUntil.atMost`, `ensure.within`, `watch.for`, `start.andWait`.
+`waitUntil.atMost`, `waitFor.atMost`, `ensure.within`, `watch.for`,
+`start.andWait`.
 
 | Data | Text | Does |
 |---|---|---|
@@ -171,15 +172,21 @@ Lengths of time are in seconds, named as a file says them: `wait.for`,
 | `write` | `set: plug` with `setting: key` or `meaning: chargeLimit`, and `to: <value>` | change a setting the part offers, read back as any setting — never one its device declares dangerous |
 | `wait` | `wait: 5 s` | a pause |
 | `waitUntil` | `wait until: <condition>` with `at most: 2 min` | until the condition is true, or the run stops, not having succeeded |
+| `waitFor` | `wait for: mains.restored` with `from: station` and `at most: 30 min` | until the part raises the event — one raised after it began to wait — or the run stops, not having succeeded |
 | `ensure` | `make sure: <condition>` with `within: 20 s`, `tries: 5` and `each time: [steps]` | make sure it comes true within a time; if not, take the steps and look again, at most that many times — then the run stops, not having succeeded |
 | `choose` | `if: <condition>` with `then: [steps]` and `else: [steps]` | one way or the other, as the condition is now; unknown is not true |
 | `watch` | `watch: <condition>` with `for: 5 s`, `if it stays so: [steps]` and `if not: [steps]` | watch the condition for a while: the first steps if it stays true all that time, the others the moment it is not, or cannot be told |
+| `repeat` | `repeat: 3` with `do: [steps]` — and `until: <condition>` | the steps, round after round: so many times — or until the condition is so after a round, at most that many, not succeeding if it never is. A round that does not succeed ends it |
+| `try` | `try: [steps]` with `if it fails: [steps]` | the steps; one that does not succeed is answered by the others — none, and it goes on as if it had. A stop is not caught |
+| `stop` | `stop: Already charged` — and `failed: true` | the run ends here, saying why: as it went — or, failed, as not having succeeded, its `if a step fails` steps taken |
 | `start` | `start: role` with `and wait: 10 min` | start the automation filling the role, as a person's play would; with a wait, until its run ends |
 | `remember` | `remember: timesCharged` with `as: memory.timesCharged + 1` | remember a value for later steps and later runs: one of what the automation declares under `memory:`, converted to its unit and held to its range |
 
 Every command and every setting goes through the gateway, under its rules,
 and is audited as the automation's. A step that waits always has a limit,
-and every retry a count.
+every retry a count, every repeat at most `SEQUENCE_LIMITS.rounds` rounds —
+and a run at most `SEQUENCE_LIMITS.steps` steps, its `if a step fails`
+steps counted apart: whatever it repeats, every run ends.
 
 ## Conditions and values — expressions
 

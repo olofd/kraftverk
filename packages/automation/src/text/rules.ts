@@ -173,7 +173,11 @@ class Reader {
       case 'event':
       case 'name':
       case 'memory':
+      case 'text':
         return this.name(data, path, field.label.toLowerCase());
+      case 'flag':
+        if (typeof data !== 'boolean') return this.fail('Expected true or false', path);
+        return data;
       case 'id':
         if (typeof data !== 'string' || !TRIGGER_ID.test(data)) return this.fail('A name of its own is letters and digits, starting with a lowercase letter: "low"', path);
         return data;
@@ -261,7 +265,7 @@ function usedCapabilities(rule: RuleBody, role: string): string[] {
   const uses = ruleUses({ roles: {}, params: { fields: {} }, when: rule.when, ...(rule.if !== undefined ? { if: rule.if } : {}), then: rule.then, ...(rule.otherwise !== undefined ? { otherwise: rule.otherwise } : {}) });
   const add = (capability: string | null) => void (capability && used.add(capability));
   for (const read of uses.reads) if (read.role === role) add(CAPABILITY_OF(`read:${read.means}`));
-  for (const event of uses.events) if (event.role === role) add(CAPABILITY_OF(`event:${event.event}`));
+  for (const event of [...uses.events, ...uses.awaits]) if (event.role === role) add(CAPABILITY_OF(`event:${event.event}`));
   return [...used].sort();
 }
 
@@ -418,6 +422,8 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
       case 'name':
       case 'id':
       case 'memory':
+      case 'text':
+      case 'flag':
         return value;
       case 'steps':
         return (value as readonly Step[]).map(step);

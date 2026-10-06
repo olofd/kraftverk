@@ -1,4 +1,4 @@
-import { Text, YStack } from 'tamagui';
+import { Input, Text, YStack } from 'tamagui';
 
 import { fieldValue, withField, type Expr, type FieldSpec, type Weekday } from '@kraftverk/automation';
 import { MAIN_PART, wholeTime } from '@kraftverk/device-sdk';
@@ -137,6 +137,31 @@ function FieldEditor<T extends object>({ field, fields, construct, set }: { fiel
         </YStack>
       );
     }
+    case 'text':
+      return (
+        <YStack gap="$1">
+          <Label>{field.label}</Label>
+          <Input size="$4" value={typeof value === 'string' ? value : ''} aria-label={field.label} backgroundColor="$background" borderColor="$borderColor" onChangeText={(text) => put(text)} />
+          {help}
+        </YStack>
+      );
+    case 'flag':
+      // Not written is no: none is said rather than false.
+      return (
+        <YStack gap="$1">
+          <Label>{field.label}</Label>
+          <Chips
+            label={field.label}
+            options={[
+              { value: false, label: 'No' },
+              { value: true, label: 'Yes' },
+            ]}
+            value={value === true}
+            onChange={(next) => put(next ? true : undefined)}
+          />
+          {help}
+        </YStack>
+      );
     // Drawn by the kind that has them — a command's, a setting's, an automation started — or as its branches.
     case 'value':
     case 'automation':
@@ -144,6 +169,12 @@ function FieldEditor<T extends object>({ field, fields, construct, set }: { fiel
     case 'memory':
     case 'args':
     case 'steps':
+    // A trigger's id: given when a condition asks which trigger started it (`triggerIdOf`), not typed.
+    case 'id':
       return null;
+    default: {
+      const unknown: never = type;
+      throw new Error(`No field drawn for ${JSON.stringify(unknown)}`);
+    }
   }
 }

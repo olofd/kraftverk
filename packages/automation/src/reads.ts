@@ -1,7 +1,7 @@
 import { capabilitySpec, isCapability, type CapabilityNeed } from '@kraftverk/device-sdk';
 
 import { expressionsIn } from './kinds/exprs.ts';
-import { EXPRESSION_FIELDS, fieldValue } from './kinds/spec.ts';
+import { EXPRESSION_FIELDS, fieldValue, type FieldSpec } from './kinds/spec.ts';
 import { branchesOf, stepSpec } from './kinds/steps.ts';
 import { stepListsOf, triggerSpec } from './kinds/triggers.ts';
 import type { Command, Expr, Rule, Step, Write } from './rule.ts';
@@ -50,7 +50,10 @@ export function* ruleExpressions(rule: Rule): Generator<Expr> {
  */
 export function ruleUses(rule: Rule): {
   reads: { role: string; means: string }[];
+  /** The events that start it: its triggers'. */
   events: { role: string; event: string }[];
+  /** The events a step waits for. */
+  awaits: { role: string; event: string }[];
   calls: { fn: string; role: string }[];
   /** The roles whose reachability it asks about: what a device's health moving can change. */
   reaches: string[];
@@ -67,6 +70,7 @@ export function ruleUses(rule: Rule): {
   const writes: Write[] = [];
   const windows: { from: Expr; to: Expr }[] = [];
   const starts: string[] = [];
+  const awaits: { role: string; event: string }[] = [];
   // Every expression within, by its kind's children (kinds/exprs.ts): the readings, parts, windows and functions it names.
   for (const top of ruleExpressions(rule)) {
     for (const each of expressionsIn(top)) {
@@ -80,6 +84,7 @@ export function ruleUses(rule: Rule): {
   const walkSteps = (steps: readonly Step[]): void => {
     for (const step of steps) {
       if ('write' in step) writes.push(step.write);
+      awaits.push(...eventsIn(step, stepSpec(step).fields));
       for (const field of stepSpec(step).fields) {
         const value = fieldValue(step, field);
         if (value === undefined) continue;
@@ -90,20 +95,21 @@ export function ruleUses(rule: Rule): {
   };
   // Its own steps, each trigger's, and what it does if one fails.
   for (const list of stepListsOf(rule)) walkSteps(list.steps);
-  const events: { role: string; event: string }[] = [];
   // Each trigger by its kind's fields (kinds/triggers.ts): the events it waits for.
-  for (const trigger of rule.when) {
-    const spec = triggerSpec(trigger);
-    for (const field of spec.fields) {
-      const type = field.type;
-      if (type.type !== 'event') continue;
-      const value = fieldValue(trigger, field);
-      if (value === undefined) continue;
-      const from = spec.fields.find((each) => each.key === type.role);
-      events.push({ role: String((from && fieldValue(trigger, from)) ?? ''), event: String(value) });
-    }
-  }
-  return { reads, events, calls, reaches: [...new Set(reaches)], writes, starts: [...new Set(starts)], windows };
+  const events = rule.when.flatMap((trigger) => eventsIn(trigger, triggerSpec(trigger).fields));
+  return { reads, events, awaits, calls, reaches: [...new Set(reaches)], writes, starts: [...new Set(starts)], windows };
+}
+
+/** The events a construct names, by its fields: each with the role whose part raises it — the field its event field names. */
+function eventsIn(construct: object, fields: readonly FieldSpec[]): { role: string; event: string }[] {
+  return fields.flatMap((field) => {
+    const type = field.type;
+    if (type.type !== 'event') return [];
+    const value = fieldValue(construct, field);
+    if (value === undefined) return [];
+    const from = fields.find((each) => each.key === type.role);
+    return [{ role: String((from && fieldValue(construct, from)) ?? ''), event: String(value) }];
+  });
 }
 
 /** Every command a rule may send, in its steps, its triggers', retries and `otherwise`: what its roles must be able to take. */

@@ -10,7 +10,7 @@ import type { FieldSpec, KindDocs, KindIcon } from './spec.ts';
   seconds.
 */
 
-export type StepKind = 'command' | 'write' | 'wait' | 'waitUntil' | 'ensure' | 'choose' | 'watch' | 'start' | 'remember';
+export type StepKind = 'command' | 'write' | 'wait' | 'waitUntil' | 'waitFor' | 'ensure' | 'choose' | 'watch' | 'repeat' | 'try' | 'stop' | 'start' | 'remember';
 
 /** A step of one kind. */
 export type StepOf<K extends StepKind> = K extends StepKind ? Extract<Step, Record<K, unknown>> : never;
@@ -33,6 +33,8 @@ export type StepSay = {
   briefs(steps: readonly Step[] | undefined): string[];
   /** What it remembers, by what it is called: "Times charged". */
   memory(name: string): string;
+  /** An event a role's part raises, in its own words: "mains lost". */
+  event(role: string, event: string): string;
 };
 
 /** What a kind's own text form reads with: the file reader's tools. */
@@ -242,6 +244,26 @@ const WAIT_UNTIL: StepSpec<'waitUntil'> = {
   },
 };
 
+const WAIT_FOR: StepSpec<'waitFor'> = {
+  kind: 'waitFor',
+  label: 'Wait for an event',
+  icon: 'bell',
+  says: 'Wait until a device says something happened — at most so long, or the run does not succeed.',
+  waits: true,
+  fields: [
+    { data: ['waitFor', 'event'], key: 'wait for', type: { type: 'event', role: 'from' }, required: true, label: 'What it says' },
+    { data: ['waitFor', 'role'], key: 'from', type: { type: 'role' }, required: true, label: 'Which part' },
+    { data: ['waitFor', 'atMost'], key: 'at most', type: { type: 'duration', min: 1, max: WAIT_MAX, fixed: true }, required: true, label: 'At most', help: 'Every wait has its limit: then the run stops, not having succeeded.' },
+  ],
+  blank: (role) => ({ waitFor: { role: role ?? '', event: '', atMost: { value: 5, unit: 'min' } } }),
+  line: (step, say) => `Wait until ${say.name(step.waitFor.role)} says ${say.event(step.waitFor.role, step.waitFor.event)} — at most ${say.seconds(step.waitFor.atMost)}`,
+  brief: (step, say) => `wait until ${say.name(step.waitFor.role)} says ${say.event(step.waitFor.role, step.waitFor.event)}`,
+  docs: {
+    summary: 'Wait until the part filling a role raises an event its description declares — one raised after the step began — or stop, not having succeeded, once it has waited that long.',
+    examples: ['wait for: mains.restored\nfrom: station\nat most: 30 min'],
+  },
+};
+
 const ENSURE: StepSpec<'ensure'> = {
   kind: 'ensure',
   label: 'Make sure',
@@ -307,6 +329,71 @@ const WATCH: StepSpec<'watch'> = {
   },
 };
 
+// --- again, and again --------------------------------------------------------------------------------
+
+const REPEAT: StepSpec<'repeat'> = {
+  kind: 'repeat',
+  label: 'Repeat',
+  icon: 'rotate-cw',
+  says: 'Take steps again and again: so many times, or until something is so.',
+  fields: [
+    { data: ['repeat', 'times'], key: 'repeat', type: { type: 'count', max: SEQUENCE_LIMITS.rounds }, required: true, label: 'Times, at most', help: `At most ${SEQUENCE_LIMITS.rounds}.` },
+    { data: ['repeat', 'until'], key: 'until', type: { type: 'condition', calls: true }, required: false, label: 'Until', help: 'Looked at after each round: still not so after the last, it does not succeed.' },
+    { data: ['repeat', 'steps'], key: 'do', type: { type: 'steps', sure: 'inherit', nonEmpty: 'what does it repeat?' }, required: true, label: 'Each round' },
+  ],
+  blank: () => ({ repeat: { times: { value: 3 }, steps: [] } }),
+  line: (step, say) => (step.repeat.until ? `Repeat until ${say.expr(step.repeat.until)} — at most ${say.count(step.repeat.times)}` : `Repeat ${say.count(step.repeat.times)}`),
+  brief: (step, say) => {
+    const steps = say.briefs(step.repeat.steps).join(' and ') || 'nothing';
+    return step.repeat.until ? `${steps}, until ${say.expr(step.repeat.until)}` : `${steps}, ${say.count(step.repeat.times)}`;
+  },
+  docs: {
+    summary: 'Take the steps under `do` again and again: `repeat` times — or, with `until`, until it is so after a round, at most that many; still not so after the last, the run stops, not having succeeded.',
+    examples: ['repeat: 3\ndo:\n  - turn on: charger\n  - wait: 10 s\n  - turn off: charger', 'repeat: 5\nuntil: charger.power > 50 W\ndo:\n  - turn on: charger\n  - wait: 20 s'],
+  },
+};
+
+// --- when a step does not succeed ------------------------------------------------------------------
+
+const TRY: StepSpec<'try'> = {
+  kind: 'try',
+  label: 'Try',
+  icon: 'shield',
+  says: 'Try some steps: if one does not succeed, take others — and go on.',
+  fields: [
+    { data: ['try', 'steps'], key: 'try', type: { type: 'steps', sure: 'inherit', nonEmpty: 'what does it try?' }, required: true, label: 'Try' },
+    { data: ['try', 'recover'], key: 'if it fails', type: { type: 'steps', sure: false }, required: false, label: 'If it fails' },
+  ],
+  blank: () => ({ try: { steps: [] } }),
+  line: (step) => (step.try.recover?.length ? 'Try — and if a step does not succeed, take others' : 'Try — and go on, whatever comes of it'),
+  brief: (step, say) => {
+    const recover = say.briefs(step.try.recover);
+    return `try to ${say.briefs(step.try.steps).join(' and ') || 'do nothing'}${recover.length ? `, and if that does not succeed ${recover.join(' and ')}` : ''}`;
+  },
+  docs: {
+    summary: 'Try the steps under `try`: one that does not succeed ends them, and the steps under `if it fails` are taken — none, and it goes on as if it had succeeded. The run goes on after it either way, unless what it took after a failure did not succeed. A stop is not caught.',
+    examples: ['try:\n  - turn on: charger\nif it fails:\n  - turn off: supply', 'try:\n  - wait until: charger reachable\n    at most: 1 min'],
+  },
+};
+
+const STOP: StepSpec<'stop'> = {
+  kind: 'stop',
+  label: 'Stop here',
+  icon: 'octagon',
+  says: 'End the run here, saying why — as it went, or as not having succeeded.',
+  fields: [
+    { data: ['stop', 'why'], key: 'stop', type: { type: 'text' }, required: true, label: 'Why', help: 'What the run says as it ends.' },
+    { data: ['stop', 'failed'], key: 'failed', type: { type: 'flag' }, required: false, label: 'As not having succeeded', help: 'Its "if a step fails" steps are taken.' },
+  ],
+  blank: () => ({ stop: { why: 'Nothing more to do' } }),
+  line: (step) => `${step.stop.failed ? 'Stop, not having succeeded' : 'Stop here'}: ${step.stop.why}`,
+  brief: (step) => `${step.stop.failed ? 'stop, not having succeeded' : 'stop'}: ${step.stop.why}`,
+  docs: {
+    summary: 'End the run here, saying why: as it went — or, with `failed: true`, as not having succeeded, its `if a step fails` steps taken. Within `try`, a failure is the `if it fails` steps’ to answer.',
+    examples: ['stop: Already charged', 'stop: The charger did not answer\nfailed: true'],
+  },
+};
+
 // --- another automation ---------------------------------------------------------------------------
 
 const START: StepSpec<'start'> = {
@@ -348,10 +435,24 @@ const REMEMBER: StepSpec<'remember'> = {
 };
 
 /** Every kind of step, by its key: the table everything that handles steps reads. */
-export const STEP_KINDS: { readonly [K in StepKind]: StepSpec<K> } = { command: COMMAND, write: WRITE, wait: WAIT, waitUntil: WAIT_UNTIL, ensure: ENSURE, choose: CHOOSE, watch: WATCH, start: START, remember: REMEMBER };
+export const STEP_KINDS: { readonly [K in StepKind]: StepSpec<K> } = {
+  command: COMMAND,
+  write: WRITE,
+  wait: WAIT,
+  waitUntil: WAIT_UNTIL,
+  waitFor: WAIT_FOR,
+  ensure: ENSURE,
+  choose: CHOOSE,
+  watch: WATCH,
+  repeat: REPEAT,
+  try: TRY,
+  stop: STOP,
+  start: START,
+  remember: REMEMBER,
+};
 
 /** The order the editor offers them in. */
-export const STEP_KIND_ORDER: readonly StepKind[] = ['command', 'write', 'wait', 'waitUntil', 'ensure', 'choose', 'watch', 'start', 'remember'];
+export const STEP_KIND_ORDER: readonly StepKind[] = ['command', 'write', 'wait', 'waitUntil', 'waitFor', 'ensure', 'choose', 'watch', 'repeat', 'try', 'stop', 'start', 'remember'];
 
 /** Which kind a step is — by its key; one of no kind is an error, never taken for another. */
 export function stepKind(step: Step): StepKind {

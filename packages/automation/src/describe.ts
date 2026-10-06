@@ -331,7 +331,7 @@ function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (rol
       return chosen ? steps(chosen, each) : [each(step)];
     });
   // What each kind's words are handed (kinds/steps.ts): how the parts of a step read.
-  const say: StepSay = { expr: text, seconds, count, name, command, write, briefs: (list) => briefs(list), memory: (key) => memoryWords(rule, key) };
+  const say: StepSay = { expr: text, seconds, count, name, command, write, briefs: (list) => briefs(list), memory: (key) => memoryWords(rule, key), event: (role, event) => eventWords(rule, role, event) };
   const lines = (list: readonly Step[] | undefined): StepLine[] => steps(list, line);
   /** A step as its kind says it, and its branches — its lists of steps — each under its field's label. */
   const line = (step: Step): StepLine => {
