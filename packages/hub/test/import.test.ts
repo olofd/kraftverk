@@ -189,7 +189,7 @@ describe('what a file cannot do, and what it needs', () => {
 
   test('a key naming a device of another type is a problem, at its line', async () => {
     aHome();
-    const text = `kraftverk: 3
+    const text = `kraftverk: 4
 devices:
   hall-lamp:
     type: test.lamp
@@ -203,7 +203,7 @@ devices:
   });
 
   test('a secret it names but does not carry is asked for, and kept once given', async () => {
-    const text = `kraftverk: 3
+    const text = `kraftverk: 4
 devices:
   desk-lamp:
     type: test.lamp
@@ -224,7 +224,7 @@ devices:
 
   test('a role naming a device you do not have: one of yours that can do it, chosen', async () => {
     aHome();
-    const text = `kraftverk: 3
+    const text = `kraftverk: 4
 automations:
   evening:
     name: Evening
@@ -306,7 +306,7 @@ automations:
     );
     expect(refused).toEqual([]);
     const text = (limit: string) =>
-      `kraftverk: 3\ndevices:\n  meter:\n    type: test.flow\n    name: Meter\n    connect:\n      - via: simulated\nautomations:\n  flowing:\n    name: Flowing\n    clock: Europe/Stockholm\n    uses:\n      meter: { part: meter, needs: [powerMeter] }\n    when:\n      - becomes: meter.test.flow > ${limit}\n    do:\n      - wait: 1 s\n`;
+      `kraftverk: 4\ndevices:\n  meter:\n    type: test.flow\n    name: Meter\n    connect:\n      - via: simulated\nautomations:\n  flowing:\n    name: Flowing\n    clock: Europe/Stockholm\n    uses:\n      meter: { part: meter, needs: [powerMeter] }\n    when:\n      - becomes: meter.test.flow > ${limit}\n    do:\n      - wait: 1 s\n`;
     const plan = await planImport(deps, text('2 kW'), { mode: 'merge', by: 'olof' });
     expect(plan.problems).toEqual([]);
     await applyImport(deps, plan.id!, 'olof', {});
@@ -317,13 +317,13 @@ automations:
 
   test('simulated devices share their address: no claim on it, as setup makes none', async () => {
     deps.connections.add({ deviceId: deps.catalog.add({ typeId: 'test.lamp', name: 'Sim lamp', description: LAMP }).id, method: 'simulated', transport: 'simulated', heldBy: MACHINE_NODE.id, address: 'simulated' });
-    const text = 'kraftverk: 3\ndevices:\n  other-sim:\n    type: test.lamp\n    name: Other sim\n    connect:\n      - via: simulated\n';
+    const text = 'kraftverk: 4\ndevices:\n  other-sim:\n    type: test.lamp\n    name: Other sim\n    connect:\n      - via: simulated\n';
     expect((await planImport(deps, text, { mode: 'merge', by: 'olof' })).problems).toEqual([]);
   });
 
   test('a role nothing fills — written while it was being built — is a problem at its line, not an import that fails', async () => {
     aHome();
-    const text = `kraftverk: 3
+    const text = `kraftverk: 4
 automations:
   evening:
     name: Evening
@@ -339,7 +339,7 @@ automations:
   });
 
   test('a part that cannot do what the rule asks is said in the plan — before a yes, not after', async () => {
-    const text = `kraftverk: 3
+    const text = `kraftverk: 4
 devices:
   new-lamp:
     type: test.lamp
@@ -365,7 +365,7 @@ automations:
 
   test('an automation that cannot be kept at the apply undoes the whole import — the devices added with it too', async () => {
     const { hall } = aHome();
-    const text = `kraftverk: 3
+    const text = `kraftverk: 4
 devices:
   new-lamp:
     type: test.lamp
@@ -393,7 +393,7 @@ automations:
 
   test('replacing: what the file does not have is removed — and asked a yes to', async () => {
     aHome();
-    const text = `kraftverk: 3
+    const text = `kraftverk: 4
 devices:
   hall-lamp:
     type: test.lamp

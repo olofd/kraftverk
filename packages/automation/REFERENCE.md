@@ -301,14 +301,33 @@ reached — is never taken for true.
 | Kind | Written | Is |
 |---|---|---|
 | A value | `50 W` · `"eco"` · `07:00` | A number — with its unit beside a reading, `50 W`, `15 %` — a time of day, `07:00`, text in quotes, `true` or `false`. |
-| A setting | `$low` | One of the rule’s settings, by its name: a recipe’s, before it is copied into an automation. |
+| A setting | `setting.low` | One of the rule’s settings, by its name: a recipe’s, before it is copied into an automation. |
 | A reading | `station.charge` · `charger.power` | What the part filling a role reports now, by what it means: a standard meaning, or a type’s own. Unknown when it has not said, or said too long ago. |
 | Can be reached | `charger reachable` | Whether the part filling a role can be reached now: its holder says it is connected. Never unknown — not being reachable is the answer. |
 | What the run knows | `run.trigger == "low"` | What the run knows of itself: `run.trigger`, the id of the trigger that started it — `""` when none with an id did. |
 | Time of day | `time between 23:00 and 05:00` | Whether the owner’s clock is between two times of day, from the first up to the second — across midnight when the second comes first. |
-| Ask a package | `call acme.weather.sunny(forecast, day = "tomorrow")` | A function a package contributes, over the part filling a role: what the forecast says of tomorrow, the price’s rank. Only where a run may wait for its answer. |
+| Ask a package | `acme.weather.sunny(forecast, day = "tomorrow")` | A function a package contributes, over the part filling a role: what the forecast says of tomorrow, the price’s rank. Only where a run may wait for its answer. |
+| A function of the language | `min(station.charge, 80 %)` · `clamp(charger.power, 0 W, 2 kW)` | One of the language’s own functions — min, max, clamp, round, floor, ceil, abs — on numbers, each with its unit; the answer in the first one’s unit. |
 | A comparison | `station.charge < 15 %` | Two values compared: `<`, `<=`, `>`, `>=`, `==`, `!=`. Unknown when either is. |
-| Arithmetic | `station.charge + 10 %` · `min(station.charge, 80 %)` | A number from two, in one unit: their sum or difference, or the lower or higher of them. Unknown when either is. |
+| One of | `station.mode in ["eco", "boost"]` | Whether a value is one of a list: numbers in one unit, or texts. |
+| Arithmetic | `station.charge + 10 %` · `station.capacity * 50 %` · `charger.power * 2 h` | A number from two: `+ - * /`. A sum is in one unit; a product or quotient in the unit the two make — a power for a time an energy, a percentage a share of what it multiplies. Unknown when either is. |
+| The opposite | `-meter.power` | A number’s opposite, in its unit. |
+| One or the other | `price.priceRank <= 4 ? 2 kW : 500 W` | The first value when the condition holds, the second when it does not; unknown when it cannot be told. |
+| The first known | `outdoor.temperature ?? 10 °C` | The first of its values that is known: a reading gone quiet, a value in its place. |
 | All of | `charger reachable and station.charge < 50 %` | True when every part is: one false is enough to say no, and with none false, one unknown leaves it unknown. |
 | Any of | `station.charge < 10 % or time between 23:00 and 05:00` | True when any part is: one true is enough, and with none true, one unknown leaves it unknown. |
 | Not | `not charger reachable` | True when its part is false, false when it is true; unknown stays unknown. |
+
+### The language’s own functions
+
+Each takes numbers, each with its unit, and answers in the first one’s unit. Unknown when any argument is.
+
+| Function | Written | Is |
+|---|---|---|
+| `min(a, b, …)` — The lowest | `min(station.charge, 80 %)` · `min(a.power, b.power, 2 kW)` | The lowest of two or more numbers, in the first one’s unit. |
+| `max(a, b, …)` — The highest | `max(station.charge, 20 %)` | The highest of two or more numbers, in the first one’s unit. |
+| `clamp(x, low, high)` — Keep between | `clamp(charger.power, 0 W, 2 kW)` | A number kept between two others: below the low one, the low one; above the high one, the high one. All in the first one’s unit. |
+| `round(x, digits)` — Round | `round(station.charge)` · `round(charger.power, 1)` | A number rounded to a whole one — or, given `digits`, to that many decimals. In its own unit. |
+| `floor(x)` — Round down | `floor(station.charge)` | A number rounded down to a whole one, in its own unit. |
+| `ceil(x)` — Round up | `ceil(station.charge)` | A number rounded up to a whole one, in its own unit. |
+| `abs(x)` — Size | `abs(meter.power)` | How large a number is, whichever way: −5 W is 5 W. |

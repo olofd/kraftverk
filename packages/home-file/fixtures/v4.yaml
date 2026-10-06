@@ -1,0 +1,123 @@
+kraftverk: 4
+home:
+  clock: Europe/Stockholm
+  policy:
+    loadWatts: 50
+    reserveSoc: 20
+devices:
+  garage-station:
+    type: acme.station
+    name: Garage station
+    identity: acme:station-0001
+    picture: type:1
+    connect:
+      - via: ble
+        address: AA:BB:CC:DD:EE:01
+  smart-plug:
+    type: acme.plug
+    name: Smart plug
+    settings:
+      profile: b
+    connect:
+      - via: lan
+        address: 192.0.2.10#a4c1380000000001
+        settings:
+          deviceId: made-up-device-id
+          protocolVersion: "3.4"
+        secrets:
+          localKey: !secret smart-plug.localKey
+        exportable: true
+  ac-in-meter:
+    type: acme.meter
+    name: AC-IN meter
+    connect:
+      - via: lan
+        address: 192.0.2.11
+links:
+  - feeds:
+      from: ac-in-meter
+      to: garage-station.input.ac
+automations:
+  start-charging:
+    name: Start charging the scooter
+    mode: act
+    clock: Europe/Stockholm
+    home page: 0
+    made from: standard.start-charging
+    uses:
+      supply: garage-station.outlet.ac
+      charger: smart-plug
+    do:
+      - turn on: supply
+      - wait until: charger reachable
+        at most: 2 min
+      - turn on: charger
+      - make sure: charger.power > 50 W
+        within: 20 s
+        tries: 5
+        each time:
+          - turn off: charger
+          - wait: 5 s
+          - turn on: charger
+    if a step fails:
+      - turn off: charger
+      - turn off: supply
+  stop-charging:
+    name: Stop charging the scooter
+    mode: watch
+    clock: Europe/Stockholm
+    uses:
+      supply: garage-station.outlet.ac
+      charger: smart-plug
+    do:
+      - turn off: charger
+      - watch: supply.power < 10 W
+        for: 5 s
+        if it stays so:
+          - turn off: supply
+  charge-window:
+    name: Charge window
+    mode: watch
+    clock: Europe/Stockholm
+    recheck: 10 min
+    uses:
+      battery: garage-station
+      charger:
+        part: smart-plug
+        label: What charges it
+    when:
+      - becomes: battery.charge < 15 %
+        for: 2 min
+      - becomes: battery.charge >= 50 %
+    do:
+      - switch: charger
+        on: battery.charge < 50 %
+  morning:
+    name: Morning
+    mode: off
+    clock: Europe/Stockholm
+    uses:
+      station: garage-station
+      mains: garage-station.input.ac
+      plug: smart-plug
+      charging:
+        automation: start-charging
+    when:
+      - at: "07:00"
+        days: weekdays
+      - every: 30 min
+      - event: mains.lost
+        from: mains
+    only if: station.charge < 80 % and time between 05:00 and 09:00
+    do:
+      - set: station
+        meaning: chargeLimit
+        to: 90
+      - if: station.charge < 20 %
+        then:
+          - start: charging
+            and wait: 10 min
+        else:
+          - turn on: plug
+secrets:
+  smart-plug.localKey: sealed:v1:c2FsdA:aXY:ZGF0YQ

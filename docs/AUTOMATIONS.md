@@ -59,12 +59,17 @@ type RuleTrigger = Trigger & {
 };
 
 type Expr =
-  | { value: Value }                               // a literal
-  | { param: string }                              // one of its settings
+  | { value: Value; unit?: Unit }                 // a literal, a number with the unit it is written in
+  | { param: string }                              // one of its settings: setting.low
   | { read: { role: string; means: string } }      // a part's current value, by meaning
   | { call: string; role: string; args?: Record<string, Expr> }  // a package's function
+  | { apply: 'min' | 'max' | 'clamp' | 'round' | 'floor' | 'ceil' | 'abs'; args: Expr[] }  // the language's own
   | { compare: 'lt' | 'le' | 'gt' | 'ge' | 'eq' | 'ne'; left: Expr; right: Expr }
-  | { math: 'add' | 'subtract' | 'min' | 'max'; left: Expr; right: Expr }   // numbers, in one unit
+  | { item: Expr; in: Expr[] }                     // one of a list
+  | { math: 'add' | 'subtract' | 'multiply' | 'divide'; left: Expr; right: Expr }   // with the units they make
+  | { negate: Expr }                               // -x
+  | { if: Expr; then: Expr; else: Expr }           // c ? a : b
+  | { either: Expr[] }                             // a ?? b: the first known
   | { all: Expr[] } | { any: Expr[] } | { not: Expr }
   | { reachable: string }                          // the part filling a role can be reached now
   | { within: { from: Expr; to: Expr } };          // the owner's clock is between two times, "22:00" to "06:00" across midnight

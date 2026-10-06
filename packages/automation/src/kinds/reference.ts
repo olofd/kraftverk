@@ -1,4 +1,5 @@
 import { secondsText } from '../describe.ts';
+import { BUILTIN_ORDER, BUILTINS } from './builtins.ts';
 import { EXPR_KIND_ORDER, EXPR_KINDS } from './exprs.ts';
 import type { FieldSpec } from './spec.ts';
 import { STEP_KIND_ORDER, STEP_KINDS, type StepSpec } from './steps.ts';
@@ -105,6 +106,19 @@ export function referenceMarkdown(): string {
   for (const kind of EXPR_KIND_ORDER) {
     const spec = EXPR_KINDS[kind];
     lines.push(`| ${spec.label} | ${spec.docs.examples.map((example) => `\`${example}\``).join(' · ')} | ${spec.docs.summary} |`);
+  }
+  lines.push(
+    '',
+    '### The language’s own functions',
+    '',
+    'Each takes numbers, each with its unit, and answers in the first one’s unit. Unknown when any argument is.',
+    '',
+    '| Function | Written | Is |',
+    '|---|---|---|'
+  );
+  for (const name of BUILTIN_ORDER) {
+    const spec = BUILTINS[name];
+    lines.push(`| \`${name}(${spec.params.join(', ')})\` — ${spec.label} | ${spec.docs.examples.map((example) => `\`${example}\``).join(' · ')} | ${spec.docs.summary} |`);
   }
   return `${lines.join('\n').trimEnd()}\n`;
 }

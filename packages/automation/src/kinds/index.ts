@@ -5,3 +5,4 @@ export * from './reference.ts';
 export * from './steps.ts';
 export * from './shape.ts';
 export * from './exprs.ts';
+export * from './builtins.ts';

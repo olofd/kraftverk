@@ -2,12 +2,13 @@ import { isScalar, type ConfigSchema, type ScalarValue, type Unit, type Value } 
 
 import { inWindow, minutesOf } from './clock.ts';
 import type { Evaluation } from './functions.ts';
-import { exprKind, expressionsIn, mapChildren, type ExprOf } from './kinds/exprs.ts';
+import { BUILTINS } from './kinds/builtins.ts';
+import { childrenOf, exprKind, expressionsIn, mapChildren, type ExprOf } from './kinds/exprs.ts';
 import { EXPRESSION_FIELDS, fieldValue, withField } from './kinds/spec.ts';
 import { stepSpec } from './kinds/steps.ts';
 import { triggerFields } from './kinds/triggers.ts';
 import { automationRoles, calculate, type CompareOp, type Expr, type RuleTrigger, type Rule, type RunFact, type Step } from './rule.ts';
-import { convert, wholeTime } from '@kraftverk/device-sdk';
+import { convert, product, quotient, wholeTime } from '@kraftverk/device-sdk';
 
 /*
   Evaluating a rule's expressions where it runs: against what its parts read
@@ -32,6 +33,9 @@ function inOneUnit(left: Measured, right: Measured): { left: Value; right: Value
   const converted = convert(right.value, right.unit, left.unit);
   return converted === null ? null : { left: left.value, right: converted, unit: left.unit };
 }
+
+/** A number worked out without the float's dust: 0.1 + 0.2 is 0.3. */
+const tidy = (value: number): number => Math.round(value * 1e9) / 1e9;
 
 /** A measured number in a unit: one with none is taken as in it already; null when it is not a number, or not of that quantity. */
 export function numberIn(measured: Measured, unit: Unit): number | null {
@@ -190,8 +194,55 @@ export function measureNow(expr: Expr, scope: RuleScope, trace: string[] = [], a
     }
     case 'math': {
       const { math: op, left, right } = expr as ExprOf<'math'>;
-      const both = inOneUnit(now(left), now(right));
-      return both ? { value: calculate(op, both.left, both.right), unit: both.unit } : plain(null);
+      const [a, b] = [now(left), now(right)];
+      // A sum is in one unit; a product or a quotient in the unit the two make (units.ts).
+      if (op === 'add' || op === 'subtract') {
+        const both = inOneUnit(a, b);
+        return both ? { value: calculate(op, both.left, both.right), unit: both.unit } : plain(null);
+      }
+      if (typeof a.value !== 'number' || typeof b.value !== 'number') return plain(null);
+      const made = op === 'multiply' ? product(a.unit, b.unit) : quotient(a.unit, b.unit);
+      const value = made ? calculate(op, a.value, b.value) : null;
+      return made && typeof value === 'number' ? { value: tidy(value * made.factor), unit: made.unit } : plain(null);
+    }
+    case 'apply': {
+      const { apply: name, args } = expr as ExprOf<'apply'>;
+      const spec = BUILTINS[name];
+      const measured = args.map(now);
+      if (measured.length < spec.arity.min || (spec.arity.max !== null && measured.length > spec.arity.max)) return plain(null);
+      if (measured.some((each) => typeof each.value !== 'number')) return plain(null);
+      // In the first one's unit — or, it having none, the first that has one.
+      const unit = spec.units === 'first' ? measured[0]!.unit : (measured.find((each) => each.unit)?.unit ?? null);
+      const values = measured.map((each, index) => (spec.units === 'first' && index > 0 ? (each.unit ? null : (each.value as number)) : unit ? numberIn(each, unit) : (each.value as number)));
+      if (values.some((value) => value === null)) return plain(null);
+      const value = spec.apply(values as number[]);
+      return value === null ? plain(null) : { value: tidy(value), unit };
+    }
+    case 'negate': {
+      const inner = now((expr as ExprOf<'negate'>).negate);
+      return typeof inner.value === 'number' ? { value: -inner.value, unit: inner.unit } : plain(null);
+    }
+    case 'if': {
+      const { if: condition, then, else: otherwise } = expr as ExprOf<'if'>;
+      const holds = now(condition).value;
+      return holds === true ? now(then) : holds === false ? now(otherwise) : plain(null);
+    }
+    case 'either': {
+      for (const part of (expr as ExprOf<'either'>).either) {
+        const measured = now(part);
+        if (measured.value !== null) return measured;
+      }
+      return plain(null);
+    }
+    case 'in': {
+      const { item, in: options } = expr as ExprOf<'in'>;
+      const value = now(item);
+      if (value.value === null) return plain(null);
+      // One equal is enough; none equal, one unknown leaves it unknown — as "any of" the comparisons.
+      return plain(combine('any', options.map((option) => {
+        const both = inOneUnit(value, now(option));
+        return both ? compare('eq', both.left, both.right) : null;
+      })));
     }
     case 'all':
       return plain(combine('all', (expr as ExprOf<'all'>).all.map((inner) => now(inner).value)));
@@ -272,11 +323,25 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
       case 'param':
         return written((settled as ExprOf<'param'>).param);
       // Settings alone: the number, or the answer, they make — written in, in their unit.
-      case 'math': {
-        const { left, right } = settled as ExprOf<'math'>;
-        if (!known(left) || !known(right)) return settled;
+      case 'math':
+      case 'apply':
+      case 'negate':
+      case 'in': {
+        if (!childrenOf(settled).every(known)) return settled;
         const { value, unit } = measureNow(settled, scope);
         return unit && typeof value === 'number' ? { value, unit } : { value };
+      }
+      // A choice the settings make is the value it chose.
+      case 'if': {
+        const { if: condition, then, else: otherwise } = settled as ExprOf<'if'>;
+        return known(condition) && typeof condition.value === 'boolean' ? (condition.value ? then : otherwise) : settled;
+      }
+      // A known value first is the value; the rest are never reached.
+      case 'either': {
+        const parts = (settled as ExprOf<'either'>).either;
+        const first = parts.findIndex((part) => !known(part) || part.value !== null);
+        const rest = parts.slice(Math.max(first, 0));
+        return rest.length === 1 || (rest[0] && known(rest[0])) ? rest[0]! : { either: rest };
       }
       case 'compare': {
         const { left, right } = settled as ExprOf<'compare'>;

@@ -219,7 +219,7 @@ describe('configuration', () => {
 
   test('the copy a restore was made from is imported again only when there was a restore; a file’s text, or it — not both', async () => {
     expect((await as('/config/plan', { method: 'POST', body: { restored: true } })).status).toBe(404);
-    expect((await as('/config/plan', { method: 'POST', body: { restored: true, text: 'kraftverk: 3\n' } })).status).toBe(400);
+    expect((await as('/config/plan', { method: 'POST', body: { restored: true, text: 'kraftverk: 4\n' } })).status).toBe(400);
   });
 });
 

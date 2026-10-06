@@ -11,7 +11,7 @@ import type { KindDocs } from './spec.ts';
   one left out.
 */
 
-export type ExprKind = 'value' | 'param' | 'read' | 'call' | 'compare' | 'math' | 'all' | 'any' | 'not' | 'reachable' | 'within' | 'run';
+export type ExprKind = 'value' | 'param' | 'read' | 'call' | 'apply' | 'compare' | 'math' | 'negate' | 'if' | 'either' | 'in' | 'all' | 'any' | 'not' | 'reachable' | 'within' | 'run';
 
 /** An expression of one kind. */
 export type ExprOf<K extends ExprKind> = K extends ExprKind ? Extract<Expr, Record<K, unknown>> : never;
@@ -40,17 +40,55 @@ const two = <K extends 'compare' | 'math'>(kind: K, label: string, docs: KindDoc
 /** Every kind of expression, by its key. */
 export const EXPR_KINDS: { readonly [K in ExprKind]: ExprSpec<K> } = {
   value: leaf('value', 'A value', { summary: 'A number — with its unit beside a reading, `50 W`, `15 %` — a time of day, `07:00`, text in quotes, `true` or `false`.', examples: ['50 W', '"eco"', '07:00'] }),
-  param: leaf('param', 'A setting', { summary: 'One of the rule’s settings, by its name: a recipe’s, before it is copied into an automation.', examples: ['$low'] }),
+  param: leaf('param', 'A setting', { summary: 'One of the rule’s settings, by its name: a recipe’s, before it is copied into an automation.', examples: ['setting.low'] }),
   read: leaf('read', 'A reading', { summary: 'What the part filling a role reports now, by what it means: a standard meaning, or a type’s own. Unknown when it has not said, or said too long ago.', examples: ['station.charge', 'charger.power'] }),
   call: {
     kind: 'call',
     label: 'Ask a package',
     children: (expr) => Object.values(expr.args ?? {}),
     rebuild: (expr, children) => (expr.args ? { ...expr, args: Object.fromEntries(Object.keys(expr.args).map((name, index) => [name, children[index]!])) } : expr),
-    docs: { summary: 'A function a package contributes, over the part filling a role: what the forecast says of tomorrow, the price’s rank. Only where a run may wait for its answer.', examples: ['call acme.weather.sunny(forecast, day = "tomorrow")'] },
+    docs: { summary: 'A function a package contributes, over the part filling a role: what the forecast says of tomorrow, the price’s rank. Only where a run may wait for its answer.', examples: ['acme.weather.sunny(forecast, day = "tomorrow")'] },
+  },
+  apply: {
+    kind: 'apply',
+    label: 'A function of the language',
+    children: (expr) => expr.args,
+    rebuild: (expr, children) => ({ ...expr, args: children }),
+    docs: { summary: 'One of the language’s own functions — min, max, clamp, round, floor, ceil, abs — on numbers, each with its unit; the answer in the first one’s unit.', examples: ['min(station.charge, 80 %)', 'clamp(charger.power, 0 W, 2 kW)'] },
   },
   compare: two('compare', 'A comparison', { summary: 'Two values compared: `<`, `<=`, `>`, `>=`, `==`, `!=`. Unknown when either is.', examples: ['station.charge < 15 %'] }),
-  math: two('math', 'Arithmetic', { summary: 'A number from two, in one unit: their sum or difference, or the lower or higher of them. Unknown when either is.', examples: ['station.charge + 10 %', 'min(station.charge, 80 %)'] }),
+  math: two('math', 'Arithmetic', {
+    summary: 'A number from two: `+ - * /`. A sum is in one unit; a product or quotient in the unit the two make — a power for a time an energy, a percentage a share of what it multiplies. Unknown when either is.',
+    examples: ['station.charge + 10 %', 'station.capacity * 50 %', 'charger.power * 2 h'],
+  }),
+  negate: {
+    kind: 'negate',
+    label: 'The opposite',
+    children: (expr) => [expr.negate],
+    rebuild: (_expr, [inner]) => ({ negate: inner! }),
+    docs: { summary: 'A number’s opposite, in its unit.', examples: ['-meter.power'] },
+  },
+  if: {
+    kind: 'if',
+    label: 'One or the other',
+    children: (expr) => [expr.if, expr.then, expr.else],
+    rebuild: (_expr, [condition, then, otherwise]) => ({ if: condition!, then: then!, else: otherwise! }),
+    docs: { summary: 'The first value when the condition holds, the second when it does not; unknown when it cannot be told.', examples: ['price.priceRank <= 4 ? 2 kW : 500 W'] },
+  },
+  either: {
+    kind: 'either',
+    label: 'The first known',
+    children: (expr) => expr.either,
+    rebuild: (_expr, children) => ({ either: children }),
+    docs: { summary: 'The first of its values that is known: a reading gone quiet, a value in its place.', examples: ['outdoor.temperature ?? 10 °C'] },
+  },
+  in: {
+    kind: 'in',
+    label: 'One of',
+    children: (expr) => [expr.item, ...expr.in],
+    rebuild: (_expr, [item, ...options]) => ({ item: item!, in: options }),
+    docs: { summary: 'Whether a value is one of a list: numbers in one unit, or texts.', examples: ['station.mode in ["eco", "boost"]'] },
+  },
   all: {
     kind: 'all',
     label: 'All of',
@@ -78,7 +116,7 @@ export const EXPR_KINDS: { readonly [K in ExprKind]: ExprSpec<K> } = {
 };
 
 /** The order the reference lists them in. */
-export const EXPR_KIND_ORDER: readonly ExprKind[] = ['value', 'param', 'read', 'reachable', 'run', 'within', 'call', 'compare', 'math', 'all', 'any', 'not'];
+export const EXPR_KIND_ORDER: readonly ExprKind[] = ['value', 'param', 'read', 'reachable', 'run', 'within', 'call', 'apply', 'compare', 'in', 'math', 'negate', 'if', 'either', 'all', 'any', 'not'];
 
 /** Which kind an expression is — by its key; one of no kind is an error, never taken for another. */
 export function exprKind(expr: Expr): ExprKind {

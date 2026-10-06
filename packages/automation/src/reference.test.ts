@@ -31,13 +31,18 @@ const STEPS: Record<Keys<Step>, string> = {
   watch: 'watch:',
   start: 'start:',
 };
-const EXPRESSIONS: Record<Exclude<Keys<Expr>, 'role' | 'args' | 'left' | 'right' | 'unit'>, string> = {
+const EXPRESSIONS: Record<Exclude<Keys<Expr>, 'role' | 'args' | 'left' | 'right' | 'unit' | 'then' | 'else' | 'item'>, string> = {
   value: '50 W',
-  param: '$',
+  param: 'setting.',
   read: 'charger.power',
-  call: 'call ',
+  call: 'acme.weather.sunny(',
+  apply: 'min(',
   compare: ' > ',
-  math: 'min(',
+  math: ' * ',
+  negate: '-meter',
+  if: ' ? ',
+  either: ' ?? ',
+  in: ' in [',
   all: ' and ',
   any: ' or ',
   not: 'not ',
@@ -46,7 +51,7 @@ const EXPRESSIONS: Record<Exclude<Keys<Expr>, 'role' | 'args' | 'left' | 'right'
   run: 'run.trigger',
 };
 const COMPARISONS: Record<CompareOp, string> = { lt: '<', le: '<=', gt: '>', ge: '>=', eq: '==', ne: '!=' };
-const ARITHMETIC: Record<MathOp, string> = { add: '+', subtract: '-', min: 'min(', max: 'max(' };
+const ARITHMETIC: Record<MathOp, string> = { add: ' + ', subtract: ' - ', multiply: ' * ', divide: ' / ' };
 
 describe('the reference', () => {
   for (const [what, kinds] of Object.entries({ trigger: TRIGGERS, step: STEPS, expression: EXPRESSIONS, comparison: COMPARISONS, operation: ARITHMETIC })) {

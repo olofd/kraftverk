@@ -120,7 +120,7 @@ test('an import naming a device you do not have: one of yours, chosen, fills it 
   await write(
     page,
     'The configuration to import',
-    `kraftverk: 3\nautomations:\n  ${key}:\n    name: Porch light\n    mode: act\n    clock: Europe/Stockholm\n    uses:\n      plug: attic-plug\n    when:\n      - at: "21:00"\n    do:\n      - turn on: plug\n`
+    `kraftverk: 4\nautomations:\n  ${key}:\n    name: Porch light\n    mode: act\n    clock: Europe/Stockholm\n    uses:\n      plug: attic-plug\n    when:\n      - at: "21:00"\n    do:\n      - turn on: plug\n`
   );
   await page.getByRole('button', { name: 'Read it' }).click();
   await expect(page.getByText('Plug — it names “attic-plug”')).toBeVisible();

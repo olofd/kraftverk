@@ -49,7 +49,7 @@ describe('every version of the document', () => {
     expect(document.home.clock).toBe('Europe/Stockholm');
     expect(document.automations['stop-charging']!.clock).toBe('Europe/Stockholm');
     // Without one, an automation says its own.
-    expect(readConfig('kraftverk: 3\nautomations:\n  a:\n    name: A\n    do: []\n').problems.map((problem) => problem.message)).toEqual([
+    expect(readConfig('kraftverk: 4\nautomations:\n  a:\n    name: A\n    do: []\n').problems.map((problem) => problem.message)).toEqual([
       'Expected its clock: the time zone its times are in ("clock: Europe/Stockholm"), or the home\'s ("home: { clock: … }")',
     ]);
   });
@@ -79,5 +79,31 @@ automations:
     expect(read.from).toBe(2);
     expect(read.document!.automations.window!.rule.roles).toEqual({ battery: { label: 'Battery', capabilities: ['battery'] }, charger: { label: 'What charges it', capabilities: ['switch'] } });
     expect(writeConfig(read.document!)).not.toContain('description');
+  });
+
+  test('a setting is setting.low and a package’s function its id alone, as version 4 writes them — a quoted text kept as it is', () => {
+    const text = `kraftverk: 3
+automations:
+  window:
+    name: Window
+    clock: Europe/Stockholm
+    uses:
+      charger: plug
+      forecast: weather
+    when:
+      - becomes: charger.power > $low
+    only if: call acme.weather.sunny(forecast, day = "call $tomorrow") == "yes"
+    do:
+      - turn on: charger
+`;
+    const read = readConfig(text);
+    expect(read.from).toBe(3);
+    const rule = read.document!.automations.window!.rule;
+    expect(rule.when[0]).toEqual({ becomes: { compare: 'gt', left: { read: { role: 'charger', means: 'power' } }, right: { param: 'low' } } });
+    expect(rule.if).toEqual({
+      compare: 'eq',
+      left: { call: 'acme.weather.sunny', role: 'forecast', args: { day: { value: 'call $tomorrow' } } },
+      right: { value: 'yes' },
+    });
   });
 });

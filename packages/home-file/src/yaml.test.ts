@@ -9,7 +9,7 @@ import { readAutomationYaml, readConfig, readDeviceYaml, schemaLine, writeConfig
 */
 
 const EXAMPLE = `${schemaLine('http://192.0.2.1:8080/api/config/schema.json')}
-kraftverk: 3
+kraftverk: 4
 
 home:
   policy: { loadWatts: 50, reserveSoc: 20 }
@@ -83,7 +83,7 @@ describe('a configuration file', () => {
   test('read: devices, a secret by name, a link, automations in words', () => {
     const { document, problems, from } = readConfig(EXAMPLE);
     expect(problems).toEqual([]);
-    expect(from).toBe(3);
+    expect(from).toBe(4);
     expect(document!.home.policy).toEqual({ loadWatts: 50, reserveSoc: 20 });
     expect(document!.devices['smart-plug']!.connect[0]).toEqual({
       via: 'lan',
@@ -112,7 +112,7 @@ describe('a configuration file', () => {
   });
 
   test('every problem where it is: a missing field, inside an expression, a wrong key — all at once', () => {
-    const text = `kraftverk: 3
+    const text = `kraftverk: 4
 devices:
   Smart_Plug:
     type: tuya.zigbee-plug
@@ -139,8 +139,8 @@ automations:
 
   test('YAML that is not YAML, a missing version, and one written by a newer kraftverk', () => {
     expect(readConfig('devices: [').problems[0]).toMatchObject({ line: 1 });
-    expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 3" at its top');
-    expect(readConfig('kraftverk: 9').problems[0]).toMatchObject({ message: 'It was written by a newer kraftverk (version 9); this one reads up to version 3', line: 1, column: 12 });
+    expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 4" at its top');
+    expect(readConfig('kraftverk: 9').problems[0]).toMatchObject({ message: 'It was written by a newer kraftverk (version 9); this one reads up to version 4', line: 1, column: 12 });
   });
 });
 

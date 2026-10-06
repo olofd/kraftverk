@@ -3,6 +3,7 @@ import { capabilitySpec, enumLabel, isCapability, standardMeaning, type ConfigSc
 import type { RuleVocabulary } from './check.ts';
 import { WEEKDAYS, type Weekday } from './clock.ts';
 import { evaluateNow, measureNow, secondsNow, settledChoice, settledScope, shown } from './evaluate.ts';
+import { BUILTINS } from './kinds/builtins.ts';
 import { exprKind, type ExprOf } from './kinds/exprs.ts';
 import type { Say } from './kinds/spec.ts';
 import { branchesOf, stepSpec, type StepKind, type StepSay } from './kinds/steps.ts';
@@ -90,7 +91,11 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
   };
   /** The unit a reading is in, when it is one: a plain number beside it is in it too — "above 50 W", not "above 50". */
   const unitOf = (expr: Expr): string => {
-    if ('math' in expr) return unitOf(expr.left) || unitOf(expr.right);
+    if ('math' in expr) return expr.math === 'add' || expr.math === 'subtract' ? unitOf(expr.left) || unitOf(expr.right) : '';
+    if ('apply' in expr) return expr.args.map(unitOf).find(Boolean) ?? '';
+    if ('negate' in expr) return unitOf(expr.negate);
+    if ('if' in expr) return unitOf(expr.then) || unitOf(expr.else);
+    if ('either' in expr) return expr.either.map(unitOf).find(Boolean) ?? '';
     const standard = 'read' in expr ? standardMeaning(expr.read.means) : null;
     return standard?.type === 'number' && !standard.units ? (standard.unit ?? '') : '';
   };
@@ -125,8 +130,48 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
         const math = expr as ExprOf<'math'>;
         // A plain number beside a reading is in its unit: "Garage station’s charge plus 10 %".
         const in_ = unit || unitOf(math);
-        const [left, right] = [text(math.left, in_), text(math.right, in_)];
-        return math.math === 'add' ? `${left} plus ${right}` : math.math === 'subtract' ? `${left} minus ${right}` : `the ${math.math === 'min' ? 'lower' : 'higher'} of ${left} and ${right}`;
+        const [left, right] = math.math === 'add' || math.math === 'subtract' ? [text(math.left, in_), text(math.right, in_)] : [text(math.left), text(math.right)];
+        switch (math.math) {
+          case 'add':
+            return `${left} plus ${right}`;
+          case 'subtract':
+            return `${left} minus ${right}`;
+          case 'multiply': {
+            // A percentage of something is a share of it: "50 % of Garage station’s capacity".
+            const share = (side: Expr) => 'value' in side && side.unit === '%';
+            if (share(math.right)) return `${right} of ${left}`;
+            if (share(math.left)) return `${left} of ${right}`;
+            return `${left} times ${right}`;
+          }
+          case 'divide':
+            return `${left} divided by ${right}`;
+        }
+      }
+      case 'apply': {
+        const { apply: fn, args } = expr as ExprOf<'apply'>;
+        // A plain number beside the first is in its unit: "the lowest of Garage station’s charge and 80 %".
+        const in_ = unit || (args.map(unitOf).find(Boolean) ?? '');
+        return BUILTINS[fn].words(args.map((arg, index) => text(arg, index === 0 || BUILTINS[fn].units === 'one' ? in_ : '')));
+      }
+      case 'negate':
+        return `minus ${text((expr as ExprOf<'negate'>).negate, unit)}`;
+      case 'if': {
+        const { if: condition, then, else: otherwise } = expr as ExprOf<'if'>;
+        const in_ = unit || unitOf(expr);
+        return `${text(then, in_)} if ${text(condition)}, otherwise ${text(otherwise, in_)}`;
+      }
+      case 'either': {
+        const parts = (expr as ExprOf<'either'>).either;
+        const in_ = unit || unitOf(expr);
+        const said = parts.map((part) => text(part, in_));
+        return said.length === 2 ? `${said[0]} — or, when that is not known, ${said[1]}` : `the first known of ${said.slice(0, -1).join(', ')} and ${said.at(-1)}`;
+      }
+      case 'in': {
+        const { item, in: options } = expr as ExprOf<'in'>;
+        const in_ = unitOf(item);
+        const said = options.map((option) => text(option, in_));
+        const alternatives = said.length > 1 ? `${said.slice(0, -1).join(', ')} or ${said.at(-1)}` : (said[0] ?? 'nothing');
+        return `${text(item)} is ${alternatives}`;
       }
       case 'call': {
         const call = expr as ExprOf<'call'>;

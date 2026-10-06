@@ -120,9 +120,17 @@ describes.
     2000 W), and one of another is a problem (`50 °C` beside W). A number
     with no unit is in the unit of what it is beside;
   - `< <= > >= == !=`, joined with `and`, `or`, `not`, and parentheses;
+  - one of a list: `station.mode in ["eco", "boost"]`;
   - `time between 23:00 and 05:00` (across midnight when the end comes first);
-  - `+`, `-`, `min(a, b)`, `max(a, b)`;
-  - a package's function: `call open-meteo.weather.skyLooks(forecast, cloudMax = 40)`.
+  - `+ - * /` and `-x`: a product or quotient in the unit the two make — a
+    power for a time an energy (`charger.power * 2 h`), a percentage a share
+    of what it multiplies (`station.capacity * 50 %`);
+  - one value or the other, `station.charge < 20 % ? 2 kW : 500 W`, and the
+    first known, `outdoor.temperature ?? 10 °C`;
+  - the language's functions: `min(a, b, …)`, `max(…)`, `clamp(x, low, high)`,
+    `round(x)`, `round(x, digits)`, `floor(x)`, `ceil(x)`, `abs(x)`;
+  - a recipe's setting: `setting.low`;
+  - a package's function, by its id: `open-meteo.weather.skyLooks(forecast, cloudMax = 40)`.
 - **Lengths of time**: `5 s`, `2 min`, `1 h` — always with their unit: a
   bare `15` would be seconds to a wait and minutes to `every`, so it is
   refused.
@@ -257,6 +265,7 @@ nothing wrong — and write back the same.
 | 1 | The first |
 | 2 | Each standard meaning is one word: `station.battery.soc` is `station.charge`, `charger.power.draw` is `charger.power`, `meaning: battery.chargeLimit` is `meaning: chargeLimit` |
 | 3 | A role under `uses` has no `description`: what a recipe says for whoever fills a role stays with the recipe |
+| 4 | A setting is `setting.low`, not `$low`; a package's function is called by its id alone, without `call` |
 
 ## Importing
 

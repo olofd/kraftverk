@@ -37,10 +37,11 @@ const scope = (charge: number | null): RuleScope => ({
 });
 
 describe('arithmetic', () => {
-  test('adds, subtracts, and takes the lower or higher — unknown when either side is', () => {
-    expect([calculate('add', 40, 10), calculate('subtract', 40, 10), calculate('min', 40, 10), calculate('max', 40, 10)]).toEqual([50, 30, 10, 40]);
+  test('adds, subtracts, multiplies and divides — unknown when either side is, and by nothing', () => {
+    expect([calculate('add', 40, 10), calculate('subtract', 40, 10), calculate('multiply', 40, 10), calculate('divide', 40, 10)]).toEqual([50, 30, 400, 4]);
     expect(calculate('add', 40, null)).toBeNull();
-    expect(evaluateNow({ compare: 'lt', left: soc, right: { math: 'min', left: { value: 80 }, right: { math: 'add', left: { value: 20 }, right: { value: 10 } } } }, scope(25))).toBe(true);
+    expect(calculate('divide', 40, 0)).toBeNull();
+    expect(evaluateNow({ compare: 'lt', left: soc, right: { apply: 'min', args: [{ value: 80 }, { math: 'add', left: { value: 20 }, right: { value: 10 } }] } }, scope(25))).toBe(true);
     expect(evaluateNow({ math: 'add', left: soc, right: { value: 10 } }, scope(null))).toBeNull();
   });
 
@@ -51,13 +52,13 @@ describe('arithmetic', () => {
     expect(checkRule(below({ math: 'add', left: soc, right: { value: true } }), NO_FUNCTIONS)).toEqual(['then[0].command.args.on.right.right: expected a number, got a boolean']);
     // The sum is in its unit, and compared as that.
     expect(checkRule(rule({ compare: 'lt', left: draw, right: { math: 'add', left: soc, right: { value: 5 } } }), NO_FUNCTIONS)).toEqual(['then[0].command.args.on: compares a number in W with a number in %']);
-    expect(checkRule(below({ math: 'times' as never, left: { value: 1 }, right: { value: 2 } }), NO_FUNCTIONS)).toEqual(['then[0].command.args.on.right: "times" is not add, subtract, min or max']);
+    expect(checkRule(below({ math: 'times' as never, left: { value: 1 }, right: { value: 2 } }), NO_FUNCTIONS)).toEqual(['then[0].command.args.on.right: "times" is not +, -, * or /']);
   });
 
   test('reads as words, a plain number in the reading’s unit', () => {
     const lines = (on: Expr) => describeSteps(rule(on), {}, (role) => (role === 'battery' ? 'Garage station' : 'Scooter plug')).steps.map((line) => line.text);
-    expect(lines({ compare: 'lt', left: soc, right: { math: 'min', left: { value: 80 }, right: { math: 'add', left: soc, right: { value: 10 } } } })).toEqual([
-      'Turn Scooter plug on if Garage station’s charge is below the lower of 80 % and Garage station’s charge plus 10 %, off if not',
+    expect(lines({ compare: 'lt', left: soc, right: { apply: 'min', args: [{ value: 80 }, { math: 'add', left: soc, right: { value: 10 } }] } })).toEqual([
+      'Turn Scooter plug on if Garage station’s charge is below the lowest of 80 % and Garage station’s charge plus 10 %, off if not',
     ]);
   });
 

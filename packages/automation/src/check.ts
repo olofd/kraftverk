@@ -2,13 +2,14 @@ import { attributeMeaning, CAMEL_NAME, capabilitySpec, checkValue, isCapability,
 
 import { CLOCK_TIME, minutesOf, WEEKDAYS, type Weekday } from './clock.ts';
 import { secondsText } from './describe.ts';
+import { BUILTIN_ORDER, BUILTINS, isBuiltin } from './kinds/builtins.ts';
 import { expressionsIn } from './kinds/exprs.ts';
 import { fieldValue, type FieldSpec } from './kinds/spec.ts';
 import { branchesOf, STEP_KIND_ORDER, STEP_KINDS } from './kinds/steps.ts';
 import { TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './kinds/triggers.ts';
 import type { AutomationFunction } from './functions.ts';
 import { ruleExpressions, ruleUses } from './reads.ts';
-import { convert, convertible, isUnit, unitIn, type Unit } from '@kraftverk/device-sdk';
+import { convert, convertible, isUnit, product, quotient, unitIn, type Unit } from '@kraftverk/device-sdk';
 import { COMPARE_OPS, isAutomationRole, MATH_OPS, ORDERED_OPS, partRoles, RUN_FACTS, SEQUENCE_LIMITS, TRIGGER_ID, type Command, type Expr, type PartRole, type Rule, type Step, type WriteTarget } from './rule.ts';
 
 /*
@@ -99,6 +100,7 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
   for (const [role, spec] of Object.entries(roles)) {
     if (!CAMEL_NAME.test(role)) problems.push(`roles.${role}: a role is named in camelCase`);
     if (role === 'run') problems.push('roles.run: "run" is what the run knows of itself — name the role otherwise');
+    if (role === 'setting') problems.push('roles.setting: "setting" is how the rule names its settings — name the role otherwise');
     if (!spec.label?.trim()) problems.push(`roles.${role}: it has no label`);
     if (isAutomationRole(spec)) continue;
     const named = [...(spec.capabilities ?? []), ...(spec.oneOf ?? [])];
@@ -184,15 +186,85 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       return { type: 'boolean' };
     }
     if ('math' in expr) {
-      if (!MATH_OPS.includes(expr.math)) problems.push(`${where}: "${expr.math}" is not add, subtract, min or max`);
+      if (!MATH_OPS.includes(expr.math)) problems.push(`${where}: "${expr.math}" is not +, -, * or /`);
       const left = shape(expr.left, `${where}.left`, options);
       const right = shape(expr.right, `${where}.right`, options);
       for (const [side, got] of [['left', left], ['right', right]] as const) {
         if (!fits({ type: 'number', unit: null }, got)) problems.push(`${where}.${side}: expected a number, got ${said(got)}`);
       }
+      if (expr.math === 'multiply' || expr.math === 'divide') {
+        // The unit the two make (units.ts): a power for a time is an energy; one that makes none kraftverk knows is a mistake.
+        const unitOf = (side: Shape): Unit | null => (side.type === 'number' && side.unit ? side.unit : null);
+        if (left.type !== 'number' || right.type !== 'number' || left.unit === null || right.unit === null) return { type: 'number', unit: left.type === 'number' && right.type === 'number' && expr.math === 'multiply' ? (left.unit ?? right.unit) : null };
+        const made = expr.math === 'multiply' ? product(unitOf(left), unitOf(right)) : quotient(unitOf(left), unitOf(right));
+        if (!made) {
+          problems.push(`${where}: ${said(left)} ${expr.math === 'multiply' ? 'times' : 'divided by'} ${said(right)} makes no unit kraftverk knows`);
+          return { type: 'unknown' };
+        }
+        return { type: 'number', unit: made.unit ?? '' };
+      }
       const units = [left, right].flatMap((side) => (side.type === 'number' && side.unit !== null ? [side.unit] : []));
       if (units.length === 2 && !fits({ type: 'number', unit: units[0]! }, { type: 'number', unit: units[1]! })) problems.push(`${where}: ${units[0]} and ${units[1]} are not of one quantity`);
       return { type: 'number', unit: units[0] ?? null };
+    }
+    if ('apply' in expr) {
+      const spec = isBuiltin(expr.apply) ? BUILTINS[expr.apply] : null;
+      if (!spec) {
+        problems.push(`${where}: "${String(expr.apply)}" is not one of the language's functions: ${BUILTIN_ORDER.join(', ')}`);
+        return { type: 'unknown' };
+      }
+      const args = expr.args ?? [];
+      const { min, max } = spec.arity;
+      if (args.length < min || (max !== null && args.length > max)) {
+        problems.push(`${where}: ${spec.name} takes ${max === null ? `${min} or more` : min === max ? min : `${min} to ${max}`} ${max === 1 ? 'number' : 'numbers'}`);
+      }
+      const got = args.map((arg, index) => shape(arg, `${where}.args[${index}]`, options));
+      got.forEach((each, index) => {
+        if (!fits({ type: 'number', unit: null }, each)) problems.push(`${where}.args[${index}]: expected a number, got ${said(each)}`);
+      });
+      const first = got[0]?.type === 'number' ? got[0] : null;
+      // Its arguments in the first one's unit — or, round's digits, plain numbers.
+      got.slice(1).forEach((each, index) => {
+        if (each.type !== 'number') return;
+        if (spec.units === 'first' ? each.unit !== null && each.unit !== '' : first && !fits(first, each)) {
+          problems.push(`${where}.args[${index + 1}]: ${spec.units === 'first' ? 'a plain number' : `expected ${said(first!)}`}, got ${said(each)}`);
+        }
+      });
+      return { type: 'number', unit: first?.unit ?? null };
+    }
+    if ('negate' in expr) {
+      const got = shape(expr.negate, `${where}.negate`, options);
+      if (!fits({ type: 'number', unit: null }, got)) problems.push(`${where}.negate: expected a number, got ${said(got)}`);
+      return got.type === 'number' ? got : { type: 'unknown' };
+    }
+    if ('if' in expr) {
+      const condition = shape(expr.if, `${where}.if`, options);
+      if (!fits({ type: 'boolean' }, condition)) problems.push(`${where}.if: expected a condition, got ${said(condition)}`);
+      const [then, otherwise] = [shape(expr.then, `${where}.then`, options), shape(expr.else, `${where}.else`, options)];
+      if (!fits(then, otherwise)) problems.push(`${where}: one way ${said(then)}, the other ${said(otherwise)}`);
+      return then.type === 'unknown' ? otherwise : then;
+    }
+    if ('either' in expr) {
+      const parts = (expr.either ?? []).map((part, index) => shape(part, `${where}.either[${index}]`, options));
+      if (parts.length < 2) problems.push(`${where}: the first known of fewer than two is no choice`);
+      const known = parts.find((part) => part.type !== 'unknown') ?? { type: 'unknown' };
+      parts.forEach((part, index) => {
+        if (!fits(known, part)) problems.push(`${where}.either[${index}]: expected ${said(known)}, got ${said(part)}`);
+      });
+      return known;
+    }
+    if ('in' in expr) {
+      const item = shape(expr.item, `${where}.item`, options);
+      if (item.type === 'structure' || item.type === 'boolean') problems.push(`${where}.item: one of a list is a number or a text, not ${said(item)}`);
+      if (!(expr.in ?? []).length) problems.push(`${where}: one of nothing is never so`);
+      (expr.in ?? []).forEach((option, index) => {
+        const got = shape(option, `${where}.in[${index}]`, options);
+        if (!fits(item, got)) problems.push(`${where}.in[${index}]: expected ${said(item)}, got ${said(got)}`);
+        if (item.type === 'string' && item.options && 'value' in option && typeof option.value === 'string' && !item.options.includes(option.value)) {
+          problems.push(`${where}.in[${index}]: "${option.value}" is not one of ${item.options.join(', ')}`);
+        }
+      });
+      return { type: 'boolean' };
     }
     if ('within' in expr) {
       const ends = [

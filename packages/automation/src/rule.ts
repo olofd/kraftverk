@@ -1,5 +1,7 @@
 import type { CapabilityName, CapabilityNeed, ConfigSchema, Unit, Value } from '@kraftverk/device-sdk';
 
+import type { BuiltinName } from './kinds/builtins.ts';
+
 import type { Weekday } from './clock.ts';
 
 /**
@@ -37,19 +39,30 @@ export type Expr =
    * its quantity; with none, in the unit of what it is beside.
    */
   | { value: Value; unit?: Unit }
-  /** One of the rule's settings. */
+  /** One of the rule's settings: `setting.low`. */
   | { param: string }
   /** What the part filling a role reports now, by meaning: `charge`, or a type's own `acme.minutesToFull`. */
   | { read: { role: string; means: string } }
-  /** A function a package contributes, over the part filling a role. */
+  /** A function a package contributes, over the part filling a role: `acme.weather.sunny(forecast, day = "tomorrow")`. */
   | { call: string; role: string; args?: Readonly<Record<string, Expr>> }
+  /** One of the language's own functions (`BUILTINS`, kinds/builtins.ts): `round(x)`, `clamp(x, 0 W, 2 kW)`, `max(a, b, c)`. */
+  | { apply: BuiltinName; args: readonly Expr[] }
   | { compare: CompareOp; left: Expr; right: Expr }
   /**
-   * A number from two: their sum or difference, or the lower or higher of
-   * them — in one unit, as a comparison is: "the charge limit, less 5 %",
-   * "the lower of the forecast's hours and 4". Unknown when either is.
+   * A number from two: their sum, difference, product or quotient. A sum is
+   * in one unit, as a comparison is — "the charge limit, less 5 %"; a
+   * product or quotient makes the unit the two make (units.ts): a power for
+   * a time is an energy, a percentage a share. Unknown when either is.
    */
   | { math: MathOp; left: Expr; right: Expr }
+  /** A number's opposite: `-x`. */
+  | { negate: Expr }
+  /** One value or another, as a condition is: `c ? a : b`. Unknown when the condition is. */
+  | { if: Expr; then: Expr; else: Expr }
+  /** The first of these that is known: `x ?? fallback` — a reading gone quiet, a default in its place. */
+  | { either: readonly Expr[] }
+  /** Whether a value is one of these: `station.mode in ["eco", "boost"]`. */
+  | { item: Expr; in: readonly Expr[] }
   | { all: readonly Expr[] }
   | { any: readonly Expr[] }
   | { not: Expr }
@@ -90,14 +103,23 @@ export const RUN_FACTS = ['trigger'] as const;
 export type RunFact = (typeof RUN_FACTS)[number];
 
 /** What `math` does with its two numbers. */
-export type MathOp = 'add' | 'subtract' | 'min' | 'max';
+export type MathOp = 'add' | 'subtract' | 'multiply' | 'divide';
 
-export const MATH_OPS: readonly MathOp[] = ['add', 'subtract', 'min', 'max'];
+export const MATH_OPS: readonly MathOp[] = ['add', 'subtract', 'multiply', 'divide'];
 
-/** Two numbers made one; unknown unless both are numbers. */
+/** Two numbers made one; unknown unless both are numbers — and a quotient by nothing is not one. */
 export const calculate = (op: MathOp, left: Value, right: Value): Value => {
   if (typeof left !== 'number' || typeof right !== 'number') return null;
-  return op === 'add' ? left + right : op === 'subtract' ? left - right : op === 'min' ? Math.min(left, right) : Math.max(left, right);
+  switch (op) {
+    case 'add':
+      return left + right;
+    case 'subtract':
+      return left - right;
+    case 'multiply':
+      return left * right;
+    case 'divide':
+      return right === 0 ? null : left / right;
+  }
 };
 
 /**

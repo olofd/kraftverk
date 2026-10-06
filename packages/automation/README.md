@@ -101,7 +101,7 @@ A rule has:
 | Part | Text | What it is |
 |---|---|---|
 | `roles` | `uses:` | What it works on, by role: a part of a device that offers some capabilities, or another automation. Filled when the rule becomes an automation. |
-| `params` | — | A recipe's settings, read as `$name`. An automation of its own has them written into its blocks (`inlineParams`). |
+| `params` | — | A recipe's settings, read as `setting.name`. An automation of its own has them written into its blocks (`inlineParams`). |
 | `when` | `when:` | What starts a run: any one trigger — each with steps of its own, if it has them (`do:` under it). Empty: it runs only when a person plays it or another automation starts it. |
 | `if` | `only if:` | Must be true for a run to act. Unknown is not true: nothing is done, and the run says why. |
 | `then` | `do:` | What it does, step by step — when what started it has no steps of its own. |
@@ -195,11 +195,16 @@ charge is below 15 %".
 | Data | Text | Is |
 |---|---|---|
 | `value` | `50 W`, `15 %`, `07:00`, `"text"`, `true` | a value; a number keeps the unit it is written in (`{ value: 50, unit: 'W' }`) — with none, it is in the unit of what it is compared with |
-| `param` | `$cloudMax` | one of a recipe's settings |
+| `param` | `setting.cloudMax` | one of a recipe's settings |
 | `read` | `charger.power` | what the part filling a role reports now, by meaning (`charge`) or by its type's own (`acme.minutesToFull`) |
-| `call` | `call open-meteo.weather.skyLooks(forecast, cloudMax = 40)` | a function a package contributes, over the part filling a role |
+| `call` | `acme.weather.sunny(forecast, day = "tomorrow")` | a function a package contributes, over the part filling a role: its whole id, then the role it reads and its arguments by name |
+| `apply` | `min(a, b)`, `clamp(x, 0 W, 2 kW)`, `round(x, 1)` | one of the language's own functions (`src/kinds/builtins.ts`: min, max, clamp, round, floor, ceil, abs) — numbers in, a number in the first one's unit out |
 | `compare` | `a > b` | a comparison (below) |
-| `math` | `a + b`, `min(a, b)` | a number from two (below), in one unit |
+| `in` | `station.mode in ["eco", "boost"]` | whether a value is one of a list (`item` and `in` in data) |
+| `math` | `a + b`, `station.capacity * 50 %`, `charger.power * 2 h` | a number from two (below) |
+| `negate` | `-meter.power` | a number's opposite |
+| `if` | `price.priceRank <= 4 ? 2 kW : 500 W` | one value or the other, as a condition holds; unknown when it cannot be told |
+| `either` | `outdoor.temperature ?? 10 °C` | the first of its values that is known |
 | `all` | `a and b` | all true |
 | `any` | `a or b` | any true |
 | `not` | `not a` | not true |
@@ -218,12 +223,20 @@ Comparisons (`compare`):
 | `eq` | `==` |
 | `ne` | `!=` |
 
-Arithmetic (`math`): `add` `+`, `subtract` `-`, `min` `min( , )`, `max`
-`max( , )`. Unknown when either side is.
+Arithmetic (`math`): `add` ` + `, `subtract` ` - `, `multiply` ` * `,
+`divide` ` / `. Unknown when either side is, and a quotient by nothing. A
+sum is in one unit; a product or quotient in the unit the two make
+(`product`, `quotient` in units.ts): a power for a time is an energy
+(`charger.power * 2 h`), an energy over a time a power, a percentage a share
+of what it multiplies (`station.capacity * 50 %`), two of one dimension
+divided a plain number. Any other pair makes no unit kraftverk knows, and
+is a problem before it runs.
 
-Precedence, loosest first: `or`, `and`, `not`, a comparison, `+ -`, then a
-value, a reading, `role reachable`, `run.trigger`, `time between … and …`, `min( , )`,
-`max( , )`, `call …`, `$setting`, or parentheses.
+Precedence, loosest first: `c ? a : b`, `a ?? b`, `or`, `and`, `not`, a
+comparison or `in [ … ]`, `+ -`, `* /`, `-x`, then a value, a reading,
+`role reachable`, `run.trigger`, `setting.name`, `time between … and …`, one
+of the language's functions — `min(…)` — or a package's — `acme.weather.sunny(…)`
+— or parentheses.
 
 **Unknown.** A reading a device has not given, a part that cannot be reached,
 a function that cannot tell: unknown, not false. A comparison with an unknown

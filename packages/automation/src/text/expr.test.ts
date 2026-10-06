@@ -31,18 +31,18 @@ describe('reading a condition', () => {
     expect(parse('not (a reachable and b reachable)')).toEqual({ not: { all: [{ reachable: 'a' }, { reachable: 'b' }] } });
   });
 
-  test('time of day, a window across midnight, sums, the lower of two, a setting, a function', () => {
+  test('time of day, a window across midnight, sums, the lowest of two, a setting, a function', () => {
     expect(parse('time between 23:00 and 05:00')).toEqual({ within: { from: { value: '23:00' }, to: { value: '05:00' } } });
     expect(parse('station.chargeLimit - 5 %')).toEqual({ math: 'subtract', left: read('station', 'chargeLimit'), right: { value: 5, unit: '%' } });
-    expect(parse('min(forecast.hours, 4) >= $hours')).toEqual({ compare: 'ge', left: { math: 'min', left: read('forecast', 'hours'), right: { value: 4 } }, right: { param: 'hours' } });
-    expect(parse('call open-meteo.weather.skyLooks(forecast, cloudMax = 40) == "sunny"')).toEqual({
+    expect(parse('min(forecast.hours, 4) >= setting.hours')).toEqual({ compare: 'ge', left: { apply: 'min', args: [read('forecast', 'hours'), { value: 4 }] }, right: { param: 'hours' } });
+    expect(parse('open-meteo.weather.skyLooks(forecast, cloudMax = 40) == "sunny"')).toEqual({
       compare: 'eq',
       left: { call: 'open-meteo.weather.skyLooks', role: 'forecast', args: { cloudMax: { value: 40 } } },
       right: { value: 'sunny' },
     });
   });
 
-  test('"30 min" is minutes; "min(" the lower of two', () => {
+  test('"30 min" is minutes; "min(" the lowest of some', () => {
     const parsed = parseExpr('station.time.toFull < 30 min');
     expect(parsed.ok && parsed.expr).toEqual({ compare: 'lt', left: read('station', 'time.toFull'), right: { value: 30, unit: 'min' } });
   });
@@ -70,7 +70,7 @@ describe('writing it back', () => {
     { not: { compare: 'lt', left: read('a', 'b'), right: { value: -3 } } },
     { math: 'subtract', left: read('a', 'b'), right: { math: 'subtract', left: { value: 1 }, right: { value: 2 } } },
     { math: 'add', left: { math: 'add', left: read('a', 'b'), right: { value: 1 } }, right: { value: 2 } },
-    { math: 'max', left: read('a', 'b'), right: { compare: 'gt', left: read('c', 'd'), right: { value: 0 } } },
+    { apply: 'max', args: [read('a', 'b'), { compare: 'gt', left: read('c', 'd'), right: { value: 0 } }] },
     { within: { from: { value: '22:00' }, to: { param: 'until' } } },
     { call: 'test.weather.sky', role: 'forecast' },
     { compare: 'eq', left: read('plug', 'on'), right: { value: true } },

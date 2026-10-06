@@ -88,8 +88,8 @@ describe('the configuration kept beside the database', () => {
     const folder = join(dir, 'copies');
     mkdirSync(folder, { recursive: true });
     const kept = join(folder, 'kraftverk.yaml');
-    for (let n = 0; n < 7; n++) writeFileSync(join(folder, `kraftverk.before-2026-01-0${n + 1}T00-00-00Z.yaml`), 'kraftverk: 3\n');
-    writeFileSync(kept, 'kraftverk: 3\n# the one restored from\n');
+    for (let n = 0; n < 7; n++) writeFileSync(join(folder, `kraftverk.before-2026-01-0${n + 1}T00-00-00Z.yaml`), 'kraftverk: 4\n');
+    writeFileSync(kept, 'kraftverk: 4\n# the one restored from\n');
     const heard: string[] = [];
     const planned: string[] = [];
     const restoring = new ConfigSnapshot(
@@ -107,7 +107,7 @@ describe('the configuration kept beside the database', () => {
       kept
     );
     const restored = (await restoring.restore())!;
-    expect(heard).toEqual(['kraftverk: 3\n# the one restored from\n']);
+    expect(heard).toEqual(['kraftverk: 4\n# the one restored from\n']);
     expect(restored.from.startsWith(join(folder, 'kraftverk.before-'))).toBe(true);
     // What it could not do alone is planned again from that copy.
     await restoring.planAgain('merge', 'olof');
@@ -121,7 +121,7 @@ describe('the configuration kept beside the database', () => {
     const folder = join(dir, 'unfinished');
     mkdirSync(folder, { recursive: true });
     const kept = join(folder, 'kraftverk.yaml');
-    const home = 'kraftverk: 3\n# the home to restore\n';
+    const home = 'kraftverk: 4\n# the home to restore\n';
     writeFileSync(kept, home);
     let fails = true;
     let writes = 0;
@@ -130,7 +130,7 @@ describe('the configuration kept beside the database', () => {
         {
           kept: async () => {
             writes += 1;
-            return 'kraftverk: 3\n# an empty home\n';
+            return 'kraftverk: 4\n# an empty home\n';
           },
           restore: async (_, from) => {
             if (fails) throw new Error('A value this version does not know');
@@ -150,7 +150,7 @@ describe('the configuration kept beside the database', () => {
     fails = false;
     await snapshotOf().begin(false);
     expect(writes).toBe(1);
-    expect(readFileSync(kept, 'utf8')).toBe('kraftverk: 3\n# an empty home\n');
+    expect(readFileSync(kept, 'utf8')).toBe('kraftverk: 4\n# an empty home\n');
     // Finished: the start after that does not restore again.
     fails = true;
     await snapshotOf().begin(false);

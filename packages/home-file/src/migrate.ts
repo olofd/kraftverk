@@ -11,13 +11,39 @@
 */
 
 /** The version this kraftverk writes. */
-export const CURRENT_VERSION = 3;
+export const CURRENT_VERSION = 4;
 
 /** Each version's document, as data, made into the next version's. */
 export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unknown>) => Record<string, unknown>>> = {
   1: (document) => ({ ...document, automations: renamedMeanings(document.automations, MEANINGS_1_TO_2) }),
   2: (document) => ({ ...document, automations: withoutRoleDescriptions(document.automations) }),
+  3: (document) => ({ ...document, automations: inTextsOf(document.automations, plainerExpressions) }),
 };
+
+/**
+ * Version 4 writes a setting as `setting.low`, not `$low`, and a package's
+ * function by its id alone, `acme.weather.sunny(forecast)`, not
+ * `call acme.weather.sunny(forecast)` — in an expression's text, outside its
+ * quoted texts, which are kept as they are.
+ */
+function plainerExpressions(text: string): string {
+  return text
+    .split(/("(?:[^"\\]|\\.)*")/)
+    .map((part, index) =>
+      index % 2
+        ? part
+        : part.replace(/\$([A-Za-z_][A-Za-z0-9_-]*)/g, 'setting.$1').replace(/\bcall\s+(?=[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)+\s*\()/g, '')
+    )
+    .join('');
+}
+
+/** Every text within the automations, changed: what an expression is written in. */
+function inTextsOf(value: unknown, change: (text: string) => string): unknown {
+  if (typeof value === 'string') return change(value);
+  if (Array.isArray(value)) return value.map((each) => inTextsOf(each, change));
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([name, each]) => [name, inTextsOf(each, change)]));
+  return value;
+}
 
 /**
  * Version 3 keeps no description on an automation's roles: what a recipe

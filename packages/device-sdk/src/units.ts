@@ -130,6 +130,55 @@ export function convert(value: number, from: Unit, to: Unit): number | null {
 }
 
 /**
+ * What two numbers make, multiplied or divided: the unit the result is in —
+ * null, a plain number — and what the plain product or quotient of the two
+ * numbers, each in its own unit, is multiplied by to be in it.
+ */
+export type Combined = { unit: Unit | null; factor: number };
+
+
+/** Units whose zero is not nothing — degrees Celsius, Fahrenheit — are added and compared, never multiplied. */
+const scales = (unit: Unit): boolean => unitSpec(unit).offset === undefined;
+
+/**
+ * Two numbers multiplied: a plain number keeps the other's unit; a
+ * percentage is a share of what it multiplies (50 % of 2 kWh is 1 kWh); a
+ * power for a time is an energy (2 kW for 2 h is 4000 Wh). Anything else
+ * makes no unit kraftverk knows: null.
+ */
+export function product(a: Unit | null, b: Unit | null): Combined | null {
+  if (a === null || b === null) {
+    const unit = a ?? b;
+    return unit === null || scales(unit) ? { unit, factor: 1 } : null;
+  }
+  if (a === '%' || b === '%') {
+    const other = a === '%' ? b : a;
+    return scales(other) ? { unit: other, factor: 0.01 } : null;
+  }
+  const [power, time] = unitSpec(a).dimension === 'power' ? [a, b] : [b, a];
+  if (unitSpec(power).dimension === 'power' && unitSpec(time).dimension === 'time') return { unit: 'Wh', factor: (unitSpec(power).factor * unitSpec(time).factor) / 3_600 };
+  return null;
+}
+
+/**
+ * One number divided by another: by a plain number, the same unit; two of
+ * one dimension, a plain number (2 kW / 500 W is 4); by a percentage, the
+ * whole of which it is that share; an energy by a time, a power; an energy
+ * by a power, a time. Anything else makes no unit kraftverk knows: null.
+ */
+export function quotient(a: Unit | null, b: Unit | null): Combined | null {
+  if (b === null) return a === null || scales(a) ? { unit: a, factor: 1 } : null;
+  if (a === null) return null;
+  if (!scales(a) || !scales(b)) return null;
+  if (b === '%') return { unit: a, factor: 100 };
+  const [top, bottom] = [unitSpec(a), unitSpec(b)];
+  if (top.dimension === bottom.dimension) return { unit: null, factor: top.factor / bottom.factor };
+  if (top.dimension === 'energy' && bottom.dimension === 'time') return { unit: 'W', factor: (top.factor * 3_600) / bottom.factor };
+  if (top.dimension === 'energy' && bottom.dimension === 'power') return { unit: 's', factor: (top.factor * 3_600) / bottom.factor };
+  return null;
+}
+
+/**
  * A length of time in the largest unit that says it whole — 120 s is 2 min,
  * 90 s stays 90 s — as a setting kept in seconds is written into a rule.
  */
