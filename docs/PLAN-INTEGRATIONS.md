@@ -33,7 +33,14 @@ here is built yet.
 - **Home Assistant's integrations come in two ways:** ported to TypeScript,
   for the ones that matter (a recipe and a map, §8), and run as they are,
   in a Home Assistant beside kraftverk, through a bridge integration (§9).
-  Running their Python inside kraftverk is ruled out, with reasons.
+  Running their Python inside kraftverk is ruled out, with reasons. The
+  bridge to Home Assistant is **not** part of the first work: kraftverk is
+  built as its own thing first.
+- **The order** (§12): what kraftverk already has is moved onto the model
+  first — the packages become integrations, NIU gets its account, the Tuya
+  Zigbee gateway becomes a bridge, signing in again and the "needs you" list
+  work for them. Then discovery and the opened lists; then the first new
+  integrations, iCloud and Apple TV.
 - **Better than Home Assistant** where it counts: typed descriptions, no
   integration code doing its own I/O, every physical act through the
   gateway, a simulator and recorded fixtures for every integration, a
@@ -410,7 +417,7 @@ Matter".
 **Several types, one integration.** `tuya` holds `tuya.plug`,
 `tuya.zigbee-plug` and `tuya.gateway`; `niu` holds `niu.account` and
 `niu.scooter` with the UQi GT as a profile; `aferiy` holds `aferiy.p280`.
-An integration may refine another's type (step 30's `refines`), so `atorch`
+An integration may refine another's type (ARCHITECTURE.md step 30's `refines`), so `atorch`
 stays an integration of its own that refines `tuya.plug`.
 
 **The code's entry** exports `defineIntegration({ types, functions,
@@ -637,7 +644,7 @@ the app holds only what is near it (Bluetooth) and what runs in a browser.
 | **What** | Integrations in this repository | An integration from outside it | Home Assistant's own integrations, in Home Assistant |
 | **Isolation** | None; reviewed code | Its own process, no built-ins, channels by message, limits on memory and time | A container |
 | **Speaks** | The SDK, directly | The SDK, over messages | Home Assistant's WebSocket API, through the `home-assistant` integration |
-| **When** | Today | Phase I7 | Phase I8 |
+| **When** | Today | Later | Later |
 
 **Contained** is possible because of the seam kraftverk already has: a
 type's code does no I/O of its own. It is handed channels, a clock, a store
@@ -715,7 +722,7 @@ TypeScript, as a kraftverk integration, in one sitting.
 | `number` / `select` / `text` (config) | settings, written through the gateway |
 | `event` entities, bus events | declared events |
 | actions (`services.yaml`) | capability commands; with a response: queries |
-| `diagnostics.py` | the diagnostics bundle (step 32), redaction declared by `secret` fields |
+| `diagnostics.py` | the diagnostics bundle (ARCHITECTURE.md step 32), redaction declared by `secret` fields |
 | `strings.json` | words in the type; translations later |
 | `quality_scale.yaml` | measured (§10) |
 | tests with `MockConfigEntry` and mocks | simulator + recorded fixtures replayed |
@@ -772,8 +779,8 @@ copyright; the README says so where it applies.
   locks someone's phone).
 - **The interval:** shorter while a device moves away from home, longer at
   home or on low battery — ported from Home Assistant's `account.py`.
-- **What it needs first:** bridges (I2), `ask` and kept tokens (I3), the
-  `location` capability and a position quantity (I5). Presence in
+- **What it needs first:** bridges (steps 3-5), `ask` and kept tokens (steps 9-10), the
+  `location` capability and a position quantity (step 14). Presence in
   automations — "when Alex's phone gets home" — follows from the position and
   the home's own location, already kept: `distance(phone.position, home) <
   200 m`. Places beyond the home wait on the owner's open decision about
@@ -786,13 +793,13 @@ copyright; the README says so where it applies.
   then Ed25519/X25519 and ChaCha20-Poly1305). `node-appletv-remote` (MIT,
   TypeScript, no native code) already speaks these; it is vendored behind a
   protocol package rather than ported line by line from pyatv.
-- **Transport:** `lan` with TCP and mDNS discovery (I4).
+- **Transport:** `lan` with TCP and mDNS discovery (step 13).
 - **Type `apple.tv`:** hardware; discovered by `_companion-link._tcp` and
   `_airplay._tcp` with `model=AppleTV*`; capabilities `onOff`,
   `mediaPlayback`, `contentLauncher`, `keypadInput`, `audioOutput`; pairing
   credentials per protocol as connection secrets; push updates.
-- **What it needs first:** `ask` (I3), mDNS (I4), the media capabilities
-  (I5).
+- **What it needs first:** `ask` (step 9), mDNS (step 13), the media capabilities
+  (step 20).
 
 ### 8.6 A first port to prove the recipe
 
@@ -904,28 +911,195 @@ Written down now so the first steps do not close the door:
 
 ## 12. The order of work
 
-Each phase is one or more green steps, pushed, as the automation language
-was. The database resets where the schema changes; the configuration file
-gains a version where its shape does, with a migration and a kept fixture.
+Three rules shape it:
 
-| Phase | What | Done when |
-|---|---|---|
-| **I1 · Integrations as packages** | `packages/integrations/<id>` replaces `devices/` and `services/`; the manifest; several types per integration; brands; `gen:catalogue`; the architecture check's areas renamed; ARCHITECTURE.md, DATA-MODEL.md and ADDING-A-DEVICE.md (becoming ADDING-AN-INTEGRATION.md) changed with it; the integrations page | Every existing package is an integration; the integrations page lists them |
-| **I2 · Accounts and bridges** | `kind: 'account'`; `BridgeSpec` and `BridgeSession`; connections `through` a bridge; members as sightings; `sighting_ignored`; NIU becomes `niu.account` + `niu.scooter` (one password); the Tuya gateway a bridge (no more `ip#cid`); configuration file version 5 with `through:`, migrating NIU and Tuya Zigbee entries | Two NIU scooters share one account; a Zigbee plug is reached through its gateway |
-| **I3 · Setup and health that need a person** | `ask` and `open` results; flows with a purpose (`sign-in`, `change`); kept secrets; the core's health states and backoff; `NeedsSignIn` / `NotReachable`; the "needs you" list | A changed NIU password is fixed from "needs you" without removing anything |
-| **I4 · Discovery** | mDNS and SSDP in `lan`; matchers in manifests; matching from the catalogue; gathering by host; "found" items | A device on the LAN that announces itself is offered without being searched for |
-| **I5 · The lists opened, code loaded on demand** | Categories grown; quantities as records (position first); capabilities: `location`, `mediaPlayback`, `contentLauncher`, `keypadInput`, `audioOutput`, `notify`; lazy registries; `updates` declared and checked | The add screen offers a type whose code is not yet loaded |
-| **I6 · The first ports** | A small polling integration (the recipe); then iCloud; then Apple TV | Family devices' positions in kraftverk; an Apple TV paused from an automation |
-| **I7 · Contained integrations, then uploads** | `IntegrationSandbox`; an integration run in its own process; crash and hang handling; then `integration_package`, upload, namespaces, contract versions | A deliberately crashing integration does not take the hub down; an uploaded one runs contained |
-| **I8 · Home Assistant beside kraftverk** | The `home-assistant` integration; entities mapped; commands through the gateway; Home Assistant's flows drawn in kraftverk; its catalogue "through Home Assistant" | An integration kraftverk has not ported is added from kraftverk's add screen and switched by an automation |
+- **Kraftverk on its own first.** The bridge to Home Assistant (§9) is not
+  part of this work. Kraftverk is built to be a hub that has integrations,
+  not a front end to another hub.
+- **What kraftverk has comes first.** Every existing package is moved onto
+  the model — integrations, NIU's account, the Tuya gateway as a bridge,
+  signing in again, "needs you" — before anything new is added. The new
+  integrations then arrive on a model already proven by the old ones.
+- **Each step is green and pushed**, as the automation language's were, and
+  its documents are made true in the same step (ARCHITECTURE.md,
+  DATA-MODEL.md, CONFIG.md, the package READMEs). The database resets where
+  the schema changes; the configuration file gains a version where its shape
+  changes, with a migration and a kept fixture, so the home kept on the
+  server comes back after each.
 
-I1 to I3 come first because every port that signs in needs them. The owner
-can point at a Home Assistant integration from I1 on: one without an account
-ports straight away; one with an account waits for I2–I3.
+### Part A — What kraftverk has, on the model
+
+**Step 1 · Integrations as packages.**
+`defineIntegration` and the manifest's type in the SDK. `packages/integrations/`
+holds six integrations made from today's eight packages: `aferiy`
+(`aferiy.p280`), `tuya` (`tuya.plug`, `tuya.zigbee-plug`), `atorch`
+(`atorch.s1w`, on Tuya's socket as today), `niu` (`niu.scooter`,
+`niu.uqi-gt`), `open-meteo` and `elprisetjustnu`. The server's discovery
+(`server/src/platform/packages.ts`) and the generated lists read the
+manifest; the architecture check's device area becomes the integration
+area; `new-package` makes an integration; a check holds the manifest's types
+to the code's. ADDING-A-DEVICE.md becomes ADDING-AN-INTEGRATION.md. Type ids,
+protocols, transports, the database and the file do not change.
+*Done when* the same devices run as before and nothing is left under
+`packages/devices` or `packages/services`.
+
+**Step 2 · The catalogue and the integrations page.**
+Brands as records; `gen:catalogue` in place of `gen:devices`, one catalogue
+for the server and the app; `GET /api/integrations`; an *Integrations* page
+in Settings — each integration, its types, its reach, the devices using it,
+its README as its page.
+*Done when* the page lists the six, each with the devices that use it.
+
+**Step 3 · Bridges in the contract and the database.**
+`kind: 'account'`; `BridgeSpec`, `BridgeSession` and `Member`; a connection
+method reached by a transport or through a bridge, the compiler holding
+every place that opens one to both; `device_connection.through` with its
+checks; `sighting_ignored`; where a member is held worked out from where its
+bridge is (`packages/store/src/holding.ts`). A bridge type's simulator brings
+simulated members, as the contract requires a simulator of every type.
+*Done when*, in the hub's tests, a simulated bridge's two members open
+through it, go offline with it, and follow it to another node.
+
+**Step 4 · Bridges in the app and the API.**
+Members not yet added are offered on the add screen ("Found through …");
+adding one makes a connection through its bridge; one can be ignored; Home
+gains an *Accounts* section; an account's page lists its members; a member's
+page says how it is reached; removing a bridge says what becomes of its
+members. The file gains `through:` on a connection: version 5, migrated from
+4 (no entry changes), with a fixture.
+*Done when* a simulated account and its members are added end to end, in the
+app's tests on the fast clock.
+
+**Step 5 · NIU on an account.**
+`niu.account`: kind account, a bridge; the account and password asked once;
+its session signs in once, lists the scooters as members and fetches each
+one's state. `niu.scooter` and `niu.uqi-gt` are reached through it. The
+protocol splits into signing in and listing, which the account speaks, and
+a scooter's state and commands, which its members speak. The file goes to
+version 6: a scooter that carries its own account becomes an account entry —
+one per distinct account — and the scooter through it.
+*Done when* two scooters on one account sign in once and keep one password,
+and the configuration kept on the server comes back as an account with its
+scooter.
+
+**Step 6 · The Tuya gateway as a bridge.**
+`tuya.gateway`: hardware, a bridge, reached by `tuya-local` over `lan` with
+the gateway's own key; one connection to the gateway for all its Zigbee
+plugs; its members are the sub-devices it reports, by their Zigbee address.
+`tuya.zigbee-plug` is reached through it, and the `ip#cid` address goes. The
+file goes to version 7: a Zigbee plug entry becomes a gateway entry — one per
+gateway — and the plug through it. Tuya's Smart Life sign-in stays what it is:
+used once, at setup, to fetch a key, and never kept (D8).
+*Done when* two Zigbee plugs behind one gateway share one connection, and no
+address in the code or the file holds two things.
+
+**Step 7 · Health the core owns.**
+`NeedsSignIn` and `NotReachable({ retryAfter })` in the SDK; the states
+`opening`, `ready`, `retrying`, `needs-person`, `failed` and `paused`; backoff
+in the holder, from 15 s to 5 min with jitter; a member takes its bridge's
+state, and says why. A device can be paused by its owner without being
+removed (`device.paused_at`). NIU says `NeedsSignIn` when its password is
+refused and `NotReachable` when it is rate-limited; Tuya says `NotReachable`.
+*Done when* a refused NIU password shows "needs you to sign in" on the
+account and on its scooters, and nothing retries it in a loop.
+
+**Step 8 · The "needs you" list.**
+One list from the hub: connections that need a person, and members of a
+bridge not yet added. Served by the API, shown on Home with a count, each
+item opening what fixes it.
+*Done when* a refused NIU password and a new scooter on the account both
+appear in it, each with its button.
+
+**Step 9 · Setup that asks again, and runs again.**
+Actions that answer `ask`, with what the next turn needs (`carry`) kept by
+the server; flows with a purpose — `add`, `sign-in` or `change` — run
+against a connection already saved, refusing a different identity; the app
+draws an ask as a form inside its step. NIU signs in again from "needs
+you"; a Tuya plug paired again in the vendor's app, whose key has changed,
+fetches its new key the same way.
+*Done when* a changed NIU password is fixed without removing anything, and a
+re-paired Tuya plug gets its new key the same way.
+
+**Step 10 · Secrets a session keeps.**
+Fields a protocol declares `kept: 'session'`; `secrets.set` on the open
+connection; `connection_secret.source` and `written_at`; carried sealed in the
+file. NIU keeps its sign-in token for as long as NIU honours it.
+*Done when* restarting the server does not make NIU sign in again.
+
+**Step 11 · Quality measured, updates declared.**
+`updates` (push, poll, both) in the manifest, checked against the code;
+`check:integrations` runs the checklist (§10) over every integration and
+writes its level into its README; `SupportLevel` is computed from it. The
+six are brought up to what they can reach.
+*Done when* every integration has a measured level, and the add screen
+states how far each reaches and how it updates.
+
+### Part B — Ready for new integrations
+
+**Step 12 · Discovery by declaration.**
+Sightings carry typed facts; manifests declare matchers, compiled into the
+catalogue; the hub matches sightings without loading an integration, and
+gathers one device's many announcements by host; a found device is a "needs
+you" item until added or ignored. Tuya's own broadcast discovery moves onto
+it.
+*Done when* a Tuya plug on the network is offered as found without anyone
+opening the add screen.
+
+**Step 13 · mDNS and SSDP.**
+An mDNS browser and an SSDP listener in the `lan` transport, on Bun, checked
+in the container on the server — host networking or a reflector, decided
+then.
+*Done when* a device that announces itself by mDNS is found.
+
+**Step 14 · The lists opened.**
+Categories grown toward Home Assistant's breadth; quantities as records, with
+position the first new one; the `location` capability; `distance` in the
+automation language, measured from the home's location.
+
+**Step 15 · Code loaded on demand.**
+Lazy registries in the server, dynamic imports in the app.
+*Done when* the server starts without importing an integration no device
+uses.
+
+**Step 16 · The porting guide, and a first port.**
+`docs/PORTING-FROM-HOME-ASSISTANT.md`, a current document: §8's map, recipe
+and licences, kept true. Then a small integration the owner has (D7), ported
+by it, to prove it.
+
+### Part C — The first new integrations
+
+**Step 17 · iCloud's protocol.** SRP sign-in, two-factor by `ask`, the trust
+token kept, Find My with the family's devices; tested against recorded
+exchanges with made-up data.
+
+**Step 18 · iCloud's account and devices.** `icloud.account` as a bridge,
+`apple.device` as its members: position, battery, play a sound, lost mode
+(consequential), and the interval that shortens while someone moves.
+*Done when* the family's devices are on their pages, and an automation
+starts when a phone gets home.
+
+**Step 19 · Apple TV's protocol and pairing.** The maintained library behind a
+protocol package; pairing by `ask`, protocol by protocol; its credentials
+kept.
+
+**Step 20 · Apple TV as a device.** Found by mDNS; on and off,
+playback, apps, the remote's keys, volume; updates pushed.
+*Done when* an automation pauses an Apple TV, through the gateway.
+
+OAuth (`open`, §5.2) is built with the first integration that needs it.
+
+### Later, not in this work
+
+- **Contained integrations and uploads** (§6.2, §11): they matter when code
+  comes from outside the repository.
+- **Home Assistant beside kraftverk** (§9).
+- **Translations.**
 
 ---
 
 ## 13. Decisions for the owner
+
+Before step 1:
 
 - **D1. Integration and service are different words** (§1): *integration*
   for the code, *service* for a device without hardware. Recommended.
@@ -937,13 +1111,20 @@ ports straight away; one with an account waits for I2–I3.
   device, one owner, children for parts, via for hubs" is the same shape.
 - **D4. One folder per integration**, `packages/integrations/<id>`, with
   several types in it, replacing `devices/` and `services/`. Recommended.
-- **D5. How contained integrations are contained** (I7): a separate process,
-  or QuickJS in WebAssembly. To decide when I7 starts, measured.
-- **D6. Home Assistant beside kraftverk** (I8): run and updated by the
+
+Later:
+
+- **D5. How contained integrations are contained:** a separate process,
+  or QuickJS in WebAssembly. Measured, when that work starts.
+- **D6. Home Assistant beside kraftverk:** run and updated by the
   deployment, as a container kraftverk connects to. Kraftverk does not
-  supervise containers itself. Recommended.
-- **D7. The first port** (I6): which small integration the owner has, to prove the
-  recipe before iCloud.
+  supervise containers itself. Recommended, when that work starts.
+- **D7. The first port** (step 16): which small integration the owner has,
+  to prove the recipe before iCloud.
+- **D8. Tuya keeps no account.** The Smart Life sign-in fetches a key at
+  setup, and again when a plug is paired anew (step 9), and is not kept.
+  Keeping it would let kraftverk fetch a changed key by itself, at the price
+  of keeping a vendor password. Recommended: not kept.
 - **Open, and not decided here:** people and places — who a phone belongs
   to, and places other than the home — wait on the decision about homes and
   places already open. Presence at home works without it.
