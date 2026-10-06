@@ -422,11 +422,12 @@ describe('freshness', () => {
     expect(plug.commands).toHaveLength(0);
   });
 
-  test('refuses on a stale reading from the plug', async () => {
+  test('refuses on a stale reading from the plug — and says whose, so a run can ask it for a fresh one', async () => {
     const plug = new StubPlug({ at: ago(10 * 60_000) });
     const { gateway } = harness({ plug });
     const result = await gateway.execute(cut());
     expect(result.detail).toContain('stale');
+    expect(result.stale).toEqual([{ device: PLUG, part: 'main' }]);
     expect(plug.commands).toHaveLength(0);
   });
 
@@ -452,6 +453,7 @@ describe('freshness', () => {
     station.reading = { present: true, at: ago(10 * 60_000), connected: true };
     const result = await gateway.execute(cut());
     expect(result.detail).toContain('stale');
+    expect(result.stale).toEqual([{ device: STATION, part: 'input.ac' }]);
     expect(plug.commands).toHaveLength(0);
   });
 

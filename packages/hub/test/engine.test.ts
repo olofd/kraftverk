@@ -156,8 +156,8 @@ const asEngineDevice = (device: Omit<EngineDevice, 'reachable' | 'wantFresh' | '
 });
 
 /** Two engines on one database are one server, restarted: what they keep is in the store. */
-/** `gate`: what a command waits on once sent — a run that takes its time. */
-function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: boolean; gate?: () => Promise<void> } = {}) {
+/** `gate`: what a command waits on once sent — a run that takes its time. `refuse`: what the gateway says instead of acting, when it says something. */
+function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: boolean; gate?: () => Promise<void>; refuse?: (intent: CommandIntent) => GatewayResult | null } = {}) {
   const sent: CommandIntent[] = [];
   const written: WriteIntent[] = [];
   const recorded: AuditRecord[] = [];
@@ -192,6 +192,8 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
     gateway: {
       execute: async (intent: CommandIntent): Promise<GatewayResult> => {
         sent.push(intent);
+        const refused = options.refuse?.(intent);
+        if (refused) return refused;
         await options.gate?.();
         ledger.switched(intent.deviceId, intent.part, { at: now.getTime(), by: intent.by });
         // The plug does as it is told, and reports it.
@@ -990,6 +992,25 @@ describe('a battery kept between two levels', () => {
     expect((await engine.run(window, { check: true })).summary).toContain('Would turn Heater plug on');
     station.soc = 31;
     expect((await engine.run(window, { check: true })).summary).toContain('Would turn Heater plug off');
+    engine.stop();
+  });
+
+  test('refused for a stale reading, it asks for a fresh one and sends again once the part has said something new', async () => {
+    let stale = true;
+    const context = setup({ refuse: () => (stale ? { outcome: 'refused', detail: 'Its reading is stale: refusing to switch blind', stale: [{ device: PLUG, part: 'main' }] } : null) });
+    const { engine, station, plug, sent } = context;
+    plug.on = false;
+    const window = context.make('standard.charge-between', roles, levels, 'act');
+    station.soc = 4;
+    const going = engine.run(window, { askedBy: { actor: 'person', name: 'olof' } });
+    // The plug says something new: its reading is fresh again, and the gateway takes it.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    stale = false;
+    context.at(new Date(context.now().getTime() + 2_000));
+    const run = await going;
+    expect(run.outcome).toBe('acted');
+    expect(sent.map((intent) => intent.args.on)).toEqual([true, true]);
+    expect(plug.on).toBe(true);
     engine.stop();
   });
 });

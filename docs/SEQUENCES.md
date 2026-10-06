@@ -284,6 +284,12 @@ type CommandIntent = … & {
   commands to that part, a retry's as often as its tries — and never more
   than the gateway's own ceiling (`runSwitchCeiling`, 12), whatever the rule
   asks.
+- **A stale reading** — one late over the network, a device asked too
+  seldom — is never switched on: the gateway refuses, and names the parts
+  whose readings were stale (`stale`). The run asks those parts for fresh
+  readings (`wantFresh`) and waits, at most 15 s, until each has said
+  something new, then sends the command once more; none in time, it stays
+  refused, as the gateway said.
 - Outside the run, nothing changes: the next automation or person to switch
   the part meets the dwell from the run's last switch.
 - When the run ends, the engine tells the gateway (`runEnded`), which forgets

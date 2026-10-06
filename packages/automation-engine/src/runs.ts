@@ -1,5 +1,5 @@
 import type { AutomationRun, RunLog, RunStep } from '@kraftverk/api-contract';
-import { branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, secondsNow, fieldValue, negation, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepsOf, stepSpec, takesSteps, type Command, type Expr, type Rule, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
+import { branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, secondsNow, fieldValue, negation, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepsOf, stepSpec, takesSteps, type Command, type Expr, type Rule, type RoleBinding, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
 import { attributeMeaning, readingOf, type AutomationId } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
@@ -23,6 +23,9 @@ import { ACTS, actsOn, lowerFirst, pastOf, quoted } from './words.ts';
  * still says what its outlets gave before the plug on them was switched off.
  */
 const SETTLE_AT_MOST_SECONDS = 15;
+
+/** How long a command refused for a stale reading waits for a fresh one, at most, before it is sent again: a device asked to answer now does so in seconds. */
+const FRESH_WAIT_SECONDS = 15;
 
 /** A run taking steps now: its record as it goes, and whether someone has stopped it. */
 export type LiveRun = {
@@ -600,6 +603,22 @@ export class Runs {
       }
       outcome = await send();
     }
+    /*
+      Refused only because what it acts on was read too long ago — a reading
+      late over the network, a device asked too seldom: fresh ones are asked
+      for, and it is sent once more as soon as each part has said something
+      new. None in time: it stays refused, said as the gateway said it.
+    */
+    if (outcome.outcome === 'refused' && outcome.stale?.length) {
+      Object.assign(entry, { detail: 'Waiting for a fresh reading', until: this.#after(FRESH_WAIT_SECONDS) });
+      this.#moved(live);
+      const heard = await this.#untilHeard(live, outcome.stale, FRESH_WAIT_SECONDS, regardless);
+      if (heard === 'stopped') {
+        this.#end(live, entry, 'stopped', `Stopped by ${live.stoppedBy}`);
+        return 'stopped';
+      }
+      if (heard === 'heard') outcome = await send();
+    }
     const already = outcome.outcome === 'verified' && outcome.detail.startsWith('Already');
     if (!already && (outcome.outcome === 'verified' || outcome.outcome === 'unverified')) this.#changed(live);
     // What the switch left — the device's own readback — is in the log as it was then.
@@ -803,6 +822,24 @@ export class Runs {
         () => done('slept')
       );
     });
+  }
+
+  /**
+   * Asks these parts for fresh readings and waits — at most `seconds` — until
+   * each has said something new: what a command refused for a stale reading
+   * waits for before it is sent again.
+   */
+  async #untilHeard(live: LiveRun, parts: readonly RoleBinding[], seconds: number, regardless: boolean): Promise<'heard' | 'late' | 'stopped'> {
+    const since = this.#context.clock.now();
+    const until = since + seconds * 1000;
+    const devices = parts.map((part) => this.deps.device(part));
+    for (const device of devices) device?.wantFresh(until);
+    const newest = (device: (typeof devices)[number]) => Math.max(0, ...(device?.device?.readings() ?? []).map((reading) => Date.parse(reading.at)));
+    const heard = () => devices.every((device) => newest(device) > since);
+    while (!heard() && this.#context.clock.now() < until) {
+      if ((await this.#sleep(live, 1, regardless)) === 'stopped') return 'stopped';
+    }
+    return heard() ? 'heard' : 'late';
   }
 
   /** Keeps what a condition reads fresh while a step waits on it: its holders ask their devices more often, until then. */

@@ -128,6 +128,13 @@ export type GatewayResult = {
    * out; a person is told.
    */
   retryInMs?: number;
+  /**
+   * Refused only because what it acts on was read too long ago — a reading
+   * late over the network, a device asked too seldom: these parts. The same
+   * intent is taken once each has said something new. A run asks them for
+   * fresh readings and waits a moment; a person is told.
+   */
+  stale?: readonly { device: SavedDeviceId; part: string }[];
 };
 
 export type GatewayPolicy = {
@@ -504,7 +511,7 @@ export class ActionGateway {
 
     // 3. Freshness: acting on stale readings is how mains is cut at exactly the wrong moment.
     if (current.some((reading) => reading === null || reading.value === null)) return refuse('Its current state is not known, so it is not switched blind');
-    if (settings.some((setting, index) => !this.#fresh(setting.attribute, current[index]!))) return refuse('Its reading is stale: refusing to switch blind');
+    if (settings.some((setting, index) => !this.#fresh(setting.attribute, current[index]!))) return refuse('Its reading is stale: refusing to switch blind', { stale: [{ device: intent.deviceId, part: intent.part }] });
 
     // Every link from this part whose kind goes through this capability: its target must be answering, now.
     const links: Linked[] = [];
@@ -520,7 +527,7 @@ export class ActionGateway {
       if (!evidence || !evidence.connected || evidence.at === null || evidence.value === null) {
         return refuse(`${link.name}, which it ${link.kind.verb}, is not answering: refusing to act without its own reading`);
       }
-      if (!evidence.current) return refuse(`The reading of ${link.name}, which it ${link.kind.verb}, is stale: refusing to act blind`);
+      if (!evidence.current) return refuse(`The reading of ${link.name}, which it ${link.kind.verb}, is stale: refusing to act blind`, { stale: [link.target] });
     }
 
     // 4. A deliberate act where one matters, as the capability and the link kinds declare it.
