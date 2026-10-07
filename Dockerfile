@@ -153,10 +153,12 @@ COPY server ./server
 # The server finds its integrations, transports and device types in packages/ at
 # startup rather than importing a fixed list, so that directory is not
 # optional: without it the container starts able to reach nothing.
-# Only /data is writable, and only it is chowned — a recursive chown of /app
-# would copy every node_modules file into a new layer to change one bit of
-# metadata the server never needs changed.
-RUN mkdir -p /data && chown bun:bun /data
+# Only /data and /relay are writable, and only they are chowned — a recursive
+# chown of /app would copy every node_modules file into a new layer to change
+# one bit of metadata the server never needs changed. /relay holds the relay's
+# token, which the server makes (docs/DOCKER.md#the-relay): a new volume there
+# takes this owner from the image.
+RUN mkdir -p /data /relay && chown bun:bun /data /relay
 
 USER bun
 

@@ -148,7 +148,15 @@ class TcpChannel implements ByteChannel {
 function hearingFor(context: TransportContext): Hearing & { relay?: { connected(): boolean } } {
   const port = context.env.KRAFTVERK_LAN_RELAY_PORT;
   if (!port) return hearDirectly(context.log);
-  const token = relayToken(context.env.KRAFTVERK_LAN_RELAY_TOKEN_FILE || '/relay/token', true)!;
+  const file = context.env.KRAFTVERK_LAN_RELAY_TOKEN_FILE || '/relay/token';
+  let token: string;
+  try {
+    token = relayToken(file, true)!;
+  } catch (error) {
+    // Hearing must never cost reaching: devices are still reached, and nothing is heard — said, once.
+    context.log('error', `[lan] The relay's token could not be kept in ${file} (${(error as Error).message}): nothing on the home network is heard, devices are still reached`);
+    return { want: () => () => {}, sightings: () => [], onHeard: () => () => {}, stop: () => {} };
+  }
   const relayed = hearThroughRelay({ port: Number(port), token, log: context.log });
   return { ...relayed, relay: relayed };
 }

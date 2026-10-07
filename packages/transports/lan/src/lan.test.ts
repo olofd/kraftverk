@@ -6,6 +6,7 @@ import { memoryTransportStore, type Sighting } from '@kraftverk/device-sdk';
 
 import { hostOf, isLocalAddress } from './index.ts';
 import createLanTransport from './system.ts';
+import { join } from 'node:path';
 
 /**
  * The home network, for real: a TCP server standing in for a device, and a
@@ -87,6 +88,32 @@ describe('the home network', () => {
 
     await first.close();
     await second.close();
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }, 15_000);
+
+  test('a relay that cannot be set up costs hearing, never reaching: devices are still reached', async () => {
+    const sockets: Socket[] = [];
+    const server = createServer((socket) => void sockets.push(socket));
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+    const said: string[] = [];
+    // Its token cannot be kept where it is told to: under a file, where no folder can be made.
+    const transport = createLanTransport({
+      ...quiet,
+      env: { KRAFTVERK_LAN_RELAY_PORT: '0', KRAFTVERK_LAN_RELAY_TOKEN_FILE: join(import.meta.dirname, 'lan.test.ts', 'token') },
+      log: (_level: string, message: string) => void said.push(message),
+    });
+    await transport.start();
+    expect(said.join()).toContain("The relay's token could not be kept");
+    let seen = null as readonly Sighting[] | null;
+    const stop = transport.watch!([{ kind: 'broadcast', port: 6667 }], (sightings) => (seen = sightings));
+    expect(seen).toEqual([]);
+    stop();
+    const device = await transport.open('127.0.0.1', { port });
+    await until(() => device.connected, 'the device to be reached');
+    await device.close();
+    await transport.stop();
     for (const socket of sockets) socket.destroy();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }, 15_000);
