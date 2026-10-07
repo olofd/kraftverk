@@ -158,20 +158,22 @@ and `.set-aside.*` copies on the server's volume are the owner's to delete.
 
 Built to step 15 of [PLAN-INTEGRATIONS.md](PLAN-INTEGRATIONS.md) on
 2026-10-07 (Part A: what kraftverk has, on the model; discovery by
-declaration; the lists opened — quantities as records, position and
-`location`, `distance` in rules, categories toward Home Assistant's
-breadth; and code loaded on demand — each package's generated
-`catalogue.json` is what a home lists and finds by, an integration's code
-imported when first needed), on the model its §1.1 sets out: an integration is the one
-place kraftverk meets a service — its protocol, accounts, gateways and own
-screens — and a device package builds on one integration and nothing else;
-parts talk by typed calls, never publish/subscribe; accounts live on their
-integration's page. Ways say what they are found by; the home network and
-the broker are watched all the time, so what turns up waits on Home. Next
-in Part B (mDNS and SSDP, the
-porting guide) are two of the owner's choices: how the server's container
-hears mDNS (host networking or a reflector), and which small integration is
-ported first (D7).
+declaration; mDNS and SSDP heard through the relay; the lists opened —
+quantities as records, position and `location`, `distance` in rules,
+categories toward Home Assistant's breadth; and code loaded on demand —
+each package's generated `catalogue.json` is what a home lists and finds
+by, an integration's code imported when first needed), on the model its
+§1.1 sets out: an integration is the one place kraftverk meets a service —
+its protocol, accounts, gateways and own screens — and a device package
+builds on one integration and nothing else; parts talk by typed calls,
+never publish/subscribe; accounts live on their integration's page. Ways
+say what they are found by; the home network and the broker are watched all
+the time, so what turns up waits on Home. In Docker the home network is
+heard by the `relay` service, the only one on the host's network
+([DOCKER.md](DOCKER.md#the-relay)); radios plugged into the host later
+(Zigbee, Thread, Matter) are services at that edge too. Next is the porting
+guide and a first port (step 16), which waits on the owner's choice of a
+small integration to port (D7).
 
 ## The automation language
 
