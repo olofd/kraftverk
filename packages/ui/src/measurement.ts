@@ -89,7 +89,7 @@ export function formatValue(attribute: Formatted, value: Value | undefined): str
  * A place as a person reads it: "59.32930° N, 18.06860° E", and how sure,
  * "± 20 m", when the device says. Five decimals is about a metre.
  */
-export function formatPosition(position: Position): string {
+function formatPosition(position: Position): string {
   const precision = quantitySpec('position').precision;
   const north = `${Math.abs(position.latitude).toFixed(precision)}° ${position.latitude < 0 ? 'S' : 'N'}`;
   const east = `${Math.abs(position.longitude).toFixed(precision)}° ${position.longitude < 0 ? 'W' : 'E'}`;

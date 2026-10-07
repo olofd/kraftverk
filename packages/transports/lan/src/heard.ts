@@ -12,7 +12,7 @@ import type { DnsMessage } from './dns.ts';
 */
 
 /** A broadcast not heard again in this long has left. Devices repeat theirs every few seconds. */
-export const BROADCAST_HELD_MS = 60_000;
+const BROADCAST_HELD_MS = 60_000;
 /** The longest an mDNS or SSDP announcement is held without being heard again, whatever it said: a device that left without a goodbye leaves the list. */
 const LONGEST_HELD_MS = 75 * 60_000;
 /** How long an SSDP announcement holds when it does not say. */

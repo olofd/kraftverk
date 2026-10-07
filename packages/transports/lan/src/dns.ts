@@ -6,7 +6,7 @@
   bytes in, records out, so it is tested without a network.
 */
 
-export const RECORD = { A: 1, PTR: 12, TXT: 16, AAAA: 28, SRV: 33 } as const;
+const RECORD = { A: 1, PTR: 12, TXT: 16, AAAA: 28, SRV: 33 } as const;
 
 /** One record of an answer, read as far as discovery needs it; any other type is kept as its type alone. */
 export type DnsRecord =

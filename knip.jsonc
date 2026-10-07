@@ -20,6 +20,10 @@
     "server": {
       "entry": ["src/auth/cli.ts"]
     },
+    "packages/transports/lan": {
+      // The relay runs as a process of its own, on the host's network (docs/DOCKER.md#the-relay).
+      "entry": ["src/relay-main.ts"]
+    },
     "packages/transports/mqtt": {
       // The broker runs as a process of its own: its CLI, and what the supervisor launches.
       "entry": ["src/broker/cli.ts", "src/broker/main.ts", "src/broker/launcher.ts"]
