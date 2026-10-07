@@ -2,7 +2,7 @@ import type { ByteChannel } from '@kraftverk/device-sdk';
 
 import { equal, randomBytes, text, utf8 } from './bytes.ts';
 import { aesEcbEncrypt, aesGcmEncrypt } from './crypto/aes.ts';
-import { hmacSha256 } from './crypto/hash.ts';
+import { hmacSha256 } from '@kraftverk/device-sdk';
 import { CMD, encodeFrame, FrameReader, type ProtocolVersion, type TuyaFrame } from './frame.ts';
 import type { Dps } from './socket.ts';
 

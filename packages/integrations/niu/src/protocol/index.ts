@@ -3,7 +3,7 @@ import { channelOf, directOf, identityOf, personFields, type ConfigSchema, type 
 import { NIU_ACCOUNT, NiuClient, NiuError, signIn, type NiuHttp, type NiuTokens } from './api.ts';
 
 export * from './api.ts';
-export { md5Hex } from './md5.ts';
+export { md5Hex } from './api.ts';
 
 /**
  * The NIU cloud as a protocol: how a NIU account is reached — over HTTPS, to

@@ -2,7 +2,7 @@ import { heardAs, type Matcher, type Sighting } from '@kraftverk/device-sdk';
 
 import { fromHex, readU32, text } from './bytes.ts';
 import { aesEcbDecrypt } from './crypto/aes.ts';
-import { md5 } from './crypto/hash.ts';
+import { md5 } from '@kraftverk/device-sdk';
 import { FrameReader, PREFIX_55AA, PREFIX_6699 } from './frame.ts';
 
 /**

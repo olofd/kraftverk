@@ -1,6 +1,6 @@
 import { ascii, concat, readU32, u32 } from './bytes.ts';
 import { aesEcbDecrypt, aesEcbEncrypt, aesGcmDecrypt, aesGcmEncrypt } from './crypto/aes.ts';
-import { crc32, hmacSha256 } from './crypto/hash.ts';
+import { crc32, hmacSha256 } from '@kraftverk/device-sdk';
 
 /**
  * Tuya LAN framing.

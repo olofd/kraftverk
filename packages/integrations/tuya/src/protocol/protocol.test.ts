@@ -6,7 +6,7 @@ import { fakeByteChannel } from '@kraftverk/device-sdk/testing';
 import { concat, readU32, text, toHex, utf8 } from './bytes.ts';
 import { isRegion, REGIONS, signRequest, stringToSign } from './cloud.ts';
 import { aesEcbDecrypt, aesEcbEncrypt } from './crypto/aes.ts';
-import { crc32, hmacSha256 } from './crypto/hash.ts';
+import { crc32, hmacSha256 } from '@kraftverk/device-sdk';
 import { decodeBroadcast, DISCOVERY_KEY } from './discovery.ts';
 import { CMD, encodeFrame, FrameReader, PREFIX_55AA, SUFFIX_55AA, type ProtocolVersion } from './frame.ts';
 import protocol, { linkOver, parseTuyaAddress, tuyaIdentity, zigbeeIdentity } from './index.ts';

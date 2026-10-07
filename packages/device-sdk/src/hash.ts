@@ -1,13 +1,29 @@
-import { concat, utf8 } from '../bytes.ts';
-
 /**
- * The hashes the Tuya LAN protocol and its cloud use: SHA-256 and HMAC-SHA256
- * (3.4's frame signature, the session handshake, the cloud's request
- * signature), MD5 (the public discovery key) and CRC-32 (3.1–3.3 frames).
+ * The hashes protocols use: SHA-256 and HMAC-SHA256 (frame signatures,
+ * handshakes, a cloud's request signatures, HTTP digest sign-in), MD5 (keys
+ * derived from a vendor's published text, passwords as an API wants them) and
+ * CRC-32 (frame checksums).
  *
- * Written out for the same reason as AES: no platform offers all of them the
- * same way. Checked against Node's implementations in the tests.
+ * Written out because a protocol is pure — it runs in the app as well as on
+ * a server — and no platform offers all of them the same way: Node's
+ * `crypto` is not in a browser, and the browser's `crypto.subtle` has no MD5
+ * and is not synchronous. Checked against Node's implementations in the tests.
  */
+
+const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
+
+const concat = (...parts: Uint8Array[]): Uint8Array => {
+  const joined = new Uint8Array(parts.reduce((length, part) => length + part.length, 0));
+  let at = 0;
+  for (const part of parts) {
+    joined.set(part, at);
+    at += part.length;
+  }
+  return joined;
+};
+
+/** Bytes as lowercase hex: how a digest is usually written. */
+export const hexOf = (bytes: Uint8Array): string => [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 
 const bytesOf = (data: Uint8Array | string): Uint8Array => (typeof data === 'string' ? utf8(data) : data);
 

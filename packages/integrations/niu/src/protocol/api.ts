@@ -1,6 +1,7 @@
-import { NeedsSignIn, needsSignIn, NotReachable } from '@kraftverk/device-sdk';
+import { hexOf, md5, NeedsSignIn, needsSignIn, NotReachable } from '@kraftverk/device-sdk';
 
-import { md5Hex } from './md5.ts';
+/** A password as NIU's sign-in wants it: MD5, in hex. Not for anything that must be secure — it is how NIU expects it. */
+export const md5Hex = (text: string): string => hexOf(md5(text));
 
 /**
  * The NIU cloud, as the NIU app talks to it. Nothing here is documented by

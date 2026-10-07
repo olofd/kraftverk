@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 
 import { bridgedConnection, checkDeviceTypeContract, fakeByteChannel, fakeConnection, simulatorContext } from '@kraftverk/device-sdk/testing';
 import gatewayType from '@kraftverk/integration-tuya/gateway';
-import { CMD, encodeFrame, FrameReader, hmacSha256, sessionKeyOf } from '@kraftverk/integration-tuya/protocol';
+import { hmacSha256 } from '@kraftverk/device-sdk';
+import { CMD, encodeFrame, FrameReader, sessionKeyOf } from '@kraftverk/integration-tuya/protocol';
 
 import plugType, { ZIGBEE_PLUG } from '../src/type.ts';
 

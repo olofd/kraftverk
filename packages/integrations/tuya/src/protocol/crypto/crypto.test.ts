@@ -1,11 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
 import { aesEcbDecrypt, aesEcbEncrypt, aesGcmDecrypt, aesGcmEncrypt } from './aes.ts';
-import { crc32, hmacSha256, md5, sha256 } from './hash.ts';
 
 /**
- * The hand-written crypto, checked byte for byte against Node's — the one
+ * The hand-written AES, checked byte for byte against Node's — the hashes are the SDK's, and checked there — the one
  * place in this package allowed to use Node's, because it is a test and never
  * ships. Random inputs of every length that matters: empty, one block short,
  * exactly a block, a block and a bit, and larger.
@@ -78,27 +77,5 @@ describe('AES-128-GCM', () => {
     const sealed = aesGcmEncrypt(key, iv, new TextEncoder().encode('switch on'), new Uint8Array());
     sealed.ciphertext[0]! ^= 1;
     expect(() => aesGcmDecrypt(key, iv, sealed.ciphertext, new Uint8Array(), sealed.tag)).toThrow();
-  });
-});
-
-describe('the hashes', () => {
-  test('SHA-256, HMAC-SHA256 and MD5 agree with Node on every length', () => {
-    for (const length of [...LENGTHS, 55, 56, 57, 119, 120, 1000]) {
-      const data = randomBytes(length);
-      expect(sha256(u8(data))).toEqual(u8(createHash('sha256').update(data).digest()));
-      expect(md5(u8(data))).toEqual(u8(createHash('md5').update(data).digest()));
-      const key = randomBytes(length % 90);
-      expect(hmacSha256(u8(key), u8(data))).toEqual(u8(createHmac('sha256', key).update(data).digest()));
-    }
-  });
-
-  test('strings are hashed as UTF-8', () => {
-    expect(sha256('')).toEqual(u8(createHash('sha256').update('').digest()));
-    expect(md5('yGAdlopoPVldABfn')).toEqual(u8(createHash('md5').update('yGAdlopoPVldABfn').digest()));
-  });
-
-  test('CRC-32 matches the known check value', () => {
-    // The standard CRC-32/ISO-HDLC check: "123456789" -> 0xCBF43926.
-    expect(crc32(new TextEncoder().encode('123456789'))).toBe(0xcbf43926);
   });
 });

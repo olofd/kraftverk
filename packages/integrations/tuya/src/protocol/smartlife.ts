@@ -2,7 +2,7 @@ import type { ScopedHttp } from '@kraftverk/device-sdk';
 
 import { concat, text, toHex, utf8 } from './bytes.ts';
 import { aesGcmDecrypt, aesGcmEncrypt } from './crypto/aes.ts';
-import { hmacSha256, md5 } from './crypto/hash.ts';
+import { hmacSha256, md5 } from '@kraftverk/device-sdk';
 import type { CloudDevice } from './cloud.ts';
 
 /**

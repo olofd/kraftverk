@@ -1,7 +1,7 @@
 import type { ScopedHttp } from '@kraftverk/device-sdk';
 
 import { toHex } from './bytes.ts';
-import { hmacSha256, sha256 } from './crypto/hash.ts';
+import { hmacSha256, sha256 } from '@kraftverk/device-sdk';
 
 /**
  * Just enough of the Tuya Cloud API to fetch local keys.
