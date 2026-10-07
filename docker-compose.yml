@@ -33,7 +33,7 @@ services:
     logging: *logging
     build: { context: ., target: server }
     image: ${KRAFTVERK_SERVER_IMAGE:-kraftverk-server}
-    restart: unless-stopped
+    restart: ${KRAFTVERK_RESTART:-unless-stopped}
     command: ["bun", "run", "packages/transports/mqtt/src/broker/main.ts"]
 
     ports:
@@ -65,7 +65,7 @@ services:
     logging: *logging
     build: { context: ., target: server }
     image: ${KRAFTVERK_SERVER_IMAGE:-kraftverk-server}
-    restart: unless-stopped
+    restart: ${KRAFTVERK_RESTART:-unless-stopped}
     depends_on:
       - broker
 
@@ -125,7 +125,7 @@ services:
     logging: *logging
     build: { context: ., target: server }
     image: ${KRAFTVERK_SERVER_IMAGE:-kraftverk-server}
-    restart: unless-stopped
+    restart: ${KRAFTVERK_RESTART:-unless-stopped}
     network_mode: host
     command: ["bun", "run", "packages/transports/lan/src/relay-main.ts"]
     environment:
@@ -146,7 +146,7 @@ services:
     logging: *logging
     build: { context: ., target: web }
     image: ${KRAFTVERK_WEB_IMAGE:-kraftverk-web}
-    restart: unless-stopped
+    restart: ${KRAFTVERK_RESTART:-unless-stopped}
     depends_on:
       kraftverk:
         condition: service_started

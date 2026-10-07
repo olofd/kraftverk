@@ -42,8 +42,22 @@ finish() {
 }
 trap finish EXIT
 
+# A test stack is never restarted: one cut off by the machine going down stays down, rather than coming back with it.
+export KRAFTVERK_RESTART=no
+
 # A stack of this number left from a run that was cancelled before it could take it down — a hundred runs ago — goes first.
 compose down --volumes --remove-orphans > /dev/null 2>&1 || true
+
+# And any other run's stack older than an hour: no run takes that long, so it is one cut off before it could take itself down.
+for stale in $(docker ps -a --filter 'name=^kraftverk-smoke-' --format '{{.Label "com.docker.compose.project"}}' | sort -u); do
+  [ "$stale" = "$project" ] && continue
+  created=$(docker ps -a --filter "label=com.docker.compose.project=$stale" --format '{{.ID}}' | head -1 | xargs docker inspect -f '{{.Created}}' 2>/dev/null) || continue
+  age=$(( $(date +%s) - $(date -d "$created" +%s 2>/dev/null || echo "$(date +%s)") ))
+  if [ "$age" -gt 3600 ]; then
+    echo "Taking down $stale, left by a run that could not ($((age / 60)) min old)"
+    docker compose -f docker-compose.yml -p "$stale" down --volumes --remove-orphans > /dev/null 2>&1 || true
+  fi
+done
 
 echo "Starting the stack"
 if [ "${SMOKE_BUILD:-1}" = "0" ]; then
