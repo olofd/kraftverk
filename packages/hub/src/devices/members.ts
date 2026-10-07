@@ -61,7 +61,8 @@ function typesFor(member: Member, candidates: readonly MemberType[], fallback: s
         .map(({ candidate }) => candidate)
     : [];
   if (claiming.length) return claiming;
-  return candidates.filter((candidate) => candidate.type.id === fallback);
+  // Saying nothing of itself: the bridge's own type for one first, then every other that is reached through it — a person picks.
+  return [...candidates.filter((candidate) => candidate.type.id === fallback), ...candidates.filter((candidate) => candidate.type.id !== fallback)];
 }
 
 /** Every member of every bridge open here, of these bridge types when some are given. */

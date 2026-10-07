@@ -3,14 +3,13 @@ import { Redirect, router } from 'expo-router';
 import { Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import type { ConnectionStatus } from '@kraftverk/device-sdk';
-import type { DeviceView } from '@kraftverk/api-client';
+import { PATHS, pathOf, type DeviceView } from '@kraftverk/api-client';
 import { Card, haptic } from '@kraftverk/ui';
 
 import { Screen } from '../../components/Screen';
 import type { StatusTone } from '../../components/Screen';
 import { useDevice, useDevices } from '../../state/DevicesProvider';
 import { useShowing } from '../../state/useShowing';
-import { accountPath } from '../integrations/IntegrationScreen';
 import { DevicePicture } from './DevicePicture';
 import { pictureFor } from './registry';
 
@@ -113,17 +112,14 @@ export function DeviceShell({ id, tab, children }: { id: string | undefined; tab
     );
   }
 
-  // An account is its integration's, and has its page there (docs/PLAN-INTEGRATIONS.md §1.1).
-  if (device.kind === 'account' && device.integration && !device.removedAt) return <Redirect href={accountPath(device.integration.id, device.id)} />;
+  // An account or a gateway is its integration's, and has its page there (docs/PLAN-INTEGRATIONS.md §1.1).
+  if ((device.kind === 'account' || device.kind === 'gateway') && device.integration && !device.removedAt) return <Redirect href={pathOf(device)} />;
 
-  const path = `/device/${encodeURIComponent(device.id)}`;
-  // A gateway is its integration's, and goes back to its page; a device and a service, to Home.
-  const fromIntegration = device.kind === 'gateway' && device.integration ? device.integration : null;
+  const path = PATHS.devices.one(device.id);
 
   return (
     <Screen
-      back={fromIntegration ? fromIntegration.name : 'Your devices'}
-      {...(fromIntegration ? { backTo: `/integration/${encodeURIComponent(fromIntegration.id)}` } : {})}
+      back="Your devices"
       title={device.name}
       subtitle={device.meta.name}
       status={deviceStatus(device)}
@@ -133,7 +129,7 @@ export function DeviceShell({ id, tab, children }: { id: string | undefined; tab
         <DeviceTabs
           tab={tab}
           // Replace, not push: the two tabs are one destination.
-          onChange={(next) => router.replace(next === 'dashboard' ? path : `${path}/settings`)}
+          onChange={(next) => router.replace(next === 'dashboard' ? path : PATHS.devices.settings(device.id))}
         />
       )}
       {children(device)}

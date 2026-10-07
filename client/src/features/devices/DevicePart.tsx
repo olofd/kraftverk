@@ -3,6 +3,7 @@ import { Text } from 'tamagui';
 
 import { partsOf } from '@kraftverk/device-sdk';
 import { Card, PartCard } from '@kraftverk/ui';
+import { PATHS } from '@kraftverk/api-client';
 
 import { Screen } from '../../components/Screen';
 import { useDevice, useDevices } from '../../state/DevicesProvider';
@@ -23,7 +24,7 @@ export function DevicePart() {
   const { id, part: partId } = useLocalSearchParams<{ id: string; part: string }>();
   const device = useDevice(id);
   const { screenProps } = useDevices();
-  const devicePath = device ? `/device/${encodeURIComponent(device.id)}` : '/';
+  const devicePath = device ? PATHS.devices.one(device.id) : PATHS.home;
   const part = device ? partsOf(device.description, device.name).find((candidate) => candidate.id === partId) : undefined;
 
   if (!device || !part) {

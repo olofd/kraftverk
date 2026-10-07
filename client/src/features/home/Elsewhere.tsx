@@ -1,7 +1,7 @@
 import { router, useIsFocused } from 'expo-router';
 import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import type { ElsewhereView } from '@kraftverk/api-client';
+import { PATHS, type ElsewhereView } from '@kraftverk/api-client';
 import { Card, haptic, Icon } from '@kraftverk/ui';
 
 import { useAnswer } from '../../components/useAnswer';
@@ -44,7 +44,7 @@ export function Elsewhere() {
         color="$background"
         onPress={() => {
           haptic();
-          router.push(`/configuration?import=1&from=${elsewhere.from}`);
+          router.push(PATHS.settings.configuration({ import: true, from: elsewhere.from }));
         }}
       >
         {action}

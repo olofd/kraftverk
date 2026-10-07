@@ -87,11 +87,11 @@ test('start charging: copied from its recipe, its parts chosen, run from its pag
   await expect(page.getByRole('group', { name }).getByRole('button', { name: `Start ${name}` })).toBeVisible();
 
   // The plug's page lists it among its automations — the same card — and makes a new one from here.
-  await page.goto(`/device/${plug.id}`);
+  await page.goto(`/devices/${plug.id}`);
   const automations = page.getByRole('region', { name: 'Automations' });
   await expect(automations.getByRole('group', { name }).getByRole('button', { name: `Start ${name}` })).toBeVisible();
   await automations.getByRole('button', { name: `New automation with ${plug.name}` }).click();
-  await expect(page).toHaveURL(new RegExp(`/automation/new\\?device=${plug.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/automations/new\\?device=${plug.id}$`));
   await expect(page.getByRole('button', { name: `Back to ${plug.name}` })).toBeVisible();
   // From nothing, a step's part: the plug it was started from is offered first.
   await press(page, 'Nothing');
@@ -102,14 +102,14 @@ test('start charging: copied from its recipe, its parts chosen, run from its pag
   // Left, asked first: nothing is made.
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   expect(await answer(page, true)).toContain('It is not made');
-  await expect(page).toHaveURL(new RegExp(`/device/${plug.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/devices/${plug.id}$`));
   // Its card opens its page.
-  await page.goto(`/device/${plug.id}`);
+  await page.goto(`/devices/${plug.id}`);
   await page.getByRole('button', { name: new RegExp(`^${name}: `) }).click();
   await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
 
   // Its stop, copied after it: the same two parts, in one tap.
-  await page.goto('/automation/new');
+  await page.goto('/automations/new');
   await press(page, 'Stop charging');
   await page.getByRole('button', { name: `Same parts as “${name}”` }).click();
   await expect(page.getByRole('status')).toContainText('It can run as it is');
@@ -139,7 +139,7 @@ test('built from nothing: a time, a setting changed, and another automation star
   });
   expect(made.ok(), await made.text()).toBe(true);
 
-  await page.goto('/automation/new');
+  await page.goto('/automations/new');
   await press(page, 'Nothing');
   // Nothing in it yet: it says so, in the group it is about, and how it reads.
   await expect(page.getByRole('region', { name: 'Does' }).getByText('What it does: it does nothing')).toBeVisible();
@@ -191,7 +191,7 @@ test('built from nothing: a time, a setting changed, and another automation star
 
 test('through the night: a window of the day, across midnight, is what starts it', async ({ page, request }) => {
   const plug = await addSimulated(request, 'tuya.zigbee-plug', unique('Scooter plug'));
-  await page.goto('/automation/new');
+  await page.goto('/automations/new');
   await press(page, 'Nothing');
   const name = unique('Night charge');
   await page.getByLabel('Name').fill(name);
@@ -228,7 +228,7 @@ test('through the night: a window of the day, across midnight, is what starts it
 test('for each of several plugs: its parts chosen in its block, and each switched in turn', async ({ page, request }) => {
   const desk = await addSimulated(request, 'tuya.zigbee-plug', unique('Desk plug'));
   const lamp = await addSimulated(request, 'tuya.zigbee-plug', unique('Lamp plug'));
-  await page.goto('/automation/new');
+  await page.goto('/automations/new');
   await press(page, 'Nothing');
   const name = unique('All off');
   await page.getByLabel('Name').fill(name);
@@ -260,7 +260,7 @@ test('for each of several plugs: its parts chosen in its block, and each switche
 
 test('round after round, and a stop that says why: blocks within blocks, run to their end', async ({ page, request }) => {
   const plug = await addSimulated(request, 'tuya.zigbee-plug', unique('Scooter plug'));
-  await page.goto('/automation/new');
+  await page.goto('/automations/new');
   await press(page, 'Nothing');
   const name = unique('Blink');
   await page.getByLabel('Name').fill(name);

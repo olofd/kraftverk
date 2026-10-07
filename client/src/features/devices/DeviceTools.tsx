@@ -1,6 +1,7 @@
 import { useLocalSearchParams } from 'expo-router';
 import { Card, SectionLabel, ToolPanel } from '@kraftverk/ui';
 import { Text, YStack } from 'tamagui';
+import { PATHS } from '@kraftverk/api-client';
 
 import { Screen } from '../../components/Screen';
 import { deviceStatus } from './DeviceShell';
@@ -17,7 +18,7 @@ export function DeviceTools() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const device = useDevice(id);
   const { screenProps } = useDevices();
-  const settingsPath = device ? `/device/${encodeURIComponent(device.id)}/settings` : '/';
+  const settingsPath = device ? PATHS.devices.settings(device.id) : PATHS.home;
 
   if (!device) {
     return (

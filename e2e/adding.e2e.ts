@@ -9,7 +9,7 @@ import { addSimulated, press, unique } from './helpers';
 */
 
 test('devices and services are added apart, each shelf naming what it holds; an account or a gateway is its integration’s', async ({ page }) => {
-  await page.goto('/add-device');
+  await page.goto('/devices/add');
   await expect(page.getByText('Devices', { exact: true })).toBeVisible();
   await expect(page.getByText('Power stations', { exact: true })).toBeVisible();
   // Each shelf says which products it holds, not prose about one of them: products first, the platform's generic one last.
@@ -19,7 +19,7 @@ test('devices and services are added apart, each shelf naming what it holds; an 
   await expect(page.getByText('Accounts', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Gateways', { exact: true })).toHaveCount(0);
 
-  await page.goto('/add-device?what=service');
+  await page.goto('/services/add');
   await expect(page.getByText('Add a service', { exact: true })).toBeVisible();
   await expect(page.getByText('Services', { exact: true })).toBeVisible();
   await expect(page.getByText('Open-Meteo', { exact: true })).toBeVisible();
@@ -28,7 +28,7 @@ test('devices and services are added apart, each shelf naming what it holds; an 
 
 test('every step can go back, and a choice changed there is the one that counts', async ({ page }) => {
   const name = unique('Second thoughts');
-  await page.goto('/add-device');
+  await page.goto('/devices/add');
   await press(page, 'Smart plugs');
   await press(page, 'ATORCH S1W');
   await press(page, 'Simulated');
@@ -48,7 +48,7 @@ test('every step can go back, and a choice changed there is the one that counts'
   await press(page, 'Continue');
   await page.getByRole('textbox').first().fill(name);
   await press(page, 'Save');
-  await expect(page).toHaveURL(/\/device\//);
+  await expect(page).toHaveURL(/\/devices\//);
   await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
 });
 
@@ -56,7 +56,7 @@ test('a plug added beside a station is asked what it feeds, and the answer is a 
   const station = await addSimulated(request, 'aferiy.p280', unique('Garage P280'));
   const plugName = unique('Charger plug');
 
-  await page.goto('/add-device');
+  await page.goto('/devices/add');
   await press(page, 'Smart plugs');
   await press(page, 'ATORCH S1W');
   await press(page, 'Simulated');
@@ -69,7 +69,7 @@ test('a plug added beside a station is asked what it feeds, and the answer is a 
   await press(page, 'Save');
 
   // Its page, and on its settings the fact it records about the house.
-  await expect(page).toHaveURL(/\/device\//);
+  await expect(page).toHaveURL(/\/devices\//);
   await page.goto(`${page.url()}/settings`);
   await expect(page.getByText(`It feeds ${station.name} — Mains`)).toBeVisible();
 });

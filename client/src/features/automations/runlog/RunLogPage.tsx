@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, type AutomationView, type RunLog } from '@kraftverk/api-client';
+import { type AutomationView, describeError, PATHS, type RunLog } from '@kraftverk/api-client';
 import { awayOf, changed, marksOf, said, seriesOf, sinceStart, windowOf, type Mark } from '@kraftverk/api-client';
 import { runLogCsv } from '@kraftverk/automation-engine';
 import { fileNameOf, type AutomationId } from '@kraftverk/device-sdk';
@@ -60,13 +60,13 @@ export function RunLogPage({ id, runId }: { id: string; runId: string }) {
   const back = automation?.name ?? 'Automation';
   if (!log) {
     return (
-      <Screen back={back} backTo={`/automation/${encodeURIComponent(id)}`} title="Run log">
+      <Screen back={back} backTo={PATHS.automations.one(id)} title="Run log">
         <Loading error={error} />
       </Screen>
     );
   }
   return (
-    <Screen back={back} backTo={`/automation/${encodeURIComponent(id)}`} title="Run log" subtitle={`${dayOf(log.run.at)} ${new Date(log.run.at).toLocaleTimeString()}`}>
+    <Screen back={back} backTo={PATHS.automations.one(id)} title="Run log" subtitle={`${dayOf(log.run.at)} ${new Date(log.run.at).toLocaleTimeString()}`}>
       <Log log={log} name={automation?.name ?? 'run'} />
     </Screen>
   );

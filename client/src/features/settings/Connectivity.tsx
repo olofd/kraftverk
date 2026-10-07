@@ -1,6 +1,7 @@
 import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { capitalise, Card, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
+import { PATHS } from '@kraftverk/api-client';
 
 import { ErrorText } from '../../components/ErrorText';
 import { Screen } from '../../components/Screen';
@@ -29,7 +30,7 @@ export function Connectivity() {
   const mine = list?.transports.filter((transport) => transport.holder === 'this-node') ?? [];
 
   return (
-    <Screen back="App settings" backTo="/app-settings" title="Connectivity" subtitle="How devices are reached">
+    <Screen back="App settings" backTo={PATHS.settings.index} title="Connectivity" subtitle="How devices are reached">
       <Nodes labels={Object.fromEntries((list?.transports ?? []).map((transport) => [transport.id, transport.label]))} />
 
       <YStack gap="$2">

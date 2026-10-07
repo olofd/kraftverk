@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { router, useIsFocused } from 'expo-router';
 import { useTheme, XStack, YStack } from 'tamagui';
 
-import type { FoundView } from '@kraftverk/api-client';
+import { PATHS, type FoundView } from '@kraftverk/api-client';
 import { Card, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { DeviceImage } from '../../components/DeviceImage';
@@ -48,9 +48,7 @@ export function FoundNearYou() {
   const row = (entry: FoundView, index: number, again: boolean) => {
     const first = entry.types[0]!;
     const add = () =>
-      router.push(
-        `/add-device?type=${encodeURIComponent(first.typeId)}&method=${encodeURIComponent(first.methodId)}&address=${encodeURIComponent(entry.address)}${entry.through ? `&through=${encodeURIComponent(entry.through.id)}` : ''}`
-      );
+      router.push(PATHS.add(first.typeId, { method: first.methodId, address: entry.address, ...(entry.through ? { through: entry.through.id } : {}) }));
     return (
       <YStack key={`${entry.transport}-${entry.through?.id ?? ''}-${entry.address}`}>
         {index > 0 ? <RowSeparator /> : null}

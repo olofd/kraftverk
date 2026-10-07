@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Input, Spinner } from 'tamagui';
 
-import { SetupFlow, typeMatches, waySaid, type CheckOutcome, type DeviceTypeListing } from '@kraftverk/api-client';
-import { isIntegrationsOwn, SIMULATED_METHOD_ID } from '@kraftverk/device-sdk';
+import { PATHS, pathOf, SetupFlow, typeMatches, waySaid, type CheckOutcome, type DeviceTypeListing, type HeldBy, type SetupFrom } from '@kraftverk/api-client';
+import { CATEGORIES, isIntegrationsOwn, SIMULATED_METHOD_ID } from '@kraftverk/device-sdk';
 import { Card, haptic } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
@@ -16,61 +16,112 @@ import { useHome } from '../../state/HomeProvider';
 import { useReach } from '../../state/useReach';
 import { Categories } from './Categories';
 import { Finish } from './Finish';
+import { doneWith, dropFlow, keepFlow, nameFound, namedIn, useFlow } from './flows';
 import { Outcome } from './Outcome';
 import { Progress } from './Progress';
 import { StepView } from './steps/StepView';
 import { Types } from './Types';
 import { Ways, type Way } from './Ways';
 
-/**
- * Adding a device (docs/DATA-MODEL.md §1).
- *
- * What are you adding → which one → how do you want to connect → the steps
- * that connection's layers supply → the check → a name and how it fits the
- * house → saved. Every step that touches the device runs where the connection
- * will be held: the home — a server, or the app's own — or this app, for a
- * server. `?attach=<id>` adds another way to
- * reach a device you have; `?type=&method=&address=` comes from "Found near you" — with `&through=` for one found behind a bridge.
- * `?what=service` adds a service instead: weather, prices. An account or a
- * gateway is its integration's, opened here at its type (`?type=`) from its
- * integration's page, and never listed.
- */
+/*
+  Adding a device, a service — or, from its integration's page, an account
+  or a gateway (docs/DATA-MODEL.md §1), each stage at an address of its own
+  (`PATHS`): its shelves → what is on one → how it is reached → the steps
+  that way's layers supply, one page each → the check → a name, and how it
+  fits the house → saved. Every step that touches the device runs where the
+  connection will be held: the home — a server, or the app's own — or this
+  app, for a server.
+*/
 
-type Stage = 'category' | 'type' | 'method' | 'steps' | 'finish';
+type Shelf = 'devices' | 'services';
 
 /** What a person calls what they are adding, by its kind. */
 const KIND_WORD: Readonly<Record<DeviceTypeListing['kind'], string>> = { hardware: 'device', service: 'service', account: 'account', gateway: 'gateway' };
+const adding = (kind: DeviceTypeListing['kind']) => `Add ${kind === 'account' ? 'an' : 'a'} ${KIND_WORD[kind]}`;
 
-export function AddDevice() {
-  const params = useLocalSearchParams<{ type?: string; method?: string; address?: string; through?: string; attach?: string; again?: string; connection?: string; what?: string }>();
-  const shelf = params.what === 'service' ? 'services' : 'devices';
-  const { devices, refresh } = useDevices();
+/** The home's installed types, and whether it can hold each way. */
+function useTypes() {
+  const { api } = useHome();
+  const { value, error } = useAnswer(() => api.deviceTypes().then((list) => list.types), [api], { failure: 'What can be added could not be read' });
+  return { types: value ?? null, error };
+}
+
+/** A shelf's types: devices, or services. An account or a gateway is never listed: it is opened at its type from its integration's page. */
+const onShelf = (types: readonly DeviceTypeListing[], shelf: Shelf) => types.filter((type) => type.kind === (shelf === 'services' ? 'service' : 'hardware'));
+
+const addOn = (shelf: Shelf) => (shelf === 'services' ? PATHS.services.add : PATHS.devices.add);
+
+function Loading({ error }: { error: string | null }) {
+  return error ? (
+    <Card borderColor="$danger">
+      <ErrorText>{error}</ErrorText>
+    </Card>
+  ) : (
+    <Spinner color="$accent" />
+  );
+}
+
+// --- 1 · what are you adding: /devices/add, /services/add ----------------------------
+
+export function ShelfScreen({ shelf }: { shelf: Shelf }) {
+  const { types, error } = useTypes();
+  const [query, setQuery] = useState('');
+  const listed = onShelf(types ?? [], shelf);
+  const label = shelf === 'services' ? 'Search by name' : 'Search by brand or model';
+  return (
+    <Screen back="Your devices" backTo={PATHS.home} title={shelf === 'services' ? 'Add a service' : 'Add a device'}>
+      {!types ? <Loading error={error} /> : null}
+      {types ? (
+        <>
+          <Input size="$3" value={query} placeholder={label} autoCapitalize="none" onChangeText={setQuery} backgroundColor="$background" borderColor="$borderColor" aria-label={label} />
+          {query.trim() ? (
+            <Types types={listed.filter((candidate) => typeMatches(candidate, query))} onPick={(id) => router.push(PATHS.add(id))} onBack={() => setQuery('')} />
+          ) : (
+            <Categories types={listed} shelf={shelf} onPick={(id) => router.push(addOn(shelf)(id))} />
+          )}
+        </>
+      ) : null}
+    </Screen>
+  );
+}
+
+// --- 2 · which one: /devices/add/<category> ---------------------------------------------
+
+export function CategoryScreen({ shelf }: { shelf: Shelf }) {
+  const { category } = useLocalSearchParams<{ category: string }>();
+  const { types, error } = useTypes();
+  return (
+    <Screen
+      back={shelf === 'services' ? 'Add a service' : 'Add a device'}
+      backTo={addOn(shelf)()}
+      title={CATEGORIES[category as keyof typeof CATEGORIES]?.label ?? (shelf === 'services' ? 'Add a service' : 'Add a device')}
+    >
+      {!types ? <Loading error={error} /> : null}
+      {types ? (
+        <Types
+          types={onShelf(types, shelf).filter((candidate) => candidate.meta.category === category)}
+          onPick={(id) => router.push(PATHS.add(id))}
+          onBack={() => (router.canGoBack() ? router.back() : router.replace(addOn(shelf)()))}
+        />
+      ) : null}
+    </Screen>
+  );
+}
+
+// --- 3 · how do you want to connect: /add/<type>, /devices/<id>/ways/add ----------------------
+
+/** The ways to reach a type — for a device you have, another way to reach it (`/devices/<id>/ways/add`). */
+export function WaysScreen() {
+  const params = useLocalSearchParams<{ type?: string; id?: string; method?: string; address?: string; through?: string }>();
+  const { devices } = useDevices();
   const { api, role } = useHome();
   const reach = useReach();
-  // Set up again — signed in again, its key fetched again — is a way of a device you have, as adding another way is.
-  const againOf = params.again ? (devices.find((device) => device.id === params.again) ?? null) : null;
-  const attachTo = againOf ?? (params.attach ? (devices.find((device) => device.id === params.attach) ?? null) : null);
-
-  // What can be added: the home's installed types, and whether it can hold each way.
-  const { value: types, error: loadError } = useAnswer(() => api.deviceTypes().then((list) => list.types), [api], { failure: 'What can be added could not be read' });
-  const [stage, setStage] = useState<Stage>(params.again ? 'steps' : params.type ? 'method' : 'category');
-  const [category, setCategory] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
-  const [typeId, setTypeId] = useState<string | null>(params.type ?? againOf?.typeId ?? null);
-  const [flow, setFlow] = useState<SetupFlow | null>(null);
-  const [stepIndex, setStepIndex] = useState(0);
-  const [outcome, setOutcome] = useState<CheckOutcome | null>(null);
-  /** What a helper learnt the device is called — its name in its maker's app — offered when it is named. */
-  const [suggestedName, setSuggestedName] = useState<string | null>(null);
+  const { types, error: loadError } = useTypes();
   const { busy, error, attempt } = useAttempt();
-  const flowRef = useRef<SetupFlow | null>(null);
-
-  // A draft left behind is discarded, so a secret it holds does not outlive the screen.
-  useEffect(() => () => flowRef.current?.discard(), []);
-
+  // Another way to reach a device you have: its type, and it to attach the way to.
+  const attachTo = params.id ? (devices.find((device) => device.id === params.id) ?? null) : null;
+  const typeId = params.type ?? attachTo?.typeId ?? null;
   const type = types?.find((candidate) => candidate.id === typeId) ?? null;
-  // What this list is of: devices, or services. An account or a gateway is its integration's, opened here from its page.
-  const listed = types?.filter((candidate) => candidate.kind === (shelf === 'services' ? 'service' : 'hardware')) ?? [];
 
   const ways = useMemo((): Way[] => {
     if (!type) return [];
@@ -104,51 +155,29 @@ export function AddDevice() {
           };
         })
     );
-  }, [devices, role, type, types]);
+  }, [devices, reach, role, type, types]);
 
   const begin = useCallback(
     async (way: Way) => {
       if (!type) return;
       haptic();
       await attempt(async () => {
-        flowRef.current?.discard();
-        const next: SetupFlow = await SetupFlow.start(api, type.id, way.methodId, way.holder);
-        flowRef.current = next;
-        setFlow(next);
-        setStepIndex(0);
-        setOutcome(null);
-        setSuggestedName(null);
-        setStage('steps');
+        const flow = await SetupFlow.start(api, type.id, way.methodId, way.holder);
+        keepFlow(flow);
+        router.push(
+          PATHS.setup(flow.id, flow.plan[0]!.id, {
+            ...(attachTo ? { attach: attachTo.id } : {}),
+            ...(params.address ? { address: params.address } : {}),
+            ...(params.through ? { through: params.through } : {}),
+            ...(way.holder === 'this-node' ? { held: 'here' as const } : {}),
+          })
+        );
       }, 'That way cannot be used right now');
     },
-    [api, type]
+    [api, attachTo, attempt, params.address, params.through, type]
   );
 
-  // Set up again: straight into its steps, from its way's credentials to the check.
-  const againStarted = useRef(false);
-  useEffect(() => {
-    if (againStarted.current || !params.again || !params.connection) return;
-    againStarted.current = true;
-    void attempt(async () => {
-      const next = await SetupFlow.again(api, params.again!, params.connection!);
-      flowRef.current = next;
-      setFlow(next);
-      setStepIndex(0);
-    }, 'It cannot be set up again right now');
-  }, [api, attempt, params.again, params.connection]);
-
-  /** Saved over the way it set up again — nothing added — and back where it was asked from. */
-  const saveAgain = useCallback(async () => {
-    if (!flow || !againOf) return;
-    await attempt(async () => {
-      await flow.save({ name: againOf.name });
-      flowRef.current = null;
-      await refresh();
-      router.back();
-    }, 'It could not be saved');
-  }, [againOf, attempt, flow, refresh]);
-
-  // "Found near you" names the method too: start it straight away.
+  // "Found near you" names the way too: started straight away.
   const autostarted = useRef(false);
   useEffect(() => {
     if (autostarted.current || !params.method || !type) return;
@@ -158,168 +187,25 @@ export function AddDevice() {
     void begin(way);
   }, [begin, params.method, type, ways]);
 
-  const adding = type ? KIND_WORD[type.kind] : shelf === 'services' ? 'service' : 'device';
-  // An account or a gateway is added from its integration's page, and goes back there.
-  const ownOf = type && isIntegrationsOwn(type.kind) ? type.source.integration : null;
-  const title = againOf ? `Sign ${againOf.name} in again` : attachTo ? `Another way to reach ${attachTo.name}` : `Add ${adding === 'account' ? 'an' : 'a'} ${adding}`;
-
-  // --- moving through the steps ---------------------------------------------------------
-
-  /** Forward. Finding the device on the network is skipped when an earlier step already found it. */
-  const next = useCallback(() => {
-    if (!flow) return;
-    setStepIndex((index) => flow.after(index));
-  }, [flow]);
-
-  /** Back one step, keeping everything entered; from the first, back to choosing how to connect. */
-  const back = useCallback(() => {
-    if (!flow) return;
-    haptic();
-    if (stepIndex === 0) {
-      flowRef.current?.discard();
-      flowRef.current = null;
-      setFlow(null);
-      setStage('method');
-      return;
-    }
-    setOutcome(null);
-    setStepIndex(flow.before(stepIndex));
-  }, [flow, stepIndex]);
-
-  /** Straight to an earlier step, from the progress bar. */
-  const goTo = useCallback((index: number) => {
-    haptic();
-    setOutcome(null);
-    setStage('steps');
-    setStepIndex(index);
-  }, []);
+  // Back to where it was asked from: its device, its integration's page, or the shelf it is on.
+  const own = type && isIntegrationsOwn(type.kind) ? type.source.integration : null;
+  const back = attachTo
+    ? { label: attachTo.name, to: PATHS.devices.settings(attachTo.id) }
+    : own
+      ? { label: own.name, to: PATHS.integrations.one(own.id) }
+      : type
+        ? { label: type.kind === 'service' ? 'Add a service' : 'Add a device', to: addOn(type.kind === 'service' ? 'services' : 'devices')(type.meta.category) }
+        : { label: 'Your devices', to: PATHS.home };
 
   return (
-    <Screen
-      back={attachTo ? attachTo.name : ownOf ? ownOf.name : 'Your devices'}
-      backTo={attachTo ? `/device/${encodeURIComponent(attachTo.id)}/settings` : ownOf ? `/integration/${encodeURIComponent(ownOf.id)}` : '/'}
-      title={title}
-      subtitle={type?.meta.name}
-    >
-      {loadError ? (
-        <Card borderColor="$danger">
-          <ErrorText>
-            {loadError}
-          </ErrorText>
+    <Screen back={back.label} backTo={back.to} title={attachTo ? `Another way to reach ${attachTo.name}` : type ? adding(type.kind) : 'Add'} subtitle={type?.meta.name}>
+      {!types ? <Loading error={loadError} /> : null}
+      {types && !type ? (
+        <Card>
+          <ErrorText>Nothing installed here is called “{typeId}”.</ErrorText>
         </Card>
       ) : null}
-      {!types && !loadError ? <Spinner color="$accent" /> : null}
-
-      {types && stage === 'category' ? (
-        <>
-          <Input
-            size="$3"
-            value={query}
-            placeholder={shelf === 'services' ? 'Search by name' : 'Search by brand or model'}
-            autoCapitalize="none"
-            onChangeText={setQuery}
-            backgroundColor="$background"
-            borderColor="$borderColor"
-            aria-label={shelf === 'services' ? 'Search by name' : 'Search by brand or model'}
-          />
-          {query.trim() ? (
-            <Types
-              types={listed.filter((candidate) => typeMatches(candidate, query))}
-              onPick={(id) => {
-                setTypeId(id);
-                setStage('method');
-              }}
-              onBack={() => setQuery('')}
-            />
-          ) : (
-            <Categories types={listed} shelf={shelf} onPick={(id) => (setCategory(id), setStage('type'))} />
-          )}
-        </>
-      ) : null}
-
-      {types && stage === 'type' ? (
-        <Types
-          types={listed.filter((candidate) => candidate.meta.category === category)}
-          onPick={(id) => {
-            setTypeId(id);
-            setStage('method');
-          }}
-          onBack={() => setStage('category')}
-        />
-      ) : null}
-
-      {stage === 'method' && type ? (
-        <Ways ways={ways} busy={busy} onPick={(way) => void begin(way)} onNeed={(need) => router.push(`/add-device?type=${encodeURIComponent(need.typeId)}`)} onBack={params.type ? undefined : () => setStage('type')} />
-      ) : null}
-
-      {(stage === 'steps' || stage === 'finish') && flow ? (
-        <Progress
-          steps={[
-            ...flow.plan
-              .map((step, index) => ({ title: step.title, index, skipped: flow.skips(index) && index !== stepIndex }))
-              .filter((step) => !step.skipped),
-            ...(againOf ? [] : [{ title: attachTo ? 'Add it' : 'Name it', index: flow.plan.length }]),
-          ]}
-          at={stage === 'finish' ? flow.plan.length : stepIndex}
-          onGoTo={goTo}
-        />
-      ) : null}
-
-      {stage === 'steps' && flow ? (
-        outcome ? (
-          <Outcome
-            outcome={outcome}
-            attachTo={attachTo}
-            earlier={flow.plan.length > 1}
-            onBack={() => {
-              // To the step before the check; with none, to choosing how to reach it.
-              if (flow.plan.length > 1) {
-                setOutcome(null);
-                setStepIndex(flow.plan.length - 2);
-              } else {
-                setStepIndex(0);
-                back();
-              }
-            }}
-            onRetry={() => setOutcome(null)}
-            onContinue={() => (againOf ? void saveAgain() : setStage('finish'))}
-            onOtherType={(id) => {
-              setTypeId(id);
-              setStage('method');
-            }}
-          />
-        ) : (
-          <StepView
-            key={flow.plan[stepIndex]?.id}
-            flow={flow}
-            step={flow.plan[stepIndex]!}
-            presetAddress={params.address}
-            presetThrough={params.through}
-            onNext={next}
-            onBack={back}
-            onChecked={setOutcome}
-            onNamed={setSuggestedName}
-          />
-        )
-      ) : null}
-
-      {stage === 'finish' && flow && outcome && type ? (
-        <Finish
-          flow={flow}
-          outcome={outcome}
-          onBack={() => setStage('steps')}
-          typeName={suggestedName ?? type.meta.name}
-          description={type.description}
-          attachTo={attachTo}
-          devices={devices}
-          onSaved={async (id) => {
-            flowRef.current = null;
-            await refresh();
-            router.replace(`/device/${encodeURIComponent(id)}`);
-          }}
-        />
-      ) : null}
-
+      {type ? <Ways ways={ways} busy={busy} onPick={(way) => void begin(way)} onNeed={(need) => router.push(PATHS.add(need.typeId))} /> : null}
       {error ? (
         <ErrorText fontSize={12} paddingHorizontal="$1">
           {error}
@@ -329,5 +215,179 @@ export function AddDevice() {
   );
 }
 
-// --- 1 · what are you adding ------------------------------------------------------
+// --- one of a device's ways, set up again: /devices/<id>/ways/<connection>/again ----------
 
+export function AgainScreen() {
+  const { id, connection } = useLocalSearchParams<{ id: string; connection: string }>();
+  const { api } = useHome();
+  const { busy, error, attempt } = useAttempt();
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    void attempt(async () => {
+      const flow = await SetupFlow.again(api, id, connection);
+      keepFlow(flow);
+      router.replace(PATHS.setup(flow.id, flow.plan[0]!.id));
+    }, 'It cannot be set up again right now');
+  }, [api, attempt, connection, id]);
+  return (
+    <Screen back="Back" backTo={PATHS.devices.one(id)} title="Set up again">
+      {busy ? <Spinner color="$accent" /> : null}
+      {error ? <ErrorText>{error}</ErrorText> : null}
+    </Screen>
+  );
+}
+
+// --- 4 · its steps, one page each: /setup/<draft>/<step> -----------------------------------
+
+/** After the check: naming it, and how it fits the house. Not one of the plan's steps. */
+const NAME_STEP = 'name';
+
+export function SetupScreen() {
+  const params = useLocalSearchParams<{ draft: string; step?: string; attach?: string; address?: string; through?: string; held?: string }>();
+  const { devices, refresh } = useDevices();
+  const { api } = useHome();
+  const { types } = useTypes();
+  const holder: HeldBy = params.held === 'here' ? 'this-node' : 'master';
+  const { flow, error: lost } = useFlow(api, params.draft, holder);
+  const { error, attempt } = useAttempt();
+  const type = flow ? (types?.find((candidate) => candidate.id === flow.typeId) ?? null) : null;
+  const attachTo = params.attach ? (devices.find((device) => device.id === params.attach) ?? null) : null;
+  const carried: Pick<SetupFrom, 'attach' | 'address' | 'through' | 'held'> = {
+    ...(params.attach ? { attach: params.attach } : {}),
+    ...(params.address ? { address: params.address } : {}),
+    ...(params.through ? { through: params.through } : {}),
+    ...(params.held === 'here' ? { held: 'here' as const } : {}),
+  };
+  const at = (step: string) => PATHS.setup(params.draft, step, carried);
+
+  // Where it is: a step of its plan, or naming it after the check. None named: the first.
+  const naming = params.step === NAME_STEP;
+  const stepIndex = flow ? Math.max(0, flow.plan.findIndex((step) => step.id === params.step)) : 0;
+  const [outcome, setOutcome] = useState<CheckOutcome | null>(null);
+  // Taken up again at the check, or come back to it: what it found is shown, not asked for again.
+  useEffect(() => {
+    if (flow && flow.plan[stepIndex]?.kind === 'check') setOutcome(flow.checked);
+  }, [flow, stepIndex]);
+  useEffect(() => {
+    if (flow && !params.step) router.replace(at(flow.plan[0]!.id));
+  });
+
+  const again = flow?.again ?? null;
+  const title = again ? `Sign ${again.name} in again` : attachTo ? `Another way to reach ${attachTo.name}` : type ? adding(type.kind) : 'Setting up';
+  const waysOf = flow ? (attachTo ? PATHS.devices.addWay(attachTo.id) : PATHS.add(flow.typeId)) : PATHS.home;
+
+  /** Forward. Finding the device on the network is skipped when an earlier step already found it. */
+  const next = useCallback(() => {
+    if (!flow) return;
+    router.push(at(flow.plan[flow.after(stepIndex)]!.id));
+  }, [flow, stepIndex]);
+
+  /** Back one step, keeping everything entered; from the first, back to choosing how to connect, the draft let go. */
+  const back = useCallback(() => {
+    if (!flow) return;
+    haptic();
+    if (stepIndex === 0) {
+      dropFlow(flow.id);
+      router.replace(waysOf);
+      return;
+    }
+    flow.uncheck();
+    router.replace(at(flow.plan[flow.before(stepIndex)]!.id));
+  }, [flow, stepIndex, waysOf]);
+
+  /** Saved over the way it set up again — nothing added — and back to what it is a way of. */
+  const saveAgain = useCallback(async () => {
+    if (!flow || !again) return;
+    await attempt(async () => {
+      await flow.save({ name: again.name });
+      doneWith(flow.id);
+      await refresh();
+      const thing = devices.find((device) => device.id === again.deviceId);
+      router.replace(thing ? pathOf(thing) : PATHS.devices.one(again.deviceId));
+    }, 'It could not be saved');
+  }, [again, attempt, devices, flow, refresh]);
+
+  if (lost || !flow) {
+    return (
+      <Screen back="Your devices" backTo={PATHS.home} title="Setting up">
+        {lost ? <ErrorText>{lost}</ErrorText> : <Spinner color="$accent" />}
+      </Screen>
+    );
+  }
+
+  const step = flow.plan[stepIndex]!;
+  return (
+    <Screen back={attachTo ? attachTo.name : type ? (type.kind === 'service' ? 'Add a service' : 'Add a device') : 'Back'} backTo={waysOf} title={title} subtitle={type?.meta.name}>
+      <Progress
+        steps={[
+          ...flow.plan.map((each, index) => ({ title: each.title, index, skipped: flow.skips(index) && index !== stepIndex })).filter((each) => !each.skipped),
+          ...(again ? [] : [{ title: attachTo ? 'Add it' : 'Name it', index: flow.plan.length }]),
+        ]}
+        at={naming ? flow.plan.length : stepIndex}
+        onGoTo={(index) => {
+          haptic();
+          flow.uncheck();
+          router.push(at(index >= flow.plan.length ? NAME_STEP : flow.plan[index]!.id));
+        }}
+      />
+
+      {!naming && step.kind === 'check' && outcome ? (
+        <Outcome
+          outcome={outcome}
+          attachTo={attachTo}
+          earlier={flow.plan.length > 1}
+          onBack={() => {
+            // To the step before the check; with none, to choosing how to reach it.
+            flow.uncheck();
+            setOutcome(null);
+            if (flow.plan.length > 1) router.replace(at(flow.plan[flow.before(stepIndex)]!.id));
+            else back();
+          }}
+          onRetry={() => (flow.uncheck(), setOutcome(null))}
+          onContinue={() => (again ? void saveAgain() : router.push(at(NAME_STEP)))}
+          onOtherType={(id) => (dropFlow(flow.id), router.replace(PATHS.add(id)))}
+        />
+      ) : null}
+
+      {!naming && !(step.kind === 'check' && outcome) ? (
+        <StepView
+          key={step.id}
+          flow={flow}
+          step={step}
+          presetAddress={params.address}
+          presetThrough={params.through}
+          onNext={next}
+          onBack={back}
+          onChecked={setOutcome}
+          onNamed={(name) => nameFound(flow.id, name)}
+        />
+      ) : null}
+
+      {naming && flow.checked && type ? (
+        <Finish
+          flow={flow}
+          outcome={flow.checked}
+          onBack={() => router.replace(at(flow.plan[flow.plan.length - 1]!.id))}
+          typeName={namedIn(flow.id) ?? type.meta.name}
+          description={type.description}
+          attachTo={attachTo}
+          devices={devices}
+          onSaved={async (id) => {
+            doneWith(flow.id);
+            await refresh();
+            router.replace(pathOf({ id, kind: type.kind, integration: type.source.integration }));
+          }}
+        />
+      ) : null}
+      {naming && !flow.checked ? <ErrorText>It has not been checked yet: go back to the check.</ErrorText> : null}
+
+      {error ? (
+        <ErrorText fontSize={12} paddingHorizontal="$1">
+          {error}
+        </ErrorText>
+      ) : null}
+    </Screen>
+  );
+}

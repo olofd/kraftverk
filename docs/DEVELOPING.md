@@ -94,9 +94,10 @@ packages/devices/        aferiy-p280, atorch-s1w, tuya-zigbee-plug, niu-uqi-gt �
 packages/ui/             shared interface primitives, used by the app and by devices
 packages/api-client/     every API endpoint, and the shapes the server sends
 client/                  Expo app (iOS + web)
+  app/                   the routes, one per address — the scheme is packages/api-client/src/paths.ts (PATHS), and every link is built from it
   app/index.tsx          "Your devices" — the root, always
-  app/add-device.tsx     categories → type → how to connect → steps → check → save
-  app/device/[id]/       one device: dashboard, settings, advanced
+  app/devices/add/       Add a device: shelves → a shelf; app/add/[type] how it is reached; app/setup/[draft]/[step] each step
+  app/devices/[id]/      one device: dashboard, settings, tools, parts, its ways
   src/platform/home/     the home, where the app runs: its own, or what it holds for a server — in its process on a phone, in a worker in a browser
   src/platform/          what is the app's own and not a screen: its preferences, its cipher, where it runs
   src/state/             the home the screens ask (HomeProvider), its devices, the servers

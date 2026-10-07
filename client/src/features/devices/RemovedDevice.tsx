@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { router } from 'expo-router';
 import { Button, Input, Text, YStack } from 'tamagui';
 
-import type { DeviceView } from '@kraftverk/api-client';
+import { PATHS, type DeviceView } from '@kraftverk/api-client';
 import { Card, haptic, SectionLabel } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
@@ -27,7 +27,7 @@ export function RemovedDevice({ device }: { device: DeviceView }) {
     haptic();
     await attempt(async () => {
       await deleteHistory(device.id, typed);
-      router.replace('/removed');
+      router.replace(PATHS.devices.removed);
     }, 'Its history could not be deleted');
   };
 
@@ -41,7 +41,7 @@ export function RemovedDevice({ device }: { device: DeviceView }) {
           Its history is kept. To bring it back, add it again: when the check recognises it, it offers
           to bring this history with it.
         </Text>
-        <Button alignSelf="flex-start" size="$3" onPress={() => router.push(`/add-device?type=${encodeURIComponent(device.typeId)}`)}>
+        <Button alignSelf="flex-start" size="$3" onPress={() => router.push(PATHS.add(device.typeId))}>
           Add it again
         </Button>
       </Card>

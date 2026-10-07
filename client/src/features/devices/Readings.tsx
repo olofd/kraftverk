@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { useTheme } from 'tamagui';
 
-import { fedBy, feedsTo, type DeviceView } from '@kraftverk/api-client';
+import { type DeviceView, fedBy, feedsTo, PATHS } from '@kraftverk/api-client';
 import { attributesOf, MAIN_PART, partsOf } from '@kraftverk/device-sdk';
 import { DeviceCard, EnergyFlow, Icon, PartCard, Row } from '@kraftverk/ui';
 
@@ -50,7 +50,7 @@ export function Parts({ device }: { device: DeviceView }) {
             attributes={reportedBy(device, part.id)}
             readings={device.readings}
             accessory={
-              <Pressable onPress={() => router.push(`/device/${encodeURIComponent(device.id)}/part/${encodeURIComponent(part.id)}`)}>
+              <Pressable onPress={() => router.push(PATHS.devices.part(device.id, part.id))}>
                 <Row title={`More about ${part.label.toLowerCase()}`} accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />} />
               </Pressable>
             }

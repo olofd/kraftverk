@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
 import type { AutomationId, Value } from '@kraftverk/device-sdk';
-import { describeError, isRunEntry, type AutomationRun, type AutomationView, type Rehearsal } from '@kraftverk/api-client';
+import { type AutomationRun, type AutomationView, describeError, isRunEntry, PATHS, type Rehearsal } from '@kraftverk/api-client';
 import { describeExpr, paramText, WHILE_RUNNING } from '@kraftverk/automation';
 import { capitalise, Card, haptic, Icon, RowSeparator, type IconName } from '@kraftverk/ui';
 
@@ -37,14 +37,11 @@ export function AutomationPage({ id, edit = null }: { id: string; edit?: 'form' 
   const { api } = useHome();
   const [automation, setAutomation] = useState<AutomationView | null>(null);
   const [error, setError] = useState<string | null>(null);
-  /** Being changed: through the form, or as its YAML. */
-  const [editing, setEditing] = useState<'form' | 'yaml' | null>(edit);
+  /** Being changed — through the form, or as its YAML — is its editor's own address (`PATHS.automations.edit`). */
+  const editing = edit;
 
-  /** Edited, or not: the page again — and an address that does not open the form once more. */
-  const done = () => {
-    setEditing(null);
-    if (edit) router.setParams({ edit: undefined } as never);
-  };
+  /** Edited, or not: back to its page. */
+  const done = () => router.replace(PATHS.automations.one(id));
 
   const load = useCallback(() => {
     api.automations
@@ -60,7 +57,7 @@ export function AutomationPage({ id, edit = null }: { id: string; edit?: 'form' 
 
   if (!automation) {
     return (
-      <Screen back="Automations" backTo="/automations" title="Automation">
+      <Screen back="Automations" backTo={PATHS.automations.list} title="Automation">
         <Loading error={error} />
       </Screen>
     );
@@ -71,14 +68,15 @@ export function AutomationPage({ id, edit = null }: { id: string; edit?: 'form' 
         existing={automation}
         initial={{ name: automation.name, rule: automation.rule, roles: automation.roles, groups: automation.groups, starts: automation.starts }}
         madeFrom={automation.madeFrom?.id ?? null}
-        back={{ label: 'Automations', to: '/automations' }}
+        back={{ label: automation.name, to: PATHS.automations.one(id) }}
         view={editing}
         onSaved={(next) => (setAutomation(next), done())}
         onCancel={done}
+        onView={(view) => router.setParams({ view: view === 'yaml' ? 'yaml' : undefined } as never)}
       />
     );
   }
-  return <Page automation={automation} onChanged={setAutomation} onEdit={(view) => setEditing(view)} />;
+  return <Page automation={automation} onChanged={setAutomation} onEdit={(view) => router.push(PATHS.automations.edit(id, view))} />;
 }
 
 function Page({ automation, onChanged, onEdit }: { automation: AutomationView; onChanged: (next: AutomationView) => void; onEdit: (view: 'form' | 'yaml') => void }) {
@@ -92,7 +90,7 @@ function Page({ automation, onChanged, onEdit }: { automation: AutomationView; o
   const eachSaysItsOwn = onItsOwn && automation.whenSteps.every((own) => own.length > 0);
 
   return (
-    <Screen back="Automations" backTo="/automations" title={automation.name}>
+    <Screen back="Automations" backTo={PATHS.automations.list} title={automation.name}>
       <Header automation={automation} onChanged={onChanged} onEdit={() => onEdit('form')} onChecked={setChecked} onRehearsed={setRehearsal} />
 
       {checked ? (
@@ -247,13 +245,13 @@ function Header({
     act(async () => {
       if (!(await confirmAction(`Delete “${automation.name}”?`, `${automation.running ? 'Its run is stopped first. ' : ''}It stops, and is gone — its runs and their logs with it. What it did stays on the timeline, said in words.`, 'Delete', 'dangerous'))) return;
       await api.automations.delete(automation.id);
-      router.replace('/automations');
+      router.replace(PATHS.automations.list);
     }, 'It could not be deleted');
 
   const items: { icon: IconName; label: string; danger?: boolean; onPress: () => void }[] = [
     { icon: 'help-circle', label: 'What would it do now?', onPress: () => void act(async () => onChecked(await api.automations.check(automation.id)), 'It could not be checked') },
     ...(automation.when.length ? [{ icon: 'rewind' as const, label: 'Rehearse on last week', onPress: () => void act(async () => onRehearsed(await api.automations.rehearse({ automation: automation.id })), 'It could not be rehearsed') }] : []),
-    { icon: 'code', label: 'As configuration', onPress: () => (setMenu(false), router.push(`/automation/${encodeURIComponent(automation.id)}/configuration`)) },
+    { icon: 'code', label: 'As configuration', onPress: () => (setMenu(false), router.push(PATHS.automations.configuration(automation.id))) },
     { icon: 'trash-2', label: 'Delete', danger: true, onPress: () => void remove() },
   ];
 

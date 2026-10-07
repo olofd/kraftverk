@@ -13,7 +13,7 @@ test('cutting a plug that feeds a station is confirmed first, naming the part it
   const plug = await addSimulated(request, 'atorch.s1w', unique('ATORCH'));
   await link(request, { device: plug.id, part: 'main' }, { device: station.id, part: 'input.ac' });
 
-  await page.goto(`/device/${plug.id}`);
+  await page.goto(`/devices/${plug.id}`);
   const power = page.getByRole('switch').first();
   await expect(power).toHaveAttribute('aria-checked', 'true');
 
@@ -30,7 +30,7 @@ test('cutting a plug that feeds a station is confirmed first, naming the part it
 test('turning off a plug that carries a load says how much, and once confirmed, it is off', async ({ page, request }) => {
   const plug = await addSimulated(request, 'atorch.s1w', unique('Heater plug'));
 
-  await page.goto(`/device/${plug.id}`);
+  await page.goto(`/devices/${plug.id}`);
   const power = page.getByRole('switch').first();
   await expect(power).toHaveAttribute('aria-checked', 'true');
 
@@ -44,7 +44,7 @@ test('turning off a plug that carries a load says how much, and once confirmed, 
 test('a switch is operated from the keyboard: Tab to it, Space asks the same question a tap does', async ({ page, request }) => {
   const plug = await addSimulated(request, 'atorch.s1w', unique('Kettle plug'));
 
-  await page.goto(`/device/${plug.id}`);
+  await page.goto(`/devices/${plug.id}`);
   const power = page.getByRole('switch').first();
   await expect(power).toHaveAttribute('aria-checked', 'true');
   await power.focus();
@@ -60,7 +60,7 @@ test('a switch is operated from the keyboard: Tab to it, Space asks the same que
 test('how much is a load is the home’s to say: set in App settings, the same plug turns off without asking', async ({ page, request }) => {
   const plug = await addSimulated(request, 'atorch.s1w', unique('Night light'));
   try {
-    await page.goto('/app-settings');
+    await page.goto('/settings');
     const load = page.getByLabel('A load worth confirming');
     await load.fill('500');
     await load.press('Enter');
@@ -68,7 +68,7 @@ test('how much is a load is the home’s to say: set in App settings, the same p
       .poll(async () => ((await (await request.get('/api/policy')).json()) as { name: string; value: number }[]).find((item) => item.name === 'loadWatts')?.value)
       .toBe(500);
 
-    await page.goto(`/device/${plug.id}`);
+    await page.goto(`/devices/${plug.id}`);
     const power = page.getByRole('switch').first();
     await expect(power).toHaveAttribute('aria-checked', 'true');
     await power.click();

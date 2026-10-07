@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { Button, Text, XStack } from 'tamagui';
 
-import { mayContinue, type CheckOutcome, type DeviceView } from '@kraftverk/api-client';
+import { type CheckOutcome, type DeviceView, mayContinue, PATHS } from '@kraftverk/api-client';
 import { Card } from '@kraftverk/ui';
 
 export function Outcome({
@@ -55,7 +55,7 @@ export function Outcome({
           </Button>
         ) : null}
         {outcome.outcome === 'yours' && (!attachTo || outcome.device.id !== attachTo.id) ? (
-          <Button size="$3" onPress={() => router.replace(`/device/${encodeURIComponent(outcome.device.id)}`)}>
+          <Button size="$3" onPress={() => router.replace(PATHS.devices.one(outcome.device.id))}>
             Open {outcome.device.name}
           </Button>
         ) : null}

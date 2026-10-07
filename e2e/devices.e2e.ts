@@ -14,7 +14,7 @@ test('the station’s own dashboard and settings draw what it reports, and what 
   const charger = await addSimulated(request, 'atorch.s1w', unique('Charger plug'));
   await link(request, { device: charger.id, part: 'main' }, { device: station.id, part: 'input.ac' });
 
-  await page.goto(`/device/${station.id}`);
+  await page.goto(`/devices/${station.id}`);
   await expect(page.getByText('Grid', { exact: true })).toBeVisible();
   await expect(page.getByText('Solar', { exact: true }).first()).toBeVisible();
   await expect(page.getByText(/^\d+%?$/).first()).toBeVisible();
@@ -22,7 +22,7 @@ test('the station’s own dashboard and settings draw what it reports, and what 
   await expect(page.getByText('Light', { exact: true }).first()).toBeVisible();
   await expect(page.getByText(new RegExp(`fed by ${charger.name}`))).toBeVisible();
 
-  await page.goto(`/device/${station.id}/settings`);
+  await page.goto(`/devices/${station.id}/settings`);
   await expect(page.getByText('AC charge limit', { exact: true })).toBeVisible();
   await expect(page.getByText('Whole machine unused time', { exact: true })).toBeVisible();
 });
@@ -45,7 +45,7 @@ test('electricity prices: the price now in the currency chosen, and where the ho
   await expect(card).toBeVisible();
   await expect(card).toContainText('SEK/kWh');
 
-  await page.goto(`/device/${prices.id}`);
+  await page.goto(`/devices/${prices.id}`);
   await expect(page.getByText('Electricity price', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Price rank today', { exact: true }).first()).toBeVisible();
 });
@@ -70,7 +70,7 @@ test('the device list follows the live stream: a new device appears without relo
 
 test('a model has its pictures, and the one shown is its owner’s pick: tap the picture, choose another', async ({ page, request }) => {
   const scooter = await addSimulated(request, 'niu.uqi-gt', unique('Scooter'));
-  await page.goto(`/device/${scooter.id}`);
+  await page.goto(`/devices/${scooter.id}`);
   await page.getByRole('button', { name: `Change the picture of ${scooter.name}` }).click();
   const dialog = page.getByRole('dialog', { name: `The picture of ${scooter.name}` });
   await expect(dialog.getByRole('radio')).toHaveCount(3);
@@ -88,7 +88,7 @@ test('a model has its pictures, and the one shown is its owner’s pick: tap the
 });
 
 test('a Zigbee plug is offered under Smart plugs, reached through its gateway; its settings read in words', async ({ page, request }) => {
-  await page.goto('/add-device');
+  await page.goto('/devices/add');
   await page.getByText('Smart plugs', { exact: true }).click();
   await page.getByText('Tuya Zigbee plug', { exact: true }).click();
   await expect(page.getByText(/^Through its Zigbee gateway/).first()).toBeVisible();
@@ -96,21 +96,21 @@ test('a Zigbee plug is offered under Smart plugs, reached through its gateway; i
   await expect(page.getByText(/^Set up your Tuya Zigbee gateway first/).first()).toBeVisible();
 
   const plug = await addSimulated(request, 'tuya.zigbee-plug', unique('Fan plug'));
-  await page.goto(`/device/${plug.id}/settings`);
+  await page.goto(`/devices/${plug.id}/settings`);
   await expect(page.getByText('After a power cut', { exact: true })).toBeVisible();
   await expect(page.getByText('Indicator light', { exact: true })).toBeVisible();
   await expect(page.getByText('Button locked', { exact: true })).toBeVisible();
 });
 
 test('a NIU scooter is found under Vehicles — the common one, and a model of its own — and its page says how full it is, what it is doing and when it reported', async ({ page, request }) => {
-  await page.goto('/add-device');
+  await page.goto('/devices/add');
   await page.getByText('Vehicles', { exact: true }).click();
   await expect(page.getByText('NIU scooter', { exact: true })).toBeVisible();
   await expect(page.getByText('NIU UQi GT', { exact: true })).toBeVisible();
 
   // A model reported with its finish after its name is still that model: the check lets it be added as one.
   const scooter = await addSimulated(request, 'niu.uqi-gt', unique('Scooter'));
-  await page.goto(`/device/${scooter.id}`);
+  await page.goto(`/devices/${scooter.id}`);
   // Its battery, in percent: not the spinner a chart shows while it loads, which is a progress bar too.
   await expect(page.locator('[role=progressbar][aria-valuemax="100"]')).toBeVisible();
   await expect(page.getByText(/^(Charging|Switched on|Parked)$/)).toBeVisible();

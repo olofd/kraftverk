@@ -28,6 +28,22 @@ export class SetupFlow {
     return new SetupFlow(api, 'master', await api.setup.again({ deviceId, connectionId }));
   }
 
+  /** One in progress, taken up again by its id: a step's own page, or after a reload. */
+  static async resume(api: KraftverkApi, draftId: string, holder: HeldBy): Promise<SetupFlow> {
+    return new SetupFlow(api, holder, await api.setup.get(draftId));
+  }
+
+  get id() {
+    return this.#draft.id;
+  }
+  get typeId() {
+    return this.#draft.typeId;
+  }
+  /** What the check found, once it has run. */
+  get checked() {
+    return this.#draft.checked;
+  }
+
   /** The way being set up again, when it is one: its device and connection. */
   get again() {
     return this.#draft.again;
@@ -100,6 +116,10 @@ export class SetupFlow {
     const outcome = await this.api.setup.check(this.#draft.id);
     this.#draft = { ...this.#draft, checked: outcome };
     return outcome;
+  }
+  /** Gone back before the check: what it found no longer stands, and it is asked again. */
+  uncheck(): void {
+    this.#draft = { ...this.#draft, checked: null };
   }
   /** Saves, and returns the device's id. */
   async save(input: SaveInput): Promise<SavedDeviceId> {

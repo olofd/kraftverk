@@ -16,16 +16,16 @@ test('a NIU account finds its scooters: one is added through it, as its model, a
   const account = await addSimulated(request, 'niu.account', unique('NIU account'));
 
   // Not among the devices: under its integration, on NIU's page.
-  await page.goto('/integration/niu');
+  await page.goto('/integrations/niu');
   await expect(page.getByText('Accounts', { exact: true })).toBeVisible();
   await press(page, account.name);
-  await expect(page).toHaveURL(new RegExp(`/integration/niu/account/${account.id}`));
+  await expect(page).toHaveURL(new RegExp(`/integrations/niu/accounts/${account.id}`));
   // NIU's own panel, and signing in again.
   await expect(page.getByText('How NIU is asked', { exact: true })).toBeVisible();
 
   // Its page: what is behind it, not added yet — each as the model it says it is. A device's address for it leads here too.
-  await page.goto(`/device/${account.id}`);
-  await expect(page).toHaveURL(new RegExp(`/integration/niu/account/${account.id}`));
+  await page.goto(`/devices/${account.id}`);
+  await expect(page).toHaveURL(new RegExp(`/integrations/niu/accounts/${account.id}`));
   await expect(page.getByText('Through it', { exact: true })).toBeVisible();
   await expect(page.getByText('Not added yet · NIU UQi GT')).toBeVisible();
   await expect(page.getByText('Not added yet · NIU scooter')).toBeVisible();
@@ -37,18 +37,18 @@ test('a NIU account finds its scooters: one is added through it, as its model, a
   const name = unique('Scooter one');
   await page.getByRole('textbox').first().fill(name);
   await press(page, 'Save');
-  await expect(page).toHaveURL(/\/device\//);
-  const id = page.url().split('/device/')[1]!.split(/[/?#]/)[0]!;
+  await expect(page).toHaveURL(/\/devices\//);
+  const id = page.url().split('/devices/')[1]!.split(/[/?#]/)[0]!;
 
   // Read through its account, and said to be.
   const device = await (await request.get(`/api/devices/${id}`, { headers: HEADERS })).json();
   expect(device).toMatchObject({ typeId: 'niu.uqi-gt', connections: [{ transport: 'bridge', address: 'SIMULATED-NIU-1', through: { id: account.id, name: account.name } }] });
   await expect.poll(async () => (await (await request.get(`/api/devices/${id}`, { headers: HEADERS })).json()).health.detail).toContain('through its NIU account');
-  await page.goto(`/device/${id}/settings`);
+  await page.goto(`/devices/${id}/settings`);
   await expect(page.getByText(`Through your NIU account, through ${account.name}`)).toBeVisible();
 
   // The account's page lists it now as one of yours.
-  await page.goto(`/device/${account.id}`);
+  await page.goto(`/devices/${account.id}`);
   await expect(page.getByText(name, { exact: true })).toBeVisible();
 
   // Paused there, the account is kept and not reached — and the scooter says why; resumed, it is read again.

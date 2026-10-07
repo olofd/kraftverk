@@ -4,6 +4,6 @@ import { RunLogPage } from '../../../../src/features/automations/runlog/RunLogPa
 
 /** One run of an automation, read back: its steps, and every value its devices gave while it ran. */
 export default function RunLogScreen() {
-  const { id, runId } = useLocalSearchParams<{ id: string; runId: string }>();
-  return <RunLogPage id={id} runId={runId} />;
+  const { id, run } = useLocalSearchParams<{ id: string; run: string }>();
+  return <RunLogPage id={id} runId={run} />;
 }

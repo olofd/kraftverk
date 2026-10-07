@@ -8,7 +8,7 @@ import { addSimulated, answer, unique } from './helpers';
 */
 
 test('where the home is: typed in degrees, said back with today’s sunrise and sunset, and forgotten', async ({ page }) => {
-  await page.goto('/app-settings');
+  await page.goto('/settings');
   // Made-up coordinates: Greenwich.
   await page.getByLabel('Latitude', { exact: true }).fill('51,4779');
   await page.getByLabel('Longitude', { exact: true }).fill('0');
@@ -27,7 +27,7 @@ test('a slider moved from the keyboard is written once, when the keys stop', asy
   };
   expect(await reading()).toBe(6);
 
-  await page.goto(`/device/${plug.id}/settings`);
+  await page.goto(`/devices/${plug.id}/settings`);
   const thumb = page.getByRole('slider', { name: 'Brightness', exact: true });
   await thumb.focus();
   // Arrow keys move the value with no slide around them: two presses, one write.
@@ -49,7 +49,7 @@ test('a button that cannot be undone asks first, in the server’s words; no run
     return (audit as { kind: string }[]).filter((entry) => entry.kind === 'device.tool').length;
   };
 
-  await page.goto(`/device/${plug.id}/settings`);
+  await page.goto(`/devices/${plug.id}/settings`);
   const reset = page.getByRole('button', { name: 'Reset', exact: true });
 
   await reset.click();

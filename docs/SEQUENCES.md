@@ -232,7 +232,7 @@ too, and `home_setting` keeps only what the home sets as a whole, by names the s
   (`automation_run_device`, `_role`, `_key`, `_reading`, `_reach`; see
   DATA-MODEL.md); `GET /automations/:id/runs/:runId/log`, or `?format=csv`.
   The minute samples of history cannot say what happened inside a 20 s try.
-- **The run log page** (`/automation/:id/run/:runId`, "Run log" in a run's
+- **The run log page** (`/automations/:id/runs/:run`, "Run log" in a run's
   Activity): how it came out; every step, those that changed something
   numbered; every value drawn across the run — numbers held from one reading
   to the next, on/off and options as bands, the time a device was out of
@@ -416,7 +416,7 @@ tried on the owner's real station, plug and charger, with the owner watching.
 7. **The recipes** — `standard.start-charging`, `standard.stop-charging`.
    *Built.*
 8. **The app** — the card, the run as it goes, the device page's Start, the
-   editor — `client/src/features/automations`, `client/app/automations.tsx`;
+   editor — `client/src/features/automations`, `client/app/automations/index.tsx`;
    `e2e/sequences.e2e.ts`. *Built.*
 9. **Docs** — this, AUTOMATIONS.md, DATA-MODEL.md, API.md, HANDOFF.md.
 10. **On the real chain** — the owner's station, Zigbee plug and scooter

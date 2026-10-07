@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Text, XStack, YStack } from 'tamagui';
 
-import { describeError } from '@kraftverk/api-client';
+import { describeError, PATHS } from '@kraftverk/api-client';
 import type { ServerLogLine } from '@kraftverk/api-client';
 import { Card, Row, RowSeparator, SectionLabel, SegmentedControl } from '@kraftverk/ui';
 
@@ -65,7 +65,7 @@ export function ServerLog() {
   }, [load, allowed]);
 
   return (
-    <Screen back="App settings" backTo="/app-settings" title="Server log" subtitle="What the server has said lately">
+    <Screen back="App settings" backTo={PATHS.settings.index} title="Server log" subtitle="What the server has said lately">
       <Card inset>
         <SegmentedControl title="Show" value={level} options={LEVELS} onChange={setLevel} />
       </Card>

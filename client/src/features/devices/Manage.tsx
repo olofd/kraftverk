@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { router } from 'expo-router';
 import { Button, Input, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { describeError, type DeviceView } from '@kraftverk/api-client';
+import { describeError, type DeviceView, PATHS } from '@kraftverk/api-client';
 import { Card, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
@@ -38,7 +38,7 @@ export function Manage({ device }: { device: DeviceView }) {
     setError(null);
     try {
       await remove(device.id);
-      router.replace('/');
+      router.replace(PATHS.home);
     } catch (err) {
       setError(describeError(err) || 'It could not be removed');
     } finally {
@@ -101,7 +101,7 @@ export function Manage({ device }: { device: DeviceView }) {
         />
         <RowSeparator />
         <Row
-          title="Remove this device"
+          title={`Remove this ${device.kind === 'hardware' ? 'device' : device.kind}`}
           subtitle="Its history is kept, to bring back or delete later"
           accessory={
             <Button size="$3" minHeight={44} disabled={busy} borderColor="$danger" icon={<Icon name="trash-2" size={13} color={theme.danger?.val} />} onPress={() => void removeIt()}>

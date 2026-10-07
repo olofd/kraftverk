@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Text, useTheme, YStack } from 'tamagui';
 
-import { describeError, type AccountDetail } from '@kraftverk/api-client';
+import { type AccountDetail, describeError, PATHS } from '@kraftverk/api-client';
 import { Card, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
@@ -23,7 +23,7 @@ export function Accounts() {
   const { applies, state } = useAuth();
 
   return (
-    <Screen back="App settings" backTo="/app-settings" title="Accounts" subtitle="Who may use this server">
+    <Screen back="App settings" backTo={PATHS.settings.index} title="Accounts" subtitle="Who may use this server">
       {!applies ? (
         <Card>
           <Text fontSize={13} color="$muted" lineHeight={19}>

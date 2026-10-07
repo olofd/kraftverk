@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import type { AutomationMode } from '@kraftverk/automation';
-import { automationChangeOf, summaryOn, type AuditEntry, type AutomationRun, type AutomationView, type ConditionState, type Rehearsal } from '@kraftverk/api-client';
+import { type AuditEntry, automationChangeOf, type AutomationRun, type AutomationView, type ConditionState, PATHS, type Rehearsal, summaryOn } from '@kraftverk/api-client';
 import { Icon, IconLabel, type IconName } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
@@ -170,7 +170,7 @@ function RunLogLink({ automationId, run }: { automationId: string; run: Automati
       alignSelf="flex-start"
       icon={<Icon name="activity" size={16} />}
       aria-label={`Run log: ${run.summary}`}
-      onPress={() => router.push(`/automation/${encodeURIComponent(automationId)}/run/${encodeURIComponent(runId)}`)}
+      onPress={() => router.push(PATHS.automations.run(automationId, runId))}
     >
       Run log
     </Button>

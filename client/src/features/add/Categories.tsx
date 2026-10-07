@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { useTheme, XStack, YStack } from 'tamagui';
 
 import { CATEGORIES } from '@kraftverk/device-sdk';
-import { type DeviceTypeListing } from '@kraftverk/api-client';
+import { type DeviceTypeListing, PATHS } from '@kraftverk/api-client';
 import { Card, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { featherName } from '../../components/icons';
@@ -64,7 +64,7 @@ export function Categories({ types, shelf, onPick }: { types: DeviceTypeListing[
       <YStack gap="$2">
         <SectionLabel>Already described</SectionLabel>
         <Card inset>
-          <Pressable onPress={() => router.push('/configuration?import=1')}>
+          <Pressable onPress={() => router.push(PATHS.settings.configuration({ import: true }))}>
             <XStack alignItems="center" gap="$3" paddingLeft="$4">
               <Icon name="file-text" size={18} color={theme.accent?.val} />
               <YStack flex={1}>

@@ -92,7 +92,7 @@ for (const width of [320, 375]) {
     await expect(page.getByRole('group', { name })).toBeVisible();
     expect(await problems(page)).toEqual([]);
 
-    await page.goto(`/automation/${id}`);
+    await page.goto(`/automations/${id}`);
     await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
     await page.getByRole('button', { name: 'More' }).click();
     expect(await problems(page)).toEqual([]);
@@ -130,7 +130,7 @@ for (const width of [320, 375]) {
     expect(await problems(page)).toEqual([]);
 
     // Its history: which reading, and how far back — a title never squeezed beside the ranges.
-    await page.goto(`/device/${prices.id}`);
+    await page.goto(`/devices/${prices.id}`);
     await expect(page.getByRole('radiogroup', { name: /: how far back$/ })).toBeVisible();
     expect(await problems(page)).toEqual([]);
 
@@ -158,13 +158,13 @@ for (const width of [320, 375]) {
     expect(started.ok(), await started.text()).toBe(true);
     await expect.poll(async () => (await (await request.get(`/api/automations/${quickId}`, { headers: HEADERS })).json()).lastRun?.id ?? null, { timeout: 15_000 }).not.toBeNull();
     const runId = (await (await request.get(`/api/automations/${quickId}`, { headers: HEADERS })).json()).lastRun.id as string;
-    await page.goto(`/automation/${quickId}/run/${runId}`);
+    await page.goto(`/automations/${quickId}/runs/${runId}`);
     await expect(page.getByRole('list', { name: 'Every reading' })).toBeVisible();
     expect(await problems(page)).toEqual([]);
 
     // Five power steps, six delays: every label whole, each a named group.
     for (const device of [station, meter]) {
-      await page.goto(`/device/${device.id}/settings`);
+      await page.goto(`/devices/${device.id}/settings`);
       await expect(page.getByRole('heading', { level: 1, name: device.name })).toBeVisible();
       await expect(page.getByRole('radiogroup').first()).toBeVisible();
       expect(await problems(page)).toEqual([]);
@@ -177,7 +177,7 @@ for (const width of [320, 375]) {
     const plug = await addSimulated(request, 'atorch.s1w', unique('Plug'));
 
     // An export of chosen things, and an import that names a device you do not have.
-    await page.goto('/configuration');
+    await page.goto('/settings/configuration');
     await page.getByRole('radio', { name: 'Choose' }).click();
     await page.getByRole('radio', { name: 'Sealed' }).click();
     expect(await problems(page)).toEqual([]);
@@ -203,7 +203,7 @@ for (const width of [320, 375]) {
       },
     });
     expect(made.ok(), await made.text()).toBe(true);
-    await page.goto(`/automation/${(await made.json()).id}/configuration`);
+    await page.goto(`/automations/${(await made.json()).id}/configuration`);
     expect(await problems(page)).toEqual([]);
     await page.getByRole('region', { name: 'Configuration' }).getByRole('button', { name: 'Edit as YAML' }).click();
     await expect(page.getByRole('radio', { name: 'YAML' })).toBeChecked();

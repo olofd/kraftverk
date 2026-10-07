@@ -26,6 +26,6 @@ test('Integrations, from Home: each platform, where it runs, and its own page wi
   await expect(page.getByText(/For one nobody has described yet/).last()).toBeVisible();
 
   // A service is the platform's own.
-  await page.goto('/integration/open-meteo');
+  await page.goto('/integrations/open-meteo');
   await expect(page.getByText(/Its service/).first()).toBeVisible();
 });

@@ -23,7 +23,7 @@ test('without a server, the app keeps its own home: a simulated plug added, swit
   await page.goto('/');
   await press(page, 'Use without a server');
 
-  await page.goto('/add-device');
+  await page.goto('/devices/add');
   await press(page, 'Smart plugs');
   await press(page, 'Tuya smart plug');
   await press(page, 'Simulated');

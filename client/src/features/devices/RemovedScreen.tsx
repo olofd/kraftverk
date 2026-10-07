@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { Text, useTheme } from 'tamagui';
 
 import { Card, Row, RowSeparator, Icon } from '@kraftverk/ui';
+import { PATHS } from '@kraftverk/api-client';
 
 import { Pressable } from '../../components/Pressable';
 import { Screen } from '../../components/Screen';
@@ -22,7 +23,7 @@ export function RemovedScreen() {
           <Row title="Nothing removed" subtitle="A device you remove is kept here with its history" />
         ) : (
           removed.map((device, index) => (
-            <Pressable key={device.id} onPress={() => router.push(`/device/${encodeURIComponent(device.id)}`)}>
+            <Pressable key={device.id} onPress={() => router.push(PATHS.devices.one(device.id))}>
               {index > 0 ? <RowSeparator /> : null}
               <Row
                 title={device.name}

@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
-import type { AutomationView } from '@kraftverk/api-client';
+import { PATHS, type AutomationView } from '@kraftverk/api-client';
 import { Card, Icon, type IconName } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
@@ -26,7 +26,7 @@ export function AutomationCard({ automation, onChanged }: { automation: Automati
     <Card inset role="group" aria-label={automation.name} borderColor={running ? '$accent' : '$borderColor'}>
       <XStack alignItems="center" gap="$3" paddingRight="$3">
         <YStack flex={1}>
-          <Pressable onPress={() => router.push(`/automation/${encodeURIComponent(automation.id)}`)} label={`${automation.name}: ${run.status}. Open`}>
+          <Pressable onPress={() => router.push(PATHS.automations.one(automation.id))} label={`${automation.name}: ${run.status}. Open`}>
             <XStack alignItems="center" gap="$3" paddingLeft="$3" paddingVertical="$3" minHeight={72}>
               {/* How it starts, in a square: filled when it acts on its own, outlined while it only watches, grey when off. */}
               <YStack

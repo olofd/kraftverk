@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { useTheme, YStack } from 'tamagui';
 
-import { byPlatform, whereTheyRunSaid } from '@kraftverk/api-client';
+import { byPlatform, PATHS, whereTheyRunSaid } from '@kraftverk/api-client';
 import { Card, Icon, Row, RowSeparator } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
@@ -25,7 +25,7 @@ export function IntegrationsScreen() {
   const platforms = list ? byPlatform(list) : [];
 
   return (
-    <Screen back="Your devices" backTo="/" title="Integrations" subtitle="Where kraftverk meets each service and platform: your accounts and gateways on it, and what it knows">
+    <Screen back="Your devices" backTo={PATHS.home} title="Integrations" subtitle="Where kraftverk meets each service and platform: your accounts and gateways on it, and what it knows">
       {error ? <ErrorText>{error}</ErrorText> : null}
       <Card inset>
         {platforms.map(({ integration, products, own }, index) => {
@@ -39,7 +39,7 @@ export function IntegrationsScreen() {
           return (
             <YStack key={integration.id}>
               {index > 0 ? <RowSeparator /> : null}
-              <Pressable onPress={() => router.push(`/integration/${encodeURIComponent(integration.id)}`)}>
+              <Pressable onPress={() => router.push(PATHS.integrations.one(integration.id))}>
                 <Row
                   title={integration.name}
                   subtitle={[yours.length ? `${yours.join(', ')} of yours` : null, whereTheyRunSaid([...products, ...own])].filter(Boolean).join(' · ')}

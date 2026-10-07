@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { Text, useTheme, YStack } from 'tamagui';
 
-import { byPlatform, whereTheyRunSaid, type DeviceTypeListing, type DeviceView } from '@kraftverk/api-client';
+import { byPlatform, type DeviceTypeListing, type DeviceView, pathOf, PATHS, whereTheyRunSaid } from '@kraftverk/api-client';
 import type { CategorySpec } from '@kraftverk/device-sdk';
 import { Card, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
@@ -13,9 +13,6 @@ import { useAnswer } from '../../components/useAnswer';
 import { useDevices } from '../../state/DevicesProvider';
 import { useHome } from '../../state/HomeProvider';
 import { integrationScreens } from './registry';
-
-/** Where an account's page is: under its integration, never among the devices (docs/PLAN-INTEGRATIONS.md §1.1). */
-export const accountPath = (integration: string, account: string): string => `/integration/${encodeURIComponent(integration)}/account/${encodeURIComponent(account)}`;
 
 const SUPPORT: Record<string, string> = {
   verified: 'Verified on real hardware',
@@ -37,7 +34,7 @@ function TypeRow({ type, categories, devices }: { type: DeviceTypeListing; categ
 /** A device of yours on it, as a row: an account to its own page, a device to its device page. */
 function YoursRow({ device, integration }: { device: DeviceView; integration: string }) {
   const theme = useTheme();
-  const path = device.kind === 'account' ? accountPath(integration, device.id) : `/device/${encodeURIComponent(device.id)}`;
+  const path = pathOf(device);
   return (
     <Pressable onPress={() => router.push(path)}>
       <Row
@@ -73,7 +70,7 @@ function OwnSection({ kind, yours, types, integration }: { kind: keyof typeof OW
         {types.map((type, index) => (
           <YStack key={type.id}>
             {yours.length + index > 0 ? <RowSeparator /> : null}
-            <Pressable onPress={() => router.push(`/add-device?type=${encodeURIComponent(type.id)}`)}>
+            <Pressable onPress={() => router.push(PATHS.add(type.id))}>
               <Row title={`Add ${yours.length ? 'another' : 'your'} ${type.meta.name}`} subtitle={OWN[kind].adds} accessory={<Icon name="plus" size={16} color={theme.accent?.val} />} />
             </Pressable>
           </YStack>
@@ -121,7 +118,7 @@ export function IntegrationScreen() {
   const Page = platform ? integrationScreens(platform.integration.id)?.page : undefined;
 
   return (
-    <Screen back="Integrations" backTo="/integrations" title={platform?.integration.name ?? 'Integration'} subtitle={platform ? whereTheyRunSaid(types) : undefined}>
+    <Screen back="Integrations" backTo={PATHS.integrations.list} title={platform?.integration.name ?? 'Integration'} subtitle={platform ? whereTheyRunSaid(types) : undefined}>
       {error ? <ErrorText>{error}</ErrorText> : null}
       {list && !platform ? (
         <Card>

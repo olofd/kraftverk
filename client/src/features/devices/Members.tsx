@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { useTheme, YStack } from 'tamagui';
 
-import type { DeviceView } from '@kraftverk/api-client';
+import { PATHS, type DeviceView } from '@kraftverk/api-client';
 import { Card, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { DeviceImage } from '../../components/DeviceImage';
@@ -31,33 +31,27 @@ export function Members({ device }: { device: DeviceView }) {
         {yours.map((member, index) => (
           <YStack key={member.id}>
             {index > 0 ? <RowSeparator /> : null}
-            <Pressable onPress={() => router.push(`/device/${encodeURIComponent(member.id)}`)}>
+            <Pressable onPress={() => router.push(PATHS.devices.one(member.id))}>
               <Row leading={<DeviceImage typeId={member.typeId} size={36} />} title={member.name} subtitle={member.meta.name} accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />} />
             </Pressable>
           </YStack>
         ))}
-        {found.map((entry, index) => {
-          const first = entry.types[0]!;
-          return (
-            <YStack key={`found-${entry.address}`}>
+        {/* One that does not say what it is is offered as each thing it could be: a person picks, rather than a first guess being made for them. */}
+        {found
+          .flatMap((entry) => entry.types.map((type) => ({ entry, type, several: entry.types.length > 1 })))
+          .map(({ entry, type, several }, index) => (
+            <YStack key={`found-${entry.address}-${type.typeId}`}>
               {yours.length + index > 0 ? <RowSeparator /> : null}
-              <Pressable
-                onPress={() =>
-                  router.push(
-                    `/add-device?type=${encodeURIComponent(first.typeId)}&method=${encodeURIComponent(first.methodId)}&address=${encodeURIComponent(entry.address)}&through=${encodeURIComponent(device.id)}`
-                  )
-                }
-              >
+              <Pressable onPress={() => router.push(PATHS.add(type.typeId, { method: type.methodId, address: entry.address, through: device.id }))}>
                 <Row
-                  leading={<DeviceImage typeId={first.typeId} size={36} />}
+                  leading={<DeviceImage typeId={type.typeId} size={36} />}
                   title={entry.name}
-                  subtitle={`Not added yet · ${first.name}`}
+                  subtitle={several ? `Not added yet · add it as a ${type.name}` : `Not added yet · ${type.name}`}
                   accessory={<Icon name="plus" size={16} color={theme.accent?.val} />}
                 />
               </Pressable>
             </YStack>
-          );
-        })}
+          ))}
       </Card>
     </YStack>
   );

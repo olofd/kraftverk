@@ -6,7 +6,7 @@ plan. It builds on docs/AUTOMATIONS.md and docs/SEQUENCES.md: the language
 they describe stays; who writes a rule changes.
 
 **Status:** built, 2026-09-30, as written here: the editor at
-`client/app/automation/[id]/` and `client/src/features/automations/editor`,
+`client/app/automations/[id]/` and `client/src/features/automations/editor`,
 the rule kept and checked by the home (`plans` in `@kraftverk/hub`),
 and e2e in `e2e/sequences.e2e.ts` and `e2e/charge-window.e2e.ts`.
 
@@ -234,12 +234,12 @@ that acts), and `stop` stops. It does not build rules; a person does.
 - Each automation is a small card — what starts it, its name, how it
   stands in a line, and a play button (■ Stop while it runs). The same
   card on the home page and on a device's page.
-- Its name opens **its own page** (`/automation/:id`): Run, Edit, ⋯ (What
+- Its name opens **its own page** (`/automations/:id`): Run, Edit, ⋯ (What
   would it do now, Rehearse, Delete), and each part of it in a group of its
   own — When, Only if, Does, If a step fails, Right now, On its own (the
   mode), Activity. Edit turns that page into its form, in place: the same
   groups, editable, with Cancel and Save kept below it. A new one is
-  `/automation/new` — "Start from", then the same form.
+  `/automations/new` — "Start from", then the same form.
 - A device's page ends with the automations it takes part in — the same
   list, and New, which starts from that device.
 
@@ -250,7 +250,7 @@ that acts), and `stop` stops. It does not build rules; a person does.
   outcome.
 - "Show on the home page" is a switch on the card.
 
-**The editor** (`/automation/[id]`; `/automation/new`, with or without a
+**The editor** (`/automations/[id]/edit`; `/automations/new`, with or without a
 recipe to start from), top to bottom:
 
 1. **Name.**

@@ -3,7 +3,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { Text, YStack } from 'tamagui';
 
 import { CONFIG_SCHEMA_PATH } from '@kraftverk/api-contract';
-import { describeError, type AutomationView, type ConfigSnapshotView, type ElsewhereView } from '@kraftverk/api-client';
+import { type AutomationView, type ConfigSnapshotView, describeError, type ElsewhereView, PATHS } from '@kraftverk/api-client';
 import { schemaLine, type Vocabulary } from '@kraftverk/home-file';
 import { Card, Row, SectionLabel } from '@kraftverk/ui';
 
@@ -53,7 +53,7 @@ export function ConfigurationScreen() {
   return (
     <Screen
       back={params.import ? 'Add a device' : 'App settings'}
-      backTo={params.import ? '/add-device' : '/app-settings'}
+      backTo={params.import ? PATHS.devices.add() : PATHS.settings.index}
       title={params.import ? 'Import' : 'Configuration'}
       subtitle={params.import ? 'A device, an automation, or a whole home, from a configuration' : 'Your home as one file: to keep, move, or write by hand'}
     >

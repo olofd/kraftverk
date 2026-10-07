@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import type { AutomationView } from '@kraftverk/api-client';
+import { PATHS, type AutomationView } from '@kraftverk/api-client';
 import { haptic, Icon } from '@kraftverk/ui';
 
 import { useTone } from '../../components/tone';
@@ -49,7 +49,7 @@ export function AutomationList({
           color="$background"
           icon={<Icon name="plus" size={16} color={tone('$background')} />}
           aria-label={device ? `New automation with ${device.name}` : 'New automation'}
-          onPress={() => (haptic(), router.push(device ? `/automation/new?device=${encodeURIComponent(device.id)}` : '/automation/new'))}
+          onPress={() => (haptic(), router.push(PATHS.automations.new(device?.id)))}
         >
           New
         </Button>

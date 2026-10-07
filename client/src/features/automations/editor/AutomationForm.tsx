@@ -52,6 +52,7 @@ export function AutomationForm({
   view,
   onSaved,
   onCancel,
+  onView,
 }: {
   existing: AutomationView | null;
   initial: Draft;
@@ -62,6 +63,8 @@ export function AutomationForm({
   view?: View;
   onSaved: (automation: AutomationView) => void;
   onCancel: () => void;
+  /** Switched between the form and its YAML: for the page's address to say which. */
+  onView?: (view: View) => void;
 }) {
   const { devices, loading } = useDevices();
   const { kit, automations, error } = useEditorKit();
@@ -87,7 +90,7 @@ export function AutomationForm({
         prefer: prefer ?? null,
       }}
     >
-      <Editing existing={existing} initial={initial} madeFrom={madeFrom} back={back} title={title} view={view ?? 'form'} onSaved={onSaved} onCancel={onCancel} />
+      <Editing existing={existing} initial={initial} madeFrom={madeFrom} back={back} title={title} view={view ?? 'form'} onSaved={onSaved} onCancel={onCancel} onView={onView} />
     </EditorProvider>
   );
 }
@@ -101,6 +104,7 @@ function Editing({
   view: opensOn,
   onSaved,
   onCancel,
+  onView,
 }: {
   existing: AutomationView | null;
   initial: Draft;
@@ -110,6 +114,7 @@ function Editing({
   view: View;
   onSaved: (automation: AutomationView) => void;
   onCancel: () => void;
+  onView?: (view: View) => void;
 }) {
   const { api } = useHome();
   const tone = useTone();
@@ -152,6 +157,7 @@ function Editing({
     setProblem(null);
     if (next === 'yaml') yaml.open(pruned(editor.draft), settings);
     setView(next);
+    onView?.(next);
   };
   useEffect(() => {
     if (opensOn === 'yaml') switchTo('yaml');

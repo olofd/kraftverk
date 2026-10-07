@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import type { AutomationId } from '@kraftverk/device-sdk';
-import { describeError, type AutomationView } from '@kraftverk/api-client';
+import { type AutomationView, describeError, PATHS } from '@kraftverk/api-client';
 
 import { Loading } from '../../components/Loading';
 import { Screen } from '../../components/Screen';
@@ -26,14 +26,14 @@ export function AutomationConfigScreen() {
       .catch((err: unknown) => setError(describeError(err) || 'It could not be read'));
   }, [api, id]);
   useEffect(load, [load]);
-  const back = { label: automation?.name ?? 'Automation', to: `/automation/${encodeURIComponent(id)}` };
+  const back = { label: automation?.name ?? 'Automation', to: PATHS.automations.one(id) };
 
   return (
     <Screen back={back.label} backTo={back.to} title="As configuration" subtitle={automation?.name}>
       {error || !automation ? (
 <Loading error={error} />
 ) : (
-        <AutomationConfig automation={automation} onChanged={setAutomation} onEditYaml={() => router.replace(`/automation/${encodeURIComponent(id)}?edit=yaml`)} />
+        <AutomationConfig automation={automation} onChanged={setAutomation} onEditYaml={() => router.replace(PATHS.automations.edit(id, 'yaml'))} />
       )}
     </Screen>
   );

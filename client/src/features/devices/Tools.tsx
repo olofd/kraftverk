@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { useTheme, YStack } from 'tamagui';
 
-import type { DeviceView } from '@kraftverk/api-client';
+import { PATHS, type DeviceView } from '@kraftverk/api-client';
 import { Card, Icon, Row, SectionLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../components/Pressable';
@@ -17,7 +17,7 @@ export function Tools({ device }: { device: DeviceView }) {
     <YStack gap="$2">
       <SectionLabel>Tools</SectionLabel>
       <Card inset>
-        <Pressable onPress={() => router.push(`/device/${encodeURIComponent(device.id)}/tools`)}>
+        <Pressable onPress={() => router.push(PATHS.devices.tools(device.id))}>
           <Row
             title={workbench?.label ?? 'Tools'}
             subtitle={workbench?.description ?? names}

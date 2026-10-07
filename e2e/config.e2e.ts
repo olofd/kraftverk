@@ -29,7 +29,7 @@ test('a device exported from its settings, removed, and imported again: back und
   const key = (await (await request.get(`/api/devices/${plug.id}`, { headers: HEADERS })).json()).key as string;
 
   // Its settings: its key, what it is as configuration, and an export of it alone.
-  await page.goto(`/device/${plug.id}/settings`);
+  await page.goto(`/devices/${plug.id}/settings`);
   await expect(page.getByLabel('Name in configuration')).toHaveValue(key);
   await page.getByRole('button', { name: 'Show as configuration' }).click();
   const own = await textOf(page, `${plug.name}, as configuration`);
@@ -44,7 +44,7 @@ test('a device exported from its settings, removed, and imported again: back und
 
   // Removed — then imported again from its own file, as adding a device offers.
   expect((await request.delete(`/api/devices/${plug.id}`, { headers: HEADERS })).ok()).toBe(true);
-  await page.goto('/add-device');
+  await page.goto('/devices/add');
   await page.getByText('From a configuration', { exact: true }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Import' })).toBeVisible();
   await write(page, 'The configuration to import', exported);
@@ -80,7 +80,7 @@ test('an automation as YAML: shown on its page, written so, checked as it is typ
   const automation = await made.json();
 
   // Rarely needed beside Run and Edit: under ⋯, a page of its own — the menu's first item has the focus.
-  await page.goto(`/automation/${automation.id}`);
+  await page.goto(`/automations/${automation.id}`);
   await page.getByRole('button', { name: 'More' }).click();
   await expect(page.getByRole('menu').getByRole('button').first()).toBeFocused();
   await page.getByRole('button', { name: 'As configuration' }).click();
@@ -107,7 +107,7 @@ test('an automation as YAML: shown on its page, written so, checked as it is typ
   await expect(page.getByRole('region', { name: 'When' }).getByText('At 06:30 on weekdays')).toBeVisible();
 
   // Its key, changed in place.
-  await page.goto(`/automation/${automation.id}/configuration`);
+  await page.goto(`/automations/${automation.id}/configuration`);
   await page.getByLabel('Name in configuration').fill('heater-morning');
   await config.getByRole('button', { name: 'Save' }).click();
   await expect(config.getByText('heater-morning', { exact: true })).toBeVisible();
@@ -117,7 +117,7 @@ test('an automation as YAML: shown on its page, written so, checked as it is typ
 test('an import naming a device you do not have: one of yours, chosen, fills it — and letting it act is asked first', async ({ page, request }) => {
   const plug = await addSimulated(request, 'atorch.s1w', unique('Porch plug'));
   const key = unique('porch-light').replace(' ', '-');
-  await page.goto('/configuration');
+  await page.goto('/settings/configuration');
   await write(
     page,
     'The configuration to import',
@@ -140,7 +140,7 @@ test('one device\'s own YAML imported as it is; an automation exported from its 
   // A device, as its page shows it: no file around it, its key made from its name.
   const name = unique('Attic plug');
   const key = name.toLowerCase().replace(/ /g, '-');
-  await page.goto('/configuration?import=1');
+  await page.goto('/settings/configuration?import=1');
   await write(page, 'The configuration to import', `type: atorch.s1w\nname: ${name}\nconnect:\n  - via: simulated\n`);
   await page.getByRole('button', { name: 'Read it' }).click();
   await expect(page.getByText(`Read as one device, known by "${key}"`)).toBeVisible();
@@ -164,7 +164,7 @@ test('one device\'s own YAML imported as it is; an automation exported from its 
   });
   expect(made.ok(), await made.text()).toBe(true);
   const original = await made.json();
-  await page.goto(`/automation/${original.id}/configuration`);
+  await page.goto(`/automations/${original.id}/configuration`);
   const config = page.getByRole('region', { name: 'Configuration' });
   await config.getByRole('button', { name: 'Export' }).click();
   await config.getByRole('button', { name: 'Make the file' }).click();

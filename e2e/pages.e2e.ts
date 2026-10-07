@@ -11,7 +11,7 @@ import { addSimulated, unique } from './helpers';
 test('a tool is drawn from its declaration and run: the plug’s datapoints, answered as its layout sends them', async ({ page, request }) => {
   const plug = await addSimulated(request, 'atorch.s1w', unique('Desk plug'));
 
-  await page.goto(`/device/${plug.id}/settings`);
+  await page.goto(`/devices/${plug.id}/settings`);
   await page.getByText('Tools', { exact: true }).last().click();
   await expect(page.getByText('Datapoints', { exact: true }).last()).toBeVisible();
   // The datapoints are the first of its tools; its buttons — the screen, the counter — follow.
@@ -24,7 +24,7 @@ test('a tool is drawn from its declaration and run: the plug’s datapoints, ans
 test('a part has a page of its own: what it reports, and its history', async ({ page, request }) => {
   const station = await addSimulated(request, 'aferiy.p280', unique('Cabin P280'));
 
-  await page.goto(`/device/${station.id}/part/input.ac`);
+  await page.goto(`/devices/${station.id}/parts/input.ac`);
   await expect(page.getByText('Mains', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Mains present', { exact: true })).toBeVisible();
   await expect(page.getByText('Mains voltage', { exact: true }).first()).toBeVisible();

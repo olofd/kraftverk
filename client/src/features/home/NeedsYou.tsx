@@ -2,6 +2,7 @@ import { router, useIsFocused } from 'expo-router';
 import { useTheme, YStack } from 'tamagui';
 
 import { Card, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
+import { pathOf } from '@kraftverk/api-client';
 
 import { DeviceImage } from '../../components/DeviceImage';
 import { Pressable } from '../../components/Pressable';
@@ -9,7 +10,6 @@ import { useAnswer } from '../../components/useAnswer';
 import { useAuth } from '../../state/AuthProvider';
 import { useDevices } from '../../state/DevicesProvider';
 import { useHome } from '../../state/HomeProvider';
-import { accountPath } from '../integrations/IntegrationScreen';
 
 /** How often what waits on you is looked at again, while the home page is seen. */
 const LOOK_AGAIN_MS = 15_000;
@@ -36,7 +36,7 @@ export function NeedsYou() {
       <SectionLabel>{acts.length === 1 ? 'Needs you' : `Needs you · ${acts.length}`}</SectionLabel>
       <Card inset>
         {acts.map(({ device, detail }, index) => {
-          const path = device.kind === 'account' && device.integration ? accountPath(device.integration.id, device.id) : `/device/${encodeURIComponent(device.id)}`;
+          const path = pathOf(device);
           const typeId = devices.find((each) => each.id === device.id)?.typeId ?? null;
           return (
             <YStack key={device.id}>

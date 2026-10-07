@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { Text, useTheme, YStack } from 'tamagui';
 
 import { Card, haptic, Icon, Row, RowSeparator, SectionLabel, ToggleRow } from '@kraftverk/ui';
+import { PATHS } from '@kraftverk/api-client';
 
 import { Pressable } from '../../components/Pressable';
 import { Screen } from '../../components/Screen';
@@ -35,7 +36,7 @@ export function AppSettings() {
         <Card inset>
           {active ? (
             <>
-              <Pressable onPress={() => router.push('/accounts')}>
+              <Pressable onPress={() => router.push(PATHS.settings.accounts)}>
                 <Row
                   title="Accounts"
                   subtitle={auth.state?.user ? `Signed in as ${auth.state.user.username}. Who may use this server.` : 'Who may use this server'}
@@ -45,7 +46,7 @@ export function AppSettings() {
               <RowSeparator />
             </>
           ) : null}
-          <Pressable onPress={() => router.push('/connectivity')}>
+          <Pressable onPress={() => router.push(PATHS.settings.connectivity)}>
             <Row
               title="Connectivity"
               subtitle={role === 'follower' ? 'Your kraftverk nodes — your server and this app — what each reaches devices over, and their diagnostics' : 'This kraftverk node, and what it reaches devices over'}
@@ -53,17 +54,17 @@ export function AppSettings() {
             />
           </Pressable>
           <RowSeparator />
-          <Pressable onPress={() => router.push('/removed')}>
+          <Pressable onPress={() => router.push(PATHS.devices.removed)}>
             <Row title="Removed devices" subtitle={removed.length ? `${removed.length} kept with their history` : 'None'} accessory={chevron} />
           </Pressable>
           <RowSeparator />
-          <Pressable onPress={() => router.push('/configuration')}>
+          <Pressable onPress={() => router.push(PATHS.settings.configuration())}>
             <Row title="Configuration" subtitle={active ? 'Your home as one file: export it, import one, and the copy kept beside the server' : 'Your home as one file: export it, and import one'} accessory={chevron} />
           </Pressable>
           {active ? (
             <>
               <RowSeparator />
-              <Pressable onPress={() => router.push('/server-log')}>
+              <Pressable onPress={() => router.push(PATHS.settings.serverLog)}>
                 <Row title="Server log" subtitle="What the server has said lately — where to look when something is wrong" accessory={chevron} />
               </Pressable>
             </>

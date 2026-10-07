@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { Button, Spinner, Text, useTheme, YStack } from 'tamagui';
 
-import type { DeviceTypeListing, DeviceView } from '@kraftverk/api-client';
+import { PATHS, type DeviceTypeListing, type DeviceView } from '@kraftverk/api-client';
 import { attributesOf, CATEGORIES, MAIN_PART } from '@kraftverk/device-sdk';
 import { Card, DeviceCard, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
@@ -109,7 +109,7 @@ export function HomeScreen() {
             icon={<Icon name="plus" size={14} color={theme.background?.val} />}
             onPress={() => {
               haptic();
-              router.push('/add-device');
+              router.push(PATHS.devices.add());
             }}
           >
             Add a device
@@ -128,7 +128,7 @@ export function HomeScreen() {
       <YStack gap="$2">
         <SectionLabel>Manage</SectionLabel>
         <Card inset>
-          <Pressable onPress={() => router.push('/add-device')}>
+          <Pressable onPress={() => router.push(PATHS.devices.add())}>
             <Row
               title="Add a device"
               subtitle={addSubtitle(deviceTypes)}
@@ -138,13 +138,13 @@ export function HomeScreen() {
           {serviceTypes.length ? (
             <>
               <RowSeparator />
-              <Pressable onPress={() => router.push('/add-device?what=service')}>
+              <Pressable onPress={() => router.push(PATHS.services.add())}>
                 <Row title="Add a service" subtitle={addSubtitle(serviceTypes)} accessory={<Icon name="plus" size={16} color={theme.muted?.val} />} />
               </Pressable>
             </>
           ) : null}
           <RowSeparator />
-          <Pressable onPress={() => router.push('/integrations')}>
+          <Pressable onPress={() => router.push(PATHS.integrations.list)}>
             <Row
               title="Integrations"
               subtitle={accounts ? `Your ${accounts === 1 ? 'account' : `${accounts} accounts`} on the services kraftverk reaches, and what each knows` : 'The services and platforms kraftverk reaches: sign in to an account, and what is on it is found'}
@@ -152,7 +152,7 @@ export function HomeScreen() {
             />
           </Pressable>
           <RowSeparator />
-          <Pressable onPress={() => router.push('/automations')}>
+          <Pressable onPress={() => router.push(PATHS.automations.list)}>
             <Row
               title="Automations"
               subtitle="What runs on its own, and what you start: “if tomorrow is sunny, turn the plug on”, “start charging”"
@@ -160,7 +160,7 @@ export function HomeScreen() {
             />
           </Pressable>
           <RowSeparator />
-          <Pressable onPress={() => router.push('/problems')}>
+          <Pressable onPress={() => router.push(PATHS.problems)}>
             <Row
               title="Problems"
               subtitle={problemCount ? `${problemCount} warning${problemCount === 1 ? '' : 's'} or error${problemCount === 1 ? '' : 's'} your devices reported` : 'None reported'}
@@ -170,7 +170,7 @@ export function HomeScreen() {
           {removed.length > 0 ? (
             <>
               <RowSeparator />
-              <Pressable onPress={() => router.push('/removed')}>
+              <Pressable onPress={() => router.push(PATHS.devices.removed)}>
                 <Row
                   title="Removed devices"
                   subtitle={`${removed.length} kept with their history, to bring back or delete`}
@@ -180,7 +180,7 @@ export function HomeScreen() {
             </>
           ) : null}
           <RowSeparator />
-          <Pressable onPress={() => router.push('/app-settings')}>
+          <Pressable onPress={() => router.push(PATHS.settings.index)}>
             <Row
               title="App settings"
               subtitle={role === 'master' ? 'Servers, and what this app may do' : 'Accounts, connectivity, servers and this install'}
@@ -202,7 +202,7 @@ function DeviceList({ devices }: { devices: DeviceView[] }) {
           device={{ name: device.name, subtitle: device.meta.name, health: device.health, attributes: attributesOf(device.description, MAIN_PART), readings: device.readings }}
           icon={<DeviceIcon device={device} />}
           image={pictureFor(device.typeId, device.picture)}
-          onPress={() => router.push(`/device/${encodeURIComponent(device.id)}`)}
+          onPress={() => router.push(PATHS.devices.one(device.id))}
         />
       ))}
     </>

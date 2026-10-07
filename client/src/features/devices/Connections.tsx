@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import type { DeviceView } from '@kraftverk/api-client';
+import { PATHS, type DeviceView } from '@kraftverk/api-client';
 import { Card, haptic, Icon, Row, RowSeparator, SectionLabel, Toggle } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
@@ -75,7 +75,7 @@ export function Connections({ device }: { device: DeviceView }) {
                     minHeight={44}
                     alignSelf="flex-start"
                     {...(device.health.status === 'needs-you' ? { backgroundColor: '$accent', color: '$background' } : {})}
-                    onPress={() => router.push(`/add-device?again=${encodeURIComponent(device.id)}&connection=${encodeURIComponent(connection.id)}`)}
+                    onPress={() => router.push(PATHS.devices.again(device.id, connection.id))}
                   >
                     {`Set ${connection.methodLabel} up again`}
                   </Button>
@@ -173,7 +173,7 @@ export function Connections({ device }: { device: DeviceView }) {
           ))
         )}
         <RowSeparator />
-        <Pressable onPress={() => router.push(`/add-device?attach=${encodeURIComponent(device.id)}&type=${encodeURIComponent(device.typeId)}`)}>
+        <Pressable onPress={() => router.push(PATHS.devices.addWay(device.id))}>
           <Row title="Add another way to reach it" accessory={<Icon name="plus" size={16} color={theme.muted?.val} />} />
         </Pressable>
       </Card>
