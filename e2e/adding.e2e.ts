@@ -49,7 +49,7 @@ test('every step can go back, and a choice changed there is the one that counts'
   await page.getByRole('textbox').first().fill(name);
   await press(page, 'Save');
   await expect(page).toHaveURL(/\/devices\//);
-  await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(name, { exact: true }).filter({ visible: true }).first()).toBeVisible();
 });
 
 test('a plug added beside a station is asked what it feeds, and the answer is a part: the station’s mains input', async ({ page, request }) => {

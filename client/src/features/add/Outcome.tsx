@@ -55,7 +55,7 @@ export function Outcome({
           </Button>
         ) : null}
         {outcome.outcome === 'yours' && (!attachTo || outcome.device.id !== attachTo.id) ? (
-          <Button size="$3" onPress={() => router.replace(PATHS.devices.one(outcome.device.id))}>
+          <Button size="$3" onPress={() => (router.dismissTo(PATHS.home), router.push(PATHS.devices.one(outcome.device.id)))}>
             Open {outcome.device.name}
           </Button>
         ) : null}

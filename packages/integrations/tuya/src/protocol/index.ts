@@ -208,6 +208,18 @@ function heard(sightings: readonly Sighting[]): Map<string, { address: string; v
   return found;
 }
 
+/** What a choice says of a device: where it is on the network and how it speaks, its id and its key — what a pick is checked by. */
+const factsOf = (facts: { id: string | null; key: string; seen: { address: string; version: string } | null; product?: string | null; offline?: boolean }): string =>
+  [
+    facts.seen ? `IP ${facts.seen.address} · Tuya ${facts.seen.version}` : 'not heard on this network yet',
+    facts.id ? `device id ${facts.id}` : null,
+    `local key ${facts.key}`,
+    facts.product ?? null,
+    facts.offline ? 'offline in Smart Life' : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
 /**
  * The devices on the account that fit what is being added, offered: a
  * gateway when one is, never one when it is not; each with its key, and —
@@ -234,6 +246,17 @@ function offer(ctx: SetupContext, account: readonly CloudDevice[], from: { kept:
     .map((device) => ({ ...device, localKey: keyOf(device) }))
     .filter((device) => device.localKey);
   const source = from ? `From the keys fetched ${from.kept}.` : 'Signed in.';
+  /** What is paired with the gateway whose key this is: the devices Tuya handed it, as the gateway's way keeps them (`cid=name`). */
+  const pairedWith = (key: string): string =>
+    subs
+      .filter((sub) => sub.localKey === key && sub.uuid)
+      .map((sub) => `${sub.uuid!.toLowerCase()}=${(sub.name || sub.productName || '').replace(/[,=]/g, ' ').trim()}`)
+      .join(',');
+  /** What is paired with it, as a choice says it: "paired with it: Fan plug (a4c1380000000001)". */
+  const pairedSaid = (key: string): string | null => {
+    const paired = subs.filter((sub) => sub.localKey === key && sub.uuid);
+    return paired.length ? `paired with it: ${paired.map((sub) => `${sub.name || sub.productName || 'a device'} (${sub.uuid!.toLowerCase()})`).join(', ')}` : null;
+  };
   /*
     A gateway not on the account at all — paired from another one, or never
     listed — while what is paired with it is: Tuya hands those its gateway's
@@ -243,16 +266,31 @@ function offer(ctx: SetupContext, account: readonly CloudDevice[], from: { kept:
   if (wantsGateway && !devices.length) {
     const keys = [...new Map(subs.filter((sub) => sub.localKey).map((sub) => [sub.localKey, sub])).values()];
     if (keys.length) {
+      // The gateway is one of what is heard on the network that the account does not list: each such, with each key.
+      const onAccount = new Set(account.map((device) => device.id));
+      const unlisted = [...heard(ctx.sightings)].filter(([id]) => !onAccount.has(id));
+      const choices: SetupChoice[] = unlisted.length
+        ? keys.flatMap((sub) =>
+            unlisted.map(([id, seen]) => ({
+              id: `behind-${sub.id}-${id}`,
+              label: `Gateway at ${seen.address}`,
+              detail: [factsOf({ id, key: sub.localKey, seen }), pairedSaid(sub.localKey) ?? `the key of ${sub.name || sub.productName || sub.id}, paired with it`].join(' · '),
+              config: { deviceId: id, localKey: sub.localKey, ...(pairedWith(sub.localKey) ? { paired: pairedWith(sub.localKey) } : {}), ...((VERSIONS as readonly string[]).includes(seen.version) ? { protocolVersion: seen.version } : {}) },
+              address: seen.address,
+              recommended: keys.length === 1 && unlisted.length === 1,
+            }))
+          )
+        : keys.map((sub) => ({
+            id: `behind-${sub.id}`,
+            label: `The gateway ${sub.name || sub.productName || sub.id} is paired with`,
+            detail: [factsOf({ id: null, key: sub.localKey, seen: null }), pairedSaid(sub.localKey) ?? `the key of ${sub.name || sub.productName || sub.id} (device id ${sub.id})`].join(' · '),
+            config: { localKey: sub.localKey, ...(pairedWith(sub.localKey) ? { paired: pairedWith(sub.localKey) } : {}) },
+            recommended: keys.length === 1,
+          }));
       return {
         ok: true,
-        detail: `${source} The gateway is not on this account, but what is paired with it is, and Tuya gives that the gateway's key. Pick it; the gateway itself is found on your network next.`,
-        choices: keys.map((sub) => ({
-          id: `behind-${sub.id}`,
-          label: `The gateway ${sub.name || sub.productName || sub.id} is paired with`,
-          detail: 'Its key, as Tuya hands it to what is paired with it',
-          config: { localKey: sub.localKey },
-          recommended: keys.length === 1,
-        })),
+        detail: `${source} The gateway is not on this account, but ${keys.map((sub) => `“${sub.name || sub.productName || sub.id}”`).join(' and ')}, paired with it, is — and Tuya gives that the gateway's key.${unlisted.length ? ' Which of these on your network is the gateway?' : ' The gateway itself is found on your network next.'}`,
+        choices,
         ...(from ? { again: FETCH_AGAIN } : {}),
       };
     }
@@ -275,17 +313,11 @@ function offer(ctx: SetupContext, account: readonly CloudDevice[], from: { kept:
       return {
         id: device.id,
         label: device.name || device.productName || device.id,
-        detail: [
-          device.productName,
-          gateway ? 'a gateway: what is paired with it is found through it' : null,
-          seen ? `on your network at ${seen.address}` : 'not heard on this network yet',
-          device.online === false ? 'offline' : null,
-        ]
-          .filter(Boolean)
-          .join(' · '),
+        detail: [factsOf({ id: device.id, key: device.localKey, seen, product: gateway ? `${device.productName ?? 'a gateway'}: what is paired with it is found through it` : device.productName, offline: device.online === false }), gateway ? pairedSaid(device.localKey) : null].filter(Boolean).join(' · '),
         config: {
           deviceId: device.id,
           localKey: device.localKey,
+          ...(gateway && pairedWith(device.localKey) ? { paired: pairedWith(device.localKey) } : {}),
           ...(seen && (VERSIONS as readonly string[]).includes(seen.version) ? { protocolVersion: seen.version } : {}),
         },
         ...(seen ? { address: seen.address } : {}),

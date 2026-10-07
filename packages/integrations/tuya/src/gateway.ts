@@ -39,7 +39,22 @@ type Wire = {
 };
 
 /** What the gateway keeps of each device behind it. */
-type Kept = { online: boolean | null; linked: Set<{ changed: () => void; pushes: Dps[] }> };
+type Kept = { online: boolean | null; name: string | null; linked: Set<{ changed: () => void; pushes: Dps[] }> };
+
+/**
+ * What is paired with a gateway, as its way keeps it (`paired`): `cid=name`,
+ * comma-separated — what the Smart Life sign-in fills in, so a device behind
+ * it is offered from the start, by its name, before it has said a thing.
+ */
+export function pairedOf(text: unknown): Map<string, string | null> {
+  const paired = new Map<string, string | null>();
+  for (const entry of String(text ?? '').split(',')) {
+    const [cid, ...name] = entry.split('=');
+    const key = (cid ?? '').trim().toLowerCase();
+    if (/^[0-9a-f]{16}$/.test(key)) paired.set(key, name.join('=').trim() || null);
+  }
+  return paired;
+}
 
 /**
  * The devices behind a gateway, and a link to each: its bridge, real or
@@ -52,13 +67,15 @@ export class ZigbeeDevices implements Bridge<ZigbeeLink> {
   constructor(
     private readonly wire: Wire,
     private readonly store: DeviceContext['store'],
-    private readonly changed: () => void
+    private readonly changed: () => void,
+    paired: ReadonlyMap<string, string | null> = new Map()
   ) {
     for (const cid of store.get<string[]>('members') ?? []) this.#keep(cid);
+    for (const [cid, name] of paired) this.#keep(cid).name ??= name;
   }
 
   members(): Member[] {
-    return [...this.#kept.keys()].map((cid) => ({ key: cid, name: null, model: null, identity: zigbeeIdentity(cid), typeId: null }));
+    return [...this.#kept].map(([cid, kept]) => ({ key: cid, name: kept.name, model: null, identity: zigbeeIdentity(cid), typeId: null }));
   }
 
   /** Every device known behind it, by Zigbee address: what a gateway on 3.3 is proven by asking about. */
@@ -102,7 +119,7 @@ export class ZigbeeDevices implements Bridge<ZigbeeLink> {
   #keep(cid: string): Kept {
     let kept = this.#kept.get(cid);
     if (!kept) {
-      kept = { online: null, linked: new Set() };
+      kept = { online: null, name: null, linked: new Set() };
       this.#kept.set(cid, kept);
       this.store.set('members', [...this.#kept.keys()]);
       // Who is behind it changed: its holder reads its members again.
@@ -162,7 +179,8 @@ async function gatewaySession(ctx: DeviceContext<Config>): Promise<DeviceSession
       version: () => tuya.version,
     },
     ctx.store,
-    () => ctx.changed()
+    () => ctx.changed(),
+    pairedOf(connection.config.paired)
   );
   const known = devices;
 
@@ -261,6 +279,15 @@ export default defineDeviceType<Config>({
       reach: 'cloud-at-setup',
       updates: 'both',
       discovery: TUYA_DISCOVERY,
+      config: {
+        fields: {
+          paired: {
+            type: 'string',
+            title: 'Paired with it',
+            description: 'The Zigbee devices paired with it, as address=name, comma-separated: filled in by the Smart Life sign-in, so each is offered to add from the start. Others are found as they speak.',
+          },
+        },
+      },
     },
   ],
 

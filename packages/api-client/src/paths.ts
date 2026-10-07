@@ -41,9 +41,11 @@ function query(values: Readonly<Record<string, string | null | undefined | false
 /**
  * What a setup carries through its steps: where "Found near you" found it
  * (`method`, `address`, `through`), the device another way is added to
- * (`attach`), and — for a way this app holds for its server — `held: here`.
+ * (`attach`), for a way this app holds for its server `held: here`, and —
+ * for an account or a gateway set up because a device needs it — the type
+ * to go back to adding once it is saved (`then`).
  */
-export type SetupFrom = { method?: string; address?: string; through?: string; attach?: string; held?: 'here' };
+export type SetupFrom = { method?: string; address?: string; through?: string; attach?: string; held?: 'here'; then?: string };
 
 export const PATHS = {
   home: '/',
@@ -69,7 +71,7 @@ export const PATHS = {
   add: (typeId: string, from: SetupFrom = {}) => `/add/${at(typeId)}${query({ ...from })}`,
 
   /** A setup in progress, at one of its steps: `name` after the check, for a device added. */
-  setup: (draft: string, step: string, from: Pick<SetupFrom, 'attach' | 'address' | 'through' | 'held'> = {}) => `/setup/${at(draft)}/${at(step)}${query({ ...from })}`,
+  setup: (draft: string, step: string, from: Pick<SetupFrom, 'attach' | 'address' | 'through' | 'held' | 'then'> = {}) => `/setup/${at(draft)}/${at(step)}${query({ ...from })}`,
 
   automations: {
     list: '/automations',

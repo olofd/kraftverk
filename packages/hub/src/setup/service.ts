@@ -395,7 +395,9 @@ export class SetupService {
 
     // Set up again: it must answer as the device it is — anything else is not saved over it.
     if (draft.again) {
-      const read = await draft.reach.identify(draft);
+      // Its own session holds the one connection a device like a gateway takes: let go of while it is read, and taken up again after.
+      await this.deps.sessions.close(draft.again.deviceId);
+      const read = await draft.reach.identify(draft).finally(() => this.deps.sessions.sync(this.deps.catalog.list()));
       if ('outcome' in read) return this.#checked(draft, { ...read.outcome, ...(read.outcome.outcome === 'no-answer' ? { saveAnyway: null } : {}) } as CheckOutcome);
       const said = read.identified.identity;
       if (said && draft.again.identity && said !== draft.again.identity) {

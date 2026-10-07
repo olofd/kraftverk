@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Input, Spinner } from 'tamagui';
+import { Input, Spinner, Text } from 'tamagui';
 
 import { PATHS, pathOf, SetupFlow, typeMatches, waySaid, type CheckOutcome, type DeviceTypeListing, type HeldBy, type SetupFrom } from '@kraftverk/api-client';
 import { CATEGORIES, isIntegrationsOwn, SIMULATED_METHOD_ID } from '@kraftverk/device-sdk';
@@ -112,7 +112,7 @@ export function CategoryScreen({ shelf }: { shelf: Shelf }) {
 
 /** The ways to reach a type — for a device you have, another way to reach it (`/devices/<id>/ways/add`). */
 export function WaysScreen() {
-  const params = useLocalSearchParams<{ type?: string; id?: string; method?: string; address?: string; through?: string }>();
+  const params = useLocalSearchParams<{ type?: string; id?: string; method?: string; address?: string; through?: string; then?: string }>();
   const { devices } = useDevices();
   const { api, role } = useHome();
   const reach = useReach();
@@ -169,12 +169,13 @@ export function WaysScreen() {
             ...(attachTo ? { attach: attachTo.id } : {}),
             ...(params.address ? { address: params.address } : {}),
             ...(params.through ? { through: params.through } : {}),
+            ...(params.then ? { then: params.then } : {}),
             ...(way.holder === 'this-node' ? { held: 'here' as const } : {}),
           })
         );
       }, 'That way cannot be used right now');
     },
-    [api, attachTo, attempt, params.address, params.through, type]
+    [api, attachTo, attempt, params.address, params.then, params.through, type]
   );
 
   // "Found near you" names the way too: started straight away.
@@ -205,7 +206,9 @@ export function WaysScreen() {
           <ErrorText>Nothing installed here is called “{typeId}”.</ErrorText>
         </Card>
       ) : null}
-      {type ? <Ways ways={ways} busy={busy} onPick={(way) => void begin(way)} onNeed={(need) => router.push(PATHS.add(need.typeId))} /> : null}
+      {type && params.then ? <ThenNote typeId={params.then} types={types} /> : null}
+      {/* What a way needs first is set up first — and adding this one carries on after it. */}
+      {type ? <Ways ways={ways} busy={busy} onPick={(way) => void begin(way)} onNeed={(need) => router.push(PATHS.add(need.typeId, { then: type.id }))} /> : null}
       {error ? (
         <ErrorText fontSize={12} paddingHorizontal="$1">
           {error}
@@ -241,14 +244,37 @@ export function AgainScreen() {
 
 // --- 4 · its steps, one page each: /setup/<draft>/<step> -----------------------------------
 
+/** Said while setting up what another device needs first: what is being added after it. */
+function ThenNote({ typeId, types }: { typeId: string; types: readonly DeviceTypeListing[] | null }) {
+  const next = types?.find((candidate) => candidate.id === typeId);
+  return next ? (
+    <Card>
+      <Text fontSize={13} color="$muted" lineHeight={19}>
+        {`First this — then on to adding your ${next.meta.name}, reached through it.`}
+      </Text>
+    </Card>
+  ) : null;
+}
+
 /** After the check: naming it, and how it fits the house. Not one of the plan's steps. */
 const NAME_STEP = 'name';
+
+/**
+ * Done: the steps are let go of, so going back from what was added goes
+ * where adding began — Home, or an integration's page — and not through them.
+ * `from` is that page, then `to` is opened over it; with no `from`, `to` is
+ * the page it began on, gone back to.
+ */
+function leaveFor(to: string, from: string | null): void {
+  router.dismissTo(from ?? to);
+  if (from) router.push(to);
+}
 
 /** Back to where it came from — the page before, still in the stack — or, opened afresh with nothing before it, to this. */
 const backTo = (path: string) => (router.canGoBack() ? router.back() : router.replace(path));
 
 export function SetupScreen() {
-  const params = useLocalSearchParams<{ draft: string; step?: string; attach?: string; address?: string; through?: string; held?: string }>();
+  const params = useLocalSearchParams<{ draft: string; step?: string; attach?: string; address?: string; through?: string; held?: string; then?: string }>();
   const { devices, refresh } = useDevices();
   const { api } = useHome();
   const { types } = useTypes();
@@ -262,6 +288,7 @@ export function SetupScreen() {
     ...(params.address ? { address: params.address } : {}),
     ...(params.through ? { through: params.through } : {}),
     ...(params.held === 'here' ? { held: 'here' as const } : {}),
+    ...(params.then ? { then: params.then } : {}),
   };
   const at = (step: string) => PATHS.setup(params.draft, step, carried);
 
@@ -308,7 +335,8 @@ export function SetupScreen() {
       doneWith(flow.id);
       await refresh();
       const thing = devices.find((device) => device.id === again.deviceId);
-      router.replace(thing ? pathOf(thing) : PATHS.devices.one(again.deviceId));
+      // Back to the page it was set up again from — not through the steps that did it.
+      leaveFor(thing ? pathOf(thing) : PATHS.devices.one(again.deviceId), null);
     }, 'It could not be saved');
   }, [again, attempt, devices, flow, refresh]);
 
@@ -380,7 +408,9 @@ export function SetupScreen() {
           onSaved={async (id) => {
             doneWith(flow.id);
             await refresh();
-            router.replace(pathOf({ id, kind: type.kind, integration: type.source.integration }));
+            // Set up because a device needed it: back to adding that device, which can now be reached through it.
+            const own = isIntegrationsOwn(type.kind) ? PATHS.integrations.one(type.source.integration.id) : PATHS.home;
+            leaveFor(params.then ? PATHS.add(params.then) : pathOf({ id, kind: type.kind, integration: type.source.integration }), params.then ? PATHS.home : own);
           }}
         />
       ) : null}

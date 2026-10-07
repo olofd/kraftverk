@@ -104,7 +104,11 @@ export class FakeBus implements Transport {
     return () => void this.#watchers.delete(listener);
   }
 
+  /** What is open now: like every real transport, one channel to an address at a time. */
+  #open = new Set<string>();
+
   async open(address: string) {
+    if (this.#open.has(address)) throw new Error(`${address} is already open`);
     const channel = fakeByteChannel((bytes) => {
       const lamp = this.lamps.get(address);
       if (!lamp?.answers) return null;
@@ -117,6 +121,12 @@ export class FakeBus implements Transport {
       return null;
     });
     if (!this.lamps.has(address)) channel.setConnected(false);
+    this.#open.add(address);
+    const close = channel.close.bind(channel);
+    channel.close = async () => {
+      this.#open.delete(address);
+      await close();
+    };
     this.channels.push(channel);
     return channel;
   }

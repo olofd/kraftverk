@@ -162,7 +162,16 @@
               "kind": "broadcast",
               "port": 7000
             }
-          ]
+          ],
+          "config": {
+            "fields": {
+              "paired": {
+                "type": "string",
+                "title": "Paired with it",
+                "description": "The Zigbee devices paired with it, as address=name, comma-separated: filled in by the Smart Life sign-in, so each is offered to add from the start. Others are found as they speak."
+              }
+            }
+          }
         }
       ],
       "bridge": {

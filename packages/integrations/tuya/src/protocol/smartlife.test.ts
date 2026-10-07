@@ -256,9 +256,10 @@ describe('the Smart Life login and listing', () => {
       expect.objectContaining({
         label: 'Gateway',
         address: '192.0.2.74',
-        detail: 'Zigbee gateway · a gateway: what is paired with it is found through it · on your network at 192.0.2.74',
+        detail: 'IP 192.0.2.74 · Tuya 3.4 · device id bf8d0000000000000000gw · local key g1a2t3e4w5a6y7k8 · Zigbee gateway: what is paired with it is found through it · paired with it: Fan plug (a4c1380000000001)',
         recommended: true,
-        config: { deviceId: 'bf8d0000000000000000gw', localKey: 'g1a2t3e4w5a6y7k8', protocolVersion: '3.4' },
+        // What is paired with it, by Zigbee address and name: offered to add from the start.
+        config: { deviceId: 'bf8d0000000000000000gw', localKey: 'g1a2t3e4w5a6y7k8', paired: 'a4c1380000000001=Fan plug', protocolVersion: '3.4' },
       }),
     ]);
     expect(done.detail).toContain('1 more is behind a gateway: add the gateway, and it is found through it');
@@ -342,11 +343,34 @@ describe('the Smart Life login and listing', () => {
     };
     const offered = await signIn.run(ctx, {});
     expect(offered.ok).toBe(true);
-    expect(offered.detail).toContain('The gateway is not on this account, but what is paired with it is');
+    expect(offered.detail).toContain('The gateway is not on this account, but “Charger”, paired with it, is');
+    // Nothing heard on the network yet: the key, said with whose it is; the gateway is found next.
     expect(offered.choices).toEqual([
-      { id: 'behind-bf7c0000000000000000zp', label: 'The gateway Charger is paired with', detail: 'Its key, as Tuya hands it to what is paired with it', config: { localKey: 'g1a2t3e4w5a6y7k8' }, recommended: true },
+      { id: 'behind-bf7c0000000000000000zp', label: 'The gateway Charger is paired with', detail: 'not heard on this network yet · local key g1a2t3e4w5a6y7k8 · the key of Charger (device id bf7c0000000000000000zp)', config: { localKey: 'g1a2t3e4w5a6y7k8' }, recommended: true },
     ]);
     expect(offered.again).toEqual({ label: 'Fetch the keys again', input: { fresh: true } });
+
+    // The gateway heard announcing itself — a device the account does not list: offered as it, every fact said, one pick filling in its address.
+    const announcement = encodeFrame({
+      version: '3.5',
+      key: DISCOVERY_KEY,
+      sequence: 0,
+      command: 0x13,
+      payload: new TextEncoder().encode(JSON.stringify({ ip: '192.0.2.74', gwId: 'keym0000000000gw', version: '3.4' })),
+      iv: new Uint8Array(12).fill(1),
+    });
+    const heardIt = await signIn.run({ ...ctx, sightings: [{ transport: 'lan', address: '192.0.2.74', seenAt: new Date().toISOString(), heard: [{ kind: 'broadcast' as const, port: 6667, payload: toHex(announcement) }] }] }, {});
+    expect(heardIt.detail).toContain('Which of these on your network is the gateway?');
+    expect(heardIt.choices).toEqual([
+      {
+        id: 'behind-bf7c0000000000000000zp-keym0000000000gw',
+        label: 'Gateway at 192.0.2.74',
+        detail: 'IP 192.0.2.74 · Tuya 3.4 · device id keym0000000000gw · local key g1a2t3e4w5a6y7k8 · the key of Charger, paired with it',
+        config: { deviceId: 'keym0000000000gw', localKey: 'g1a2t3e4w5a6y7k8', protocolVersion: '3.4' },
+        address: '192.0.2.74',
+        recommended: true,
+      },
+    ]);
   });
 
   test('a wrong user code says where to find the right one', async () => {

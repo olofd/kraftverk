@@ -32,7 +32,7 @@ test('without a server, the app keeps its own home: a simulated plug added, swit
   await page.getByRole('textbox').first().fill('Desk plug');
   await press(page, 'Save');
 
-  await expect(page.getByText('240 W', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('240 W', { exact: true }).filter({ visible: true }).first()).toBeVisible();
   const power = page.getByRole('switch').first();
   await expect(power).toHaveAttribute('aria-checked', 'true');
 
