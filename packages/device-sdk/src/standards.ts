@@ -45,12 +45,16 @@ export type HomeAssistantEntity = {
 export const MATTER_CLUSTERS = {
   Identify: 0x0003,
   OnOff: 0x0006,
+  LevelControl: 0x0008,
   PowerSource: 0x002f,
   ElectricalPowerMeasurement: 0x0090,
   ElectricalEnergyMeasurement: 0x0091,
   IlluminanceMeasurement: 0x0400,
   TemperatureMeasurement: 0x0402,
   RelativeHumidityMeasurement: 0x0405,
+  MediaPlayback: 0x0506,
+  KeypadInput: 0x0509,
+  ApplicationLauncher: 0x050c,
 } as const;
 
 export type MatterCluster = keyof typeof MATTER_CLUSTERS;
@@ -163,6 +167,15 @@ export const MEANING_PROJECTIONS: Readonly<Record<StandardMeaningId, MeaningProj
     homeAssistant: { platform: 'device_tracker', deviceClass: null },
     matter: { none: 'Matter does not describe where a device is' },
   },
+  'playing': {
+    homeAssistant: { platform: 'binary_sensor', deviceClass: null },
+    matter: { none: 'Matter says what a player does as one of four states (MediaPlayback CurrentState), not as playing or not' },
+  },
+  'volume': {
+    homeAssistant: { platform: 'number', deviceClass: null },
+    // 0 to 254 for 0 to 100 %.
+    matter: { cluster: 'LevelControl', attribute: 'CurrentLevel', scale: 2.54 },
+  },
 };
 
 // --- capabilities -------------------------------------------------------------
@@ -206,6 +219,22 @@ export const CAPABILITY_PROJECTIONS: Readonly<Record<CapabilityName, CapabilityP
   location: {
     homeAssistant: { platforms: ['device_tracker'], commands: {} },
     matter: { none: 'Matter does not describe where a device is' },
+  },
+  mediaPlayback: {
+    homeAssistant: { none: 'MQTT discovery has no media player: Home Assistant reaches a TV with its own integration' },
+    matter: { clusters: ['MediaPlayback'], commands: { set: 'Play / Pause', next: 'Next', previous: 'Previous' } },
+  },
+  keypadInput: {
+    homeAssistant: { none: 'MQTT discovery has no remote: Home Assistant reaches a TV with its own integration' },
+    matter: { clusters: ['KeypadInput'], commands: { press: 'SendKey' } },
+  },
+  applicationLauncher: {
+    homeAssistant: { none: 'MQTT discovery has no media player: Home Assistant reaches a TV with its own integration' },
+    matter: { clusters: ['ApplicationLauncher'], commands: { launch: 'LaunchApp' } },
+  },
+  volume: {
+    homeAssistant: { platforms: ['number'], commands: { set: 'set_value' } },
+    matter: { clusters: ['LevelControl'], commands: { set: 'MoveToLevel' } },
   },
 };
 

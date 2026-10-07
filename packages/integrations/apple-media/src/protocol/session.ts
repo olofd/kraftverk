@@ -1,5 +1,3 @@
-import type { ByteChannel } from '@kraftverk/device-sdk';
-
 import { CompanionLink, type Message } from './companion.ts';
 import { randomBytes } from './crypto.ts';
 import { idText, type Credentials } from './pairing.ts';
@@ -58,6 +56,28 @@ export type Attention = 'asleep' | 'screensaver' | 'awake' | 'idle' | 'unknown';
 const ATTENTION: Readonly<Record<number, Attention>> = { 1: 'asleep', 2: 'screensaver', 3: 'awake', 4: 'idle' };
 export const attentionOf = (state: unknown): Attention => (typeof state === 'number' ? (ATTENTION[state] ?? 'unknown') : 'unknown');
 
+/**
+ * What it says can be done now, as the _iMC event's _mcF flags: what is
+ * playing can be paused, and what is paused played.
+ */
+export const MediaFlag = {
+  play: 0x0001,
+  pause: 0x0002,
+  next: 0x0004,
+  previous: 0x0008,
+  fastForward: 0x0010,
+  rewind: 0x0020,
+  volume: 0x0100,
+  skipForward: 0x0200,
+  skipBackward: 0x0400,
+} as const;
+
+/** Whether something plays, from what can be done now: it can be paused. Null before the TV has said. */
+export const playingOf = (flags: number | null): boolean | null => (flags === null ? null : (flags & MediaFlag.pause) !== 0);
+
+/** Whether its volume can be set: it controls a TV or a receiver that lets it. */
+export const hasVolume = (flags: number | null): boolean => flags !== null && (flags & MediaFlag.volume) !== 0;
+
 /** The events a session asks the TV for. */
 export const EVENTS = ['_iMC', 'SystemStatus', 'TVSystemStatus'] as const;
 
@@ -74,33 +94,31 @@ export class CompanionSession {
     readonly sessionId: bigint,
   ) {}
 
-  /** Verifies with the credentials pairing left, says who this side is, and begins the remote's session. */
-  static async start(channel: ByteChannel, credentials: Credentials, name = 'kraftverk', timeoutMs?: number): Promise<CompanionSession> {
-    const link = new CompanionLink(channel, timeoutMs);
-    try {
-      await link.verify(credentials);
-      await link.request('_systemInfo', {
-        _bf: 0,
-        _cf: 512,
-        _clFl: 128,
-        _i: randomHex(6),
-        _idsID: idText(credentials.clientId),
-        _pubID: randomHex(6).replace(/(..)(?!$)/g, '$1:').toUpperCase(),
-        _sf: 256,
-        _sv: '170.18',
-        model: 'iPhone14,3',
-        name,
-      });
-      const local = crypto.getRandomValues(new Uint32Array(1))[0]!;
-      const started = await link.request('_sessionStart', { _srvT: 'com.apple.tvremoteservices', _sid: local });
-      const remote = typeof started._sid === 'number' ? started._sid : 0;
-      const session = new CompanionSession(link, (BigInt(remote) << 32n) | BigInt(local));
-      for (const event of EVENTS) await link.event('_interest', { _regEvents: [event] });
-      return session;
-    } catch (error) {
-      await link.close();
-      throw error;
-    }
+  /**
+   * Verifies with the credentials pairing left, says who this side is, and
+   * begins the remote's session — on a link its holder keeps: after the
+   * connection drops, a session is begun on it again.
+   */
+  static async begin(link: CompanionLink, credentials: Credentials, name = 'kraftverk'): Promise<CompanionSession> {
+    await link.verify(credentials);
+    await link.request('_systemInfo', {
+      _bf: 0,
+      _cf: 512,
+      _clFl: 128,
+      _i: randomHex(6),
+      _idsID: idText(credentials.clientId),
+      _pubID: randomHex(6).replace(/(..)(?!$)/g, '$1:').toUpperCase(),
+      _sf: 256,
+      _sv: '170.18',
+      model: 'iPhone14,3',
+      name,
+    });
+    const local = crypto.getRandomValues(new Uint32Array(1))[0]!;
+    const started = await link.request('_sessionStart', { _srvT: 'com.apple.tvremoteservices', _sid: local });
+    const remote = typeof started._sid === 'number' ? started._sid : 0;
+    const session = new CompanionSession(link, (BigInt(remote) << 32n) | BigInt(local));
+    for (const event of EVENTS) await link.event('_interest', { _regEvents: [event] });
+    return session;
   }
 
   /** A key on the remote, pressed and let go. */
@@ -151,9 +169,8 @@ export class CompanionSession {
     await this.link.request('_launchApp', { _bundleID: bundleId });
   }
 
-  /** Ends the remote's session, and the connection. */
-  async close(): Promise<void> {
+  /** Ends the remote's session; the connection is its holder's. */
+  async end(): Promise<void> {
     await this.link.request('_sessionStop', { _srvT: 'com.apple.tvremoteservices', _sid: this.sessionId }).catch(() => undefined);
-    await this.link.close();
   }
 }

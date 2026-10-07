@@ -2,7 +2,7 @@ import { heardAs, identityOf, type ConfigSchema, type ConfigValues, type Protoco
 
 import { CompanionLink } from './companion.ts';
 import { randomBytes } from './crypto.ts';
-import { PairingRefused, PairSetup, readCredentials, writeCredentials } from './pairing.ts';
+import { idText, PairingRefused, PairSetup, readCredentials, writeCredentials, type Credentials } from './pairing.ts';
 
 /**
  * How an Apple TV is spoken to over Companion — the protocol Apple's own
@@ -34,17 +34,11 @@ export const PAIRED_AS = 'kraftverk';
 /** How long a pairing started waits for its PIN: the TV shows it for as long as the connection is open. */
 export const PAIRING_HELD_MS = 2 * 60_000;
 
-/** An Apple device's permanent identity: its MAC, as AirPlay names it — the same whichever protocol found it. */
-export const appleIdentity = (mac: string): string => identityOf('apple-media', mac.toLowerCase().replace(/[^0-9a-f]/g, ''));
-
-/** The models, by the codes they announce. */
-const MODELS: Readonly<Record<string, string>> = {
-  'AppleTV5,3': 'Apple TV HD',
-  'AppleTV6,2': 'Apple TV 4K',
-  'AppleTV11,1': 'Apple TV 4K (2nd generation)',
-  'AppleTV14,1': 'Apple TV 4K (3rd generation)',
-};
-export const modelName = (code: string): string => MODELS[code] ?? 'Apple TV';
+/**
+ * An Apple TV's permanent identity: the pairing id it answers pair-verify
+ * with — learnt once paired, so what it announces carries none.
+ */
+export const appleIdentity = (credentials: Credentials): string => identityOf('apple-media', idText(credentials.tvId).toLowerCase());
 
 /** A TXT value, its key in any case: mDNS's keys are not case-sensitive. */
 const txtOf = (txt: Readonly<Record<string, string>>, key: string): string | undefined => {
@@ -139,20 +133,16 @@ const protocol: Protocol = {
   bindings: {
     lan: {
       open: (_address, config) => ({ port: typeof config?.port === 'number' && config.port > 0 ? config.port : COMPANION_PORT }),
-      // What an Apple TV announces: Companion, its model in TXT, and — over AirPlay, the same host — its MAC.
+      // What a device speaking Companion announces: the service, on its port, its model code in TXT. Which models a
+      // type is for, its way's matcher says: a Mac and an iPhone announce it too.
       recognise(sighting: Sighting) {
         const companion = heardAs(sighting, 'mdns').find((said) => said.service === '_companion-link._tcp');
         const model = companion ? txtOf(companion.txt, 'rpMd') : undefined;
-        if (!companion || !model?.startsWith('AppleTV')) return null;
-        const mac = heardAs(sighting, 'mdns')
-          .filter((said) => said.service === '_airplay._tcp')
-          .map((said) => txtOf(said.txt, 'deviceid'))
-          .find((id): id is string => !!id && /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(id));
+        if (!companion || !model) return null;
         return {
-          name: companion.instance || modelName(model),
-          ...(mac ? { identity: appleIdentity(mac) } : {}),
-          model: modelName(model),
-          detail: `${sighting.address} · ${modelName(model)}`,
+          name: companion.instance || model,
+          model,
+          detail: `${sighting.address} · ${model}`,
           config: { port: companion.port },
         };
       },

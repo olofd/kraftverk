@@ -39,12 +39,14 @@ export function playedAppleTv(options: { pin?: string } = {}) {
   const asked: { id: string; content: Message }[] = [];
   const interests: string[] = [];
   const state = { attention: 3, volume: 0.3, playing: true };
+  /** What can be done now, as the _iMC event says it: pause what plays, play what is paused; its volume, always. */
+  const flags = () => (state.playing ? 0x0002 | 0x0004 | 0x0008 : 0x0001) | 0x0100;
   const connections: ReturnType<typeof fakeByteChannel>[] = [];
   const tellers = new Set<(id: string, content: Message) => void>();
 
   /** A connection to it, its own frames and pairing state; what the TV keeps, shared. */
   const connect = () => {
-    const framer = new Framer();
+    let framer = new Framer();
     let setup: {
       salt: Uint8Array;
       b: bigint;
@@ -188,6 +190,8 @@ export function playedAppleTv(options: { pin?: string } = {}) {
       ];
     };
 
+    /** What it tells after an answer: what changed, as the TV does. */
+    const told: [string, Message][] = [];
     const respond = (id: string, content: Message): Message | { error: string } => {
       asked.push({ id, content });
       switch (id) {
@@ -207,12 +211,16 @@ export function playedAppleTv(options: { pin?: string } = {}) {
         case '_launchApp':
           return {};
         case '_hidC':
-          if (content._hBtS === 2 && content._hidC === 12) state.attention = 1;
-          if (content._hBtS === 2 && content._hidC === 13) state.attention = 3;
+          if (content._hBtS === 2 && (content._hidC === 12 || content._hidC === 13)) {
+            state.attention = content._hidC === 12 ? 1 : 3;
+            told.push(['SystemStatus', { state: state.attention }]);
+          }
           return {};
         case '_mcc':
-          if (content._mcc === 1) state.playing = true;
-          if (content._mcc === 2) state.playing = false;
+          if (content._mcc === 1 || content._mcc === 2) {
+            state.playing = content._mcc === 1;
+            told.push(['_iMC', { _mcF: flags() }]);
+          }
           if (content._mcc === 5) return { _vol: state.volume };
           if (content._mcc === 6 && typeof content._vol === 'number') state.volume = content._vol;
           return {};
@@ -229,7 +237,12 @@ export function playedAppleTv(options: { pin?: string } = {}) {
         else if (each.type === FrameType.PairVerifyStart || each.type === FrameType.PairVerifyNext) replies.push(...pairVerify(content._pd as Uint8Array));
         else if (each.type === FrameType.SealedOpack) {
           if (content._t === 1) {
-            if (content._i === '_interest') interests.push(...((content._c as { _regEvents?: string[] })._regEvents ?? []));
+            if (content._i === '_interest') {
+              const events = (content._c as { _regEvents?: string[] })._regEvents ?? [];
+              interests.push(...events);
+              // Asked for, it says at once what can be done now.
+              if (events.includes('_iMC')) replies.push(frame(FrameType.SealedOpack, { _i: '_iMC', _x: 1, _t: 1, _c: { _mcF: flags() } }));
+            }
             continue;
           }
           const answer = respond(String(content._i), (content._c ?? {}) as Message);
@@ -246,11 +259,16 @@ export function playedAppleTv(options: { pin?: string } = {}) {
                 : { _i: content._i!, _x: content._x!, _t: 3, _c: answer },
             ),
           );
+          for (const [event, body] of told.splice(0)) replies.push(frame(FrameType.SealedOpack, { _i: event, _x: 1, _t: 1, _c: body }));
         }
       }
       return replies.length ? replies : null;
     });
     connections.push(channel);
+    // Its keys were the connection's: dropped, the next one is verified afresh.
+    channel.onConnectedChange((connected) => {
+      if (!connected) framer = new Framer();
+    });
     tellers.add((id, content) => {
       if (framer.encrypted) channel.push(frame(FrameType.SealedOpack, { _i: id, _x: 1, _t: 1, _c: content }));
     });

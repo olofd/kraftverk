@@ -1,13 +1,12 @@
 {
   "compilerOptions": {
-    "lib": ["ESNext"],
+    "lib": ["ESNext", "DOM"],
     "target": "ESNext",
     "module": "Preserve",
     "moduleResolution": "bundler",
     "types": ["bun"],
 
     "allowImportingTsExtensions": true,
-    "resolveJsonModule": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
 

@@ -44,7 +44,10 @@ export class CompanionLink {
     this.#stops.push(channel.onData((bytes) => this.#receive(bytes)));
     this.#stops.push(
       channel.onConnectedChange((connected) => {
-        if (!connected) this.#failAll(new CompanionError('The TV closed the connection'));
+        if (connected) return;
+        // Its keys were this connection's: the next one is verified afresh.
+        this.#framer = new Framer();
+        this.#failAll(new CompanionError('The TV closed the connection'));
       }),
     );
   }
@@ -84,8 +87,31 @@ export class CompanionLink {
     this.#framer.encrypt(verify.finish(finished, '', 'ClientEncrypt-main', 'ServerEncrypt-main'));
   }
 
+  /** Whether the TV is reachable now: the connection is made in the background, and made again after it drops. */
+  get connected(): boolean {
+    return this.channel.connected;
+  }
+
+  /** Resolves once the connection is made; fails when it is not, in the time a request has. */
+  async #ready(): Promise<void> {
+    if (this.channel.connected) return;
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        stop();
+        reject(new CompanionError('The TV did not answer: is it on, and on this network?'));
+      }, this.timeoutMs);
+      const stop = this.channel.onConnectedChange((connected) => {
+        if (!connected) return;
+        clearTimeout(timer);
+        stop();
+        resolve();
+      });
+    });
+  }
+
   async #pairingFrame(type: number, answer: number, content: Message): Promise<Uint8Array> {
     if (this.#auth) throw new CompanionError('A pairing step is already waiting for the TV');
+    await this.#ready();
     const reply = await new Promise<Message>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.#auth = null;

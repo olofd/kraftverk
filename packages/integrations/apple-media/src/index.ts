@@ -1,4 +1,4 @@
-import type { ConnectionMethod } from '@kraftverk/device-sdk';
+import type { DirectMethod } from '@kraftverk/device-sdk';
 
 import protocol from './protocol/index.ts';
 
@@ -19,7 +19,7 @@ import protocol from './protocol/index.ts';
  * with the PIN the TV shows. It tells of changes as they happen; found by
  * the mDNS service every Apple TV announces.
  */
-export const COMPANION_LAN: ConnectionMethod = {
+export const COMPANION_LAN: DirectMethod = {
   id: 'companion',
   label: 'Home network',
   description: 'Straight to the TV on your home network, as Apple’s own remote reaches it, with no cloud. Paired once with the PIN it shows.',
@@ -29,5 +29,3 @@ export const COMPANION_LAN: ConnectionMethod = {
   updates: 'push',
   discovery: [{ kind: 'mdns', service: '_companion-link._tcp' }],
 };
-
-export const APPLE_MEDIA_WAYS: readonly ConnectionMethod[] = [COMPANION_LAN];

@@ -754,7 +754,7 @@ here:
 |---|---|
 | `CATEGORIES` (5) | A reviewed taxonomy grown here toward Home Assistant's breadth: phone, media player, speaker, light, sensor, climate, lock, cover, vacuum, camera, vehicle, account, notifications… An integration names one per type. |
 | `Quantity` (15) | A declared record — unit dimension, formatting, chart — kept in the SDK; adding one is a row. Position (latitude, longitude, accuracy) is the first new one. |
-| Capabilities | The library grows by Matter's clusters: `mediaPlayback`, `contentLauncher`, `keypadInput`, `audioOutput` (volume), `location`, `notify`; a package may still declare its own, namespaced. |
+| Capabilities | The library grows by Matter's clusters: `mediaPlayback`, `applicationLauncher`, `keypadInput`, `volume` (LevelControl, as a speaker has it — Matter's AudioOutput chooses an output, not how loud), `location`, `notify`; a package may still declare its own, namespaced. |
 | `SupportLevel` (3) | A level computed from the quality checklist (§10). |
 
 ### 4.6 Poll or push
@@ -1586,6 +1586,28 @@ Tested against a TV played with the same cryptography; not yet a real one.
 **Step 20 · Apple TV as a device.** Found by mDNS; on and off,
 playback, apps, the remote's keys, volume; updates pushed.
 *Done when* an automation pauses an Apple TV, through the gateway.
+**Done 2026-10-07.** The library gained four capabilities on Matter's
+clusters — `mediaPlayback` (play or pause, verified by reading `playing`
+back; next, previous), `keypadInput` (a remote's keys), `applicationLauncher`
+(its apps as a query; one opened), `volume` (LevelControl) — and two
+meanings, `playing` and `volume`; on and off is `switch`. The device
+package `@kraftverk/device-apple-tv` (`apple-media.tv`, category media
+player) offers them all on one part, over Companion: awake is on; playing
+is read from what the TV says can be done now (`_iMC`: what can be paused
+plays), kept current by what it tells and asked whether it is awake once a
+minute and again after each command. The integration names no product:
+its protocol recognises anything speaking Companion, and the type's way
+narrows discovery to `rpMd: AppleTV*` as data. Its identity is the pairing
+id it verifies with — nothing it announces is both stable and readable
+once paired. The home network's connection is made in the background and
+again after it drops, so pairing waits for it and every connection is
+verified afresh. Done as `server/test/apple-tv.test.ts`: the server's
+installed packages, a home network reaching one TV played byte for byte;
+found by its address, paired with its PIN, checked, saved, and paused by
+an automation, the gateway reading back that it is — beside the server's
+own tests, as it assembles the core with real packages. Not yet against a
+real Apple TV: whether one playing offers pause in `_iMC` is the first
+thing to check.
 
 OAuth (`open`, §5.2) is built with the first integration that needs it.
 

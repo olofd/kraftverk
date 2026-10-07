@@ -2,11 +2,13 @@ import { describe, expect, test } from 'bun:test';
 
 import { validateProtocol, type Channel, type SetupContext, type Sighting } from '@kraftverk/device-sdk';
 
-import { APPLE_MEDIA_WAYS } from '../src/index.ts';
+import { COMPANION_LAN } from '../src/index.ts';
 import protocol, {
   appleIdentity,
   CompanionLink,
   CompanionSession,
+  hasVolume,
+  playingOf,
   FrameType,
   Framer,
   pack,
@@ -129,13 +131,21 @@ describe('pairing', () => {
 describe('the remote’s session', () => {
   test('begun, then the remote’s keys, media control, volume, apps and whether it is awake', async () => {
     const tv = playedAppleTv();
-    const session = await CompanionSession.start(tv.connect(), await paired(tv));
+    const link = new CompanionLink(tv.connect());
+    const flags: unknown[] = [];
+    link.onEvent('_iMC', (content) => flags.push(content._mcF));
+    const session = await CompanionSession.begin(link, await paired(tv));
     expect(tv.asked.map((each) => each.id)).toEqual(['_systemInfo', '_sessionStart']);
     expect(tv.interests).toEqual(['_iMC', 'SystemStatus', 'TVSystemStatus']);
     expect(session.sessionId >> 32n).toBe(0x1234n);
 
     await session.media('pause');
     expect(tv.state.playing).toBe(false);
+    // What can be done, said when asked for and again when it changed: playing, then paused.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(flags.map((each) => playingOf(each as number))).toEqual([true, false]);
+    expect(hasVolume(flags[1] as number)).toBe(true);
+    expect(playingOf(null)).toBeNull();
     expect(await session.volume()).toBe(30);
     await session.setVolume(55);
     expect(tv.state.volume).toBeCloseTo(0.55);
@@ -163,8 +173,21 @@ describe('the remote’s session', () => {
 
     // A request it has no answer for: refused, not hung.
     await expect(session.link.request('_unknown')).rejects.toThrow('The TV refused: No handler for _unknown');
-    await session.close();
+    await session.end();
     expect(tv.asked.at(-1)?.id).toBe('_sessionStop');
+    await link.close();
+  });
+
+  test('pairing waits for the connection, made in the background', async () => {
+    const tv = playedAppleTv();
+    const channel = tv.connect();
+    channel.setConnected(false);
+    const link = new CompanionLink(channel);
+    const setup = new PairSetup();
+    const started = link.startPairing(setup);
+    setTimeout(() => channel.setConnected(true), 10);
+    expect((await started).length).toBeGreaterThan(0);
+    await link.close();
   });
 
   test('a request the TV never answers ends, said', async () => {
@@ -196,29 +219,30 @@ describe('the protocol, as setup meets it', () => {
     expect(validateProtocol(protocol)).toEqual([]);
     expect(protocol.bindings.lan!.open('192.0.2.70')).toEqual({ port: 49153 });
     expect(protocol.bindings.lan!.open('192.0.2.70', { port: 49154 })).toEqual({ port: 49154 });
-    expect(APPLE_MEDIA_WAYS.map((way) => way.id)).toEqual(['companion']);
+    expect(COMPANION_LAN).toMatchObject({ id: 'companion', protocol: protocol.id, transport: 'lan', updates: 'push' });
   });
 
-  test('recognises an Apple TV by what it announces, and not a Mac', () => {
-    const sighting = (model: string, airplay = true): Sighting => ({
+  test('recognises what speaks Companion by what it announces: its name, its model code, its port', () => {
+    const sighting = (txt: Record<string, string>): Sighting => ({
       transport: 'lan',
       address: '192.0.2.70',
       seenAt: '2026-10-07T00:00:00.000Z',
-      heard: [
-        { kind: 'mdns', service: '_companion-link._tcp', instance: 'Living Room', port: 49154, txt: { rpMd: model, rpVr: '540.30' } },
-        ...(airplay ? [{ kind: 'mdns' as const, service: '_airplay._tcp', instance: 'Living Room', port: 7000, txt: { deviceid: 'AA:BB:CC:00:11:22', model } }] : []),
-      ],
+      heard: [{ kind: 'mdns', service: '_companion-link._tcp', instance: 'Living Room', port: 49154, txt }],
     });
-    expect(protocol.bindings.lan!.recognise(sighting('AppleTV11,1'))).toEqual({
+    // Its TXT keys in any case: mDNS's are not case-sensitive.
+    expect(protocol.bindings.lan!.recognise(sighting({ rpmd: 'AppleTV11,1', rpVr: '540.30' }))).toEqual({
       name: 'Living Room',
-      identity: appleIdentity('AA:BB:CC:00:11:22'),
-      model: 'Apple TV 4K (2nd generation)',
-      detail: '192.0.2.70 · Apple TV 4K (2nd generation)',
+      model: 'AppleTV11,1',
+      detail: '192.0.2.70 · AppleTV11,1',
       config: { port: 49154 },
     });
-    expect(appleIdentity('AA:BB:CC:00:11:22')).toBe('apple-media:aabbcc001122');
-    expect(protocol.bindings.lan!.recognise(sighting('AppleTV6,2', false))).toEqual({ name: 'Living Room', model: 'Apple TV 4K', detail: '192.0.2.70 · Apple TV 4K', config: { port: 49154 } });
-    expect(protocol.bindings.lan!.recognise(sighting('MacBookPro18,1'))).toBeNull();
+    // Saying no model, it is nothing a type could be for.
+    expect(protocol.bindings.lan!.recognise(sighting({ rpVr: '540.30' }))).toBeNull();
+  });
+
+  test('an Apple TV is known by the pairing id it verifies with', async () => {
+    const credentials = await paired(playedAppleTv());
+    expect(appleIdentity(credentials)).toBe(`apple-media:${TV_ID.toLowerCase()}`);
   });
 
   test('pairs in two turns: the TV shows a PIN, it is asked for, and what pairing left is kept', async () => {

@@ -24,13 +24,18 @@ it, with no cloud. Ported from pyatv, the library behind Home Assistant's
   while the connection the first turn opened stays open, and the second
   turn asks for it (`ask`) — and what it leaves is kept as the connection's
   sealed secret, in pyatv's own form. It finds an Apple TV by the
-  `_companion-link._tcp` service it announces, on the port announced, its
-  MAC (from AirPlay's announcement of the same host) as its identity.
-- **Does not:** offer a device type: an Apple TV as a device — on and off,
-  playback, apps, keys, volume, updates pushed — is the next step
-  (docs/PLAN-INTEGRATIONS.md, step 20). Nor does it speak AirPlay or MRP
-  (what is playing, artwork); pair a HomePod; or reach anything through
-  Apple's cloud. Each comes when it is needed and can be checked.
+  `_companion-link._tcp` service it announces, on the port announced —
+  which models a type is for, its way's matcher says; an Apple TV is known by the
+  pairing id it verifies with (`appleIdentity`), as nothing it announces is
+  both stable and readable once paired. The connection is made in the
+  background and made again after it drops: pairing waits for it, and
+  every new connection is verified afresh. A TV played byte for byte, for
+  tests of its own and of the packages built on it, is exported as
+  `./testing`.
+- **Does not:** offer a device type: an Apple TV is `@kraftverk/device-apple-tv`,
+  built on this. Nor does it speak AirPlay or MRP (what is playing,
+  artwork); pair a HomePod; or reach anything through Apple's cloud. Each
+  comes when it is needed and can be checked.
 
 ## Where it fits
 

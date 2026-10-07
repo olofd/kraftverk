@@ -28,7 +28,9 @@
     "@kraftverk/api-client": "*",
     "@kraftverk/holder": "*",
     "@kraftverk/home-file": "*",
+    "@kraftverk/integration-apple-media": "*",
     "@kraftverk/message-port": "*",
+    "@kraftverk/transport-lan": "*",
     "@types/bun": "^1.3.14",
     "typescript": "^7.0.2"
   }

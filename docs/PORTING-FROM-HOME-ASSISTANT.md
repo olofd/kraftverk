@@ -62,7 +62,8 @@ Make them with `npm run new:integration -- <id>` and `npm run new:device --
 | `switch` | the `switch` capability |
 | `sensor` | attributes; a library capability where one fits (`powerMeter`, `battery`, `energyPrice`) |
 | `device_tracker` | the `location` capability: a `position` attribute; `distance()` in automations |
-| `light`, `media_player`, `climate`, `cover`, `lock`, `vacuum` | not yet: their capabilities come with the first integration that needs them (media with Apple TV, PLAN-INTEGRATIONS.md step 20) |
+| `media_player`, `remote` | `mediaPlayback` (a `playing` attribute; play or pause, next, previous), `volume` (a `volume` attribute, %), `keypadInput` (a remote's keys), `applicationLauncher` (its apps, as a query; one opened); on and off is `switch` |
+| `light`, `climate`, `cover`, `lock`, `vacuum` | not yet: their capabilities come with the first integration that needs them |
 | `button` | a command with no arguments |
 | `number`, `select`, `text` used as settings | settings, written through the gateway |
 | `event` entities, events on the bus | declared events (`description.events`), raised with `ctx.event` |

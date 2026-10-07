@@ -176,9 +176,12 @@ heard by the `relay` service, the only one on the host's network
 Shelly (Gen2 and later) ported by it — experimental until checked against
 the owner's Shelly. Part C is under way: iCloud (steps 17–18: Apple's
 sign-in with a second factor, the family's devices with their positions)
-and Apple TV's Companion protocol with HomeKit pairing (step 19) are
-built, tested against Apple and a TV played in the tests — not yet against
-the owner's Apple ID or TV. Next is step 20, the Apple TV as a device.
+and the Apple TV (step 19: Companion with HomeKit pairing; step 20: the
+device — on and off, playback, keys, apps, volume, paused by an
+automation through the gateway) are built, tested against Apple and a TV
+played in the tests — not yet against the owner's Apple ID or TV. That
+completes Part C as planned; what is left is checking it on the real
+account and TV.
 
 ## The automation language
 

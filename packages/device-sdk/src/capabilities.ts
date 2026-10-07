@@ -253,6 +253,70 @@ export const CAPABILITIES = {
     commands: {},
     queries: {},
   },
+  /** What a TV or a speaker plays: playing or paused, and the next or the one before. Matter's MediaPlayback. */
+  mediaPlayback: {
+    label: 'Media playback',
+    attributes: { playing: { means: 'playing', required: true } },
+    commands: {
+      set: { description: 'Play, or pause', args: { playing: { type: 'boolean', words: { true: 'Play', false: 'Pause' } } }, sets: { playing: 'playing' } },
+      next: { description: 'Skip to the next', args: {}, sets: {} },
+      previous: { description: 'Go back to the one before', args: {}, sets: {} },
+    },
+    queries: {},
+  },
+  /** The keys of a remote: moving about a screen, choosing, going back. Matter's KeypadInput. */
+  keypadInput: {
+    label: 'Remote keys',
+    attributes: {},
+    commands: {
+      press: {
+        description: 'Press a key on its remote',
+        args: {
+          key: {
+            type: 'enum',
+            options: [
+              { value: 'up', label: 'Up' },
+              { value: 'down', label: 'Down' },
+              { value: 'left', label: 'Left' },
+              { value: 'right', label: 'Right' },
+              { value: 'select', label: 'Select' },
+              { value: 'back', label: 'Back' },
+              { value: 'home', label: 'Home' },
+              { value: 'playPause', label: 'Play/pause' },
+              { value: 'volumeUp', label: 'Volume up' },
+              { value: 'volumeDown', label: 'Volume down' },
+            ],
+          },
+        },
+        sets: {},
+      },
+    },
+    queries: {},
+  },
+  /** The apps a TV opens: listed, and one opened. Matter's ApplicationLauncher. */
+  applicationLauncher: {
+    label: 'Apps',
+    attributes: {},
+    commands: {
+      launch: { description: 'Open an app', args: { app: { type: 'string' } }, sets: {} },
+    },
+    queries: {
+      apps: {
+        description: 'The apps it can open: each its id, and its name',
+        args: {},
+        answer: { type: 'list', of: { type: 'object', fields: { id: { type: 'string' }, name: { type: 'string' } }, required: ['id', 'name'] } },
+      },
+    },
+  },
+  /** How loud a TV or a speaker plays. Matter's LevelControl, as a speaker has it. */
+  volume: {
+    label: 'Volume',
+    attributes: { level: { means: 'volume', required: true } },
+    commands: {
+      set: { description: 'Set how loud', args: { level: { type: 'number', unit: '%', min: 0, max: 100 } }, sets: { level: 'level' } },
+    },
+    queries: {},
+  },
 } as const satisfies Record<string, CapabilitySpec>;
 
 /** A capability in the library: the shared vocabulary. */

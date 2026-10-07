@@ -17,7 +17,8 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./protocol": "./src/protocol/index.ts"
+    "./protocol": "./src/protocol/index.ts",
+    "./testing": "./test/played.ts"
   },
   "scripts": {
     "test": "node ../../../scripts/run-bun.mjs test",

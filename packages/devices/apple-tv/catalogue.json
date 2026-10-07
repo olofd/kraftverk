@@ -1,0 +1,119 @@
+{
+  "protocols": [],
+  "types": [
+    {
+      "id": "apple-media.tv",
+      "kind": "hardware",
+      "meta": {
+        "name": "Apple TV",
+        "brand": "Apple",
+        "category": "media-player",
+        "icon": "tv",
+        "description": "An Apple TV on your home network, as Apple’s own remote reaches it, with no cloud: on and off, play and pause, its remote’s keys, its apps and its volume.",
+        "support": "experimental",
+        "supportNote": "Ported from pyatv, the library behind Home Assistant’s Apple TV; not yet checked against a real Apple TV."
+      },
+      "config": {
+        "fields": {}
+      },
+      "connections": [
+        {
+          "id": "companion",
+          "label": "Home network",
+          "description": "Straight to the TV on your home network, as Apple’s own remote reaches it, with no cloud. Paired once with the PIN it shows.",
+          "protocol": "apple-media-companion",
+          "transport": "lan",
+          "reach": "local",
+          "updates": "push",
+          "discovery": [
+            {
+              "kind": "mdns",
+              "service": "_companion-link._tcp",
+              "txt": {
+                "rpMd": "AppleTV*"
+              }
+            }
+          ]
+        }
+      ],
+      "description": {
+        "parts": [
+          {
+            "id": "main",
+            "label": "Apple TV",
+            "kind": "device",
+            "offers": [
+              "switch",
+              "mediaPlayback",
+              "keypadInput",
+              "applicationLauncher",
+              "volume"
+            ]
+          }
+        ],
+        "attributes": [
+          {
+            "key": "on",
+            "label": "On",
+            "value": {
+              "type": "boolean"
+            },
+            "means": "on",
+            "category": "primary"
+          },
+          {
+            "key": "playing",
+            "label": "Playing",
+            "value": {
+              "type": "boolean",
+              "words": {
+                "true": "Playing",
+                "false": "Not playing"
+              }
+            },
+            "means": "playing"
+          },
+          {
+            "key": "volume",
+            "label": "Volume",
+            "value": {
+              "type": "number",
+              "unit": "%",
+              "min": 0,
+              "max": 100,
+              "precision": 0
+            },
+            "means": "volume"
+          },
+          {
+            "key": "screen",
+            "label": "Screen",
+            "value": {
+              "type": "enum",
+              "options": [
+                {
+                  "value": "awake",
+                  "label": "Awake"
+                },
+                {
+                  "value": "idle",
+                  "label": "Idle"
+                },
+                {
+                  "value": "screensaver",
+                  "label": "Screensaver"
+                },
+                {
+                  "value": "asleep",
+                  "label": "Asleep"
+                }
+              ]
+            },
+            "category": "diagnostic"
+          }
+        ]
+      },
+      "automation": false
+    }
+  ]
+}

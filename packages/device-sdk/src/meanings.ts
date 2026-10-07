@@ -97,6 +97,10 @@ export const STANDARD_MEANINGS = {
   priceRank: { label: 'Price rank', type: 'number', quantity: 'rank' },
   /** Where it is on the Earth: a phone, a scooter, a tag — a latitude, a longitude and how sure (`POSITION_SHAPE`). */
   position: { label: 'Position', type: 'object', quantity: 'position' },
+  /** Whether something is playing — a film, a song — not paused or stopped. */
+  playing: { label: 'Playing', type: 'boolean' },
+  /** How loud, of all it can be. */
+  volume: { label: 'Volume', type: 'number', unit: '%', quantity: 'percent' },
 } as const satisfies Record<string, StandardMeaning>;
 
 export type StandardMeaningId = keyof typeof STANDARD_MEANINGS;
