@@ -1,8 +1,8 @@
 import { isCapability, isPolicyValueName, requiredMeanings, type CapabilitySpec } from './capabilities.ts';
 import { attributeMeaning, capabilitiesOf, capabilityIn, isStandardPartKind, MAIN_PART, partOf, partsOf, quantityOf, type DeviceDescription } from './description.ts';
-import { QUANTITIES, standardMeaning, STATE_CLASSES, unitsOfMeaning } from './meanings.ts';
+import { standardMeaning, STATE_CLASSES, unitsOfMeaning } from './meanings.ts';
 import { ATTRIBUTE_KEY, NAMESPACED_ID, NAMESPACED_NAME, PART_ID, PLAIN_ID } from './names.ts';
-import { QUANTITY_UNITS } from './units.ts';
+import { isQuantity, quantityProblem, quantitySpec, unitsOfQuantity } from './quantities.ts';
 import { valueTypeProblems } from './values.ts';
 
 /*
@@ -105,8 +105,8 @@ export function validateDescription(description: DeviceDescription, typeId = 'br
     problems.push(...valueTypeProblems(where, attribute.value));
     // A number of a quantity is in one of the units that quantity is measured in.
     const quantity = attribute.value?.type === 'number' ? quantityOf(attribute) : null;
-    if (quantity && attribute.value?.type === 'number' && attribute.value.unit !== undefined && !QUANTITY_UNITS[quantity].includes(attribute.value.unit)) {
-      problem(`${where} is ${quantity}, which is not measured in "${attribute.value.unit}": ${QUANTITY_UNITS[quantity].map((unit) => `"${unit}"`).join(', ') || 'it has no unit'}`);
+    if (quantity && attribute.value?.type === 'number' && attribute.value.unit !== undefined && !unitsOfQuantity(quantity).includes(attribute.value.unit)) {
+      problem(`${where} is ${quantity}, which is not measured in "${attribute.value.unit}": ${unitsOfQuantity(quantity).map((unit) => `"${unit}"`).join(', ') || 'it has no unit'}`);
     }
     if (attribute.category === 'primary') primaries.set(part, (primaries.get(part) ?? 0) + 1);
     if (attribute.currentFor !== undefined && !(Number.isInteger(attribute.currentFor) && attribute.currentFor > 0)) problem(`${where} is current for ${attribute.currentFor} ms; a whole number of milliseconds above zero`);
@@ -116,8 +116,11 @@ export function validateDescription(description: DeviceDescription, typeId = 'br
       else if (attribute.value?.type !== 'number') problem(`${where} has a state class, which only a number can have`);
     }
     if (attribute.quantity !== undefined) {
-      if (attribute.value?.type !== 'number') problem(`${where} names a quantity, which only a number has`);
-      else if (!QUANTITIES.includes(attribute.quantity)) problem(`${where} has an unknown quantity "${attribute.quantity}"`);
+      if (!isQuantity(attribute.quantity)) problem(`${where} has an unknown quantity "${attribute.quantity}"`);
+      else if (quantitySpec(attribute.quantity).value.type === 'object') {
+        const wrong = quantityProblem(attribute.quantity, attribute.value);
+        if (wrong) problem(`${where} is ${attribute.quantity}, but ${wrong}`);
+      } else if (attribute.value?.type !== 'number') problem(`${where} names a quantity, which only a number has`);
     }
     if (attribute.dangerous && attribute.access !== 'write') problem(`${where} is dangerous but cannot be written; a command's danger is its capability's`);
     if (attribute.category === 'config' && attribute.access !== 'write') problem(`${where} is a setting that cannot be written`);
@@ -131,6 +134,9 @@ export function validateDescription(description: DeviceDescription, typeId = 'br
     const standard = standardMeaning(attribute.means);
     if (standard?.type === 'boolean') {
       if (attribute.value?.type !== 'boolean') problem(`${where} means ${attribute.means}, which is on or off, but is not a boolean`);
+    } else if (standard?.type === 'object') {
+      const wrong = quantityProblem(standard.quantity, attribute.value);
+      if (wrong) problem(`${where} means ${attribute.means}, and ${wrong}`);
     } else if (standard) {
       const standardState = standard.stateClass ?? 'measurement';
       const units = unitsOfMeaning(standard);

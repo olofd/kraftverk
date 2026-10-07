@@ -459,10 +459,19 @@ Assistant); and `price` and `priceRank`, what electricity costs now
 hour stands among the day's by price. An on/off has no quantity: it is a boolean, drawn as a band. `validateDescription` checks every rule, and
 the contract suite checks a session keeps its description.
 
+**Quantities** are records (`quantities.ts`, `QUANTITY_SPECS`): each one
+row — what a value of it is (a number in its units, or a value of a shape of
+its own), its decimals, its chart's axis and its Home Assistant device
+class — so adding one is a row the app draws by, not a union threaded
+through it. Position — a latitude, a longitude and how sure — is the first
+with structure: the `position` meaning, the `location` capability, a
+device tracker in Home Assistant, and `distance` in the automation
+language. It is not kept in history: where someone is, is not charted.
+
 **Units** are one enumeration (`units.ts`): every unit kraftverk knows,
-what it measures and how it converts, and the units each quantity is
-measured in (`QUANTITY_UNITS`, which is also what Home Assistant takes for
-it). A number's unit is a `Unit`, never free text — in a description, a
+what it measures and how it converts; the units a quantity is measured in
+are its record's (`unitsOfQuantity`, which is also what Home Assistant takes
+for it). A number's unit is a `Unit`, never free text — in a description, a
 meaning, a setting, a rule's own numbers — so a typo does not compile; one
 arriving as data is refused by `validateDescription`, the rule checker and
 the file's schema; and the app offers a unit as a choice among those of its

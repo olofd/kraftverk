@@ -1,6 +1,6 @@
 import type { ConditionState } from '@kraftverk/api-contract';
 import { bindingsOf, capitalise, isGroupRole, memberRole, sunTimes, type HistoryPoint, groupRoles, listed, memoryOf, settingOf, checkBinding, describeExpr, describeSteps, evaluateNow, measure, numberIn, secondsNow, isAutomationRole, partRoles, secondsText, triggerKey, triggerOf, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type RuleSteps, type Step, type Write } from '@kraftverk/automation';
-import { attributeMeaning, capabilityIn, clockTime, localTime, MAIN_PART, isCurrent, isScalar, readingOf, REAL_CLOCK, standardMeaning, unitIn, type CapabilityName, type Clock, type Value } from '@kraftverk/device-sdk';
+import { attributeMeaning, capabilityIn, clockTime, localTime, MAIN_PART, isCurrent, isPosition, isScalar, readingOf, REAL_CLOCK, standardMeaning, unitIn, type CapabilityName, type Clock, type Value } from '@kraftverk/device-sdk';
 
 import type { AutomationEngineDeps, AutomationRecord, EngineDevice } from './model.ts';
 import { quoted } from './words.ts';
@@ -80,6 +80,16 @@ export class RuleContext {
         if (!attribute || !reading || !isCurrent(attribute, reading, now.getTime()) || !isScalar(reading.value)) return null;
         return { value: reading.value, label: standardMeaning(means)?.label ?? attribute.label, unit: unitIn(attribute) };
       },
+      // Where it is now: a position it reports and still current, as its meaning's shape says.
+      position: (role, means) => {
+        const device = part(role);
+        const attribute = device ? attributeMeaning(device.description, device.part, means) : null;
+        const reading = device?.device && attribute ? readingOf(device.device.readings(), attribute.key) : null;
+        if (!attribute || !reading || !isCurrent(attribute, reading, now.getTime()) || !isPosition(reading.value)) return null;
+        return { position: reading.value, label: standardMeaning(means)?.label ?? attribute.label };
+      },
+      // Where the home is, when it has said.
+      home: () => this.deps.location?.() ?? null,
       // What the home kept of a reading: the value holding as the time began, each kept since, and the reading now — each a number.
       history: (role, means, seconds) => {
         const binding = automation.roles[role];

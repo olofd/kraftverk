@@ -1,6 +1,7 @@
 import type { CapabilityName } from './capabilities.ts';
 import { quantityOf, stateClassOf, unitOf, type AttributeSpec } from './description.ts';
-import type { Quantity, StandardMeaningId, StateClass } from './meanings.ts';
+import type { StandardMeaningId, StateClass } from './meanings.ts';
+import { quantitySpec } from './quantities.ts';
 
 /**
  * Projections: what kraftverk's vocabulary is called in the standards it sits
@@ -22,32 +23,8 @@ export type NoProjection = { none: string };
 
 // --- Home Assistant -----------------------------------------------------------
 
-/** A `number` is a value Home Assistant can set: a station's charge limit. */
-export type HomeAssistantPlatform = 'sensor' | 'binary_sensor' | 'switch' | 'number';
-
-/**
- * Home Assistant's sensor device class for a quantity — the units it takes
- * are the quantity's own (`QUANTITY_UNITS`, units.ts) — or null where Home
- * Assistant has no class and shows the unit as
- * given (a percentage that is not a battery).
- */
-export const HOME_ASSISTANT_QUANTITIES: Readonly<Record<Quantity, { deviceClass: string | null }>> = {
-  power: { deviceClass: 'power' },
-  energy: { deviceClass: 'energy' },
-  percent: { deviceClass: null },
-  voltage: { deviceClass: 'voltage' },
-  current: { deviceClass: 'current' },
-  temperature: { deviceClass: 'temperature' },
-  frequency: { deviceClass: 'frequency' },
-  duration: { deviceClass: 'duration' },
-  humidity: { deviceClass: 'humidity' },
-  illuminance: { deviceClass: 'illuminance' },
-  signal: { deviceClass: 'signal_strength' },
-  distance: { deviceClass: 'distance' },
-  speed: { deviceClass: 'speed' },
-  price: { deviceClass: 'monetary' },
-  rank: { deviceClass: null },
-};
+/** A `number` is a value Home Assistant can set: a station's charge limit. A `device_tracker` is where something is. */
+export type HomeAssistantPlatform = 'sensor' | 'binary_sensor' | 'switch' | 'number' | 'device_tracker';
 
 /** Home Assistant uses the same three state classes, by the same names. */
 export const HOME_ASSISTANT_STATE_CLASSES: Readonly<Record<StateClass, string>> = {
@@ -180,6 +157,11 @@ export const MEANING_PROJECTIONS: Readonly<Record<StandardMeaningId, MeaningProj
     homeAssistant: { platform: 'sensor', deviceClass: null },
     matter: { none: 'Matter has no cloud-cover measurement' },
   },
+  'position': {
+    // Its latitude, longitude and accuracy are a device tracker's own attributes, gps_accuracy for the last.
+    homeAssistant: { platform: 'device_tracker', deviceClass: null },
+    matter: { none: 'Matter does not describe where a device is' },
+  },
 };
 
 // --- capabilities -------------------------------------------------------------
@@ -216,6 +198,10 @@ export const CAPABILITY_PROJECTIONS: Readonly<Record<CapabilityName, CapabilityP
     homeAssistant: { none: 'MQTT discovery has no weather platform, and Home Assistant has its own forecasts' },
     matter: { none: 'Matter does not describe forecasts' },
   },
+  location: {
+    homeAssistant: { platforms: ['device_tracker'], commands: {} },
+    matter: { none: 'Matter does not describe where a device is' },
+  },
 };
 
 export const isProjected = <T extends object>(projection: T | NoProjection): projection is T => !('none' in projection);
@@ -238,7 +224,7 @@ export function homeAssistantEntityOf(attribute: Pick<AttributeSpec, 'value' | '
     platform,
     deviceClass:
       meaning?.homeAssistant.deviceClass ??
-      (attribute.value.type === 'timestamp' ? 'timestamp' : platform === 'sensor' && quantity ? HOME_ASSISTANT_QUANTITIES[quantity].deviceClass : null),
+      (attribute.value.type === 'timestamp' ? 'timestamp' : platform === 'sensor' && quantity ? quantitySpec(quantity).homeAssistant : null),
     stateClass: stateClass ? HOME_ASSISTANT_STATE_CLASSES[stateClass] : null,
     unit: platform === 'sensor' && unit ? unit : null,
   };

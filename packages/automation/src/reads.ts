@@ -26,6 +26,10 @@ export function eachAsGroup(rule: Rule): Rule {
     const inner = mapChildren(expr, (child) => renamed(child, names));
     if ('read' in inner && names[inner.read.role]) return { ...inner, read: { ...inner.read, role: names[inner.read.role]! } };
     if ('history' in inner && names[inner.of.role]) return { ...inner, of: { ...inner.of, role: names[inner.of.role]! } };
+    if ('distance' in inner) {
+      const as = (read: { role: string; means: string }) => (names[read.role] ? { ...read, role: names[read.role]! } : read);
+      return { distance: as(inner.distance), ...(inner.to ? { to: as(inner.to) } : {}) };
+    }
     if ('reachable' in inner && names[inner.reachable]) return { reachable: names[inner.reachable]! };
     if ('call' in inner && names[inner.role]) return { ...inner, role: names[inner.role]! };
     return inner;
@@ -131,6 +135,7 @@ export function ruleUses(written: Rule): {
     for (const each of expressionsIn(top)) {
       if ('read' in each) reads.push(each.read);
       else if ('history' in each) reads.push(each.of);
+      else if ('distance' in each) reads.push(each.distance, ...(each.to ? [each.to] : []));
       else if ('reachable' in each) reaches.push(each.reachable);
       else if ('within' in each) windows.push(each.within);
       else if ('call' in each) calls.push({ fn: each.call, role: each.role });

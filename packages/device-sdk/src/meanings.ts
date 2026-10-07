@@ -16,53 +16,8 @@
  * so the two never meet.
  */
 
+import type { Quantity } from './quantities.ts';
 import type { Unit } from './units.ts';
-
-/**
- * What a number is a quantity of, which decides how it is formatted, charted
- * and projected into the standards. Adding one is a decision about every
- * device at once — the app has to know how to draw it — which keeps it short.
- * An on/off is not a quantity: it is a boolean, drawn as a band.
- */
-export type Quantity =
-  | 'power'
-  | 'energy'
-  | 'percent'
-  | 'voltage'
-  | 'current'
-  | 'temperature'
-  | 'frequency'
-  | 'duration'
-  | 'humidity'
-  | 'illuminance'
-  /** Radio signal strength, in dBm. Diagnostic by nature. */
-  | 'signal'
-  /** How far: a vehicle's range, its odometer. */
-  | 'distance'
-  /** How fast something moves. */
-  | 'speed'
-  /** What energy costs, in a currency per unit: "SEK/kWh". */
-  | 'price'
-  /** A place in an order, 1 first: the cheapest hour of the day. No unit. */
-  | 'rank';
-
-export const QUANTITIES: readonly Quantity[] = [
-  'power',
-  'energy',
-  'percent',
-  'voltage',
-  'current',
-  'temperature',
-  'frequency',
-  'duration',
-  'humidity',
-  'illuminance',
-  'signal',
-  'distance',
-  'speed',
-  'price',
-  'rank',
-];
 
 /**
  * How a value moves over time, which decides how history treats it — the same
@@ -79,7 +34,8 @@ export const STATE_CLASSES: readonly StateClass[] = ['measurement', 'total', 'to
 
 /**
  * A standard meaning: a number, with the unit, quantity and state class every
- * attribute claiming it keeps — or an on/off.
+ * attribute claiming it keeps; an on/off; or a value with structure, of its
+ * quantity's shape — a position.
  */
 export type StandardMeaning =
   | {
@@ -92,7 +48,8 @@ export type StandardMeaning =
       quantity: Quantity;
       stateClass?: StateClass;
     }
-  | { label: string; type: 'boolean' };
+  | { label: string; type: 'boolean' }
+  | { label: string; type: 'object'; quantity: Quantity };
 
 /** The units an attribute with this meaning may be in: its own, or one of the others it allows. */
 export const unitsOfMeaning = (meaning: Extract<StandardMeaning, { type: 'number' }>): readonly Unit[] => [...(meaning.unit ? [meaning.unit] : []), ...(meaning.units ?? [])];
@@ -138,6 +95,8 @@ export const STANDARD_MEANINGS = {
   price: { label: 'Electricity price', type: 'number', unit: 'EUR/kWh', units: ['SEK/kWh', 'NOK/kWh', 'DKK/kWh'], quantity: 'price' },
   /** Where the hour now stands among the day's hours by price: 1 is the cheapest. "The cheapest four hours" is a rank of 4 or less. */
   priceRank: { label: 'Price rank', type: 'number', quantity: 'rank' },
+  /** Where it is on the Earth: a phone, a scooter, a tag — a latitude, a longitude and how sure (`POSITION_SHAPE`). */
+  position: { label: 'Position', type: 'object', quantity: 'position' },
 } as const satisfies Record<string, StandardMeaning>;
 
 export type StandardMeaningId = keyof typeof STANDARD_MEANINGS;

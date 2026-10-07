@@ -1,7 +1,7 @@
 import { stepJsonSchema, triggerJsonSchema, WHILE_RUNNING } from '@kraftverk/automation';
 import type { ConfigField, ConfigSchema } from '@kraftverk/device-sdk';
 
-import { KEY, QUANTITY_UNITS, UNIT_LIST } from '@kraftverk/device-sdk';
+import { KEY, unitsOfQuantity, UNIT_LIST } from '@kraftverk/device-sdk';
 import { CURRENT_VERSION } from './migrate.ts';
 import type { Vocabulary, VocabularyMethod, VocabularyType } from './vocabulary.ts';
 
@@ -139,7 +139,7 @@ const LITERAL: Schema = {
   properties: { value: {}, unit: { enum: [...UNIT_LIST], description: 'The unit it is written in' } },
 };
 
-const TIME_UNITS = QUANTITY_UNITS.duration;
+const TIME_UNITS = unitsOfQuantity('duration');
 
 const DURATION: Schema = {
   anyOf: [

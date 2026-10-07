@@ -1437,6 +1437,21 @@ then.
 Categories grown toward Home Assistant's breadth; quantities as records, with
 position the first new one; the `location` capability; `distance` in the
 automation language, measured from the home's location.
+**Done 2026-10-07.** Twelve categories more (lights, sensors, heating and
+cooling, locks, blinds and doors, vacuums, cameras, TVs and media players,
+speakers, phones and tablets, trackers, notifications); the add screen folds
+the shelves nothing is installed on. Quantities are records
+(`QUANTITY_SPECS`): what a value of each is, its decimals, its axis, its
+Home Assistant class — the app's precision and axes, the units table and the
+Home Assistant table read them, and three tables went. `position` is a
+value of one shape (latitude, longitude, accuracy, in `°` and m): a
+standard meaning, the `location` capability, a device tracker in Home
+Assistant, shown as "59.32930° N, 18.06860° E ± 20 m". `distance(a.position)`
+and `distance(a.position, b.position)` measure over the Earth's surface in m,
+from the home's location. A position is not kept in history, and NIU's
+scooter still leaves its position out, as its owner asked: reporting it is a
+decision of its own. `SupportLevel`, `LINK_KINDS`, `EventLevel` and
+`POLICY_VALUES` stay as they are: none is asked to grow yet.
 
 **Step 15 · Code loaded on demand.**
 Lazy registries in the server, dynamic imports in the app.

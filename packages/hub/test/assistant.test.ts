@@ -41,7 +41,8 @@ describe('an assistant', () => {
   test('reads the words it is said in: capabilities with what makes a command consequential, and the recipes', async () => {
     const words = await t.home.vocabulary();
     expect(words.capabilities.switch!.commands.set!.consequential).toMatchObject({ when: { arg: 'on', is: false } });
-    expect(words.meanings['charge']).toEqual({ label: 'Charge', type: 'number', unit: '%' });
+    expect(words.meanings['charge']).toEqual({ label: 'Charge', type: 'number', unit: '%', quantity: 'percent' });
+    expect(words.meanings['position']).toEqual({ label: 'Position', type: 'object', unit: null, quantity: 'position' });
     expect(words.recipes.map((recipe) => recipe.id)).toContain('standard.charge-between');
     expect(words.policy.loadWatts).toMatchObject({ value: 5, unit: 'W' });
   });

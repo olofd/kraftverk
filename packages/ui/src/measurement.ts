@@ -1,4 +1,4 @@
-import { enumLabel, isCurrent, quantityOf, unitOf, type AttributeSpec, type Quantity, type Reading, type Value } from '@kraftverk/device-sdk';
+import { enumLabel, isCurrent, isPosition, quantityOf, quantitySpec, unitOf, type AttributeSpec, type Position, type Quantity, type Reading, type Value } from '@kraftverk/device-sdk';
 
 import { formatDuration, formatWatts, formatWh } from './format.ts';
 
@@ -32,25 +32,6 @@ export function observedAt(at: string, now = new Date()): string {
   return when.toDateString() === now.toDateString() ? time : `${when.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} ${time}`;
 }
 
-/** How many decimals a kind is worth, when the device does not say. */
-const DEFAULT_PRECISION: Record<Quantity, number> = {
-  price: 2,
-  rank: 0,
-  power: 0,
-  energy: 0,
-  percent: 0,
-  voltage: 1,
-  current: 2,
-  temperature: 1,
-  frequency: 2,
-  duration: 0,
-  humidity: 0,
-  illuminance: 0,
-  signal: 0,
-  distance: 0,
-  speed: 0,
-};
-
 type Formatted = Pick<AttributeSpec, 'value' | 'quantity' | 'means'>;
 
 /** An on/off in its own words, where it has them: "Yes", "Armed". */
@@ -74,7 +55,8 @@ export function formatValue(attribute: Formatted, value: Value | undefined): str
     if (attribute.value.type === 'enum') return enumLabel(attribute.value, value);
     return attribute.value.type === 'timestamp' ? observedAt(value) : value;
   }
-  // A list or an object is drawn by what knows its shape, not as one value.
+  // A position reads as a place; any other list or object is drawn by what knows its shape, not as one value.
+  if (quantityOf(attribute) === 'position' && isPosition(value)) return formatPosition(value);
   if (typeof value !== 'number') return Array.isArray(value) ? `${value.length} values` : '…';
   if (!Number.isFinite(value)) return '—';
   // An on/off kept as 1 or 0 — as history keeps one — still reads as on or off.
@@ -99,8 +81,20 @@ export function formatValue(attribute: Formatted, value: Value | undefined): str
       return minutes === undefined || value === 0 ? withUnit(unit, precision ?? 0, value) : formatDuration(value * minutes);
     }
     default:
-      return withUnit(unit, precision ?? (quantity ? DEFAULT_PRECISION[quantity] : 0), value);
+      return withUnit(unit, precision ?? (quantity ? quantitySpec(quantity).precision : 0), value);
   }
+}
+
+/**
+ * A place as a person reads it: "59.32930° N, 18.06860° E", and how sure,
+ * "± 20 m", when the device says. Five decimals is about a metre.
+ */
+export function formatPosition(position: Position): string {
+  const precision = quantitySpec('position').precision;
+  const north = `${Math.abs(position.latitude).toFixed(precision)}° ${position.latitude < 0 ? 'S' : 'N'}`;
+  const east = `${Math.abs(position.longitude).toFixed(precision)}° ${position.longitude < 0 ? 'W' : 'E'}`;
+  const sure = typeof position.accuracy === 'number' ? ` ± ${Math.round(position.accuracy)} m` : '';
+  return `${north}, ${east}${sure}`;
 }
 
 /** How many minutes one of each duration unit is. */
@@ -125,13 +119,16 @@ const withUnit = (unit: string, digits: number, value: number): string => {
  * charge. Not for mains voltage or room temperature, where a zero-based axis
  * compresses the whole interesting range into a band a few pixels tall.
  */
-export const startsAtZero = (quantity: Quantity | null): boolean =>
-  quantity === 'power' || quantity === 'energy' || quantity === 'percent' || quantity === 'current' ||
-  quantity === 'duration' || quantity === 'illuminance' || quantity === 'distance' || quantity === 'speed';
+export const startsAtZero = (quantity: Quantity | null): boolean => {
+  const axis = quantity ? quantitySpec(quantity).axis : null;
+  return axis === 'zero' || (Array.isArray(axis) && axis[0] === 0);
+};
 
-/** A percentage is 0–100 whatever the data did; nothing else has fixed bounds. */
-export const fixedRange = (quantity: Quantity | null): [number, number] | null =>
-  quantity === 'percent' || quantity === 'humidity' ? [0, 100] : null;
+/** A percentage is 0–100 whatever the data did: the bounds its quantity fixes, if it does. */
+export const fixedRange = (quantity: Quantity | null): [number, number] | null => {
+  const axis = quantity ? quantitySpec(quantity).axis : null;
+  return Array.isArray(axis) ? [axis[0]!, axis[1]!] : null;
+};
 
 /**
  * What a card shows, in order: the attribute marked primary, then the others a

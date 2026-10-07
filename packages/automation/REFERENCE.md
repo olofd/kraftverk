@@ -707,6 +707,7 @@ reached — is never taken for true.
 | What it remembers | `memory.timesCharged` | A value it remembers, as a run last left it — or, before any did, as it starts: kept across runs and restarts. |
 | A reading | `station.charge` · `charger.power` | What the part filling a role reports now, by what it means: a standard meaning, or a type’s own. Unknown when it has not said, or said too long ago. |
 | Over the time just gone | `average(station.charge, 1 h)` · `change(station.charge, 30 min) > 5 %` · `ago(charger.power, 10 min)` | A reading over the time just gone, from what the home kept of it: `average`, `lowest`, `highest`, `change` — how much it changed — or `ago`, what it was then. In the reading’s unit; the time a number or a setting, a minute to two weeks. Unknown when nothing was kept for that time. |
+| How far | `distance(phone.position) < 500 m` · `distance(phone.position) > 2 km` · `distance(phone.position, car.position) < 50 m` | How far the position a part reports is from the home — or from another part’s, given a second — over the Earth’s surface: a number in m, compared in any length. Unknown when either position is, or the home has not said where it is. |
 | Can be reached | `charger reachable` | Whether the part filling a role can be reached now: its holder says it is connected. Never unknown — not being reachable is the answer. |
 | What the run knows | `run.trigger == "low"` · `run.event.voltage < 200 V` | What the run knows of itself: `run.trigger`, the id of the trigger that started it — `""` when none with an id did; `run.event`, the event a device raised that started it, and `run.event.voltage`, what it carried, as its device declares it — unknown when no event did. |
 | Time of day | `time between 23:00 and 05:00` | Whether the owner’s clock is between two times of day, from the first up to the second — across midnight when the second comes first. |
@@ -802,6 +803,7 @@ A number may carry one of these, written after it — `50 W`, `1.5 kWh`, `2 min`
 | `W/m²` | watts a square metre | irradiance | `800 W/m²` |
 | `dBm` | decibel-milliwatts | signal | `-60 dBm` |
 | `lx` | lux | illuminance | `300 lx` |
+| `°` | degrees | angle | `59.3 °` |
 | `EUR/kWh` | euros a kilowatt-hour | price.EUR | `0.25 EUR/kWh` |
 | `SEK/kWh` | kronor a kilowatt-hour | price.SEK | `1.5 SEK/kWh` |
 | `NOK/kWh` | Norwegian kroner a kilowatt-hour | price.NOK | `1.5 NOK/kWh` |

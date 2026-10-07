@@ -1,4 +1,4 @@
-import { checkValue, isScalar, valueTypeOf, type ConfigSchema, type ScalarValue, type Unit, type Value } from '@kraftverk/device-sdk';
+import { checkValue, distanceBetween, isScalar, valueTypeOf, type ConfigSchema, type Position, type ScalarValue, type Unit, type Value } from '@kraftverk/device-sdk';
 
 import { inWindow, minutesOf } from './clock.ts';
 import type { Evaluation } from './functions.ts';
@@ -6,6 +6,7 @@ import { ACROSS_FNS } from './kinds/across.ts';
 import { BUILTINS } from './kinds/builtins.ts';
 import { HISTORY_FNS, type HistoryPoint } from './kinds/history.ts';
 import type { SunEvent } from './rule.ts';
+import type { Coordinates } from './sun.ts';
 import { childrenOf, exprKind, expressionsIn, mapChildren, type ExprOf } from './kinds/exprs.ts';
 import { EXPRESSION_FIELDS, fieldValue, withField } from './kinds/spec.ts';
 import { stepSpec } from './kinds/steps.ts';
@@ -107,6 +108,10 @@ export type RuleScope = {
    * null, where none is kept: unknown.
    */
   history?(role: string, means: string, seconds: number): { points: readonly HistoryPoint[]; from: number; to: number; unit: Unit | null; label: string } | null;
+  /** Where the part filling a role is now, by a meaning of position — or null when it cannot be known. */
+  position?(role: string, means: string): { position: Position; label: string } | null;
+  /** Where the home is; absent, or null, where it has not said. */
+  home?(): Coordinates | null;
   /** When the sun rises or sets today where the home is — moved by `offset` seconds — as a time of day, "HH:MM", on the automation's clock. Absent, or null, where it cannot be known. */
   sun?(event: SunEvent, offset: number): string | null;
   /** What an expression is evaluated against for each part of a group, in order — that part called `as`, as a role is. Absent, or null, where the parts are not known. */
@@ -240,6 +245,20 @@ export function measureNow(expr: Expr, scope: RuleScope, trace: string[] = [], a
       const value = found === null ? null : tidy(found);
       trace.push(`${scope.name(of.role)}: ${fn} of ${kept?.label ?? of.means}${value === null ? ' is not known' : ` ${shown(value, kept?.unit ?? '')}`}`);
       return { value, unit: value === null ? null : (kept?.unit ?? null) };
+    }
+    case 'distance': {
+      // Over the Earth's surface, from the home — or from another part — in metres.
+      const { distance: of, to } = expr as ExprOf<'distance'>;
+      const here = scope.position?.(of.role, of.means) ?? null;
+      const there = to ? (scope.position?.(to.role, to.means)?.position ?? null) : (scope.home?.() ?? null);
+      const from = to ? scope.name(to.role) : 'home';
+      if (!here || !there) {
+        trace.push(`How far ${scope.name(of.role)} is from ${from} is not known${!here ? '' : to ? `: where ${from} is, is not` : ': the home has not said where it is'}`);
+        return plain(null);
+      }
+      const metres = Math.round(distanceBetween(here.position, there));
+      trace.push(`${scope.name(of.role)}: ${metres >= 10_000 ? `${Math.round(metres / 1000)} km` : metres >= 1000 ? `${(metres / 1000).toFixed(1)} km` : `${metres} m`} from ${from}`);
+      return { value: metres, unit: 'm' };
     }
     case 'reachable': {
       const role = (expr as ExprOf<'reachable'>).reachable;
@@ -474,6 +493,7 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
       case 'value':
       case 'read':
       case 'history':
+      case 'distance':
       case 'call':
       case 'reachable':
       case 'within':

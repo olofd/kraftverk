@@ -1,5 +1,3 @@
-import type { Quantity } from './meanings.ts';
-
 /**
  * Every unit kraftverk knows (docs/ARCHITECTURE.md §4.2): what a device
  * reports a number in, what a setting is set in, what a rule writes beside a
@@ -30,6 +28,7 @@ export type Dimension =
   | 'irradiance'
   | 'signal'
   | 'illuminance'
+  | 'angle'
   | 'price.EUR'
   | 'price.SEK'
   | 'price.NOK'
@@ -71,6 +70,8 @@ export const UNITS = {
   'W/m²': { label: 'watts a square metre', dimension: 'irradiance', factor: 1 },
   dBm: { label: 'decibel-milliwatts', dimension: 'signal', factor: 1 },
   lx: { label: 'lux', dimension: 'illuminance', factor: 1 },
+  // A latitude or a longitude: a position's.
+  '°': { label: 'degrees', dimension: 'angle', factor: 1 },
   'EUR/kWh': { label: 'euros a kilowatt-hour', dimension: 'price.EUR', factor: 1 },
   'SEK/kWh': { label: 'kronor a kilowatt-hour', dimension: 'price.SEK', factor: 1 },
   'NOK/kWh': { label: 'Norwegian kroner a kilowatt-hour', dimension: 'price.NOK', factor: 1 },
@@ -88,28 +89,6 @@ export const isUnit = (text: unknown): text is Unit => typeof text === 'string' 
 
 /** A unit's description. */
 export const unitSpec = (unit: Unit): UnitSpec => UNITS[unit];
-
-/**
- * The units each quantity may be in — what an attribute of it is declared
- * in, and what Home Assistant takes for it. A rank has none.
- */
-export const QUANTITY_UNITS: Readonly<Record<Quantity, readonly Unit[]>> = {
-  power: ['W', 'kW', 'MW'],
-  energy: ['Wh', 'kWh', 'MWh'],
-  percent: ['%'],
-  voltage: ['V', 'mV', 'kV'],
-  current: ['A', 'mA'],
-  temperature: ['°C', '°F', 'K'],
-  frequency: ['Hz', 'kHz'],
-  duration: ['s', 'min', 'h', 'd'],
-  humidity: ['%'],
-  illuminance: ['lx'],
-  signal: ['dBm'],
-  distance: ['mm', 'cm', 'm', 'km', 'mi'],
-  speed: ['m/s', 'km/h', 'mph'],
-  price: ['EUR/kWh', 'SEK/kWh', 'NOK/kWh', 'DKK/kWh'],
-  rank: [],
-};
 
 /** Whether a number in one unit can be put in the other: they measure the same. */
 export const convertible = (from: Unit, to: Unit): boolean => UNITS[from].dimension === UNITS[to].dimension;

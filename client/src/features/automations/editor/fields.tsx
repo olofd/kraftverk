@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import { Input, Text, XStack, YStack } from 'tamagui';
 
 import { secondsText, WEEKDAYS, type Expr, type Weekday } from '@kraftverk/automation';
-import { convert, QUANTITY_UNITS, UNITS, unitsLike, type Unit, type Value, type ValueType } from '@kraftverk/device-sdk';
+import { convert, unitsOfQuantity, UNITS, unitsLike, type Unit, type Value, type ValueType } from '@kraftverk/device-sdk';
 import { Chips, haptic, useNumberText, useRadioGroup, useToggleGroup } from '@kraftverk/ui';
 
 import { Picker } from '../../../components/Picker';
@@ -51,7 +51,7 @@ const measureOf = (expr: Expr | undefined, units: readonly Unit[]): Measure | nu
   expr && 'value' in expr && typeof expr.value === 'number' && expr.unit && units.includes(expr.unit) ? { value: expr.value, unit: expr.unit } : null;
 
 /** The units of time a length of time is written in. */
-const TIME_UNITS = QUANTITY_UNITS.duration;
+const TIME_UNITS = unitsOfQuantity('duration');
 
 /** Those offered side by side — a phone's width — with days only for a length already written in days. */
 const timeUnitsFor = (value: Measure | null): readonly Unit[] => (value?.unit === 'd' ? TIME_UNITS : TIME_UNITS.filter((unit) => unit !== 'd'));

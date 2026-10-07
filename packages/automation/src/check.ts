@@ -209,6 +209,7 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         problems.push(`${where}: ${expr.read.role} asks for nothing that reports ${expr.read.means}`);
       }
       // One in any of several units — a price, in its provider's currency — is compared in its own, known once bound.
+      if (standard.type === 'object') return { type: 'structure' };
       return standard.type === 'boolean' ? { type: 'boolean' } : { type: 'number', unit: standard.units ? null : (standard.unit ?? '') };
     }
     if ('call' in expr) {
@@ -245,6 +246,18 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       const read = shape({ read: expr.of }, where, options);
       if (read.type !== 'number' && read.type !== 'unknown') problems.push(`${where}: only a number is looked back at, not ${said(read)}`);
       return read.type === 'number' ? read : { type: 'number', unit: null };
+    }
+    if ('distance' in expr) {
+      // Each a position a part reports: a standard meaning of that quantity, or a type's own, checked once bound.
+      for (const [field, read] of [['distance', expr.distance], ['to', expr.to]] as const) {
+        if (!read) continue;
+        const spec = role(read.role, `${where}.${field}`);
+        const standard = read.means ? standardMeaning(read.means) : null;
+        if (!read.means) problems.push(`${where}.${field}: choose the position it reports`);
+        else if (standard && !(standard.type === 'object' && standard.quantity === 'position')) problems.push(`${where}.${field}: ${read.means} is not a position`);
+        else if (standard && spec && !meaningsOfNeed(spec).has(read.means)) problems.push(`${where}.${field}: ${read.role} asks for nothing that reports ${read.means}`);
+      }
+      return { type: 'number', unit: 'm' };
     }
     if ('reachable' in expr) {
       role(expr.reachable, where);

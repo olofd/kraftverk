@@ -57,7 +57,8 @@ export type WorldView = {
  */
 export type VocabularyView = {
   capabilities: Record<string, { label: string; attributes: Record<string, string>; commands: Record<string, { description: string; args: Record<string, unknown>; consequential: unknown }>; queries: Record<string, { description: string; args: Record<string, unknown> }> }>;
-  meanings: Record<string, { label: string; type: 'number' | 'boolean'; unit: string | null }>;
+  /** Each standard meaning: a number in its unit, an on/off, or a value of a quantity's shape — a position — named by `quantity`. */
+  meanings: Record<string, { label: string; type: 'number' | 'boolean' | 'object'; unit: string | null; quantity: string | null }>;
   links: Record<string, { verb: string; from: string; to: string; description: string }>;
   recipes: { id: string; label: string; description: string; roles: Record<string, { label: string; capabilities: readonly string[]; oneOf?: readonly string[] } | { label: string; automation: true }>; params: ConfigSchema }[];
   policy: Record<string, { label: string; value: number; unit: string }>;

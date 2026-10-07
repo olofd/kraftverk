@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import { savedDeviceId } from '@kraftverk/device-sdk';
+import { CATEGORIES, savedDeviceId } from '@kraftverk/device-sdk';
 import { plainSecrets } from '@kraftverk/store';
 
 import { lampType, MACHINE_NODE } from '../src/testing.ts';
@@ -24,7 +24,8 @@ afterEach(async () => {
 describe('what can be added', () => {
   test('every installed type, by category, with how it can be reached and whether this home can', async () => {
     const listing = await t.home.deviceTypes();
-    expect(Object.keys(listing.categories)).toEqual(['power-station', 'smart-plug', 'weather', 'energy-price', 'vehicle', 'account', 'gateway']);
+    expect(Object.keys(listing.categories)).toEqual(Object.keys(CATEGORIES));
+    expect(Object.keys(listing.categories).slice(0, 7)).toEqual(['power-station', 'smart-plug', 'weather', 'energy-price', 'vehicle', 'account', 'gateway']);
     const station = listing.types.find((type) => type.id === 'test.station')!;
     expect(station.meta.category).toBe('power-station');
     // Its own ways, and simulated — which every type has, and a home can always hold.

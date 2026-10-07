@@ -1,6 +1,7 @@
 import type { Unit } from './units.ts';
 import { CAPABILITIES, CAPABILITY_NAMES, isCapability, mustBeOffered, requiredMeanings, type CapabilityId, type CapabilitySpec } from './capabilities.ts';
-import { standardMeaning, type Quantity, type StateClass } from './meanings.ts';
+import { standardMeaning, type StateClass } from './meanings.ts';
+import { quantitySpec, type Quantity } from './quantities.ts';
 import { checkValue, isScalarType, type ScalarValueType, type Value, type ValueType } from './values.ts';
 
 /**
@@ -105,7 +106,7 @@ export type AttributeSpec = {
   label: string;
   description?: string;
   value: ValueType;
-  /** What a number is a quantity of. On/off values are booleans, and say nothing here. */
+  /** What a number — or a value of a quantity's shape, a position — is a quantity of. On/off values are booleans, and say nothing here. */
   quantity?: Quantity;
   /**
    * What it means: a standard meaning (`charge`) — whose unit, quantity and
@@ -215,12 +216,17 @@ export const partName = (deviceName: string, part: string, label: string | null 
 export const attributesOf = (description: DeviceDescription, part: string): AttributeSpec[] =>
   description.attributes.filter((attribute) => partOf(attribute) === part);
 
-/** What a number is a quantity of: declared, or the standard meaning's. Nothing that is not a number has one. */
+/**
+ * What a value is a quantity of: declared, or the standard meaning's — for a
+ * number, or a value with structure of a quantity's shape (a position).
+ * Nothing else has one.
+ */
 export function quantityOf(attribute: Pick<AttributeSpec, 'quantity' | 'means' | 'value'>): Quantity | null {
-  if (attribute.value.type !== 'number') return null;
-  if (attribute.quantity) return attribute.quantity;
+  if (attribute.value.type !== 'number' && attribute.value.type !== 'object') return null;
   const standard = attribute.means ? standardMeaning(attribute.means) : null;
-  return standard?.type === 'number' ? standard.quantity : null;
+  const quantity = attribute.quantity ?? (standard && standard.type !== 'boolean' ? standard.quantity : null);
+  // A number's quantity is a number's; a shape's, a shape's.
+  return quantity && quantitySpec(quantity).value.type === attribute.value.type ? quantity : null;
 }
 
 /** The unit a number is in, or null: not a number, or one with no unit. */

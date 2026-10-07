@@ -163,6 +163,10 @@ describes.
     `any(c in chargers: c.power > 10 W)`, `all(…)`, `count(…)`,
     `sum(c in chargers: c.power ?? 0 W)`, `average(…)`, `lowest(…)`,
     `highest(…)` — each part called by a name of its own within it;
+  - how far a position a part reports is from the home (`home: location`), or
+    from another part's: `distance(phone.position) < 500 m`,
+    `distance(phone.position, car.position)` — in m, compared in any length;
+    unknown until the home has a location;
   - the sun, where the home is (`home: location`): `sunrise`, `sunset`,
     `30 min before sunset` — a time of day, for `at:` and
     `time between sunset and sunrise`; unknown until the home has a location;

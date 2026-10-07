@@ -354,9 +354,23 @@ export function parseExpr(text: string): Parsed {
       expect(')', `a ")" to close ${token.value}(`);
       return { history: token.value, of: of.read, over };
     }
+    // How far a position is from home, or from another: "distance(phone.position)", "distance(phone.position, car.position)".
+    if (isSymbol('(') && token.value === 'distance') {
+      next();
+      const of = ternary();
+      if (!('read' in of)) throw new Failure('distance( measures a position a part reports: "distance(phone.position)"', token.at);
+      let to: Expr | null = null;
+      if (isSymbol(',')) {
+        next();
+        to = ternary();
+        if (!('read' in to)) throw new Failure('distance( measures to another position a part reports: "distance(phone.position, car.position)"', token.at);
+      }
+      expect(')', 'a ")" to close distance(');
+      return to && 'read' in to ? { distance: of.read, to: to.read } : { distance: of.read };
+    }
     // One of the language's own functions: "min(a, b)".
     if (isSymbol('(')) {
-      if (!isBuiltin(token.value)) throw new Failure(`"${token.value}" is not a function: ${BUILTIN_ORDER.join(', ')}; over time ${HISTORY_ORDER.join(', ')} — or a package's, by its whole id`, token.at);
+      if (!isBuiltin(token.value)) throw new Failure(`"${token.value}" is not a function: ${BUILTIN_ORDER.join(', ')}; over time ${HISTORY_ORDER.join(', ')}; distance — or a package's, by its whole id`, token.at);
       next();
       const args: Expr[] = [];
       if (!isSymbol(')')) {
@@ -511,6 +525,11 @@ function print(expr: Expr, need: number): string {
   if ('across' in expr) {
     if (!isAcrossFn(expr.across) || !NAME.test(expr.as) || !NAME.test(expr.group)) throw new Unprintable();
     return `${expr.across}(${expr.as} in ${expr.group}: ${print(expr.of, LEVEL.ternary)})`;
+  }
+  if ('distance' in expr) {
+    const reads = [expr.distance, ...(expr.to ? [expr.to] : [])];
+    if (reads.some((read) => !NAME.test(read.role) || !MEANING.test(read.means))) throw new Unprintable();
+    return `distance(${reads.map((read) => `${read.role}.${read.means}`).join(', ')})`;
   }
   if ('history' in expr) {
     if (!isHistoryFn(expr.history) || !NAME.test(expr.of.role) || !MEANING.test(expr.of.means)) throw new Unprintable();

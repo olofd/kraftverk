@@ -33,6 +33,22 @@ export const CATEGORIES = {
   account: { label: 'Accounts', singular: 'account', icon: 'user' },
   // A device other devices are reached through, on the home network: a Zigbee gateway and the plugs paired with it.
   gateway: { label: 'Gateways', singular: 'gateway', icon: 'share-2' },
+  // Grown toward Home Assistant's breadth (docs/PLAN-INTEGRATIONS.md §4.5): a shelf each, ready for its first type.
+  light: { label: 'Lights', singular: 'light', icon: 'sun' },
+  sensor: { label: 'Sensors', singular: 'sensor', icon: 'activity' },
+  climate: { label: 'Heating and cooling', singular: 'thermostat', icon: 'thermometer' },
+  lock: { label: 'Locks', singular: 'lock', icon: 'lock' },
+  cover: { label: 'Blinds and doors', singular: 'blind or door', icon: 'columns' },
+  vacuum: { label: 'Vacuums', singular: 'vacuum', icon: 'disc' },
+  camera: { label: 'Cameras', singular: 'camera', icon: 'camera' },
+  'media-player': { label: 'TVs and media players', singular: 'media player', icon: 'tv' },
+  speaker: { label: 'Speakers', singular: 'speaker', icon: 'speaker' },
+  // A person's own device, where it is and how charged: a phone, a watch, a tablet.
+  phone: { label: 'Phones and tablets', singular: 'phone', icon: 'smartphone' },
+  // Something that only says where it is: a tag on keys, a tracker in a bag.
+  tracker: { label: 'Trackers', singular: 'tracker', icon: 'map-pin' },
+  // A way to tell people: a push service, a chat.
+  notifications: { label: 'Notifications', singular: 'notification service', icon: 'bell' },
 } as const satisfies Record<string, CategorySpec>;
 
 export type CategoryId = keyof typeof CATEGORIES;

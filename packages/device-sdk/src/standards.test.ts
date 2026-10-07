@@ -9,7 +9,7 @@ import {
   isProjected,
 } from './standards.ts';
 import { STANDARD_MEANINGS, unitsOfMeaning, type StandardMeaning, type StandardMeaningId } from './meanings.ts';
-import { QUANTITY_UNITS } from './units.ts';
+import { unitsOfQuantity } from './quantities.ts';
 
 /*
   The projections into Home Assistant and Matter (docs/ARCHITECTURE.md §8
@@ -26,15 +26,16 @@ describe('standard meanings', () => {
     for (const id of meanings) {
       const meaning: StandardMeaning = STANDARD_MEANINGS[id];
       if (meaning.type !== 'number') continue;
-      expect({ id, ok: unitsOfMeaning(meaning).every((unit) => QUANTITY_UNITS[meaning.quantity].includes(unit)) }).toEqual({ id, ok: true });
+      expect({ id, ok: unitsOfMeaning(meaning).every((unit) => unitsOfQuantity(meaning.quantity).includes(unit)) }).toEqual({ id, ok: true });
     }
   });
 
-  test('an on/off is a binary sensor or a switch, and a number is a sensor — or, a setting, a number', () => {
+  test('an on/off is a binary sensor or a switch, a number is a sensor — or, a setting, a number — and a position is a device tracker', () => {
     for (const id of meanings) {
       const platform = MEANING_PROJECTIONS[id].homeAssistant.platform;
-      const onOff = STANDARD_MEANINGS[id].type === 'boolean';
-      expect({ id, platform: onOff ? platform === 'binary_sensor' || platform === 'switch' : platform === 'sensor' || platform === 'number' }).toEqual({ id, platform: true });
+      const type = STANDARD_MEANINGS[id].type;
+      const fits = type === 'boolean' ? platform === 'binary_sensor' || platform === 'switch' : type === 'object' ? platform === 'device_tracker' : platform === 'sensor' || platform === 'number';
+      expect({ id, platform: fits }).toEqual({ id, platform: true });
     }
   });
 

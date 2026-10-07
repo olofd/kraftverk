@@ -233,6 +233,13 @@ export const CAPABILITIES = {
       },
     },
   },
+  location: {
+    label: 'Location',
+    // Where it is on the Earth, and how sure: a phone, a scooter, a tag. How far it is from home is the automation language's `distance`.
+    attributes: { position: { means: 'position', required: true } },
+    commands: {},
+    queries: {},
+  },
 } as const satisfies Record<string, CapabilitySpec>;
 
 /** A capability in the library: the shared vocabulary. */

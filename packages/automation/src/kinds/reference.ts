@@ -19,7 +19,7 @@ import { TRIGGER_FIELDS, TRIGGER_FIELDS_DOCS, TRIGGER_KIND_ORDER, TRIGGER_KINDS 
 */
 
 /** A number to show each quantity's units with, in an example. */
-const UNIT_EXAMPLE: Readonly<Record<Dimension, string>> = { power: '50', energy: '1.5', current: '6', voltage: '230', frequency: '50', time: '2', ratio: '20', temperature: '21', length: '12', speed: '25', irradiance: '800', signal: '-60', illuminance: '300', 'price.EUR': '0.25', 'price.SEK': '1.5', 'price.NOK': '1.5', 'price.DKK': '1.5' };
+const UNIT_EXAMPLE: Readonly<Record<Dimension, string>> = { power: '50', energy: '1.5', current: '6', voltage: '230', frequency: '50', time: '2', ratio: '20', temperature: '21', length: '12', speed: '25', irradiance: '800', signal: '-60', illuminance: '300', angle: '59.3', 'price.EUR': '0.25', 'price.SEK': '1.5', 'price.NOK': '1.5', 'price.DKK': '1.5' };
 
 /** What a field holds, as the reference says it. */
 function holds(field: FieldSpec, fields: readonly FieldSpec[]): string {

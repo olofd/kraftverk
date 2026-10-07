@@ -71,7 +71,7 @@ describe('read and written back as they were', () => {
   }
 
   test('a function is the language’s or a package’s, by its whole id; the old ways of writing them are no more', () => {
-    expect(parseExpr('mean(a.b, c.d)')).toMatchObject({ ok: false, error: { message: '"mean" is not a function: min, max, clamp, round, floor, ceil, abs; over time average, lowest, highest, change, ago — or a package\'s, by its whole id' } });
+    expect(parseExpr('mean(a.b, c.d)')).toMatchObject({ ok: false, error: { message: '"mean" is not a function: min, max, clamp, round, floor, ceil, abs; over time average, lowest, highest, change, ago; distance — or a package\'s, by its whole id' } });
     // Looking back is at a reading, for so long.
     expect(parseExpr('average(5, 1 h)')).toMatchObject({ ok: false, error: { message: 'average( looks back at a reading: "average(station.charge, 1 h)"' } });
     expect(parseExpr('$low').ok).toBe(false);

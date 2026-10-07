@@ -64,6 +64,13 @@ export type Expr =
    */
   | { history: HistoryFn; of: { role: string; means: string }; over: Expr }
   /**
+   * How far the position a part reports is from the home — or, given `to`,
+   * from another part's — over the Earth's surface, in metres:
+   * `distance(phone.position) < 500 m`. Unknown when either is, or the
+   * home has not said where it is.
+   */
+  | { distance: { role: string; means: string }; to?: { role: string; means: string } }
+  /**
    * The time of day the sun rises or sets where the home is, on the
    * automation's clock — or so long before or after: `sunset`,
    * `30 min before sunset`. A time of day, as `07:00` is: what `at` and

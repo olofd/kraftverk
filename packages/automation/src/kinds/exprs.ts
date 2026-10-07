@@ -11,7 +11,7 @@ import type { KindDocs } from './spec.ts';
   one left out.
 */
 
-export type ExprKind = 'value' | 'param' | 'memory' | 'input' | 'read' | 'history' | 'sun' | 'across' | 'call' | 'apply' | 'compare' | 'math' | 'negate' | 'if' | 'either' | 'in' | 'all' | 'any' | 'not' | 'reachable' | 'within' | 'run';
+export type ExprKind = 'value' | 'param' | 'memory' | 'input' | 'read' | 'history' | 'distance' | 'sun' | 'across' | 'call' | 'apply' | 'compare' | 'math' | 'negate' | 'if' | 'either' | 'in' | 'all' | 'any' | 'not' | 'reachable' | 'within' | 'run';
 
 /** An expression of one kind. */
 export type ExprOf<K extends ExprKind> = K extends ExprKind ? Extract<Expr, Record<K, unknown>> : never;
@@ -54,6 +54,11 @@ export const EXPR_KINDS: { readonly [K in ExprKind]: ExprSpec<K> } = {
       examples: ['average(station.charge, 1 h)', 'change(station.charge, 30 min) > 5 %', 'ago(charger.power, 10 min)'],
     },
   },
+  distance: leaf('distance', 'How far', {
+    summary:
+      'How far the position a part reports is from the home — or from another part’s, given a second — over the Earth’s surface: a number in m, compared in any length. Unknown when either position is, or the home has not said where it is.',
+    examples: ['distance(phone.position) < 500 m', 'distance(phone.position) > 2 km', 'distance(phone.position, car.position) < 50 m'],
+  }),
   call: {
     kind: 'call',
     label: 'Ask a package',
@@ -152,7 +157,7 @@ export const EXPR_KINDS: { readonly [K in ExprKind]: ExprSpec<K> } = {
 };
 
 /** The order the reference lists them in. */
-export const EXPR_KIND_ORDER: readonly ExprKind[] = ['value', 'param', 'input', 'memory', 'read', 'history', 'reachable', 'run', 'within', 'sun', 'across', 'call', 'apply', 'compare', 'in', 'math', 'negate', 'if', 'either', 'all', 'any', 'not'];
+export const EXPR_KIND_ORDER: readonly ExprKind[] = ['value', 'param', 'input', 'memory', 'read', 'history', 'distance', 'reachable', 'run', 'within', 'sun', 'across', 'call', 'apply', 'compare', 'in', 'math', 'negate', 'if', 'either', 'all', 'any', 'not'];
 
 /** Which kind an expression is — by its key; one of no kind is an error, never taken for another. */
 export function exprKind(expr: Expr): ExprKind {

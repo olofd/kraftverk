@@ -139,6 +139,11 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
         const { history: fn, of, over } = expr as ExprOf<'history'>;
         return HISTORY_FNS[fn].words(whose(name(of.role), standardMeaning(of.means)?.label.toLowerCase() || of.means || 'reading'), text(over));
       }
+      case 'distance': {
+        // "how far Olof’s phone is from home", "how far Olof’s phone is from the car".
+        const { distance: of, to } = expr as ExprOf<'distance'>;
+        return `how far ${name(of.role)} is from ${to ? name(to.role) : 'home'}`;
+      }
       case 'reachable':
         return `${name((expr as ExprOf<'reachable'>).reachable)} can be reached`;
       case 'run': {

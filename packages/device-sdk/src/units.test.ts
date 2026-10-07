@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import { validateDescription } from './check-description.ts';
-import { QUANTITIES, STANDARD_MEANINGS, unitsOfMeaning } from './meanings.ts';
-import { convert, convertible, isUnit, QUANTITY_UNITS, UNIT_LIST, UNITS, unitsLike, wholeTime } from './units.ts';
+import { STANDARD_MEANINGS, unitsOfMeaning } from './meanings.ts';
+import { QUANTITIES, unitsOfQuantity } from './quantities.ts';
+import { convert, convertible, isUnit, UNIT_LIST, UNITS, unitsLike, wholeTime } from './units.ts';
 import { valueTypeProblems } from './values.ts';
 
 /*
@@ -40,13 +41,13 @@ describe('the units', () => {
 
   test('every quantity is measured in units that measure one thing, and every standard meaning in its quantity’s', () => {
     for (const quantity of QUANTITIES) {
-      const units = QUANTITY_UNITS[quantity];
+      const units = unitsOfQuantity(quantity);
       // Prices are each in a currency of their own; anything else converts within its quantity.
       if (quantity !== 'price') expect({ quantity, one: new Set(units.map((unit) => UNITS[unit].dimension)).size <= 1 }).toEqual({ quantity, one: true });
     }
     for (const [id, meaning] of Object.entries(STANDARD_MEANINGS)) {
       if (meaning.type !== 'number') continue;
-      expect({ id, ok: unitsOfMeaning(meaning).every((unit) => QUANTITY_UNITS[meaning.quantity].includes(unit)) }).toEqual({ id, ok: true });
+      expect({ id, ok: unitsOfMeaning(meaning).every((unit) => unitsOfQuantity(meaning.quantity).includes(unit)) }).toEqual({ id, ok: true });
     }
   });
 

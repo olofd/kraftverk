@@ -38,12 +38,13 @@ const STEPS: Record<Keys<Step>, string> = {
   forEach: 'for each:',
   answer: 'answer:',
 };
-const EXPRESSIONS: Record<Exclude<Keys<Expr>, 'role' | 'args' | 'left' | 'right' | 'unit' | 'then' | 'else' | 'item' | 'field' | 'of' | 'over' | 'offset' | 'as' | 'group'>, string> = {
+const EXPRESSIONS: Record<Exclude<Keys<Expr>, 'role' | 'args' | 'left' | 'right' | 'unit' | 'then' | 'else' | 'item' | 'field' | 'of' | 'over' | 'offset' | 'as' | 'group' | 'to'>, string> = {
   value: '50 W',
   param: 'setting.',
   memory: 'memory.',
   read: 'charger.power',
   history: 'average(',
+  distance: 'distance(',
   sun: 'sunset',
   input: 'given.',
   across: 'any(c in',
