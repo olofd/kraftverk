@@ -7,6 +7,8 @@ import {
   findStep,
   isSecretField,
   isSimulated,
+  openChannel,
+  type DirectMethod,
   methodOf,
   randomHex,
   setupPlan,
@@ -586,6 +588,10 @@ export class SetupService {
       log: { info: () => {}, warn: (m: string) => console.warn(`[setup] ${m}`), error: (m: string) => console.error(`[setup] ${m}`) },
       signal: signal ?? AbortSignal.timeout(ACTION_TIMEOUT_MS),
       platform: this.deps.transports.platform,
+      // A channel to the device chosen, for an action that pairs with it.
+      ...(draft.address && draft.method && !isBridgedMethod(draft.method) && !isSimulated(draft.method) && draft.reach.protocol
+        ? { open: () => openChannel(this.deps.transports, draft.reach.protocol, { transport: (draft.method as DirectMethod).transport, address: draft.address!, config: draft.connection }) }
+        : {}),
     };
   }
 

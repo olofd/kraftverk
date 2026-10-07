@@ -56,8 +56,12 @@ export type MessageBrokerPolicy = {
 
 /** How one protocol rides one transport. */
 export type Binding = {
-  /** What to ask the transport for, to reach `address`. */
-  open(address: string): OpenOptions;
+  /**
+   * What to ask the transport for, to reach `address` — with the
+   * connection's own settings, where what it needs was found rather than
+   * fixed: the port a device announced.
+   */
+  open(address: string, config?: Readonly<Record<string, unknown>>): OpenOptions;
   /**
    * Whether a sighting is one of this protocol's devices, and what it says
    * about itself. Asked only of a sighting a way's matchers picked out

@@ -1,0 +1,25 @@
+@kraftverk/integration-apple-media
+
+Ported to TypeScript from:
+
+- pyatv (https://github.com/postlund/pyatv), Copyright Pierre Ståhl,
+  licensed under the MIT License: Companion's frames and messages, OPACK,
+  HomeKit's pairing as the Apple TV takes it, and the remote's session.
+- Home Assistant's `apple_tv` integration
+  (https://github.com/home-assistant/core/tree/dev/homeassistant/components/apple_tv),
+  Copyright the Home Assistant authors, licensed under the Apache License,
+  Version 2.0: how it is found and paired.
+
+Test vectors: test/hap-vectors.ts holds HomeKit's SRP vectors as fast-srp
+(https://github.com/homebridge/fast-srp, MIT License) publishes them.
+
+Uses, unchanged, as dependencies: @noble/hashes, @noble/curves and
+@noble/ciphers (https://paulmillr.com/noble/), Copyright Paul Miller,
+MIT License.
+
+Changed: rewritten in TypeScript for kraftverk's device model — pure, over
+a byte channel, pairing as a setup action in turns. No code was copied
+verbatim; the protocol's behaviour follows pyatv's.
+
+The MIT License: https://opensource.org/licenses/MIT. A copy of the Apache
+License, Version 2.0, is at https://www.apache.org/licenses/LICENSE-2.0.

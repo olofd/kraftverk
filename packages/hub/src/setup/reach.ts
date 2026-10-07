@@ -86,7 +86,7 @@ export function overHardware(protocol: Protocol | null, transport: TransportDefi
       readOnce(draft, async () => {
         const method = draft.method!;
         if (isBridgedMethod(method)) throw new Error('This way goes through a bridge');
-        const channel = await openChannel(transports, protocol, { transport: method.transport, address: draft.address! });
+        const channel = await openChannel(transports, protocol, { transport: method.transport, address: draft.address!, config: draft.connection });
         return {
           kind: 'direct',
           method: method.id,

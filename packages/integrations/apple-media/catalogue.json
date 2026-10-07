@@ -1,0 +1,45 @@
+{
+  "protocols": [
+    {
+      "id": "apple-media-companion",
+      "label": "Companion",
+      "bindings": {
+        "lan": {
+          "instructions": {
+            "title": "Get it ready",
+            "body": "Turn the TV on, and have it on the same network. When pairing starts it shows a PIN on the screen: have the remote nearby to dismiss it if you stop."
+          },
+          "addressLabel": "IP address"
+        }
+      },
+      "credentials": {
+        "schema": {
+          "help": "The TV shows a PIN when pairing starts: type it here. Pairing is kept, and the TV lists it under Settings › Remotes and Devices, where it can be removed.",
+          "fields": {
+            "port": {
+              "type": "number",
+              "title": "Port",
+              "description": "Where the TV answers. Found with it: change it only if it said otherwise.",
+              "default": 49153
+            },
+            "credentials": {
+              "type": "string",
+              "presentation": "secret",
+              "kept": "session",
+              "title": "Paired"
+            }
+          }
+        },
+        "actions": [
+          {
+            "id": "pair",
+            "label": "Pair with the TV",
+            "description": "The TV shows a PIN, which is asked for next. Once, for as long as the TV keeps the pairing."
+          }
+        ],
+        "title": "Pair with the TV"
+      }
+    }
+  ],
+  "types": []
+}

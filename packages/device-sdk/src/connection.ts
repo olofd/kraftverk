@@ -380,7 +380,7 @@ export type TransportSource = {
 export async function openChannel(
   source: TransportSource,
   protocol: Protocol | null | undefined,
-  connection: { transport: string; address: string }
+  connection: { transport: string; address: string; config?: Readonly<Record<string, unknown>> }
 ): Promise<Channel> {
   const binding = protocol?.bindings[connection.transport];
   if (!protocol || !binding) throw new Error('This device cannot be reached this way here: an update is needed');
@@ -389,5 +389,5 @@ export async function openChannel(
     const why = source.available(connection.transport);
     throw new Error(why.ok ? 'This way of reaching devices did not start here' : why.reason);
   }
-  return guardChannel(await transport.open(connection.address, binding.open(connection.address)), protocol);
+  return guardChannel(await transport.open(connection.address, binding.open(connection.address, connection.config ?? {})), protocol);
 }

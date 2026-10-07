@@ -174,8 +174,11 @@ heard by the `relay` service, the only one on the host's network
 (Zigbee, Thread, Matter) are services at that edge too. Step 16 is done:
 [PORTING-FROM-HOME-ASSISTANT.md](PORTING-FROM-HOME-ASSISTANT.md), and
 Shelly (Gen2 and later) ported by it — experimental until checked against
-the owner's Shelly. Next is Part C (iCloud, then Apple TV), which needs the
-owner's Apple account and hardware to verify.
+the owner's Shelly. Part C is under way: iCloud (steps 17–18: Apple's
+sign-in with a second factor, the family's devices with their positions)
+and Apple TV's Companion protocol with HomeKit pairing (step 19) are
+built, tested against Apple and a TV played in the tests — not yet against
+the owner's Apple ID or TV. Next is step 20, the Apple TV as a device.
 
 ## The automation language
 

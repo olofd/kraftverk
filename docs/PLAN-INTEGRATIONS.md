@@ -1564,6 +1564,24 @@ is below 200 m". Not yet against the owner's Apple ID.
 **Step 19 · Apple TV's protocol and pairing.** The maintained library behind a
 protocol package; pairing by `ask`, protocol by protocol; its credentials
 kept.
+**Done 2026-10-07.** Not `node-appletv-remote` (§8.5) after all: it leans
+on Node's sockets and crypto, so it could not run in the app, and is no
+longer kept up. Companion is ported from pyatv instead — the maintained
+library Home Assistant uses — into `apple-media`'s protocol
+(`apple-media-companion`), pure over the home network's TCP channel, its
+cryptography from the noble libraries (audited, pure TypeScript): frames,
+OPACK, HomeKit's pair-setup (SRP, 3072-bit, SHA-512, checked against
+HomeKit's published vectors) and pair-verify, every frame after sealed
+with ChaCha20-Poly1305, and the remote's session (keys, media control,
+volume, apps, awake or asleep, events). Pairing is a setup action in two
+turns: the TV shows its PIN while the first turn's connection stays open —
+the SDK's `SetupContext.open`, which the hub provides once a device is
+chosen — and the second asks for it; what it leaves is kept as a
+`kept: 'session'` secret in pyatv's form. Found by `_companion-link._tcp`
+on the port it announces (`Binding.open` now takes the connection's
+config), its MAC from AirPlay's announcement its identity. Only Companion
+so far: AirPlay and MRP, for what is playing, when step 20 needs them.
+Tested against a TV played with the same cryptography; not yet a real one.
 
 **Step 20 · Apple TV as a device.** Found by mDNS; on and off,
 playback, apps, the remote's keys, volume; updates pushed.

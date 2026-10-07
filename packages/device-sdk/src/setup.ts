@@ -1,3 +1,4 @@
+import type { Channel } from './channel.ts';
 import { BRIDGE_TRANSPORT } from './bridge.ts';
 import { isBridgedMethod, type ConnectionMethod } from './connection.ts';
 import type { DeviceLogger, DeviceType, ScopedHttp } from './device-type.ts';
@@ -117,6 +118,13 @@ export type SetupContext<Config extends ConfigValues = ConfigValues> = {
   /** Aborted when the user leaves the flow, or the step runs too long. */
   signal: AbortSignal;
   platform: Platform;
+  /**
+   * A channel to the device chosen, over its way's transport, for an action
+   * that pairs with it: a PIN shown on its screen, asked for in a turn of its
+   * own. The action keeps it open across its turns, and closes it. Absent
+   * until a device is chosen, and for a way that reaches none of its own.
+   */
+  open?(): Promise<Channel>;
 };
 
 /** A button inside a step: "Fetch the key from the vendor's cloud". */
