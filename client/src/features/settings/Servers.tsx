@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Button, Input, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { completeUrl } from '@kraftverk/api-client';
+import { serverAddresses } from '@kraftverk/api-client';
 import { Card, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../components/Pressable';
-import { API_PORT } from '../../platform/server-address';
+import { API_PORT, SECURE_PAGE } from '../../platform/server-address';
 import { useServers } from '../../state/ServersProvider';
 
 /**
@@ -29,16 +29,26 @@ export function Servers() {
   const [problem, setProblem] = useState<string | null>(null);
 
   const save = async () => {
-    const url = completeUrl(draft, API_PORT);
-    if (!url) return;
+    const addresses = serverAddresses(draft, API_PORT, SECURE_PAGE);
+    if (!addresses.length) return;
 
     setBusy(true);
     setProblem(null);
     try {
+      // What was typed may mean more than one address — behind a proxy, or on
+      // the API's own port — so each is tried, and the first that answers kept.
       // Checked before it is saved: an address that does not answer is worth
       // knowing about while the user still has it in their head.
-      if (!(await servers.test(url))) {
-        setProblem(`Nothing answered at ${url}. Saved anyway — select it to retry.`);
+      let url: string | undefined;
+      for (const address of addresses) {
+        if (await servers.test(address)) {
+          url = address;
+          break;
+        }
+      }
+      if (!url) {
+        url = addresses[0]!;
+        setProblem(`Nothing answered at ${addresses.join(' or ')}. Saved as ${url} — select it to retry.`);
       }
       await servers.add({ url });
       setDraft('');

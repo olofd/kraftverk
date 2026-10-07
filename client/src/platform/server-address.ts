@@ -10,6 +10,9 @@ import { Platform } from 'react-native';
 /** The port a kraftverk server's API listens on, unless its owner moved it. */
 export const API_PORT = Number(process.env.EXPO_PUBLIC_API_PORT ?? 3333);
 
+/** This app is a page served over HTTPS: a browser lets it call only HTTPS addresses. */
+export const SECURE_PAGE = Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.protocol === 'https:';
+
 /**
  * Where the API would live, beside this app.
  *

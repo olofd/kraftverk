@@ -1,7 +1,7 @@
 import { completeUrl, normaliseUrl, suggestName } from '@kraftverk/api-client';
 
 import { clearPreference, readPreference, writePreference } from './preferences';
-import { API_PORT } from './server-address';
+import { API_PORT, SECURE_PAGE } from './server-address';
 
 /**
  * The kraftverk servers this app knows about.
@@ -66,7 +66,7 @@ function writeServers(servers: SavedServer[]): void {
 }
 
 export function addServer(input: { name?: string; url: string }): SavedServer {
-  const url = completeUrl(input.url, API_PORT);
+  const url = completeUrl(input.url, API_PORT, SECURE_PAGE);
   const existing = readServers().find((server) => server.url === url);
   if (existing) return existing;
 
@@ -91,7 +91,7 @@ export function updateServer(
   const next: SavedServer = {
     ...found,
     name: changes.name?.trim() || found.name,
-    url: changes.url ? completeUrl(changes.url, API_PORT) : found.url,
+    url: changes.url ? completeUrl(changes.url, API_PORT, SECURE_PAGE) : found.url,
   };
   writeServers(servers.map((server) => (server.id === id ? next : server)));
   return next;
