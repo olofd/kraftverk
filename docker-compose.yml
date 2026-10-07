@@ -191,7 +191,9 @@ services:
       # Whether each device answers, said on its availability topic; off, kraftverk cannot tell.
       ZIGBEE2MQTT_CONFIG_AVAILABILITY_ENABLED: "true"
       # What a device last said, kept on the broker: a server restarting reads it at once.
-      ZIGBEE2MQTT_CONFIG_DEVICE_OPTIONS_RETAIN: "true"
+      # As JSON, whole: device_options has no fixed keys, so Zigbee2MQTT reads no
+      # variable for one of them (…_DEVICE_OPTIONS_RETAIN is silently ignored).
+      ZIGBEE2MQTT_CONFIG_DEVICE_OPTIONS: '{"retain":true}'
       # When each device last spoke, in what it says: a state replayed from the broker keeps its own time.
       ZIGBEE2MQTT_CONFIG_ADVANCED_LAST_SEEN: ISO_8601
       # kraftverk is its interface: no web page of its own, no Home Assistant discovery.

@@ -90,6 +90,23 @@ const TOOLS = {
   },
 } as const satisfies Record<string, ToolSpec>;
 
+/**
+ * What of its settings the integration relies on and it runs without, said
+ * in its health so a deploy that missed one shows: each device's state kept
+ * on the broker, whether each answers, and when each last spoke. Nothing
+ * before it has said its settings.
+ */
+function missingSettings(info: BridgeInfo | null): string[] {
+  const config = info?.config;
+  if (!config) return [];
+  const availability = typeof config.availability === 'object' ? config.availability.enabled : config.availability;
+  return [
+    ...(config.device_options?.retain === true ? [] : ['its devices’ state is not kept on the broker (device_options.retain): a restart forgets a quiet sensor until it speaks']),
+    ...(availability === true ? [] : ['it does not say whether each device answers (availability)']),
+    ...(config.advanced?.last_seen && config.advanced.last_seen !== 'disable' ? [] : ['it does not say when each device last spoke (advanced.last_seen)']),
+  ];
+}
+
 /** Its readings, from what Zigbee2MQTT said. */
 function readingsOf(network: ZigbeeNetwork, at: string): Reading[] {
   const info: BridgeInfo | null = network.info;
@@ -126,6 +143,7 @@ function sessionOver(channel: MessageChannel, ctx: DeviceContext<Config>, simula
       count === 1 ? '1 Zigbee device' : `${count} Zigbee devices`,
       ...(simulated ? ['simulated'] : info?.version ? [`Zigbee2MQTT ${info.version}`] : []),
       ...(info?.network?.channel ? [`channel ${info.network.channel}`] : []),
+      ...(simulated ? [] : missingSettings(info)),
     ];
     return { status: 'connected', detail: parts.join(' · '), lastReadingAt: at() };
   };

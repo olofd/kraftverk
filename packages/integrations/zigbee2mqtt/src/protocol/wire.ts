@@ -87,6 +87,12 @@ export type BridgeInfo = {
   /** When joining ends, ms since the epoch. */
   permit_join_end?: number;
   restart_required?: boolean;
+  /** Its settings as it runs with them — the network key among them, so the topic is secret. Only what the integration relies on is read. */
+  config?: {
+    device_options?: { retain?: boolean };
+    availability?: boolean | { enabled?: boolean };
+    advanced?: { last_seen?: string };
+  };
 };
 
 /** `bridge/response/<request>`: what a request was answered with, its `transaction` echoed. */
