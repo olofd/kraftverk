@@ -1,5 +1,7 @@
 import type { FileMigration } from '@kraftverk/device-sdk';
 
+import { zigbeeIdentity } from './protocol/index.ts';
+
 /*
   How Tuya's entries in a configuration file changed (docs/CONFIG.md), so a
   home kept before comes back after. Each finds its entries by what is
@@ -10,7 +12,7 @@ import type { FileMigration } from '@kraftverk/device-sdk';
 const GATEWAY = 'tuya.gateway';
 
 type Way = { via?: unknown; through?: unknown; address?: unknown; settings?: Record<string, unknown>; secrets?: Record<string, unknown>; exportable?: unknown };
-type Entry = { type?: unknown; name?: unknown; connect?: unknown };
+type Entry = { type?: unknown; name?: unknown; identity?: unknown; connect?: unknown };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -22,7 +24,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
  * its Zigbee address. One gateway entry for each gateway address — two
  * sockets behind one gateway share it, and its key. The gateway's own device
  * id was never in the file: on 3.4 and 3.5 it is not needed, and it is read
- * from the network when the gateway is set up again.
+ * from the network when the gateway is set up again. The socket is known by
+ * its Zigbee address from then on, as the gateway names its members — not
+ * by the device id it was known by on the gateway's own connection.
  */
 const throughTheGateway: FileMigration = {
   from: 6,
@@ -41,6 +45,7 @@ const throughTheGateway: FileMigration = {
     for (const [key, raw] of Object.entries(devices)) {
       const entry = raw as Entry;
       if (!isRecord(entry) || typeof entry.type !== 'string' || !behindTypes.has(entry.type) || !Array.isArray(entry.connect)) continue;
+      let zigbee: string | null = null;
       const connect = (entry.connect as Way[]).map((way) => {
         const [host, cid, ...rest] = typeof way?.address === 'string' ? way.address.split('#') : [];
         if (way?.via !== 'lan' || !host || !cid || rest.length) return way;
@@ -55,9 +60,10 @@ const throughTheGateway: FileMigration = {
             connect: [{ via: 'lan', address: host, ...(Object.keys(settings).length ? { settings } : {}), ...(way.secrets ? { secrets: way.secrets } : {}), ...(way.exportable === true ? { exportable: true } : {}) }],
           };
         }
-        return { via: 'gateway', through: gatewayKey, address: cid.toLowerCase() };
+        zigbee = cid.toLowerCase();
+        return { via: 'gateway', through: gatewayKey, address: zigbee };
       });
-      devices[key] = { ...entry, connect };
+      devices[key] = { ...entry, ...(zigbee && entry.identity !== undefined ? { identity: zigbeeIdentity(zigbee) } : {}), connect };
     }
     return { ...document, devices };
   },

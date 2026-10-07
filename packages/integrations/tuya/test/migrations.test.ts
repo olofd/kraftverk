@@ -23,14 +23,14 @@ test('Zigbee sockets at a gateway address become sockets through a gateway entry
     {
       kraftverk: 6,
       devices: {
-        fan: { type: 'acme.zigbee', name: 'Fan plug', connect: [{ via: 'lan', address: '192.0.2.74#A4C1380000000001', settings: { deviceId: 'made-up-plug-id', protocolVersion: '3.4' }, secrets: { localKey: secret } }] },
+        fan: { type: 'acme.zigbee', name: 'Fan plug', identity: 'tuya-local:made-up-plug-id', connect: [{ via: 'lan', address: '192.0.2.74#A4C1380000000001', settings: { deviceId: 'made-up-plug-id', protocolVersion: '3.4' }, secrets: { localKey: secret } }] },
         lamp: { type: 'tuya.plug', name: 'Lamp plug', connect: [{ via: 'lan', address: '192.0.2.74#a4c1380000000002', settings: { deviceId: 'made-up-plug-two', protocolVersion: '3.4' }, secrets: { localKey: secret } }] },
-        heater: { type: 'tuya.plug', name: 'Heater plug', connect: [{ via: 'lan', address: '192.0.2.80', settings: { deviceId: 'made-up-wifi-plug' } }] },
+        heater: { type: 'tuya.plug', name: 'Heater plug', identity: 'tuya-local:made-up-wifi-plug', connect: [{ via: 'lan', address: '192.0.2.80', settings: { deviceId: 'made-up-wifi-plug' } }] },
       },
     },
     installed
   );
-  const devices = migrated.devices as Record<string, { type?: string; name?: string; connect: unknown[] }>;
+  const devices = migrated.devices as Record<string, { type?: string; name?: string; identity?: string; connect: unknown[] }>;
   expect(devices['tuya-gateway']).toEqual({
     type: 'tuya.gateway',
     name: 'Tuya gateway',
@@ -40,5 +40,9 @@ test('Zigbee sockets at a gateway address become sockets through a gateway entry
   expect(devices.fan!.connect).toEqual([{ via: 'gateway', through: 'tuya-gateway', address: 'a4c1380000000001' }]);
   expect(devices.lamp!.connect).toEqual([{ via: 'gateway', through: 'tuya-gateway', address: 'a4c1380000000002' }]);
   expect(devices.heater!.connect).toEqual([{ via: 'lan', address: '192.0.2.80', settings: { deviceId: 'made-up-wifi-plug' } }]);
+  // Known from then on by its Zigbee address, as the gateway names it — or it would be refused as another device; one on Wi-Fi as before.
+  expect(devices.fan!.identity).toBe('zigbee:a4c1380000000001');
+  expect(devices.lamp!.identity).toBeUndefined();
+  expect(devices.heater!.identity).toBe('tuya-local:made-up-wifi-plug');
   expect(Object.keys(devices).filter((key) => key.startsWith('tuya-gateway'))).toEqual(['tuya-gateway']);
 });
