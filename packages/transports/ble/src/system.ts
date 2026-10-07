@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { existsSync } from 'node:fs';
 
 import {
   fullUuid,
@@ -13,14 +14,18 @@ import {
   type TransportFactory,
 } from '@kraftverk/device-sdk';
 
-import definition, { advertOf, manufacturerOf } from './index.ts';
+import { BluezRadio } from './bluez.ts';
+import definition, { advertOf } from './index.ts';
+import { NobleRadio } from './noble.ts';
+import type { Advert, Link, Radio } from './radio.ts';
 
 /**
- * Bluetooth LE on the server, over noble.
+ * Bluetooth LE on the server: through BlueZ on Linux — over the system bus,
+ * the stack the machine already runs, which a container reaches through the
+ * host's bus socket — and through noble elsewhere (radio.ts).
  *
  * Split in two, because the radio and a connection are different things. One
- * noble instance owns the radio and the scan, and there is genuinely one of
- * those per process. A *connection* is not scarce in the same way: a central
+ * radio owns the scan, and there is genuinely one of those per process. A *connection* is not scarce in the same way: a central
  * holds several peripherals at once, commonly around seven. So the transport
  * scans and each channel connects, owning what a connection actually has — its
  * characteristics and its own reconnect loop.
@@ -34,13 +39,10 @@ import definition, { advertOf, manufacturerOf } from './index.ts';
  * single unit.
  */
 
-type Noble = typeof import('@stoprocent/noble').default;
-type Peripheral = any;
-
 /** Drop a device from the list after this long without an advertisement. */
 const STALE_AFTER_MS = 30_000;
 
-/** How long a connection is given to be answered: noble's own waits for ever. */
+/** How long a connection is given to be answered: a radio's own may wait for ever. */
 const CONNECT_TIMEOUT_MS = 20_000;
 
 /** `work`, or `said` once `ms` have passed without it. */
@@ -78,10 +80,9 @@ const sightingOf = (seen: Seen): Sighting => ({
 class BleServerTransport extends EventEmitter implements Transport {
   readonly definition = definition;
 
-  #noble: Noble | null = null;
+  #radio: Radio | null = null;
   #availability: Availability = { ok: false, reason: 'Bluetooth has not started' };
   #seen = new Map<string, Seen>();
-  #peripherals = new Map<string, Peripheral>();
   #channels = new Map<string, BleChannel>();
 
   constructor(private context: TransportContext) {
@@ -94,49 +95,37 @@ class BleServerTransport extends EventEmitter implements Transport {
   }
 
   async start(): Promise<void> {
-    if (this.#noble) return;
+    if (this.#radio) return;
+    const radio = radioFor(this.context.env);
+    // Its own before it starts: what it hears while starting may wake a channel, which connects through it.
+    this.#radio = radio;
     try {
-      const noble = (await import('@stoprocent/noble')).default;
-      this.#noble = noble;
-      noble.on('discover', (peripheral: Peripheral) => this.#discovered(peripheral));
-      await new Promise<void>((resolve, reject) => {
-        if (noble.state === 'poweredOn') return resolve();
-        const timer = setTimeout(() => reject(new Error('No Bluetooth radio became available')), 8000);
-        noble.once('stateChange', (state: string) => {
-          clearTimeout(timer);
-          state === 'poweredOn' ? resolve() : reject(new Error(`The Bluetooth radio is ${state}`));
-        });
-      });
-      // allowDuplicates: repeated advertisements are what keep the signal
-      // reading and "last seen" current. Without it each device is reported
-      // once and its signal freezes at first sighting — useless when you are
-      // moving an antenna to improve it.
-      await noble.startScanningAsync([], true);
+      await radio.start((advert) => this.#heard(advert));
       this.#availability = { ok: true };
-      this.context.log('info', '[ble] Scanning for Bluetooth devices');
+      this.context.log('info', `[ble] Scanning for Bluetooth devices, through ${radio.name}`);
     } catch (error) {
       // Recorded, not thrown: a machine with no Bluetooth radio still serves
       // everything it reaches another way.
+      this.#radio = null;
       const message = (error as Error).message;
       this.#availability = {
         ok: false,
-        reason: /Cannot find (module|package)/.test(message) ? 'This server was installed without Bluetooth support' : `This server has no usable Bluetooth radio: ${message}`,
+        reason: /Cannot find (module|package)/.test(message) ? 'This server was installed without Bluetooth support' : `This server has no usable Bluetooth radio (${radio.name}): ${message}`,
       };
       this.context.log('warn', `[ble] Bluetooth is unavailable: ${message}`);
     }
   }
 
-  #discovered(peripheral: Peripheral): void {
-    const id: string = peripheral.id;
+  #heard(advert: Advert): void {
+    const { id } = advert;
     const now = new Date().toISOString();
     const existing = this.#seen.get(id);
-    this.#peripherals.set(id, peripheral);
     this.#seen.set(id, {
       id,
-      name: peripheral.advertisement?.localName || existing?.name || null,
-      rssi: typeof peripheral.rssi === 'number' ? peripheral.rssi : null,
-      services: peripheral.advertisement?.serviceUuids ?? existing?.services ?? [],
-      manufacturer: peripheral.advertisement?.manufacturerData ? manufacturerOf(new Uint8Array(peripheral.advertisement.manufacturerData)) : (existing?.manufacturer ?? {}),
+      name: advert.name || existing?.name || null,
+      rssi: advert.rssi,
+      services: advert.services.length ? advert.services : (existing?.services ?? []),
+      manufacturer: Object.keys(advert.manufacturer).length ? advert.manufacturer : (existing?.manufacturer ?? {}),
       firstSeen: existing?.firstSeen ?? now,
       lastSeen: now,
     });
@@ -151,18 +140,15 @@ class BleServerTransport extends EventEmitter implements Transport {
     const cutoff = Date.now() - STALE_AFTER_MS;
     for (const [id, seen] of this.#seen) {
       if (this.#channels.has(id)) continue;
-      if (Date.parse(seen.lastSeen) < cutoff) {
-        this.#seen.delete(id);
-        this.#peripherals.delete(id);
-      }
+      if (Date.parse(seen.lastSeen) < cutoff) this.#seen.delete(id);
     }
     return [...this.#seen.values()].sort((a, b) => (b.rssi ?? -999) - (a.rssi ?? -999));
   }
 
   async stop(): Promise<void> {
     for (const channel of [...this.#channels.values()]) await channel.close();
-    await this.#noble?.stopScanningAsync().catch(() => {});
-    this.#noble = null;
+    await this.#radio?.stop().catch(() => {});
+    this.#radio = null;
     this.#availability = { ok: false, reason: 'Bluetooth has stopped' };
   }
 
@@ -178,8 +164,9 @@ class BleServerTransport extends EventEmitter implements Transport {
     };
   }
 
-  peripheral(id: string): Peripheral | null {
-    return this.#peripherals.get(id) ?? null;
+  /** The radio, while Bluetooth runs: what a channel connects through. */
+  get radio(): Radio | null {
+    return this.#radio;
   }
 
   async open(address: string, options: OpenOptions): Promise<ByteChannel> {
@@ -211,7 +198,8 @@ class BleServerTransport extends EventEmitter implements Transport {
 export class BleChannel implements ByteChannel {
   readonly kind = 'bytes' as const;
 
-  #write: any = null;
+  #link: Link | null = null;
+  #write: string | null = null;
   #connected = false;
   #connecting = false;
   #closed = false;
@@ -270,8 +258,8 @@ export class BleChannel implements ByteChannel {
   async connect(): Promise<void> {
     if (this.#closed || this.#connecting || this.#connected) return;
 
-    const peripheral = this.transport.peripheral(this.address);
-    if (!peripheral) {
+    const radio = this.transport.radio;
+    if (!radio || !radio.knows(this.address)) {
       // Not an error worth throwing at start-up: a saved device is routinely
       // out of range when the server boots, and the scan will bring it back.
       this.#lastError = `${this.address} is not in range`;
@@ -282,7 +270,7 @@ export class BleChannel implements ByteChannel {
     this.#connecting = true;
     this.#attempts += 1;
     try {
-      await this.#openGatt(peripheral);
+      await this.#openGatt(radio);
       this.#lastError = null;
       this.#backoffMs = 2000;
     } catch (error) {
@@ -300,11 +288,12 @@ export class BleChannel implements ByteChannel {
    * lets go of the link it made: a station that takes one connection is not
    * left held by nobody, locked from the phone and its own app.
    */
-  async #openGatt(peripheral: Peripheral): Promise<void> {
+  async #openGatt(radio: Radio): Promise<void> {
     try {
-      await this.#gatt(peripheral);
+      await this.#gatt(radio);
     } catch (error) {
-      await peripheral.disconnectAsync().catch(() => {});
+      this.#link = null;
+      await radio.drop(this.address).catch(() => {});
       throw error;
     }
   }
@@ -314,58 +303,36 @@ export class BleChannel implements ByteChannel {
     if (this.#closed) throw new Error(`Closed while connecting to ${this.address}`);
   }
 
-  async #gatt(peripheral: Peripheral): Promise<void> {
+  async #gatt(radio: Radio): Promise<void> {
     // One that never answers is given up, so the next advertisement can try again.
-    await within(peripheral.connectAsync(), CONNECT_TIMEOUT_MS, `${this.address} did not answer the connection within ${CONNECT_TIMEOUT_MS / 1000} s`);
+    const link = await within(radio.connect(this.address), CONNECT_TIMEOUT_MS, `${this.address} did not answer the connection within ${CONNECT_TIMEOUT_MS / 1000} s`);
+    this.#link = link;
     this.#stillWanted();
-
-    let { services, characteristics } = await peripheral.discoverAllServicesAndCharacteristicsAsync();
-    this.#stillWanted();
+    const { services, characteristics } = link.gatt;
+    this.#lastDiscovery = { at: new Date().toISOString(), services, characteristics };
 
     const short = (uuid: string) => uuid.replace(/-/g, '').toLowerCase();
     /** 1800/1801 are Generic Access and Generic Attribute — every device has them. */
-    const onlyGenericServices = (list: any[]) =>
-      list.every((s: any) => ['1800', '1801'].includes(short(s.uuid).replace(/^0000|0000.*$/g, '')));
+    const onlyGenericServices = services.every((uuid) => ['1800', '1801'].includes(short(uuid).replace(/^0000|0000.*$/g, '')));
+    const find = (want: string) => characteristics.find((characteristic) => fullUuid(characteristic.uuid) === fullUuid(want));
 
-    // Windows sometimes returns a partial GATT database on the first pass, and
-    // for an unpaired peripheral it returns only 1800/1801 permanently (WinRT
-    // hides custom services until the device is bonded). A retry costs little
-    // and fixes the transient case; the permanent case is reported below.
-    if (services.length === 0 || onlyGenericServices(services)) {
-      await new Promise((r) => setTimeout(r, 1200));
-      const retry = await peripheral.discoverAllServicesAndCharacteristicsAsync();
-      this.#stillWanted();
-      if (retry.services.length > services.length) {
-        services = retry.services;
-        characteristics = retry.characteristics;
-      }
-    }
-
-    this.#lastDiscovery = {
-      at: new Date().toISOString(),
-      services: services.map((s: any) => s.uuid),
-      characteristics: characteristics.map((c: any) => ({ uuid: c.uuid, properties: c.properties ?? [] })),
-    };
-
-    const find = (want: string) => characteristics.find((c: any) => fullUuid(c.uuid) === fullUuid(want));
-
-    let writeChar: any = null;
-    let notifyChar: any = null;
+    let write: string | null = null;
+    let notify: string | null = null;
     for (const candidate of this.options.gatt ?? []) {
       const w = find(candidate.write);
       const n = find(candidate.notify);
       if (w && n) {
-        writeChar = w;
-        notifyChar = n;
+        write = w.uuid;
+        notify = n.uuid;
         break;
       }
     }
 
-    if (!writeChar || !notifyChar) {
-      const svc = services.map((s: any) => s.uuid).join(', ') || 'none';
-      const chr = characteristics.map((c: any) => c.uuid).join(', ') || 'none';
+    if (!write || !notify) {
+      const svc = services.join(', ') || 'none';
+      const chr = characteristics.map((characteristic) => characteristic.uuid).join(', ') || 'none';
       throw new Error(
-        onlyGenericServices(services)
+        onlyGenericServices
           ? `Only the standard GATT services are visible (${svc}). On Windows this means the ` +
               'device is not paired: WinRT hides custom services from unpaired peripherals. Pair it in ' +
               'Settings > Bluetooth & devices > Add device, then retry.'
@@ -373,33 +340,29 @@ export class BleChannel implements ByteChannel {
       );
     }
 
-    notifyChar.removeAllListeners('data');
-    notifyChar.on('data', (data: Buffer) => {
-      const bytes = new Uint8Array(data);
+    await link.subscribe(notify, (bytes) => {
       for (const listener of [...this.#data]) listener(bytes);
     });
-    await notifyChar.subscribeAsync();
     this.#stillWanted();
 
-    peripheral.removeAllListeners('disconnect');
-    peripheral.once('disconnect', () => {
+    link.onDisconnect(() => {
       this.#write = null;
+      this.#link = null;
       this.#lastError = 'The connection dropped';
       this.#setConnected(false);
       // Still this channel's device — keep trying to get it back.
       this.#scheduleReconnect();
     });
 
-    this.#write = writeChar;
+    this.#write = write;
     this.#setConnected(true);
     this.context.log('info', `[ble] Connected to ${this.address}`);
   }
 
   async write(bytes: Uint8Array): Promise<void> {
-    const characteristic = this.#write;
-    if (!characteristic) throw new Error(`No Bluetooth connection to ${this.address}`);
-    // noble's second argument is "without response".
-    await characteristic.writeAsync(Buffer.from(bytes), !(this.options.writeWithResponse ?? true));
+    const link = this.#link;
+    if (!link || !this.#write) throw new Error(`No Bluetooth connection to ${this.address}`);
+    await link.write(this.#write, bytes, this.options.writeWithResponse ?? true);
   }
 
   describe() {
@@ -416,14 +379,24 @@ export class BleChannel implements ByteChannel {
     this.#closed = true;
     if (this.#reconnectTimer) clearTimeout(this.#reconnectTimer);
     this.#reconnectTimer = null;
-    const peripheral = this.transport.peripheral(this.address);
-    if (peripheral) await peripheral.disconnectAsync().catch(() => {});
+    if (this.#link) await this.#link.disconnect().catch(() => {});
+    else await this.transport.radio?.drop(this.address).catch(() => {});
+    this.#link = null;
     this.#write = null;
     this.#setConnected(false);
     this.#data.clear();
     this.#state.clear();
     this.release();
   }
+}
+
+/**
+ * The radio to use: BlueZ where the system bus is — a Linux machine, or a
+ * container given the host's — and noble everywhere else.
+ */
+function radioFor(env: Readonly<Record<string, string | undefined>>): Radio {
+  const bus = (env.DBUS_SYSTEM_BUS_ADDRESS ?? 'unix:path=/run/dbus/system_bus_socket').replace(/^unix:path=/, '').split(',')[0]!;
+  return process.platform === 'linux' && existsSync(bus) ? new BluezRadio() : new NobleRadio();
 }
 
 const createBleTransport: TransportFactory = (context) => {

@@ -116,7 +116,7 @@ device is reached the way you added it.
 | Wi-Fi (MQTT) | Stations over Wi-Fi, through the `broker` service | ✅ The one that suits a server |
 | Home network (`lan`) | Plugs and other devices on your network, over TCP | ✅ |
 | HTTPS | Web services, such as the weather | ✅ |
-| Bluetooth LE | Devices within radio range | ❌ Not in this image — see below; the Connectivity screen says so |
+| Bluetooth LE | Devices within radio range | ✅ On a Linux host with BlueZ — see [Bluetooth](#bluetooth); not on Docker Desktop, and the Connectivity screen says so |
 
 **Simulated** is a way to add any device, with no hardware: its type's
 simulator stands in for it. A simulated device sits beside real ones, reaches
@@ -177,25 +177,30 @@ firewall separately.
 The station still needs internet on its first connect: it fetches its settings
 from the vendor cloud before connecting. Only the MQTT traffic is redirected.
 
-### Why Bluetooth is not here
+### Bluetooth
 
-`@stoprocent/noble` is declared an **optional dependency** and the image installs
-with `--omit=optional`, which is what keeps four native builds — node-gyp, usb,
-bluetooth-hci-socket, serialport — out of it. The server imports noble lazily, so
-the Bluetooth transport reports itself unavailable here and every other one
-carries on.
+On a Linux host the server reaches the radio through **BlueZ**, the Bluetooth
+stack the host already runs, over its **system D-Bus**: `/run/dbus` is mounted
+into the server container (read-only, which still lets it connect), and the
+transport talks to `org.bluez` with a pure-JavaScript D-Bus client. No host
+networking, no capabilities, no native code — and BlueZ keeps the adapter,
+shared rather than fought over. BlueZ's own D-Bus policy lets any user ask it
+for what a central does (scan, connect, read, write, notify); nothing on the
+host needs changing. The log says `[ble] Scanning for Bluetooth devices,
+through BlueZ`.
 
-That is not merely a build convenience. A container has no honest access to a
-Bluetooth radio:
+The host needs a radio BlueZ sees (`bluetoothctl list`) and `bluetooth.service`
+running. A radio switched off is switched on.
 
-- **On Docker Desktop (macOS, Windows)** the container runs inside a VM with no
-  Bluetooth passthrough. It cannot work, and no flag makes it work.
-- **On Linux** it is possible in principle — host networking, `CAP_NET_RAW` and
-  `CAP_NET_ADMIN`, access to the host's BlueZ stack, and an image rebuilt without
-  `--omit=optional`. It is fiddly, and not something this repository tests.
+noble, which drives a radio itself, stays an **optional dependency**, and the
+image installs with `--omit=optional`, which keeps its four native builds —
+node-gyp, usb, bluetooth-hci-socket, serialport — out. It is for a server run
+on Windows or macOS with `npm run dev`.
 
-If you want Bluetooth, run the server on the host with `npm run dev`, or let
-the app hold the link itself from a browser.
+**On Docker Desktop (macOS, Windows)** the container runs inside a VM with no
+Bluetooth passthrough and no BlueZ: the transport says it is unavailable, and
+every other one carries on. Run the server on the host instead, or let the app
+hold the link itself from a browser.
 
 ---
 

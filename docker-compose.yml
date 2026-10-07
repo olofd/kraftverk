@@ -110,11 +110,21 @@ services:
       KRAFTVERK_LAN_RELAY_PORT: "3334"
       KRAFTVERK_LAN_RELAY_TOKEN_FILE: /relay/token
 
+      # Bluetooth, through the host's BlueZ over its system bus (mounted below):
+      # the stack that owns the radio already, asked rather than fought with —
+      # no host networking, no capabilities (docs/DOCKER.md#bluetooth).
+      DBUS_SYSTEM_BUS_ADDRESS: unix:path=/run/dbus/system_bus_socket
+
     volumes:
       # Devices, history, accounts, plugin config, secrets and the audit
       # timeline. Delete this volume and you are back to a blank canvas.
       - kraftverk-data:/data
       - kraftverk-relay:/relay
+      # The host's system bus, for BlueZ. The folder, not the socket: D-Bus
+      # restarted makes a new one. Read-only, which still lets it connect.
+      # Where the host has none — Docker Desktop — it is empty, and
+      # Bluetooth says it is not here.
+      - /run/dbus:/run/dbus:ro
 
   # The one service on the home network itself (docs/DOCKER.md#the-relay):
   # devices that announce themselves — a broadcast, mDNS, SSDP — are heard

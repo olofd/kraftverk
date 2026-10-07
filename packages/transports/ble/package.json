@@ -2,7 +2,7 @@
   "name": "@kraftverk/transport-ble",
   "version": "0.2.0",
   "private": true,
-  "description": "Bluetooth LE: the server's radio (noble), the browser's Web Bluetooth and the phone's. Opens the GATT layout a protocol asks for and hands back the bytes; knows no protocol.",
+  "description": "Bluetooth LE: the server's radio — BlueZ over D-Bus on Linux, noble elsewhere — the browser's Web Bluetooth and the phone's. Opens the GATT layout a protocol asks for and hands back the bytes; knows no protocol.",
   "type": "module",
   "main": "src/index.ts",
   "kraftverk": {
@@ -24,14 +24,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@kraftverk/device-sdk": "*"
+    "@kraftverk/device-sdk": "*",
+    "dbus-next": "^0.10.2"
   },
   "//optional": [
-    "noble is only reached when the server starts Bluetooth, and it is imported",
-    "lazily, so a server without it still runs everything else. Optional, so a",
-    "container can install with --omit=optional and skip four native builds",
-    "(node-gyp, usb, bluetooth-hci-socket, serialport) for a radio it cannot",
-    "have anyway. A normal `npm install` still installs it."
+    "noble drives a radio itself, for a server on Windows or macOS; on Linux the",
+    "server asks BlueZ over D-Bus instead (dbus-next, pure JavaScript). noble is",
+    "imported lazily, so it is optional: a container installs with",
+    "--omit=optional and skips its four native builds (node-gyp, usb,",
+    "bluetooth-hci-socket, serialport), and reaches the host's BlueZ. A normal",
+    "`npm install` still installs it."
   ],
   "optionalDependencies": {
     "@stoprocent/noble": "^2.7.1"
