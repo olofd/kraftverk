@@ -4,7 +4,7 @@ import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import { createSchema, fromSqliteWasm, plainSecrets, prepareDatabase, type SqliteWasmDatabase } from '@kraftverk/store';
 
 import { createHub, installedFrom, type Hub } from '../src/index.ts';
-import { APP_NODE, busDefinition, FakeBus, lampProtocol, lampType, testIntegration } from '../src/testing.ts';
+import { APP_NODE, busDefinition, FakeBus, LAMP_SERVICE, lampProtocol, lampType, testIntegration } from '../src/testing.ts';
 
 /*
   A home made the way the app makes its own: what is installed from lists
@@ -82,9 +82,10 @@ test("a device picked in the platform's chooser: chosen, checked and saved — a
   const draft = await home.setup.start({ typeId: 'test.lamp', methodId: 'bus' });
   picks = null;
   expect((await home.setup.choose(draft.id, { chooser: {} })).address).toBeNull();
+  expect(shown).toEqual([{ kind: 'advert', service: LAMP_SERVICE }]);
   picks = 'lamp-7';
   expect((await home.setup.choose(draft.id, { chooser: { showAll: true } })).address).toBe('lamp-7');
-  expect(shown).toEqual({});
+  expect(shown).toEqual([]);
   expect((await home.setup.check(draft.id)).outcome).toBe('new');
   expect((await home.setup.save(draft.id, { name: 'Picked lamp' })).name).toBe('Picked lamp');
 });

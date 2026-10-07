@@ -11,7 +11,7 @@ import {
 } from '@kraftverk/device-sdk';
 
 import type { ZigbeeLink } from './link.ts';
-import { linkOver, tuyaIdentity, wrongKey, zigbeeIdentity, type Dps } from './protocol/index.ts';
+import { linkOver, TUYA_DISCOVERY, tuyaIdentity, wrongKey, zigbeeIdentity, type Dps } from './protocol/index.ts';
 
 /**
  * A Tuya Zigbee gateway, as a device of its own (docs/PLAN-INTEGRATIONS.md
@@ -260,6 +260,7 @@ export default defineDeviceType<Config>({
       transport: 'lan',
       reach: 'cloud-at-setup',
       updates: 'both',
+      discovery: TUYA_DISCOVERY,
     },
   ],
 

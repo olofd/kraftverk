@@ -1,17 +1,19 @@
 import { EventEmitter } from 'node:events';
 
-import type {
-  Availability,
-  ByteChannel,
-  OpenOptions,
-  Sighting,
-  SightingFilter,
-  Transport,
-  TransportContext,
-  TransportFactory,
+import {
+  fullUuid,
+  sightingMatches,
+  type Availability,
+  type ByteChannel,
+  type Matcher,
+  type OpenOptions,
+  type Sighting,
+  type Transport,
+  type TransportContext,
+  type TransportFactory,
 } from '@kraftverk/device-sdk';
 
-import definition, { fullUuid, matchesFilter } from './index.ts';
+import definition, { advertOf, manufacturerOf } from './index.ts';
 
 /**
  * Bluetooth LE on the server, over noble.
@@ -59,6 +61,7 @@ type Seen = {
   name: string | null;
   rssi: number | null;
   services: string[];
+  manufacturer: Record<string, string>;
   firstSeen: string;
   lastSeen: string;
 };
@@ -69,7 +72,7 @@ const sightingOf = (seen: Seen): Sighting => ({
   seenAt: seen.lastSeen,
   ...(seen.name ? { name: seen.name } : {}),
   ...(seen.rssi !== null ? { rssi: seen.rssi } : {}),
-  facts: { services: seen.services, firstSeen: seen.firstSeen },
+  heard: [advertOf(seen.name, seen.services, seen.manufacturer)],
 });
 
 class BleServerTransport extends EventEmitter implements Transport {
@@ -133,6 +136,7 @@ class BleServerTransport extends EventEmitter implements Transport {
       name: peripheral.advertisement?.localName || existing?.name || null,
       rssi: typeof peripheral.rssi === 'number' ? peripheral.rssi : null,
       services: peripheral.advertisement?.serviceUuids ?? existing?.services ?? [],
+      manufacturer: peripheral.advertisement?.manufacturerData ? manufacturerOf(new Uint8Array(peripheral.advertisement.manufacturerData)) : (existing?.manufacturer ?? {}),
       firstSeen: existing?.firstSeen ?? now,
       lastSeen: now,
     });
@@ -162,13 +166,8 @@ class BleServerTransport extends EventEmitter implements Transport {
     this.#availability = { ok: false, reason: 'Bluetooth has stopped' };
   }
 
-  watch(filter: SightingFilter, listener: (sightings: readonly Sighting[]) => void): () => void {
-    const emit = () =>
-      listener(
-        this.#current()
-          .filter((seen) => matchesFilter(filter, { name: seen.name, services: seen.services }))
-          .map(sightingOf)
-      );
+  watch(matchers: readonly Matcher[], listener: (sightings: readonly Sighting[]) => void): () => void {
+    const emit = () => listener(this.#current().map(sightingOf).filter((sighting) => !matchers.length || sightingMatches(matchers, sighting)));
     emit();
     // Signal strength changes all the time; once a second is plenty.
     const timer = setInterval(emit, 1000);

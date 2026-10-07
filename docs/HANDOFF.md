@@ -217,7 +217,6 @@ From the Phase 1 review:
 |---|---|---|
 | Phase 3 | The sampler still builds every device's view once a minute; it should sample from records and sessions, and pushing devices on change | J25 |
 | Phase 3 | Package discovery through a manifest (`@kraftverk/packages`); the broker still walks the protocols folder itself | J31 |
-| Phase 3 | `SightingFilter` with BLE manufacturer data and mDNS | — |
 | Phase 3 | Setup merges credential and method config fields by name; a collision is silent | J35 |
 | Phase 4 | A role records the part, not the capability that filled it; `oneOf` is ambiguous at run time | J40 |
 | Phase 4 | The P280 declares only its mains events: no overload or over-temperature, if its registers carry them | J22 (part) |

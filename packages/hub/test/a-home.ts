@@ -53,9 +53,10 @@ export type TestHome = {
 /**
  * A home with every test kind installed: the lamp on the bus, and the
  * station, plug and forecast, simulated. With `bridges`, also the test hub —
- * an account, a bridge — and the lamp reached only through it.
+ * an account, a bridge — and the lamp reached only through it. With
+ * `background`, the bus is watched all the time, as the home network is.
  */
-export async function aHome(options: { readOnly?: boolean; bridges?: boolean } = {}): Promise<TestHome> {
+export async function aHome(options: { readOnly?: boolean; bridges?: boolean; background?: boolean } = {}): Promise<TestHome> {
   const database = testDatabase();
   const bus = new FakeBus();
   const hubType = makeHubType();
@@ -64,7 +65,8 @@ export async function aHome(options: { readOnly?: boolean; bridges?: boolean } =
     {
       integrations: [{ ...testIntegration({ type: lampType }, { type: stationType }, { type: plugType }, { type: forecastType, automation: forecastContribution }, ...bridging), protocols: [lampProtocol] }],
 
-      transports: [{ definition: busDefinition, create: () => bus }],
+      // The bus as a radio that must scan; or, with `background`, as something that costs nothing to watch.
+      transports: [{ definition: { ...busDefinition, background: options.background ?? false }, create: () => bus }],
     },
     { platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } }
   );

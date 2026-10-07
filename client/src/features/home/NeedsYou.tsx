@@ -18,8 +18,8 @@ const LOOK_AGAIN_MS = 15_000;
  * What waits on you (docs/PLAN-INTEGRATIONS.md step 8): each device or
  * account that needs signing in to again, by its own words, a tap from the
  * page that fixes it — an account's under its integration. What is found
- * behind your accounts is offered beside it, under "Found near you". Nothing
- * when nothing waits.
+ * and not added — on the network, or behind your accounts — waits too, and
+ * is offered beside it, under "Found near you". Nothing when nothing waits.
  */
 export function NeedsYou() {
   const { api } = useHome();

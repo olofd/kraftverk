@@ -31,19 +31,12 @@ import definition from './index.ts';
 /** Silence this long from a device the broker says nothing about means it has gone. */
 const HEARD_WITHIN_MS = 120_000;
 
-/** A device's presence as a sighting: evidence its protocol can recognise. */
+/** A device's presence as a sighting: a client, by the protocol the broker heard it speak. */
 const sightingOf = (presence: DevicePresence): Sighting => ({
   transport: 'mqtt',
   address: presence.address,
   seenAt: presence.lastMessageAt ?? presence.connectedAt ?? presence.disconnectedAt ?? new Date().toISOString(),
-  facts: {
-    protocol: presence.protocol,
-    online: presence.online,
-    remote: presence.remote,
-    connectedAt: presence.connectedAt,
-    lastDisconnect: presence.lastDisconnect,
-    subscribed: presence.subscribed,
-  },
+  heard: [{ kind: 'client', protocol: presence.protocol, online: presence.online }],
 });
 
 class MqttChannel implements MessageChannel {
@@ -257,7 +250,8 @@ const createMqttTransport: TransportFactory = (context: TransportContext): Trans
       await bus.stop();
     },
 
-    watch(_filter, listener) {
+    // Every client the broker has: the hub matches them by protocol.
+    watch(_matchers, listener) {
       const emit = () => listener(bus.devices.map(sightingOf));
       bus.on('presence', emit);
       bus.on('connected', emit);

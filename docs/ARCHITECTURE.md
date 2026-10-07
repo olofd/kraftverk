@@ -294,14 +294,16 @@ export type TransportDefinition = { // what a transport is, as data, the same on
   nearby: boolean;                   // reached only within range of its holder, as Bluetooth: such a way stays with the phone near it
   platforms: Platform[];             // the runtimes it has an implementation for: 'system', 'web', 'native'
   discovery: Partial<Record<Platform, 'list' | 'chooser' | 'none'>>;
+  finds: AnnouncementKind[];         // how devices on it are heard: 'broadcast', 'advert', 'client', 'mdns', 'ssdp'
+  background: boolean;               // watching costs nothing (broadcasts, a broker's clients): watched all the time
 };
 
 export type Transport = {           // one running on one platform: a package entry per place
   definition: TransportDefinition;
   available(): Availability;         // { ok: false, reason: 'This server has no Bluetooth radio' }
   start(): Promise<void>; stop(): Promise<void>;
-  watch?(filter, listener: (sightings: Sighting[]) => void): () => void;  // server and native: a live list
-  choose?(filter): Promise<Sighting | null>;                              // web: the browser's own chooser
+  watch?(matchers, listener: (sightings: Sighting[]) => void): () => void;  // server and native: a live list, one per host
+  choose?(matchers): Promise<Sighting | null>;                              // web: the browser's own chooser
   open(address: string, options: OpenOptions): Promise<Channel>;         // bytes, messages or http
   values?(): Record<string, string>;                                      // the broker's address, for instructions
   diagnostics?: Record<string, (query) => Promise<unknown>>;              // read-only
@@ -309,7 +311,7 @@ export type Transport = {           // one running on one platform: a package en
 
 export type Protocol = {            // pure: no I/O, no product meaning
   id: string; label: string;         // 'sydpower'
-  bindings: Record<string, Binding>; // per transport: open options, filter, recognise, instructions,
+  bindings: Record<string, Binding>; // per transport: open options, recognise (confirms what a way's matchers picked), instructions,
                                      // parseAddress, and a message broker's policy
   credentials?: { schema: ConfigSchema; actions?: SetupAction[] };  // stored as connection secrets
   guard?(payload: Uint8Array): string | null;  // a refusal, applied by every holder and the broker

@@ -1,6 +1,7 @@
 import { fakeByteChannel } from '@kraftverk/device-sdk/testing';
 import {
   defineDeviceType,
+  heardAs,
   nodeId,
   MAIN_PART,
   type DeviceDescription,
@@ -39,7 +40,18 @@ export const busDefinition: TransportDefinition = {
   nearby: true,
   platforms: ['system'],
   discovery: { system: 'list' },
+  finds: ['advert'],
+  background: false,
 };
+
+/** The service a lamp advertises on the bus. */
+export const LAMP_SERVICE = '1a2b';
+
+/** The company id a lamp's advert carries its serial under: 0xFFFF, which the Bluetooth SIG keeps for tests. */
+const LAMP_MAKER = '65535';
+
+const hexOf = (text: string): string => [...new TextEncoder().encode(text)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+const textOf = (hex: string): string => new TextDecoder().decode(new Uint8Array((hex.match(/../g) ?? []).map((pair) => parseInt(pair, 16))));
 
 /** The bus, with the lamps on it. Add and remove lamps to change what is seen. */
 export class FakeBus implements Transport {
@@ -67,7 +79,18 @@ export class FakeBus implements Transport {
   }
 
   sightings(): Sighting[] {
-    return [...this.lamps.keys()].map((address) => ({ transport: 'bus', address, seenAt: new Date().toISOString(), name: `Lamp ${address}`, facts: { kind: 'lamp' } }));
+    return [...this.lamps].map(([address, lamp]) => ({
+      transport: 'bus',
+      address,
+      seenAt: new Date().toISOString(),
+      name: `Lamp ${address}`,
+      heard: [{ kind: 'advert', name: `Lamp ${address}`, services: [LAMP_SERVICE], manufacturer: { [LAMP_MAKER]: hexOf(lamp.serial) } }],
+    }));
+  }
+
+  /** How many are watching it. */
+  get watchers(): number {
+    return this.#watchers.size;
   }
 
   /** Tells whoever is watching that the lamps changed. */
@@ -105,7 +128,11 @@ export const lampProtocol: Protocol = {
   bindings: {
     bus: {
       open: () => ({}),
-      recognise: (sighting) => (sighting.facts.kind === 'lamp' ? { name: sighting.name ?? sighting.address, detail: 'on the bus' } : null),
+      // A lamp says its serial in its advert: who it is, before anyone asks it.
+      recognise: (sighting) => {
+        const serial = heardAs(sighting, 'advert').find((advert) => advert.manufacturer[LAMP_MAKER])?.manufacturer[LAMP_MAKER];
+        return sighting.name?.startsWith('Lamp ') ? { name: sighting.name, detail: 'on the bus', ...(serial ? { identity: `test-lamp:${textOf(serial)}` } : {}) } : null;
+      },
       parseAddress: (input) => (/^[a-z0-9-]{1,20}$/.test(input.trim()) ? input.trim() : null),
       addressLabel: 'Lamp id',
       instructions: { title: 'Plug the lamp in', body: 'Connect it to {host}.' },
@@ -239,8 +266,8 @@ export function makeLampType(): { type: ReturnType<typeof defineDeviceType<LampC
       },
     },
     connections: [
-      { id: 'bus', label: 'Test bus', protocol: 'test-lamp', transport: 'bus', reach: 'local', updates: 'poll', recommended: true },
-      { id: 'backup', label: 'Test bus, second port', protocol: 'test-lamp', transport: 'bus', reach: 'local', updates: 'poll' },
+      { id: 'bus', label: 'Test bus', protocol: 'test-lamp', transport: 'bus', reach: 'local', updates: 'poll', recommended: true, discovery: [{ kind: 'advert', service: LAMP_SERVICE }] },
+      { id: 'backup', label: 'Test bus, second port', protocol: 'test-lamp', transport: 'bus', reach: 'local', updates: 'poll', discovery: [{ kind: 'advert', service: LAMP_SERVICE }] },
     ],
     setup: { saveAnyway: 'A lamp that is switched off at the wall cannot answer.' },
     async identify(connection, ctx) {

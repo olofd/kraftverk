@@ -26,9 +26,10 @@ export type ProblemView = DeviceEventView & { deviceName: string };
 /**
  * One thing that waits on a person (docs/PLAN-INTEGRATIONS.md step 8): a
  * device or an account that needs signing in to again — its own, not one
- * that only waits on the bridge it is behind — or a device behind one of
- * your accounts or gateways, found and not added yet. Each says what opens
- * it: the page that fixes it.
+ * that only waits on the bridge it is behind — or a device found and not
+ * added yet: one announcing itself on the home's network, or one behind
+ * your accounts or gateways. Each says what opens it: the page that fixes
+ * it.
  */
 export type NeedsYouView =
   | {

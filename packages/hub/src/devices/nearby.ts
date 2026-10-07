@@ -1,5 +1,5 @@
 import type { FoundView } from '@kraftverk/api-contract';
-import { BRIDGE_TRANSPORT, type Sighting, type SightingFilter } from '@kraftverk/device-sdk';
+import { BRIDGE_TRANSPORT, isBridgedMethod, sightingMatches, type DeviceType, type DirectMethod, type Matcher, type Sighting } from '@kraftverk/device-sdk';
 import type { SessionManager } from '@kraftverk/holder';
 import type { ConnectionStore, DeviceCatalog, IgnoredSightings } from '@kraftverk/store';
 
@@ -12,17 +12,29 @@ import { membersOnOffer } from './members.ts';
 /**
  * "Found near you": what this home's transports can see, and the bridges open
  * here have behind them, that no device you have is reached by
- * (docs/DATA-MODEL.md §1, step 1; docs/PLAN-INTEGRATIONS.md §4.3).
+ * (docs/DATA-MODEL.md §1, step 1; docs/PLAN-INTEGRATIONS.md §4.4).
+ *
+ * Found by declaration: every way says what it is found by (its
+ * `discovery` matchers), and a sighting is matched against those as data —
+ * no integration's code runs until a way's matchers pick a sighting out,
+ * and then only its protocol's `recognise`, to confirm it and read it. Each
+ * sighting is one host, gathered by its transport, so a device that
+ * announces itself five ways is offered once.
  *
  * Live state, never stored — but for what a person said not to offer again,
- * which is listed apart, marked, where it can be brought back. Watching
- * starts when someone asks and stops a minute after they stop asking, so an
- * idle home is not scanning the radio for nobody.
+ * which is listed apart, marked, where it can be brought back. A transport
+ * that costs nothing to watch (`background`: broadcasts, a broker's clients)
+ * is watched from the start, so what turns up is offered without anyone
+ * asking; one that must scan a radio is watched when someone asks, and
+ * stops a minute after they stop.
  */
 
 const IDLE_MS = 60_000;
 
-type Watching = { stop: () => void; sightings: readonly Sighting[] };
+type Watching = { stop: () => void; sightings: readonly Sighting[]; background: boolean };
+
+/** A way that is found, with its type. */
+type Findable = { type: DeviceType<any>; method: DirectMethod & { discovery: readonly Matcher[] } };
 
 export class Nearby {
   #watching = new Map<string, Watching>();
@@ -40,25 +52,28 @@ export class Nearby {
     }
   ) {}
 
-  /** What can be seen now. The first call starts watching, so it may be empty. */
+  /** Watches every transport that costs nothing to watch, from now until `stop`. */
+  start(): void {
+    for (const definition of this.deps.transports.definitions()) if (definition.background) this.#watch(definition.id, true);
+  }
+
+  /** What can be seen now. The first call starts watching what is watched on demand, so it may be empty. */
   list(): FoundView[] {
     this.#keepWatching();
     const found: FoundView[] = [];
     for (const [transportId, { sightings }] of this.#watching) {
+      const ways = this.#findable(transportId);
       for (const sighting of sightings) {
         if (this.deps.connections.claimant(transportId, sighting.address)) continue;
-        for (const protocol of this.deps.protocols.all()) {
-          const recognised = protocol.bindings[transportId]?.recognise(sighting);
+        const picked = ways.filter(({ method }) => sightingMatches(method.discovery, sighting));
+        for (const protocolId of new Set(picked.map(({ method }) => method.protocol))) {
+          const recognised = this.deps.protocols.get(protocolId)?.bindings[transportId]?.recognise(sighting);
           if (!recognised) continue;
-          const types = this.deps.types.all().flatMap((type) =>
-            type.connections
-              .filter((method) => method.protocol === protocol.id && method.transport === transportId)
-              .map((method) => ({ typeId: type.id, methodId: method.id, name: type.meta.name, category: type.meta.category }))
-          );
-          if (!types.length) continue;
+          // Yours already, at another address — a plug the router gave a new one: not something new.
+          if (recognised.identity && this.deps.catalog.byIdentity(recognised.identity).active) continue;
           found.push({
             transport: transportId,
-            protocol: protocol.id,
+            protocol: protocolId,
             address: sighting.address,
             through: null,
             ignored: this.deps.ignored.has({ transport: transportId, through: null, address: sighting.address }),
@@ -67,7 +82,9 @@ export class Nearby {
             identity: recognised.identity ?? null,
             model: recognised.model ?? null,
             seenAt: sighting.seenAt,
-            types,
+            types: picked
+              .filter(({ method }) => method.protocol === protocolId)
+              .map(({ type, method }) => ({ typeId: type.id, methodId: method.id, name: type.meta.name, category: type.meta.category })),
           });
         }
       }
@@ -105,26 +122,41 @@ export class Nearby {
     this.#watching.clear();
   }
 
+  /** Every way over this transport that says what it is found by. */
+  #findable(transportId: string): Findable[] {
+    return this.deps.types.all().flatMap((type) =>
+      type.connections.flatMap((method) => (!isBridgedMethod(method) && method.transport === transportId && method.discovery?.length ? [{ type, method: method as Findable['method'] }] : []))
+    );
+  }
+
+  /** Watches one transport for what its ways are found by, if it lists here and any way is found on it. */
+  #watch(transportId: string, background: boolean): void {
+    if (this.#watching.has(transportId) || this.deps.transports.definition(transportId)?.discovery[this.deps.transports.platform] !== 'list') return;
+    const transport = this.deps.transports.get(transportId);
+    const matchers = this.#findable(transportId).flatMap(({ method }) => method.discovery);
+    if (!transport?.watch || !matchers.length) return;
+    const watching: Watching = { stop: () => {}, sightings: [], background };
+    watching.stop = transport.watch(matchers, (sightings) => {
+      watching.sightings = sightings;
+    });
+    this.#watching.set(transportId, watching);
+  }
+
+  /** Watches what is watched on demand, until a minute after the last ask. */
   #keepWatching(): void {
-    for (const definition of this.deps.transports.definitions()) {
-      if (this.#watching.has(definition.id) || definition.discovery[this.deps.transports.platform] !== 'list') continue;
-      const transport = this.deps.transports.get(definition.id);
-      if (!transport?.watch) continue;
-      const watching: Watching = { stop: () => {}, sightings: [] };
-      watching.stop = transport.watch(this.#filterFor(definition.id), (sightings) => {
-        watching.sightings = sightings;
-      });
-      this.#watching.set(definition.id, watching);
-    }
+    for (const definition of this.deps.transports.definitions()) this.#watch(definition.id, definition.background);
     if (this.#idle) clearTimeout(this.#idle);
-    this.#idle = setTimeout(() => this.stop(), IDLE_MS);
+    this.#idle = setTimeout(() => this.#rest(), IDLE_MS);
     unref(this.#idle);
   }
 
-  /** Everything any installed protocol looks for on this transport. */
-  #filterFor(transportId: string): SightingFilter {
-    const filters = this.deps.protocols.all().flatMap((protocol) => protocol.bindings[transportId]?.filter ?? []);
-    const merge = <K extends keyof SightingFilter>(key: K) => [...new Set(filters.flatMap((filter) => (filter[key] ?? []) as never[]))];
-    return { services: merge('services'), namePrefixes: merge('namePrefixes'), udpPorts: merge('udpPorts') };
+  /** Stops watching what is watched on demand; what costs nothing goes on. */
+  #rest(): void {
+    this.#idle = null;
+    for (const [transportId, watching] of this.#watching) {
+      if (watching.background) continue;
+      watching.stop();
+      this.#watching.delete(transportId);
+    }
   }
 }

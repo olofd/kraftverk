@@ -1,6 +1,6 @@
-import type { Availability, ByteChannel, OpenOptions, Sighting, SightingFilter, Transport, TransportContext, TransportFactory } from '@kraftverk/device-sdk';
+import { fullUuid, type Availability, type ByteChannel, type Matcher, type OpenOptions, type Sighting, type Transport, type TransportContext, type TransportFactory } from '@kraftverk/device-sdk';
 
-import definition, { fullUuid } from './index.ts';
+import definition, { advertOf } from './index.ts';
 
 /**
  * Bluetooth LE from a browser: Web Bluetooth, in Chrome and Edge.
@@ -39,7 +39,7 @@ type BluetoothDevice = {
   removeEventListener(type: 'gattserverdisconnected', listener: () => void): void;
 };
 type RequestOptions = {
-  filters?: { services?: string[]; namePrefix?: string; name?: string }[];
+  filters?: { services?: string[]; namePrefix?: string; name?: string; manufacturerData?: { companyIdentifier: number }[] }[];
   optionalServices?: string[];
   acceptAllDevices?: boolean;
 };
@@ -245,7 +245,7 @@ const createWebBleTransport: TransportFactory = (context: TransportContext): Tra
 
   const remember = (device: BluetoothDevice): Sighting => {
     handles.set(device.id, device);
-    return { transport: 'ble', address: device.id, name: device.name ?? undefined, seenAt: new Date().toISOString(), facts: {} };
+    return { transport: 'ble', address: device.id, name: device.name ?? undefined, seenAt: new Date().toISOString(), heard: [advertOf(device.name ?? null, [])] };
   };
 
   return {
@@ -278,22 +278,24 @@ const createWebBleTransport: TransportFactory = (context: TransportContext): Tra
     },
 
     /**
-     * The browser's chooser. **Call it straight from a tap.** An empty filter
+     * The browser's chooser. **Call it straight from a tap.** No matchers
      * shows every device, for one that advertises under a name nobody knows.
      */
-    async choose(filter: SightingFilter): Promise<Sighting | null> {
+    async choose(matchers: readonly Matcher[]): Promise<Sighting | null> {
       const api = bluetooth();
       if (!api) throw new Error(blockedReason() ?? 'Web Bluetooth is unavailable');
-      const services = (filter.services ?? []).map(fullUuid);
-      const prefixes = filter.namePrefixes ?? [];
-      const options: RequestOptions =
-        services.length || prefixes.length
-          ? { filters: [...services.map((service) => ({ services: [service] })), ...prefixes.map((namePrefix) => ({ namePrefix }))], optionalServices: services }
-          : { acceptAllDevices: true, optionalServices: services };
+      const adverts = matchers.flatMap((matcher) => (matcher.kind === 'advert' ? [matcher] : []));
+      const services = [...new Set(adverts.flatMap((advert) => (advert.service ? [fullUuid(advert.service)] : [])))];
+      const filters = adverts.map((advert) => ({
+        ...(advert.service ? { services: [fullUuid(advert.service)] } : {}),
+        ...(advert.name ? (advert.name.endsWith('*') ? { namePrefix: advert.name.slice(0, -1) } : { name: advert.name }) : {}),
+        ...(advert.manufacturer !== undefined ? { manufacturerData: [{ companyIdentifier: advert.manufacturer }] } : {}),
+      }));
+      const options: RequestOptions = filters.length ? { filters, optionalServices: services } : { acceptAllDevices: true, optionalServices: services };
       try {
         const sighting = remember(await api.requestDevice(options));
-        // It passed the protocol's own filter: that is the evidence recognition has.
-        return { ...sighting, facts: { services: filter.services ?? [], chosen: true } };
+        // It passed the browser's filter, built from the matchers: that is the evidence recognition has.
+        return { ...sighting, heard: [advertOf(sighting.name ?? null, services)] };
       } catch (error) {
         const failure = describeFailure(error);
         if (!failure) return null;

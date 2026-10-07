@@ -1,7 +1,7 @@
 import { createSocket, type Socket as UdpSocket } from 'node:dgram';
 import { Socket } from 'node:net';
 
-import type { ByteChannel, OpenOptions, Sighting, SightingFilter, Transport, TransportContext, TransportFactory } from '@kraftverk/device-sdk';
+import type { Announcement, ByteChannel, Matcher, OpenOptions, Sighting, Transport, TransportContext, TransportFactory } from '@kraftverk/device-sdk';
 
 import definition, { hostOf, isLocalAddress } from './index.ts';
 
@@ -9,11 +9,11 @@ import definition, { hostOf, isLocalAddress } from './index.ts';
  * The home network, on the server: TCP connections to devices, and the UDP
  * broadcasts devices announce themselves with.
  *
- * Knows no protocol. Which UDP ports to listen on comes from the protocols that
- * want to find devices (`SightingFilter.udpPorts`), and what a broadcast says is
- * for the protocol to read — the transport hands over its bytes. Listening
- * happens only while something is watching, which is while someone is adding
- * a device.
+ * Knows no protocol. Which UDP ports to listen on comes from the ways that
+ * are found by a broadcast (a `broadcast` matcher), and what a broadcast
+ * says is for the protocol to read — the transport hands over its bytes.
+ * Everything one host says is one sighting. Listening happens while something
+ * is watching; listening sends nothing, so a home watches all the time.
  */
 
 /** A device not heard from in this long has left the list. */
@@ -139,13 +139,15 @@ class TcpChannel implements ByteChannel {
   }
 }
 
-type Heard = { address: string; port: number; payload: Uint8Array; at: number };
+/** The latest a host said on one port. */
+type Heard = { port: number; payload: Uint8Array; at: number };
 
 const createLanTransport: TransportFactory = (context: TransportContext): Transport => {
   const channels = new Map<string, TcpChannel>();
   /** One socket per port, shared by every watcher that wants it. */
   const listeners = new Map<number, { socket: UdpSocket; users: number }>();
-  const heard = new Map<string, Heard>();
+  /** By host, then by port: what each host last said on each. */
+  const heard = new Map<string, Map<number, Heard>>();
   const watchers = new Set<() => void>();
 
   const listenOn = (port: number): void => {
@@ -156,7 +158,9 @@ const createLanTransport: TransportFactory = (context: TransportContext): Transp
     }
     const socket = createSocket({ type: 'udp4', reuseAddr: true });
     socket.on('message', (datagram, remote) => {
-      heard.set(remote.address, { address: remote.address, port, payload: new Uint8Array(datagram), at: Date.now() });
+      const host = heard.get(remote.address) ?? new Map<number, Heard>();
+      host.set(port, { port, payload: new Uint8Array(datagram), at: Date.now() });
+      heard.set(remote.address, host);
       for (const notify of [...watchers]) notify();
     });
     socket.on('error', (error) => context.log('warn', `[lan] Listening on UDP ${port}: ${error.message}`));
@@ -194,22 +198,24 @@ const createLanTransport: TransportFactory = (context: TransportContext): Transp
       }
     },
 
-    watch(filter: SightingFilter, listener: (sightings: readonly Sighting[]) => void) {
-      const ports = [...new Set(filter.udpPorts ?? [])];
+    watch(matchers: readonly Matcher[], listener: (sightings: readonly Sighting[]) => void) {
+      const ports = [...new Set(matchers.flatMap((matcher) => (matcher.kind === 'broadcast' ? [matcher.port] : [])))];
       for (const port of ports) listenOn(port);
       let pending: ReturnType<typeof setTimeout> | null = null;
       const emit = () => {
         const cutoff = Date.now() - STALE_AFTER_MS;
-        listener(
-          [...heard.values()]
-            .filter((entry) => entry.at >= cutoff && ports.includes(entry.port))
-            .map((entry) => ({
-              transport: 'lan',
-              address: entry.address,
-              seenAt: new Date(entry.at).toISOString(),
-              facts: { port: entry.port, payload: toHex(entry.payload) },
-            }))
-        );
+        const sightings: Sighting[] = [];
+        for (const [address, host] of heard) {
+          const recent = [...host.values()].filter((entry) => entry.at >= cutoff && ports.includes(entry.port));
+          if (!recent.length) continue;
+          sightings.push({
+            transport: 'lan',
+            address,
+            seenAt: new Date(Math.max(...recent.map((entry) => entry.at))).toISOString(),
+            heard: recent.map((entry): Announcement => ({ kind: 'broadcast', port: entry.port, payload: toHex(entry.payload) })),
+          });
+        }
+        listener(sightings);
       };
       // Devices repeat themselves every few seconds; half a second of coalescing is plenty.
       const notify = () => {

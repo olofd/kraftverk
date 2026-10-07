@@ -4,7 +4,7 @@ import { connect, createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { memoryTransportStore, type MessageBrokerPolicy } from '@kraftverk/device-sdk';
+import { memoryTransportStore, type MessageBrokerPolicy, type Sighting } from '@kraftverk/device-sdk';
 
 import { BrokerBus, type BusMessage } from '../bus.ts';
 import { MqttClient } from '../client.ts';
@@ -378,9 +378,9 @@ describe('the transport’s channel to one device', () => {
     expect(heard).toEqual([`${STATION}/device/response/client/04`]);
 
     // What the transport sees is what the add flow lists.
-    let seen: readonly { address: string; facts: Record<string, unknown> }[] = [];
-    const stop = transport.watch!({}, (sightings) => (seen = sightings));
-    expect(seen.find((s) => s.address === STATION)?.facts).toMatchObject({ protocol: 'sydpower', online: true });
+    let seen: readonly Sighting[] = [];
+    const stop = transport.watch!([], (sightings) => (seen = sightings));
+    expect(seen.find((s) => s.address === STATION)?.heard).toEqual([{ kind: 'client', protocol: 'sydpower', online: true }]);
     stop();
 
     station.drop();

@@ -26,6 +26,7 @@ import {
   encodeSocket,
   linkOver,
   relayDps,
+  TUYA_DISCOVERY,
   tuyaIdentity,
   wrongKey,
   zigbeeIdentity,
@@ -74,6 +75,7 @@ const METHODS: Readonly<Record<'directly' | 'gateway', ConnectionMethod>> = {
     reach: 'cloud-at-setup',
     // Asked every few seconds, and it says a change as it happens.
     updates: 'both',
+    discovery: TUYA_DISCOVERY,
   },
   gateway: {
     id: 'gateway',

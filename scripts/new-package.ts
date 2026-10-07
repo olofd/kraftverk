@@ -106,10 +106,15 @@ import protocol from './protocol/index.ts';
  * has described. It names no product: each is a device package built on this.
  */
 
-/** Every way a thing on ${title} is reached: its protocol over a transport. */
-export const ${waysOf(name)}: readonly ConnectionMethod[] = [{ id: 'lan', label: 'Home network', protocol: protocol.id, transport: 'lan', reach: 'local', updates: 'poll' }];
+/**
+ * Every way a thing on ${title} is reached: its protocol over a transport,
+ * and what it is found by when it announces itself (\`discovery\`).
+ */
+export const ${waysOf(name)}: readonly ConnectionMethod[] = [
+  { id: 'lan', label: 'Home network', protocol: protocol.id, transport: 'lan', reach: 'local', updates: 'poll', discovery: [{ kind: 'broadcast', port: 6668 }] },
+];
 `;
-  files['src/protocol/index.ts'] = `import type { Protocol, Sighting } from '@kraftverk/device-sdk';
+  files['src/protocol/index.ts'] = `import { heardAs, type Protocol, type Sighting } from '@kraftverk/device-sdk';
 
 /**
  * How ${title} is spoken to. Pure: bytes and messages in, bytes and messages
@@ -123,8 +128,8 @@ const protocol: Protocol = {
   bindings: {
     lan: {
       open: () => ({ port: 6668 }),
-      // Whether something the transport saw is one of ${title}'s.
-      recognise: (sighting: Sighting) => (sighting.facts.protocol === '${name}' ? { name: sighting.name ?? sighting.address } : null),
+      // Whether something a way's discovery picked out is one of ${title}'s: what it announced, read.
+      recognise: (sighting: Sighting) => (heardAs(sighting, 'broadcast').length ? { name: sighting.name ?? sighting.address } : null),
       parseAddress: (input) => (/^\\d{1,3}(\\.\\d{1,3}){3}$/.test(input.trim()) ? input.trim() : null),
       addressLabel: 'IP address',
     },
@@ -272,6 +277,8 @@ const definition: TransportDefinition = {
   nearby: false,
   platforms: ['system'],
   discovery: { system: 'none' },
+  finds: [],
+  background: false,
 };
 
 export default definition;

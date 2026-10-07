@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'bun:test';
 
-import { memoryTransportStore, type ByteChannel, type HttpChannel, type Sighting, type Transport, type TransportContext, type TransportDefinition } from '@kraftverk/device-sdk';
+import { memoryTransportStore, sightingMatches, type ByteChannel, type HttpChannel, type Sighting, type Transport, type TransportContext, type TransportDefinition } from '@kraftverk/device-sdk';
 
 import { serveTransport, transportOver } from '../src/index.ts';
 
@@ -11,8 +11,8 @@ import { serveTransport, transportOver } from '../src/index.ts';
   answer, and what it says on its timeline.
 */
 
-const DEFINITION: TransportDefinition = { id: 'wire', label: 'the test wire', channel: 'bytes', exclusive: true, nearby: false, platforms: ['web'], discovery: { web: 'chooser' } };
-const SIGHTING: Sighting = { transport: 'wire', address: 'dev-1', seenAt: '2026-10-02T00:00:00Z', name: 'Lamp', facts: { services: ['a002'] } };
+const DEFINITION: TransportDefinition = { id: 'wire', label: 'the test wire', channel: 'bytes', exclusive: true, nearby: false, platforms: ['web'], discovery: { web: 'chooser' }, finds: ['advert'], background: false };
+const SIGHTING: Sighting = { transport: 'wire', address: 'dev-1', seenAt: '2026-10-02T00:00:00Z', name: 'Lamp', heard: [{ kind: 'advert', name: 'Lamp', services: ['a002'], manufacturer: {} }] };
 
 /** A transport as a page would run one: everything kept here, to see from the test. */
 function pageTransport(context: TransportContext) {
@@ -28,8 +28,8 @@ function pageTransport(context: TransportContext) {
       context.audit({ kind: 'wire.started', actor: 'wire', summary: 'The wire started' });
     },
     stop: async () => void (started = false),
-    choose: async (filter) => (filter.services?.includes('a002') ? SIGHTING : null),
-    watch: (_filter, listener) => {
+    choose: async (matchers) => (sightingMatches(matchers, SIGHTING) ? SIGHTING : null),
+    watch: (_matchers, listener) => {
       listener([SIGHTING]);
       return () => {};
     },
@@ -94,10 +94,10 @@ test('started there, available here — and what it says on its timeline is said
 test('its chooser and its live list, from the side that has them', async () => {
   const { hub, stop } = wire();
   await hub.start();
-  expect(await hub.choose!({ services: ['a002'] })).toEqual(SIGHTING);
-  expect(await hub.choose!({ services: ['other'] })).toBeNull();
+  expect(await hub.choose!([{ kind: 'advert', service: 'a002' }])).toEqual(SIGHTING);
+  expect(await hub.choose!([{ kind: 'advert', service: 'ffff' }])).toBeNull();
   const seen: (readonly Sighting[])[] = [];
-  hub.watch!({}, (sightings) => seen.push(sightings));
+  hub.watch!([], (sightings) => seen.push(sightings));
   await later();
   expect(seen).toEqual([[SIGHTING]]);
   stop();

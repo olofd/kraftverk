@@ -722,16 +722,15 @@ members too: they are where it is.
 
 ### 4.4 Discovery
 
-Each method declares what it is found by, as data beside its transport,
-compiled into the catalogue:
+Each method declares what it is found by, as data beside its transport
+(the method's transport is the `via`), compiled into the catalogue:
 
-```jsonc
-"discovery": [
-  { "via": "lan", "mdns": { "type": "_companion-link._tcp" } },
-  { "via": "lan", "mdns": { "type": "_airplay._tcp", "txt": { "model": "AppleTV*" } } },
-  { "via": "lan", "dhcp": { "hostname": "airgradient_*" } },
-  { "via": "ble", "advert": { "manufacturerId": 2409 } },
-  { "via": "lan", "ssdp": { "st": "urn:schemas-upnp-org:device:MediaRenderer:1" } }
+```ts
+discovery: [
+  { kind: 'mdns', service: '_companion-link._tcp' },
+  { kind: 'mdns', service: '_airplay._tcp', txt: { model: 'AppleTV*' } },
+  { kind: 'advert', manufacturer: 2409 },
+  { kind: 'ssdp', st: 'urn:schemas-upnp-org:device:MediaRenderer:1' },
 ]
 ```
 
@@ -1413,6 +1412,20 @@ you" item until added or ignored. Tuya's own broadcast discovery moves onto
 it.
 *Done when* a Tuya plug on the network is offered as found without anyone
 opening the add screen.
+**Done 2026-10-07.** A sighting is one host with everything it was heard
+announcing, typed (`Announcement`: `broadcast`, `advert`, `client`,
+`mdns`, `ssdp`); a way declares its `discovery` matchers, and a transport
+what it `finds` — the checks refuse a way found by what its transport does
+not hear. The hub matches as data and asks a protocol's `recognise` only to
+confirm and read; the protocol's `filter` is gone. A transport that costs
+nothing to watch (`background`: the home network's broadcasts, the
+broker's clients) is watched from the hub's start, so a Tuya plug or a
+station on the broker is on Home — and in `needsYou` — without anyone
+asking; Bluetooth is scanned only while someone looks. A found device that
+is yours at another address, by the identity it announces, is not offered
+again. Not yet: matching without *loading* an integration is step 15's — the
+matchers are data already, but the types holding them are still imported;
+mDNS and SSDP are declared and matched, and heard from step 13; DHCP later.
 
 **Step 13 · mDNS and SSDP.**
 An mDNS browser and an SSDP listener in the `lan` transport, on Bun, checked

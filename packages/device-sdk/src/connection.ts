@@ -5,7 +5,7 @@ import { PLATFORMS, type NodeNeeds, type Platform } from './node.ts';
 import type { Protocol } from './protocol.ts';
 import type { ConfigSchema, ConfigValues } from './schema.ts';
 import type { SetupStep } from './setup.ts';
-import type { Availability, Transport, TransportDefinition } from './transport.ts';
+import type { Availability, Matcher, Transport, TransportDefinition } from './transport.ts';
 
 /**
  * How a device is reached: transports, protocols, and the connection methods a
@@ -97,6 +97,15 @@ export type DirectMethod = WayBase & {
    */
   address?: string;
   /**
+   * What it is found by on its transport (docs/PLAN-INTEGRATIONS.md §4.4):
+   * the announcements a device reached this way makes — a broadcast on
+   * UDP 6667, an mDNS service, a Bluetooth service. Matched as data, without
+   * running the integration; its protocol's `recognise` confirms. A device
+   * found by one and not yet yours is offered without anyone asking. Absent:
+   * it is not found, its address is typed or fixed.
+   */
+  discovery?: readonly Matcher[];
+  /**
    * Where it can be held at all, when that is fewer places than its
    * transport runs: a cloud that does not answer a browser's page is reached
    * over HTTPS from a server and a phone, never from a browser. A fact about
@@ -122,6 +131,7 @@ export type BridgedMethod = WayBase & {
   transport?: never;
   address?: never;
   platforms?: never;
+  discovery?: never;
 };
 
 /** One way a device type can be reached: over a transport, or through a bridge. */

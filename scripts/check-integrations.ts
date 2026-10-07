@@ -61,13 +61,12 @@ type Item = { says: string; holds: boolean; not: string[] };
 
 const HEADINGS = ['## What it is', '## What it does — and does not', '## Where it fits', '## Why a package of its own'];
 const SECRET_LIKE = /key|password|secret|token/i;
-/** Transports a device announces itself on: a way over one finds it by what its protocol declares. */
+/** Transports a device announces itself on: a way over one says what it is found by. */
 const ANNOUNCED = new Set(['lan', 'ble']);
 
 async function measure(integration: Package, products: Package[]): Promise<Item[]> {
   const manifest = integration.manifest.kraftverk!.integration!;
   const protocols = await Promise.all((manifest.protocols ?? []).map((path) => load<Protocol>(integration.dir, path)));
-  const protocolOf = (id: string | undefined) => protocols.find((protocol) => protocol.id === id) ?? null;
   const types = [...(await typesOf(integration, manifest.types)), ...(await Promise.all(products.map((product) => typesOf(product, product.manifest.kraftverk!.device!.types)))).flat()];
   const all = [integration, ...products];
 
@@ -95,8 +94,7 @@ async function measure(integration: Package, products: Package[]): Promise<Item[
   const discovery = types.flatMap((type) =>
     type.connections.flatMap((method) => {
       if (isBridgedMethod(method) || !ANNOUNCED.has(method.transport)) return [];
-      const binding = protocolOf(method.protocol)?.bindings[method.transport];
-      return binding?.filter ? [] : [`${type.id}: ${method.id}`];
+      return method.discovery?.length ? [] : [`${type.id}: ${method.id}`];
     })
   );
 
@@ -114,7 +112,7 @@ async function measure(integration: Package, products: Package[]): Promise<Item[
     { says: 'Every value a person reads has a meaning or a quantity', holds: !meanings.length, not: meanings },
     { says: 'Every key, password or token is a secret: sealed, and left out of what is shown', holds: !secrets.length, not: secrets },
     { says: 'Every way says how far it reaches and how what it says arrives', holds: !ways.length, not: ways },
-    { says: 'A device that announces itself is found by what its protocol declares', holds: !discovery.length, not: discovery },
+    { says: 'A device that announces itself says what it is found by', holds: !discovery.length, not: discovery },
     { says: 'Its packages have tests of their own', holds: !untested.length, not: untested },
     { says: 'Its packages say what they are', holds: !readmes.length, not: readmes },
   ];

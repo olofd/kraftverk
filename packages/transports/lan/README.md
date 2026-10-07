@@ -8,8 +8,9 @@ broadcasts devices announce themselves with.
 ## What it does — and does not
 
 - **Does:** keep a connection to a device up, reconnecting with a backoff;
-  hear broadcasts while someone is adding a device; reach private addresses
-  only.
+  hear the broadcasts on the UDP ports ways say they are found by, all the
+  time — listening sends nothing — each host one sighting with all it said;
+  reach private addresses only.
 - **Does not:** know a protocol. It runs on the server; a phone's entry
   needs a socket library, a reviewed dependency.
 

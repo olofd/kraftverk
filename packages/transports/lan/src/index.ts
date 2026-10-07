@@ -17,6 +17,10 @@ const definition: TransportDefinition = {
   nearby: false,
   platforms: ['system', 'native'],
   discovery: { system: 'list', native: 'list' },
+  // What devices broadcast to anyone listening; mDNS and SSDP come with step 13 of docs/PLAN-INTEGRATIONS.md.
+  finds: ['broadcast'],
+  // Listening to broadcasts sends nothing: it can go on all the time.
+  background: true,
 };
 
 export default definition;

@@ -1,3 +1,5 @@
+import { fullUuid, type Matcher } from '@kraftverk/device-sdk';
+
 import { parseFrame, SLAVE_ADDRESS, type ParsedFrame } from './modbus.ts';
 
 /**
@@ -20,19 +22,6 @@ export const SERVICE_CANDIDATES = [
   { service: 'fff0', write: 'fff2', notify: 'fff1' },
 ] as const;
 
-/**
- * Expands a 16-bit GATT UUID to its full 128-bit form.
- *
- * noble takes the short form, Web Bluetooth and react-native-ble-plx report and
- * expect the long one. Comparing the two forms directly is the classic way to
- * conclude a characteristic is missing when it is right there.
- */
-export const fullUuid = (short: string): string =>
-  short.length === 4 ? `0000${short.toLowerCase()}-0000-1000-8000-00805f9b34fb` : short.toLowerCase();
-
-/** Compares GATT UUIDs regardless of which form either side used. */
-export const uuidEquals = (a: string, b: string): boolean => fullUuid(a) === fullUuid(b);
-
 /** Every service UUID to declare up front, in the long form web APIs want. */
 export const BLE_SERVICE_UUIDS: string[] = SERVICE_CANDIDATES.map((c) => fullUuid(c.service));
 
@@ -54,6 +43,12 @@ export const NAME_PREFIXES = [
   'ABOK',
   'ECOPLAY',
 ] as const;
+
+/** What a station within Bluetooth reach is found by: one of its services, or a name of the family's. */
+export const BLE_DISCOVERY: readonly Matcher[] = [
+  ...SERVICE_CANDIDATES.map(({ service }): Matcher => ({ kind: 'advert', service })),
+  ...NAME_PREFIXES.map((prefix): Matcher => ({ kind: 'advert', name: `${prefix}*` })),
+];
 
 /**
  * The station drops frames if you talk too fast. The reference client spaces

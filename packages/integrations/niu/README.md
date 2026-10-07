@@ -212,7 +212,7 @@ the cloud cannot answer that fast.
 - ✓ Every value a person reads has a meaning or a quantity
 - ✓ Every key, password or token is a secret: sealed, and left out of what is shown
 - ✓ Every way says how far it reaches and how what it says arrives
-- ✓ A device that announces itself is found by what its protocol declares
+- ✓ A device that announces itself says what it is found by
 - ✓ Its packages have tests of their own
 - ✓ Its packages say what they are
 <!-- /quality -->

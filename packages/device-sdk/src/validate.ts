@@ -7,7 +7,7 @@ import { CAMEL_NAME, NAMESPACED_ID, PLAIN_ID } from './names.ts';
 import { NODE_TRAITS, PLATFORMS } from './node.ts';
 import type { Protocol } from './protocol.ts';
 import { configDefaults, isSecretField, schemaProblems, type ConfigSchema } from './schema.ts';
-import type { TransportDefinition } from './transport.ts';
+import { ANNOUNCEMENT_KINDS, type Matcher, type TransportDefinition } from './transport.ts';
 import { valueTypeProblems } from './values.ts';
 
 /** The shared vocabulary's namespace — its recipes are `standard.…` — which no device type may take. */
@@ -73,7 +73,7 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
       if (!method.through.length) problem(`connection method "${method.id}" goes through a bridge without naming which: "through" lists the bridge types`);
       for (const bridge of method.through) if (!NAMESPACED_ID.test(bridge)) problem(`connection method "${method.id}" goes through "${bridge}", which is not a type's id`);
       const raw = method as unknown as Record<string, unknown>;
-      for (const key of ['protocol', 'transport', 'address', 'platforms']) {
+      for (const key of ['protocol', 'transport', 'address', 'platforms', 'discovery']) {
         if (raw[key] !== undefined) problem(`connection method "${method.id}" goes through a bridge, so it has no ${key} of its own: it reads its bridge through a link`);
       }
     } else {
@@ -83,6 +83,11 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
       if (method.platforms && !method.platforms.length) problem(`connection method "${method.id}" can be held nowhere: its platforms are empty`);
       if (!method.protocol?.trim()) problem(`connection method "${method.id}" names no protocol`);
       if (!method.transport?.trim()) problem(`connection method "${method.id}" names no transport`);
+      for (const matcher of method.discovery ?? []) {
+        const wrong = matcherProblem(matcher);
+        if (wrong) problem(`connection method "${method.id}" is found by ${wrong}`);
+      }
+      if (method.discovery && method.address) problem(`connection method "${method.id}" has a fixed address, so it is not found: it declares no discovery`);
     }
     if (!REACHES.includes(method.reach)) problem(`connection method "${method.id}" must say what it reaches: ${REACHES.join(', ')}`);
     if (!UPDATES.includes(method.updates)) problem(`connection method "${method.id}" must say how what it says arrives: ${UPDATES.join(', ')}`);
@@ -137,6 +142,26 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
   return problems;
 }
 
+/** What is wrong with a matcher, said as what it would be found by; null when it is sound. */
+function matcherProblem(matcher: Matcher): string | null {
+  switch (matcher.kind) {
+    case 'broadcast':
+      return Number.isInteger(matcher.port) && matcher.port > 0 && matcher.port < 65536 ? null : `a broadcast on "${matcher.port}", which is not a UDP port`;
+    case 'advert':
+      if (matcher.service === undefined && matcher.name === undefined && matcher.manufacturer === undefined) return 'any Bluetooth advert at all: name a service, a name or a company id';
+      if (matcher.manufacturer !== undefined && !(Number.isInteger(matcher.manufacturer) && matcher.manufacturer >= 0 && matcher.manufacturer < 65536)) return `a company id "${matcher.manufacturer}", which is not one`;
+      return null;
+    case 'client':
+      return matcher.protocol?.trim() ? null : 'a broker client speaking no protocol';
+    case 'mdns':
+      return /^_[a-z0-9-]+\._(tcp|udp)$/i.test(matcher.service ?? '') ? null : `"${matcher.service}", which is not an mDNS service type such as _http._tcp`;
+    case 'ssdp':
+      return matcher.st?.trim() ? null : 'an SSDP announcement with no search target';
+    default:
+      return `"${(matcher as { kind?: string }).kind}", which is not an announcement: ${ANNOUNCEMENT_KINDS.join(', ')}`;
+  }
+}
+
 export function validateTransportDefinition(transport: TransportDefinition): string[] {
   const problems: string[] = [];
   if (!PLAIN_ID.test(transport.id ?? '')) problems.push(`transport id "${transport.id}" must be lowercase words`);
@@ -145,6 +170,10 @@ export function validateTransportDefinition(transport: TransportDefinition): str
   if (!['bytes', 'messages', 'http'].includes(transport.channel)) problems.push(`transport "${transport.id}" has an unknown channel "${transport.channel}"`);
   if (typeof transport.nearby !== 'boolean') problems.push(`transport "${transport.id}" does not say whether it reaches only what is near its holder (nearby)`);
   if (!transport.platforms?.length) problems.push(`transport "${transport.id}" runs nowhere`);
+  if (typeof transport.background !== 'boolean') problems.push(`transport "${transport.id}" does not say whether watching it costs nothing (background)`);
+  for (const kind of transport.finds ?? []) {
+    if (!ANNOUNCEMENT_KINDS.includes(kind)) problems.push(`transport "${transport.id}" finds "${kind}", which is not an announcement: ${ANNOUNCEMENT_KINDS.join(', ')}`);
+  }
   for (const platform of transport.platforms ?? []) {
     if (!PLATFORMS.includes(platform)) problems.push(`transport "${transport.id}" names an unknown platform "${platform}"`);
   }
@@ -192,6 +221,11 @@ export function connectionProblems(
     }
     if (method.address && transport?.channel !== 'http') {
       problems.push(`connection method "${method.id}" has a fixed address, which only a web API may`);
+    }
+    for (const matcher of method.discovery ?? []) {
+      if (transport && !transport.finds.includes(matcher.kind)) {
+        problems.push(`connection method "${method.id}" is found by ${matcher.kind}, which ${transport.label} does not hear${transport.finds.length ? `: it hears ${transport.finds.join(', ')}` : ''}`);
+      }
     }
   }
   return problems;

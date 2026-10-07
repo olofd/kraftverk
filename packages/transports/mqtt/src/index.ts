@@ -15,6 +15,9 @@ const definition: TransportDefinition = {
   nearby: false,
   platforms: ['system'],
   discovery: { system: 'list' },
+  finds: ['client'],
+  // The broker knows its clients whether or not anyone asks.
+  background: true,
 };
 
 export default definition;

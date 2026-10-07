@@ -8,7 +8,7 @@ import type {
   MessageChannel,
   OpenOptions,
   Sighting,
-  SightingFilter,
+  Matcher,
   Transport,
   TransportContext,
   TransportDefinition,
@@ -43,7 +43,7 @@ type State = {
 type Request = { via: string; kind: 'call'; id: number; op: string; args: unknown[] };
 type ToRunning =
   | Request
-  | { via: string; kind: 'watch'; watch: number; filter: SightingFilter }
+  | { via: string; kind: 'watch'; watch: number; matchers: readonly Matcher[] }
   | { via: string; kind: 'unwatch'; watch: number }
   | { via: string; kind: 'subscribe'; channel: number; subscription: number; filter: string }
   | { via: string; kind: 'unsubscribe'; channel: number; subscription: number };
@@ -157,10 +157,10 @@ export function serveTransport(end: MessageEnd, factory: TransportFactory, here:
       await transport?.stop();
       return transport ? stateOf(transport) : null;
     },
-    choose: async (filter: SightingFilter) => {
+    choose: async (matchers: readonly Matcher[]) => {
       const chooser = made().choose;
       if (!chooser) throw new Error(`${made().definition.label} has no chooser here`);
-      return chooser.call(transport, filter);
+      return chooser.call(transport, matchers);
     },
     open: async (address: string, options: OpenOptions) => opened(await made().open(address, options)),
     diagnostic: (name: string, query: Readonly<Record<string, string>>) => {
@@ -215,7 +215,7 @@ export function serveTransport(end: MessageEnd, factory: TransportFactory, here:
       case 'watch': {
         const watch = made().watch;
         if (!watch) return;
-        watches.set(message.watch, watch.call(transport, message.filter, (sightings) => send({ via, kind: 'sightings', watch: message.watch, sightings })));
+        watches.set(message.watch, watch.call(transport, message.matchers, (sightings) => send({ via, kind: 'sightings', watch: message.watch, sightings })));
         return;
       }
       case 'unwatch':
@@ -392,10 +392,10 @@ export function transportOver(definition: TransportDefinition, end: MessageEnd, 
       // A live list and a chooser are what the side running it has: until it has said, neither.
       get watch() {
         if (!state?.watch) return undefined;
-        return (filter: SightingFilter, listener: (sightings: readonly Sighting[]) => void) => {
+        return (matchers: readonly Matcher[], listener: (sightings: readonly Sighting[]) => void) => {
           const watch = nextWatch();
           watches.set(watch, listener);
-          send({ via, kind: 'watch', watch, filter });
+          send({ via, kind: 'watch', watch, matchers });
           return () => {
             watches.delete(watch);
             send({ via, kind: 'unwatch', watch });
@@ -404,7 +404,7 @@ export function transportOver(definition: TransportDefinition, end: MessageEnd, 
       },
       get choose() {
         if (!state?.choose) return undefined;
-        return (filter: SightingFilter) => call<Sighting | null>('choose', filter);
+        return (matchers: readonly Matcher[]) => call<Sighting | null>('choose', matchers);
       },
       open: async (address, options) => channelOf(await call<Opened>('open', address, options)),
       get diagnostics() {

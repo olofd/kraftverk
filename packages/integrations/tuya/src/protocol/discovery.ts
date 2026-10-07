@@ -1,4 +1,6 @@
-import { readU32, text } from './bytes.ts';
+import { heardAs, type Matcher, type Sighting } from '@kraftverk/device-sdk';
+
+import { fromHex, readU32, text } from './bytes.ts';
 import { aesEcbDecrypt } from './crypto/aes.ts';
 import { md5 } from './crypto/hash.ts';
 import { FrameReader, PREFIX_55AA, PREFIX_6699 } from './frame.ts';
@@ -17,6 +19,9 @@ import { FrameReader, PREFIX_55AA, PREFIX_6699 } from './frame.ts';
 
 /** 6666 is the old plaintext port, 6667 the encrypted one, 7000 used by some newer firmware. */
 export const DISCOVERY_PORTS = [6666, 6667, 7000] as const;
+
+/** What a Tuya device on the home network is found by: its broadcast, on any of the ports. A way that reaches one directly declares it. */
+export const TUYA_DISCOVERY: readonly Matcher[] = DISCOVERY_PORTS.map((port) => ({ kind: 'broadcast', port }));
 
 /**
  * The key every Tuya device encrypts its discovery broadcast with.
@@ -49,6 +54,15 @@ function deviceOf(json: Record<string, unknown>, encrypted: boolean): Discovered
     active: typeof json.active === 'number' ? json.active > 0 : undefined,
     encrypted,
   };
+}
+
+/** What a host on the network said about itself in a Tuya broadcast — the first of its broadcasts that is one — or null. */
+export function announcedBy(sighting: Sighting): DiscoveredTuyaDevice | null {
+  for (const broadcast of heardAs(sighting, 'broadcast')) {
+    const device = decodeBroadcast(fromHex(broadcast.payload));
+    if (device) return device;
+  }
+  return null;
 }
 
 /** Decodes one broadcast datagram, or null if it is not one of ours. */

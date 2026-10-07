@@ -62,7 +62,7 @@ never the secret (see [SECURITY.md](SECURITY.md)).
 |---|---|
 | **You see** | Two sections. **Devices** shows *Power stations* and *Smart plugs*. **Services** shows *Weather*: a category is under Services when what is installed in it is services. Each category has its icon and names the products it covers. There is a search box for brand and model ("P280", "ATORCH"). When the server can see something nobody has added, a **Found near you** row sits at the top: "A power station is connected to this server over Wi-Fi". |
 | **You choose** | A category, a search result (which goes straight to step 2's item), or something found. |
-| **Comes from** | **Category** is a fixed list in the SDK. Each device type names one. **Sightings** come from the server's transports, recognised by a protocol. |
+| **Comes from** | **Category** is a fixed list in the SDK. Each device type names one. **Sightings** come from the server's transports: each one host, with everything it was heard announcing — typed: a broadcast, a Bluetooth advert, a broker client. Each way declares what it is found by; a sighting a way's matchers pick out is confirmed and read by its protocol. A transport that costs nothing to watch (the home network's broadcasts, the broker's clients) is watched all the time, so what turns up waits on Home without anyone opening this screen. |
 | **Leaves behind** | Nothing. A category is display only, and a sighting is live state. |
 
 A simulator is never listed as a type. A simulator belongs to every device
@@ -121,7 +121,7 @@ a radio. The P280's code is the same either way.
 |---|---|
 | **You see** | **Held by the server:** a live list of what the server's transport can see and the protocol recognises. Each row has its advertised name, a short id, how recently it was seen and how it was found. Something already added stays in the list, greyed: "Already added as Garage P280". An empty list says what to try while it keeps waiting ("A sleeping station appears when you press its power button"). *Enter it yourself* takes an IP or MAC address when discovery can't work.<br/>**Held by this browser:** a button, *Find my station*, which opens the browser's own Bluetooth chooser. Browsers let only that chooser list devices, and only after a tap. It is filtered to the protocol's Bluetooth service.<br/>**Held by the phone app:** the same live list as the server's, from the phone's own scan. |
 | **You choose** | One physical device. |
-| **Comes from** | The **transport** of the chosen holder does the finding. The **protocol** filters it: which sightings are its devices, and which Bluetooth service to ask the browser for. |
+| **Comes from** | The **transport** of the chosen holder does the finding. The **way** says what it is found by — its `discovery` matchers: a UDP port, a Bluetooth service or name, a broker client's protocol — which is also what the browser's chooser is asked for. Its **protocol** confirms each sighting picked out, and reads what it announced. |
 | **Leaves behind** | The draft's address: what the transport knows the device by. That is a MAC, an IP address, or a browser's Bluetooth handle — or, for a device behind a gateway on the home network, the gateway's IP address, `#`, and the device's address there (`192.168.1.20#a4c1380000000001`: a Zigbee plug behind a Tuya gateway). The whole address is the one device, so two devices behind one gateway are two claims. It becomes `device_connection.address`. |
 
 ### 6 · Credentials

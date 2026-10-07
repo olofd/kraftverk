@@ -278,7 +278,8 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
      * What waits on a person: each device or account that needs signing in to
      * again — its own need, not one it only takes from the bridge it is
      * behind, which is listed once, as the bridge — and each device found
-     * behind a bridge of yours and not added yet.
+     * and not added yet, on the home's network or behind a bridge of yours,
+     * unless you said it is not yours.
      */
     async needsYou() {
       const all = views.all();
@@ -286,7 +287,7 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
       const acts = all
         .filter((device) => needing.has(device.id) && !device.connections.some((connection) => connection.through !== null && needing.has(connection.through.id)))
         .map((device) => ({ kind: 'act' as const, device: { id: device.id, name: device.name, kind: device.kind, integration: device.integration }, detail: device.health.detail }));
-      const found = hub.nearby.list().filter((entry) => entry.through !== null && !entry.ignored);
+      const found = hub.nearby.list().filter((entry) => !entry.ignored);
       return [...acts, ...found.map((entry) => ({ kind: 'found' as const, found: entry }))];
     },
 

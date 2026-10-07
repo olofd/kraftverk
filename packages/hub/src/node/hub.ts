@@ -261,7 +261,8 @@ export class Hub {
   /**
    * Starts what runs on its own. Every transport an installed type uses
    * starts first — finding a device has to work before there is one to open
-   * — then a session for every device it has, sampling and the change log,
+   * — and those that cost nothing to watch are watched for what is found;
+   * then a session for every device it has, sampling and the change log,
    * the engine (which ends as interrupted a run it finds cut short), and
    * keeping what someone looks at fresh. A transport that cannot run here
    * is said, and the others carry on.
@@ -270,6 +271,8 @@ export class Hub {
     if (this.#started) return;
     this.#started = true;
     await startTransports(this.installed, this.#log);
+    // What costs nothing to watch is watched from now on: a plug broadcasting is offered without anyone asking.
+    this.nearby.start();
     await this.sessions.sync(this.catalog.list());
     this.sampler.start();
     this.changeLog.start();

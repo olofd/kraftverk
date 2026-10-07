@@ -139,7 +139,7 @@ describe('discovery', () => {
       transport: 'lan',
       address: '192.0.2.74',
       seenAt: new Date().toISOString(),
-      facts: { port: 6667, payload: toHex(broadcast({ ip: '192.0.2.74', gwId: 'bf8dc9', version: '3.4', productKey: 'keym55', active: 2 })) },
+      heard: [{ kind: 'broadcast', port: 6667, payload: toHex(broadcast({ ip: '192.0.2.74', gwId: 'bf8dc9', version: '3.4', productKey: 'keym55', active: 2 })) }],
     });
     expect(recognised).toMatchObject({
       identity: tuyaIdentity('bf8dc9'),

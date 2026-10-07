@@ -1,6 +1,6 @@
-import { identityOf, type Protocol, type Sighting } from '@kraftverk/device-sdk';
+import { heardAs, identityOf, type Protocol, type Sighting } from '@kraftverk/device-sdk';
 
-import { BLE_SERVICE_UUIDS, isLikelyStation, NAME_PREFIXES, SERVICE_CANDIDATES } from './ble.ts';
+import { isLikelyStation, SERVICE_CANDIDATES } from './ble.ts';
 import { commandRefusal } from './guard.ts';
 import { brokerPolicy } from './mqtt.ts';
 
@@ -41,13 +41,14 @@ const protocol: Protocol = {
     mqtt: {
       open: () => ({}),
       recognise(sighting: Sighting) {
-        if (sighting.facts.protocol !== 'sydpower') return null;
+        const client = heardAs(sighting, 'client').find((said) => said.protocol === 'sydpower');
+        if (!client) return null;
         const mac = parseMac(sighting.address);
         if (!mac) return null;
         return {
           name: sighting.name ?? `Station ${mac}`,
           identity: stationIdentity(mac),
-          detail: sighting.facts.online ? 'Connected to this server over Wi-Fi' : 'Seen on Wi-Fi, not connected right now',
+          detail: client.online ? 'Connected to this server over Wi-Fi' : 'Seen on Wi-Fi, not connected right now',
         };
       },
       instructions: {
@@ -64,9 +65,8 @@ const protocol: Protocol = {
     },
     ble: {
       open: () => ({ gatt: SERVICE_CANDIDATES, writeWithResponse: true }),
-      filter: { services: BLE_SERVICE_UUIDS, namePrefixes: NAME_PREFIXES },
       recognise(sighting: Sighting) {
-        const services = Array.isArray(sighting.facts.services) ? (sighting.facts.services as string[]) : [];
+        const services = heardAs(sighting, 'advert').flatMap((advert) => advert.services);
         if (!isLikelyStation({ name: sighting.name ?? null, serviceUuids: services })) return null;
         // A peripheral id that is a MAC is the station's identity; a browser's
         // private handle is not, and the check step reads what it can.

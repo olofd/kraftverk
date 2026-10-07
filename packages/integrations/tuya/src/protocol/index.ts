@@ -11,9 +11,8 @@ import {
   directOf,
 } from '@kraftverk/device-sdk';
 
-import { fromHex } from './bytes.ts';
 import { isRegion, REGIONS, TuyaCloud, TuyaCloudError } from './cloud.ts';
-import { decodeBroadcast, DISCOVERY_PORTS } from './discovery.ts';
+import { announcedBy } from './discovery.ts';
 import type { ProtocolVersion } from './frame.ts';
 import { TUYA_PORT, TuyaLink, type TuyaLinkOptions } from './session.ts';
 import { pollLogin, qrLoginContent, requestQrToken, smartLifeDevices, SmartLifeError } from './smartlife.ts';
@@ -169,8 +168,7 @@ const signInSchema: ConfigSchema = {
 function heard(sightings: readonly Sighting[]): Map<string, { address: string; version: string }> {
   const found = new Map<string, { address: string; version: string }>();
   for (const sighting of sightings) {
-    const hex = sighting.facts.payload;
-    const device = typeof hex === 'string' ? decodeBroadcast(fromHex(hex)) : null;
+    const device = announcedBy(sighting);
     if (device) found.set(device.gwId, { address: sighting.address, version: device.version });
   }
   return found;
@@ -274,11 +272,8 @@ const protocol: Protocol = {
   bindings: {
     lan: {
       open: () => ({ port: TUYA_PORT }),
-      filter: { udpPorts: DISCOVERY_PORTS },
       recognise(sighting: Sighting) {
-        const hex = sighting.facts.payload;
-        if (typeof hex !== 'string') return null;
-        const device = decodeBroadcast(fromHex(hex));
+        const device = announcedBy(sighting);
         if (!device) return null;
         return {
           name: device.productKey ? `Tuya device (${device.productKey})` : 'Tuya device',

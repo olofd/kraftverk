@@ -1,5 +1,5 @@
 import type { ConnectionMethod } from '@kraftverk/device-sdk';
-import sydpower from './protocol/index.ts';
+import sydpower, { BLE_DISCOVERY } from './protocol/index.ts';
 
 /**
  * Sydpower as a platform: how a power station on its stack is reached,
@@ -20,6 +20,8 @@ export const SYDPOWER_WIFI: ConnectionMethod = {
   // The station publishes its own figures to the broker, and is asked for the rest.
   updates: 'both',
   recommended: true,
+  // Found when it connects to the broker: the broker knows a Sydpower station by what it publishes.
+  discovery: [{ kind: 'client', protocol: sydpower.id }],
 };
 
 /** Over Bluetooth, from whatever holds it within reach: a server's radio, or a phone. */
@@ -31,6 +33,7 @@ export const SYDPOWER_BLUETOOTH: ConnectionMethod = {
   transport: 'ble',
   reach: 'local',
   updates: 'both',
+  discovery: BLE_DISCOVERY,
 };
 
 /** Every way a Sydpower station is reached, the one to suggest first. */

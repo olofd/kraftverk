@@ -16,6 +16,8 @@ const definition: TransportDefinition = {
   nearby: false,
   platforms: ['system', 'web', 'native'],
   discovery: { system: 'none', web: 'none', native: 'none' },
+  finds: [],
+  background: false,
 };
 
 export default definition;

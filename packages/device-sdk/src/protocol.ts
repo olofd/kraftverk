@@ -1,7 +1,7 @@
 import type { OpenOptions } from './channel.ts';
 import type { ConfigSchema } from './schema.ts';
 import type { SetupAction } from './setup.ts';
-import type { Recognised, Sighting, SightingFilter } from './transport.ts';
+import type { Recognised, Sighting } from './transport.ts';
 
 /*
   Protocols: the language spoken over a transport — framing, encryption,
@@ -58,9 +58,12 @@ export type MessageBrokerPolicy = {
 export type Binding = {
   /** What to ask the transport for, to reach `address`. */
   open(address: string): OpenOptions;
-  /** What discovery should look for. */
-  filter?: SightingFilter;
-  /** Whether a sighting is one of this protocol's devices, and what it says about itself. */
+  /**
+   * Whether a sighting is one of this protocol's devices, and what it says
+   * about itself. Asked only of a sighting a way's matchers picked out
+   * (`DirectMethod.discovery`), to confirm it and read it: a broadcast
+   * decrypted, an advert's name.
+   */
   recognise(sighting: Sighting): Recognised | null;
   /**
    * What to do to a device before it can be found this way. `{name}` in the

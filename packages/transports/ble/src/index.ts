@@ -1,4 +1,4 @@
-import type { SightingFilter, TransportDefinition } from '@kraftverk/device-sdk';
+import { fullUuid, type Announcement, type TransportDefinition } from '@kraftverk/device-sdk';
 
 /**
  * Bluetooth LE: what the transport is, the same everywhere.
@@ -18,35 +18,30 @@ const definition: TransportDefinition = {
   nearby: true,
   platforms: ['system', 'web', 'native'],
   discovery: { system: 'list', web: 'chooser', native: 'list' },
+  finds: ['advert'],
+  // Scanning keeps a radio busy: only while someone looks.
+  background: false,
 };
 
 export default definition;
 
-/**
- * Expands a 16-bit GATT UUID to its full 128-bit form.
- *
- * noble takes the short form, Web Bluetooth and react-native-ble-plx report and
- * expect the long one. Comparing the two forms directly is the classic way to
- * conclude a characteristic is missing when it is right there.
- */
-export const fullUuid = (uuid: string): string => {
-  const plain = uuid.toLowerCase();
-  if (/^[0-9a-f]{4}$/.test(plain)) return `0000${plain}-0000-1000-8000-00805f9b34fb`;
-  if (/^[0-9a-f]{32}$/.test(plain)) return `${plain.slice(0, 8)}-${plain.slice(8, 12)}-${plain.slice(12, 16)}-${plain.slice(16, 20)}-${plain.slice(20)}`;
-  return plain;
-};
+/** Bytes as lowercase hex. */
+const hex = (bytes: Uint8Array): string => [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 
 /**
- * Whether an advertisement is what a protocol asked to find: one of its
- * services, or a name with one of its prefixes. An empty filter takes
- * everything; a protocol's `recognise` decides after that.
+ * Manufacturer data as an advert carries it: the company id (its first two
+ * bytes, little-endian, as a decimal) to the rest, in hex. Empty when there
+ * is none, or too little to hold a company id.
  */
-export function matchesFilter(filter: SightingFilter, ad: { name: string | null; services: readonly string[] }): boolean {
-  const services = filter.services ?? [];
-  const prefixes = filter.namePrefixes ?? [];
-  if (!services.length && !prefixes.length) return true;
-  const advertised = new Set(ad.services.map(fullUuid));
-  if (services.some((service) => advertised.has(fullUuid(service)))) return true;
-  const name = ad.name?.toUpperCase() ?? '';
-  return prefixes.some((prefix) => name.startsWith(prefix.toUpperCase()));
+export function manufacturerOf(bytes: Uint8Array | null | undefined): Record<string, string> {
+  if (!bytes || bytes.length < 2) return {};
+  return { [String(bytes[0]! | (bytes[1]! << 8))]: hex(bytes.subarray(2)) };
 }
+
+/** An advertisement as a sighting hears it: services in their full form. */
+export const advertOf = (name: string | null, services: readonly string[], manufacturer: Readonly<Record<string, string>> = {}): Announcement => ({
+  kind: 'advert',
+  name,
+  services: services.map(fullUuid),
+  manufacturer,
+});

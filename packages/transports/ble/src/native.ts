@@ -2,9 +2,9 @@
 
 import { BleManager, type Device, type Subscription } from 'react-native-ble-plx';
 
-import type { Availability, ByteChannel, OpenOptions, Sighting, SightingFilter, Transport, TransportContext, TransportFactory } from '@kraftverk/device-sdk';
+import { fullUuid, sightingMatches, type Availability, type ByteChannel, type Matcher, type OpenOptions, type Sighting, type Transport, type TransportContext, type TransportFactory } from '@kraftverk/device-sdk';
 
-import definition, { fullUuid, matchesFilter } from './index.ts';
+import definition, { advertOf } from './index.ts';
 
 /**
  * Bluetooth LE from a phone, over react-native-ble-plx.
@@ -217,7 +217,7 @@ const createNativeBleTransport: TransportFactory = (context: TransportContext): 
   const handles = new Map<string, Device>();
   const seen = new Map<string, Sighting>();
   const channels = new Map<string, NativeBleChannel>();
-  const watchers = new Set<{ filter: SightingFilter; listener: (sightings: readonly Sighting[]) => void }>();
+  const watchers = new Set<{ matchers: readonly Matcher[]; listener: (sightings: readonly Sighting[]) => void }>();
   let scanning = false;
 
   const managerOf = (): BleManager => {
@@ -229,11 +229,7 @@ const createNativeBleTransport: TransportFactory = (context: TransportContext): 
     const cutoff = Date.now() - STALE_MS;
     for (const [address, sighting] of seen) if (Date.parse(sighting.seenAt) < cutoff) seen.delete(address);
     for (const watcher of watchers) {
-      watcher.listener(
-        [...seen.values()].filter((sighting) =>
-          matchesFilter(watcher.filter, { name: sighting.name ?? null, services: (sighting.facts.services as string[] | undefined) ?? [] })
-        )
-      );
+      watcher.listener([...seen.values()].filter((sighting) => !watcher.matchers.length || sightingMatches(watcher.matchers, sighting)));
     }
   };
 
@@ -250,7 +246,7 @@ const createNativeBleTransport: TransportFactory = (context: TransportContext): 
         name: device.name ?? device.localName ?? undefined,
         rssi: device.rssi ?? undefined,
         seenAt: new Date().toISOString(),
-        facts: { services: device.serviceUUIDs ?? [] },
+        heard: [advertOf(device.name ?? device.localName ?? null, device.serviceUUIDs ?? [])],
       });
       channels.get(device.id)?.noteInRange();
       announce();
@@ -289,8 +285,8 @@ const createNativeBleTransport: TransportFactory = (context: TransportContext): 
       manager = null;
     },
 
-    watch(filter, listener) {
-      const watcher = { filter, listener };
+    watch(matchers, listener) {
+      const watcher = { matchers, listener };
       watchers.add(watcher);
       scan();
       announce();

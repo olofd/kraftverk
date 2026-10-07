@@ -232,6 +232,29 @@ writes what it found into the integration's README, under "Quality,
 measured": run it after a change, and commit what it writes — the checks
 fail a README that is not current.
 
+## Found by what it announces
+
+A way over a transport says what it is found by, as data — its
+`discovery` matchers — and its protocol's `recognise` confirms and reads
+what a matcher picked out:
+
+```ts
+{ id: 'lan', protocol: 'acme', transport: 'lan', reach: 'local', updates: 'push',
+  discovery: [{ kind: 'broadcast', port: 6667 }] }
+```
+
+A matcher is one announcement: `broadcast` (a UDP port), `advert` (a
+Bluetooth service, a name — `ACME*` for a prefix — or a company id),
+`client` (a broker client's protocol), `mdns` (a service type, with TXT
+records that say the model) or `ssdp` (a search target). A transport says
+which it hears (`finds`), and the checks refuse a way that declares one its
+transport does not. Each sighting is one host with everything it said, so
+`recognise` reads it with `heardAs(sighting, 'broadcast')` and returns the
+device's identity when the announcement carries it — then a device that is
+yours already is not offered again when its address changes. Where watching
+costs nothing — the home network, the broker — what turns up is offered on
+Home without anyone asking.
+
 ## An account, and a device behind it
 
 When a service is signed into once and brings many devices — an iCloud

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { createSocket } from 'node:dgram';
 import { createServer, type Socket } from 'node:net';
 
-import { memoryTransportStore } from '@kraftverk/device-sdk';
+import { memoryTransportStore, type Sighting } from '@kraftverk/device-sdk';
 
 import { hostOf, isLocalAddress } from './index.ts';
 import createLanTransport from './system.ts';
@@ -93,14 +93,14 @@ describe('the home network', () => {
 
   test('what devices broadcast is listed while someone watches, and handed over as bytes', async () => {
     const transport = createLanTransport(quiet);
-    let seen: readonly { address: string; facts: Record<string, unknown> }[] = [];
+    let seen: readonly Sighting[] = [];
     const port = 36000 + Math.floor(Math.random() * 2000);
-    const stop = transport.watch!({ udpPorts: [port] }, (sightings) => (seen = sightings));
+    const stop = transport.watch!([{ kind: 'broadcast', port }], (sightings) => (seen = sightings));
 
     const sender = createSocket('udp4');
     await new Promise<void>((resolve) => sender.send(Buffer.from([1, 2, 3, 255]), port, '127.0.0.1', () => resolve()));
     await until(() => seen.length > 0, 'the broadcast');
-    expect(seen[0]).toMatchObject({ address: '127.0.0.1', facts: { port, payload: '010203ff' } });
+    expect(seen[0]).toMatchObject({ address: '127.0.0.1', heard: [{ kind: 'broadcast', port, payload: '010203ff' }] });
 
     sender.close();
     stop();

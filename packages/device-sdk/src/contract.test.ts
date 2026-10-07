@@ -8,7 +8,7 @@ import { unmetNeed, type NodeNeeds, type Platform } from './node.ts';
 import type { Protocol } from './protocol.ts';
 import { setupPlan } from './setup.ts';
 import { checkDeviceTypeContract, fakeByteChannel, fakeConnection } from './testing.ts';
-import type { TransportDefinition } from './transport.ts';
+import { fullUuid, heardAs, matcherSaid, matches, sightingMatches, type Sighting, type TransportDefinition } from './transport.ts';
 import { connectionProblems, validateDeviceType, validateProtocol, validateTransportDefinition } from './validate.ts';
 
 /*
@@ -98,7 +98,7 @@ const exampleProtocol: Protocol = {
   bindings: {
     lan: {
       open: () => ({ port: 9999 }),
-      recognise: (sighting) => (sighting.facts.example ? { name: 'Example plug' } : null),
+      recognise: (sighting) => (heardAs(sighting, 'broadcast').some((said) => said.payload === '6578616d706c65') ? { name: 'Example plug' } : null),
       instructions: { title: 'Plug it in', body: 'Join it to the network that {host} is on.' },
       parseAddress: (input) => (/^[0-9.]+$/.test(input) ? input : null),
       addressLabel: 'IP address',
@@ -115,6 +115,8 @@ const lan: TransportDefinition = {
   nearby: false,
   platforms: ['system', 'native'],
   discovery: { system: 'list', native: 'list' },
+  finds: ['broadcast'],
+  background: true,
 };
 
 describe('the contract suite', () => {
@@ -310,4 +312,64 @@ test('a method\'s setup is assembled from its layers, and sent without functions
   expect(steps[0]).toMatchObject({ body: 'Join it to the network that 192.0.2.5 is on.' });
   expect(steps[1]).toMatchObject({ discovery: 'list', manual: 'IP address', transport: 'lan' });
   expect(JSON.parse(JSON.stringify(steps))).toEqual(steps);
+});
+
+describe('discovery by declaration', () => {
+  const host = (...heard: Sighting['heard']): Sighting => ({ transport: 'lan', address: '192.0.2.40', seenAt: '2026-10-07T00:00:00Z', heard });
+
+  test('a matcher picks out an announcement by its kind and what it says', () => {
+    expect(matches({ kind: 'broadcast', port: 6667 }, { kind: 'broadcast', port: 6667, payload: '00' })).toBe(true);
+    expect(matches({ kind: 'broadcast', port: 6667 }, { kind: 'broadcast', port: 6666, payload: '00' })).toBe(false);
+    expect(matches({ kind: 'client', protocol: 'acme' }, { kind: 'client', protocol: 'acme', online: false })).toBe(true);
+    expect(matches({ kind: 'client', protocol: 'acme' }, { kind: 'client', protocol: null, online: true })).toBe(false);
+    expect(matches({ kind: 'ssdp', st: 'urn:schemas-upnp-org:device:MediaRenderer:*' }, { kind: 'ssdp', st: 'urn:schemas-upnp-org:device:MediaRenderer:1', usn: 'x', location: 'http://192.0.2.40/' })).toBe(true);
+  });
+
+  test('an advert by its service in either form, a name by its prefix, a maker by its company id', () => {
+    const advert = { kind: 'advert', name: 'AC180P-1234', services: [fullUuid('fff0')], manufacturer: { '76': '0215' } } as const;
+    expect(matches({ kind: 'advert', service: 'FFF0' }, advert)).toBe(true);
+    expect(matches({ kind: 'advert', service: '0000fff0-0000-1000-8000-00805f9b34fb' }, advert)).toBe(true);
+    expect(matches({ kind: 'advert', name: 'ac180*' }, advert)).toBe(true);
+    expect(matches({ kind: 'advert', name: 'AC180' }, advert)).toBe(false);
+    expect(matches({ kind: 'advert', manufacturer: 76 }, advert)).toBe(true);
+    // Every field given must hold.
+    expect(matches({ kind: 'advert', manufacturer: 76, service: 'fff1' }, advert)).toBe(false);
+  });
+
+  test('an mDNS service, narrowed by what its TXT records say', () => {
+    const service = { kind: 'mdns', service: '_airplay._tcp', instance: 'Living room', port: 7000, txt: { model: 'AppleTV14,1' } } as const;
+    expect(matches({ kind: 'mdns', service: '_airplay._tcp' }, service)).toBe(true);
+    expect(matches({ kind: 'mdns', service: '_airplay._tcp', txt: { model: 'AppleTV*' } }, service)).toBe(true);
+    expect(matches({ kind: 'mdns', service: '_airplay._tcp', txt: { model: 'AudioAccessory*' } }, service)).toBe(false);
+    expect(matches({ kind: 'mdns', service: '_airplay._tcp', txt: { features: '*' } }, service)).toBe(false);
+  });
+
+  test('a sighting is everything one host said: any matcher, any announcement', () => {
+    const tv = host({ kind: 'mdns', service: '_companion-link._tcp', instance: 'TV', port: 49152, txt: {} }, { kind: 'mdns', service: '_airplay._tcp', instance: 'TV', port: 7000, txt: { model: 'AppleTV14,1' } });
+    expect(sightingMatches([{ kind: 'broadcast', port: 6667 }, { kind: 'mdns', service: '_airplay._tcp' }], tv)).toBe(true);
+    expect(sightingMatches([{ kind: 'mdns', service: '_hap._tcp' }], tv)).toBe(false);
+    expect(heardAs(tv, 'mdns').map((said) => said.service)).toEqual(['_companion-link._tcp', '_airplay._tcp']);
+    expect(sightingMatches([], tv)).toBe(false);
+  });
+
+  test('said in words, for a package\'s README', () => {
+    expect(matcherSaid({ kind: 'broadcast', port: 6667 })).toBe('a broadcast on UDP 6667');
+    expect(matcherSaid({ kind: 'mdns', service: '_airplay._tcp', txt: { model: 'AppleTV*' } })).toBe('the mDNS service _airplay._tcp (model=AppleTV*)');
+  });
+
+  test('a way is found only by what its transport hears, and by a sound matcher', () => {
+    const type = plug();
+    const own = type.connections[0]! as DirectMethod;
+    const installed = { protocol: () => exampleProtocol, transport: () => lan };
+    const found = (discovery: DirectMethod['discovery']) => ({ ...type, connections: [{ ...own, discovery }] });
+    expect(validateDeviceType(found([{ kind: 'broadcast', port: 6667 }]))).toEqual([]);
+    expect(connectionProblems(found([{ kind: 'broadcast', port: 6667 }]), installed)).toEqual([]);
+    expect(connectionProblems(found([{ kind: 'advert', service: 'fff0' }]), installed)).toEqual([
+      'connection method "lan" is found by advert, which the home network does not hear: it hears broadcast',
+    ]);
+    expect(validateDeviceType(found([{ kind: 'broadcast', port: 70000 }]))).toContain('connection method "lan" is found by a broadcast on "70000", which is not a UDP port');
+    expect(validateDeviceType(found([{ kind: 'advert' }]))).toContain('connection method "lan" is found by any Bluetooth advert at all: name a service, a name or a company id');
+    expect(validateDeviceType(found([{ kind: 'mdns', service: 'airplay' }]))).toContain('connection method "lan" is found by "airplay", which is not an mDNS service type such as _http._tcp');
+    expect(validateTransportDefinition({ ...lan, finds: ['smoke' as never] })).toEqual(['transport "lan" finds "smoke", which is not an announcement: broadcast, advert, client, mdns, ssdp']);
+  });
 });

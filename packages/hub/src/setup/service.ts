@@ -10,6 +10,7 @@ import {
   methodOf,
   randomHex,
   setupPlan,
+  sightingMatches,
   type AuditRecord,
   type ConfigValues,
   type Identified,
@@ -146,10 +147,10 @@ export class SetupService {
       through,
     });
 
-    // What the transport can see, kept current for as long as the draft lives.
-    const binding = method.transport ? reach.protocol?.bindings[method.transport] : undefined;
-    if (binding && transport?.watch && !method.address && reach.transport?.discovery[this.deps.transports.platform] === 'list') {
-      draft.stopWatching = transport.watch(binding.filter ?? {}, (sightings) => {
+    // What the transport can see of what this way is found by, kept current for as long as the draft lives.
+    const discovery = isBridgedMethod(method) ? [] : (method.discovery ?? []);
+    if (discovery.length && transport?.watch && reach.transport?.discovery[this.deps.transports.platform] === 'list') {
+      draft.stopWatching = transport.watch(discovery, (sightings) => {
         draft.sightings = sightings;
       });
     }
@@ -211,7 +212,7 @@ export class SetupService {
     this.#sweepWhileNeeded();
   }
 
-  /** What the transport sees that this device's protocol recognises — or, through a bridge, its members — each marked when it is already yours. */
+  /** What the transport sees that this way is found by and its protocol recognises — or, through a bridge, its members — each marked when it is already yours. */
   sightings(id: string): SightingView[] {
     const draft = this.#draft(id);
     if (draft.method && isBridgedMethod(draft.method)) {
@@ -231,8 +232,9 @@ export class SetupService {
     const binding = way.transport ? draft.reach.protocol?.bindings[way.transport] : undefined;
     if (!binding || !way.transport) return [];
     const transport = way.transport;
+    const discovery = way.discovery ?? [];
     return draft.sightings.flatMap((sighting): SightingView[] => {
-      const recognised = binding.recognise(sighting);
+      const recognised = sightingMatches(discovery, sighting) ? binding.recognise(sighting) : null;
       if (!recognised) return [];
       const claim = draft.reach.exclusive ? this.deps.connections.claimant(transport, sighting.address) : null;
       const claimed = claim ? this.deps.catalog.get(claim.deviceId) : null;
@@ -277,7 +279,7 @@ export class SetupService {
       const transport = await this.deps.transports.start(draft.method!.transport);
       if (!transport?.choose) throw new ApiError('invalid', `${platformWords(this.deps.transports.platform).this} has no chooser for ${draft.method!.label}: choose from the list`);
       // Shown everything, it may be a device its protocol does not know by its advertising alone: the check reads it.
-      const sighting = await transport.choose(input.chooser.showAll ? {} : (binding.filter ?? {}));
+      const sighting = await transport.choose(input.chooser.showAll ? [] : (draft.method!.discovery ?? []));
       if (!sighting) return viewOf(draft);
       draft.sightings = [...draft.sightings.filter((seen) => seen.address !== sighting.address), sighting];
       const recognised = binding.recognise(sighting);
