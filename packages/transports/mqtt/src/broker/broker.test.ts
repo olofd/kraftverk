@@ -155,6 +155,14 @@ describe('a protocol spoken by a bridge', () => {
     bridge.publish('bridge-test/bridge/state', new TextEncoder().encode('online'));
     await until(() => broker.devices.some((device) => device.address === 'bridge-test' && device.online), 'the bridge online');
 
+    // Someone listening — anyone may — is not the bridge: subscribing takes nothing, and leaving takes it nowhere.
+    const listener = await mqttClient(broker.port!, 'listener');
+    await listener.subscribe('bridge-test/#');
+    expect(broker.devices.find((device) => device.address === 'bridge-test')).toMatchObject({ online: true, clientId: 'bridge-1' });
+    listener.drop();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(broker.devices.find((device) => device.address === 'bridge-test')).toMatchObject({ online: true, clientId: 'bridge-1' });
+
     const impostor = await mqttClient(broker.port!, 'impostor');
     impostor.publish('bridge-test/lamp', new TextEncoder().encode('{"state":"ON"}'));
     await until(() => impostor.isClosed, 'the impostor cut off');

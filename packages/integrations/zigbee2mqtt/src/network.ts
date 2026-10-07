@@ -237,8 +237,15 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
     }
     if (!json) return;
     const kept = this.#states.get(key) ?? { values: {}, at: null };
+    /*
+      When it was said: the device's own time where Zigbee2MQTT gives it
+      (`last_seen`, as the deploy sets it) — a state kept on the broker and
+      replayed is as old as the device last spoke, not as new as its replay.
+    */
+    const seen = typeof json.last_seen === 'string' && Number.isFinite(Date.parse(json.last_seen)) ? new Date(json.last_seen).toISOString() : null;
+    const at = seen ?? (message.retained && kept.at ? kept.at : message.at);
     // Merged: a device that is not cached says only what changed.
-    this.#states.set(key, { values: { ...kept.values, ...json }, at: message.at });
+    this.#states.set(key, { values: { ...kept.values, ...json }, at });
     const shape = this.#shapes.get(key);
     // A press kept on the broker with the device's state was said before: only one said now is a press.
     const press = shape && !message.retained ? actionOf(shape, json) : null;

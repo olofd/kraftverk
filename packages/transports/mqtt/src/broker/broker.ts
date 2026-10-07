@@ -608,6 +608,17 @@ export class MessageBroker {
       for (const policy of this.options.policies) {
         const address = policy.subscribedBy(topic);
         if (!address) continue;
+        /*
+          A device spoken for by a client that signs in is not named by who
+          listens: anyone may subscribe, and only the client that signed in —
+          the first, while it is connected — is the device. Otherwise a
+          listener would take its presence, and leaving, take it offline.
+        */
+        if (policy.signedIn) {
+          if (!conn.signedIn) continue;
+          const holder = this.#devices.get(keyOf(policy.protocol, address))?.connection;
+          if (holder && holder !== conn && !holder.socket.destroyed) continue;
+        }
         const device = this.#claim(conn, policy, address, `subscribed to ${topic}`);
         device.subscribed = true;
         this.#announce(device);

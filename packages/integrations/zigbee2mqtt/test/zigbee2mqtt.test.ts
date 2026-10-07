@@ -204,6 +204,15 @@ describe('the network, against a played Zigbee2MQTT', () => {
     await until(() => link.takePresses().some((press) => press.id === 'action.hold'), 'the press');
   });
 
+  test('a state is as old as the device says it is, not as new as its replay', async () => {
+    open();
+    await until(() => network.members().length === 3, 'the devices');
+    const sensor = await network.link(SENSOR, () => {});
+    played.say(SENSOR, { temperature: 19.5, last_seen: '2026-10-07T10:00:00.000Z' });
+    await until(() => sensor.state().values.temperature === 19.5, 'the report');
+    expect(sensor.state().at).toBe('2026-10-07T10:00:00.000Z');
+  });
+
   test('a press kept on the broker with the state is not a press when it is replayed', async () => {
     const button = { ieee_address: '0x00124b00000000b9', type: 'EndDevice', friendly_name: 'Hall button', supported: true, interview_state: 'SUCCESSFUL' as const, definition: { model: 'BTN', vendor: 'Simulated', description: 'Button', exposes: BUTTON_EXPOSES } };
     played = playedZigbee2Mqtt({ stepMs: 20, devices: [button] });
