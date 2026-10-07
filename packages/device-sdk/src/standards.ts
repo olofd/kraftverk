@@ -24,7 +24,7 @@ export type NoProjection = { none: string };
 // --- Home Assistant -----------------------------------------------------------
 
 /** A `number` is a value Home Assistant can set: a station's charge limit. A `device_tracker` is where something is. */
-export type HomeAssistantPlatform = 'sensor' | 'binary_sensor' | 'switch' | 'number' | 'device_tracker';
+export type HomeAssistantPlatform = 'sensor' | 'binary_sensor' | 'switch' | 'number' | 'device_tracker' | 'button';
 
 /** Home Assistant uses the same three state classes, by the same names. */
 export const HOME_ASSISTANT_STATE_CLASSES: Readonly<Record<StateClass, string>> = {
@@ -43,6 +43,7 @@ export type HomeAssistantEntity = {
 
 /** The Matter clusters kraftverk's vocabulary maps to, by name and id. */
 export const MATTER_CLUSTERS = {
+  Identify: 0x0003,
   OnOff: 0x0006,
   PowerSource: 0x002f,
   ElectricalPowerMeasurement: 0x0090,
@@ -197,6 +198,10 @@ export const CAPABILITY_PROJECTIONS: Readonly<Record<CapabilityName, CapabilityP
   'weather.forecast': {
     homeAssistant: { none: 'MQTT discovery has no weather platform, and Home Assistant has its own forecasts' },
     matter: { none: 'Matter does not describe forecasts' },
+  },
+  identify: {
+    homeAssistant: { platforms: ['button'], commands: { identify: 'press (device class identify)' } },
+    matter: { clusters: ['Identify'], commands: { identify: 'Identify' } },
   },
   location: {
     homeAssistant: { platforms: ['device_tracker'], commands: {} },

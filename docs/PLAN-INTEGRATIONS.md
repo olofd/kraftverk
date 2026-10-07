@@ -1546,6 +1546,20 @@ proof from a verifier alone; not yet against Apple itself.
 (consequential), and the interval that shortens while someone moves.
 *Done when* the family's devices are on their pages, and an automation
 starts when a phone gets home.
+**Done 2026-10-07.** `icloud.account` (kind account, a bridge; held on a
+server trusted with the password) signs in once and asks Find My for every
+device at once — every 2 min while a device someone added has moved more
+than 200 m beyond its accuracy (4 min on a charge at or below 33 %), every
+15 min otherwise, after Home Assistant's account; `NeedsSignIn` when Apple
+asks for a code again. `icloud.device` (category phone), through it:
+`position` (the `location` capability; current for an hour; not kept in
+history), `charge`, charging, whose it is; the new library capability
+`identify` (Matter's Identify, Home Assistant's identify button) plays a
+sound, unverified by the gateway since nothing it reports changes; lost
+mode is a confirmed tool. A simulated account brings a family with a phone
+going out and back. The engine's test has an automation turn a lamp on when
+a phone is located 28 m from the home — "How far Sam's iPhone is from home
+is below 200 m". Not yet against the owner's Apple ID.
 
 **Step 19 · Apple TV's protocol and pairing.** The maintained library behind a
 protocol package; pairing by `ask`, protocol by protocol; its credentials

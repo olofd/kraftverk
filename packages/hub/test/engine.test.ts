@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
 import { checkRule, defineFunction, defineRecipe, inlineParams, SEQUENCE_LIMITS, sunTimes, withSettings, type Coordinates, type Rule, type Step } from '@kraftverk/automation';
-import { MAIN_PART, REAL_CLOCK, savedDeviceId, zonedInstant, type AuditRecord, type DeviceDescription, type DeviceReader, type Value } from '@kraftverk/device-sdk';
+import { MAIN_PART, POSITION_SHAPE, REAL_CLOCK, savedDeviceId, zonedInstant, type AuditRecord, type DeviceDescription, type DeviceReader, type Value } from '@kraftverk/device-sdk';
 import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
 
@@ -31,6 +31,7 @@ beforeEach(() => {
     ['d-forecast', 'Weather'],
     ['d-plug', 'Heater plug'],
     ['d-station', 'Garage P280'],
+    ['d-phone', 'Sam’s iPhone'],
   ] as const) insert.run(id, name);
 });
 
@@ -38,6 +39,7 @@ const ZONE = 'Europe/Stockholm';
 const FORECAST = savedDeviceId('d-forecast');
 const PLUG = savedDeviceId('d-plug');
 const STATION = savedDeviceId('d-station');
+const PHONE = savedDeviceId('d-phone');
 
 // --- a package's contribution, as a test kit ------------------------------------
 
@@ -138,6 +140,8 @@ const STATION_DESCRIPTION: DeviceDescription = {
   events: [{ id: 'mains.lost', label: 'Mains lost', level: 'warn', part: 'input.ac', data: { voltage: { type: 'number', unit: 'V' } } }],
 };
 const FORECAST_DESCRIPTION: DeviceDescription = { parts: [{ id: MAIN_PART, label: 'Forecast', kind: 'sensor', offers: ['weather.forecast'] }], attributes: [] };
+/** A phone in Find My, as an iCloud device reports itself: where it is, and nothing else here. */
+const PHONE_DESCRIPTION: DeviceDescription = { parts: [{ id: MAIN_PART, label: 'Device', kind: 'device' }], attributes: [{ key: 'position', label: 'Where it is', value: POSITION_SHAPE, means: 'position' }] };
 
 /** What a function or a condition may see of a device: its readings, its health, its answers. */
 const reader = (readings: () => { key: string; value: Value }[], clock: () => Date = () => new Date()): DeviceReader => ({
@@ -167,6 +171,8 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
   const station = { soc: 50 as Value };
   /** Whether the plug is on, as it reports it: unknown until a test says; and its light. */
   const plug = { on: null as Value, light: true as Value };
+  /** Where the phone is, as Find My last said: nowhere known until a test says. */
+  const phone = { position: null as Value };
   let now = options.now ?? MORNING;
   const devices: Record<string, EngineDevice> = Object.fromEntries(Object.entries({
     [`${FORECAST}:main`]: {
@@ -183,6 +189,7 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
     [`${STATION}:main`]: { name: 'Garage P280', removed: false, hasPart: true, part: 'main', description: STATION_DESCRIPTION, device: reader(() => [{ key: 'soc', value: station.soc }], () => now), offline: 'n/a', capabilities: ['battery'] },
     [`${STATION}:outlet.ac`]: { name: 'Garage P280 — AC outlets', removed: false, hasPart: true, part: 'outlet.ac', description: STATION_DESCRIPTION, device: null, offline: 'n/a', capabilities: ['switch'] },
     [`${STATION}:input.ac`]: { name: 'Garage P280 — Mains', removed: false, hasPart: true, part: 'input.ac', description: STATION_DESCRIPTION, device: null, offline: 'n/a', capabilities: ['acInput'] },
+    [`${PHONE}:main`]: { name: 'Sam’s iPhone', removed: false, hasPart: true, part: 'main', description: PHONE_DESCRIPTION, device: reader(() => (phone.position === null ? [] : [{ key: 'position', value: phone.position }]), () => now), offline: 'n/a', capabilities: ['location'] },
   } satisfies Record<string, Omit<EngineDevice, 'reachable' | 'wantFresh' | 'deviceName' | 'typeId'>>).map(([key, device]) => [key, asEngineDevice(device)]));
   const store = new AutomationStore(db);
   const bus = new LiveBus();
@@ -228,7 +235,8 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
   const sunny = (params: Record<string, string | number> = {}, mode: AutomationRecord['mode'] = 'watch', switchPart = { device: PLUG, part: 'main' }) =>
     make('test.kit.sunny', { forecast: { device: FORECAST, part: 'main' }, switch: switchPart }, params, mode);
   const readingsMoved = () => bus.publish({ kind: 'readings', deviceId: STATION, readings: [] });
-  return { engine, store, bus, sent, written, recorded, ledger, make, sunny, station, plug, readingsMoved, at: (next: Date) => (now = next), now: () => now };
+  const phoneMoved = () => bus.publish({ kind: 'readings', deviceId: PHONE, readings: [] });
+  return { engine, store, bus, sent, written, recorded, ledger, make, sunny, station, plug, phone, phoneMoved, readingsMoved, at: (next: Date) => (now = next), now: () => now };
 }
 
 /** 07:05 in Stockholm on a summer day: after the default run time. */
@@ -1205,6 +1213,79 @@ describe('across a group', () => {
       await settle();
       expect(sent.map((intent) => intent.args.on)).toEqual([true]);
       expect(sent[0]!.reason).toContain('Garage P280: Charge 15 %');
+    } finally {
+      engine.stop();
+    }
+  });
+});
+
+describe('when a phone gets home', () => {
+  /** A made-up home, and a phone 2 km east of it, then at its door. */
+  const HOME = { latitude: 59.3, longitude: 18 };
+  const AWAY = { latitude: 59.3, longitude: 18.035, accuracy: 20 };
+  const DOOR = { latitude: 59.3, longitude: 18.0005, accuracy: 15 };
+
+  test('distance from where the home is, falling below 200 m, starts it: once, and said in words', async () => {
+    db.exec('DELETE FROM automation');
+    const context = setup({ location: HOME });
+    const { engine, phone, sent, store, phoneMoved } = context;
+    const rule: Rule = {
+      roles: { phone: { label: 'Phone', capabilities: ['location'] }, lamp: { label: 'Hall lamp', capabilities: ['switch'] } },
+      params: { fields: {} },
+      when: [{ becomes: { compare: 'lt', left: { distance: { role: 'phone', means: 'position' } }, right: { value: 200, unit: 'm' } } }],
+      then: [{ command: { role: 'lamp', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
+    };
+    expect(checkRule(rule, { fn: () => null })).toEqual([]);
+    const made = store.create({ name: 'Welcome home', rule, madeFrom: null, roles: { phone: { device: PHONE, part: 'main' }, lamp: { device: PLUG, part: 'main' } }, groups: {}, starts: {}, timeZone: ZONE, recheckMinutes: null });
+    store.update(made.id, { mode: 'act' });
+    expect(engine.roleProblems(store.get(made.id)!)).toEqual([]);
+    phone.position = AWAY;
+    engine.start();
+    try {
+      phoneMoved();
+      await settle();
+      expect(sent).toEqual([]);
+      // Find My locates it at the door.
+      phone.position = DOOR;
+      phoneMoved();
+      await settle();
+      expect(sent.map((intent) => [intent.deviceId, intent.args.on])).toEqual([[PLUG, true]]);
+      expect(sent[0]!.reason).toBe('Welcome home: How far Sam’s iPhone is from home is below 200 m (Sam’s iPhone: 28 m from home)');
+      // Still home: it does not start again.
+      phoneMoved();
+      await settle();
+      expect(sent).toHaveLength(1);
+    } finally {
+      engine.stop();
+    }
+  });
+
+  test('with no place for the home, how far is not known, and nothing starts', async () => {
+    db.exec('DELETE FROM automation');
+    const context = setup();
+    const { engine, phone, sent, store, phoneMoved } = context;
+    const made = store.create({
+      name: 'Welcome home',
+      rule: {
+        roles: { phone: { label: 'Phone', capabilities: ['location'] }, lamp: { label: 'Hall lamp', capabilities: ['switch'] } },
+        params: { fields: {} },
+        when: [{ becomes: { compare: 'lt', left: { distance: { role: 'phone', means: 'position' } }, right: { value: 200, unit: 'm' } } }],
+        then: [{ command: { role: 'lamp', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
+      },
+      madeFrom: null,
+      roles: { phone: { device: PHONE, part: 'main' }, lamp: { device: PLUG, part: 'main' } },
+      groups: {},
+      starts: {},
+      timeZone: ZONE,
+      recheckMinutes: null,
+    });
+    store.update(made.id, { mode: 'act' });
+    phone.position = DOOR;
+    engine.start();
+    try {
+      phoneMoved();
+      await settle();
+      expect(sent).toEqual([]);
     } finally {
       engine.stop();
     }

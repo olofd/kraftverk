@@ -233,6 +233,19 @@ export const CAPABILITIES = {
       },
     },
   },
+  /**
+   * Makes a device show where it is — a sound played, a light blinked — as
+   * Matter's Identify cluster and Home Assistant's identify button do.
+   * Changes nothing it reports, so the gateway sends it unverified.
+   */
+  identify: {
+    label: 'Identify',
+    attributes: {},
+    commands: {
+      identify: { description: 'Make it show where it is: a sound played, a light blinked', args: {}, sets: {} },
+    },
+    queries: {},
+  },
   location: {
     label: 'Location',
     // Where it is on the Earth, and how sure: a phone, a scooter, a tag. How far it is from home is the automation language's `distance`.

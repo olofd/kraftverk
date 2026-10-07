@@ -12,12 +12,23 @@
       "protocols": [
         "./src/protocol/index.ts"
       ],
-      "types": []
+      "types": [
+        {
+          "id": "icloud.account",
+          "entry": "./src/account.ts"
+        },
+        {
+          "id": "icloud.device",
+          "entry": "./src/device.ts"
+        }
+      ]
     }
   },
   "exports": {
     ".": "./src/index.ts",
-    "./protocol": "./src/protocol/index.ts"
+    "./protocol": "./src/protocol/index.ts",
+    "./account": "./src/account.ts",
+    "./device": "./src/device.ts"
   },
   "scripts": {
     "test": "node ../../../scripts/run-bun.mjs test",

@@ -20,9 +20,18 @@ from Home Assistant's `icloud` integration and pyicloud
   (`kept: 'session'`), and carry it on with no person, or say it waits on one
   (`NeedsSignIn`) when Apple asks for a code again; list Find My's devices,
   the family's included, with where each is, how sure, and its charge; play
-  a sound on one; put one in lost mode (`findmy.ts`).
-- **Does not:** yet offer the account and its devices as devices (step 18,
-  `icloud.account` and `icloud.device`); Apple's newer trusted-device
+  a sound on one; put one in lost mode (`findmy.ts`). Offer the account as a
+  device of its own — `icloud.account`, a bridge to every device in its Find
+  My (`account.ts`), asking every two minutes while one someone added moves
+  (four on a low battery) and every fifteen while nobody does, as Home
+  Assistant's iCloud account does, since asking locates every device and
+  costs batteries — and each device in it as `icloud.device` (`device.ts`):
+  where it is (a `position`, the `location` capability, which `distance`
+  in an automation measures from the home: "when Sam's phone gets home"),
+  its charge and whether it is charging, whose it is, a sound played
+  (`identify`), and lost mode, a tool a person confirms, never an
+  automation's. Where someone is, is not kept in history.
+- **Does not:** Apple's newer trusted-device
   verifier (its "bridge" over Apple's push service) — a code is texted when
   Apple routes a sign-in there; people's own locations (Find My Friends is
   not on the web); China's iCloud (`icloud.com.cn`); anything in a browser,
