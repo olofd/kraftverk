@@ -86,6 +86,9 @@ export type HeldSetupInput = {
  */
 export type FoundAt = { transport: string; through: string | null; address: string };
 
+/** Something an integration keeps between setups, as its page lists it: what it is, and when — never its value. */
+export type KeptView = { key: string; label: string; at: string };
+
 /** "Found near you": something a transport sees, or a member behind a bridge, that nothing you have is reached by. */
 export type FoundView = {
   transport: string;

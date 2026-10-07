@@ -28,7 +28,8 @@ test('a NIU account finds its scooters: one is added through it, as its model, a
   await expect(page).toHaveURL(new RegExp(`/integrations/niu/accounts/${account.id}`));
   await expect(page.getByText('Through it', { exact: true })).toBeVisible();
   await expect(page.getByText('Not added yet · NIU UQi GT')).toBeVisible();
-  await expect(page.getByText('Not added yet · NIU scooter')).toBeVisible();
+  // One that does not say its model is offered as each type it could be: a person picks.
+  await expect(page.getByText('Not added yet · add it as a NIU scooter')).toBeVisible();
 
   // Added from there: chosen behind its account, read through it, named.
   await press(page, 'Scooter one');

@@ -25,6 +25,7 @@ export * from './nodes.ts';
 export * from './home.ts';
 export * from './device-store.ts';
 export * from './transport-store.ts';
+export * from './integration-kept.ts';
 export * from './ledger.ts';
 export * from './automations.ts';
 export * from './sqlite-wasm.ts';

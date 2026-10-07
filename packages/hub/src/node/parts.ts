@@ -1,7 +1,7 @@
 import { LINK_KINDS, type AuditRecord, type Clock, type ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, type GatewayDeps } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, type SessionManagerDeps } from '@kraftverk/holder';
-import { ConnectionStore, databaseLedger, DeviceCatalog, HomeSettings, LinkStore, NodeStore, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { ConnectionStore, databaseLedger, DeviceCatalog, HomeSettings, integrationKept, LinkStore, NodeStore, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import type { Installed } from '../installed/from.ts';
 import { unfitFor } from '../installed/needs.ts';
@@ -128,6 +128,7 @@ export function nodeParts(options: NodeOptions, role: NodeRole): NodeParts {
     links,
     sessions,
     http: options.http,
+    kept: (integration) => integrationKept(db, options.secrets, integration),
     self: self.id,
     traits: (id) => nodes.get(id),
   });

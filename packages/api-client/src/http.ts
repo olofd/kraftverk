@@ -12,6 +12,7 @@ import {
   type DeviceEventView,
   type DeviceView,
   type FoundView,
+  type KeptView,
   type KraftverkApi,
   type LiveUpdate,
   type NeedsYouView,
@@ -173,6 +174,10 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
     },
 
     nearby: async () => (await get<{ found: FoundView[] }>('/found')).found,
+    integrations: {
+      kept: async (integration) => (await get<{ kept: KeptView[] }>(`/integrations/${encodeURIComponent(integration)}/kept`)).kept,
+      forget: async (integration, key) => void (await call('DELETE', `/integrations/${encodeURIComponent(integration)}/kept/${encodeURIComponent(key)}`)),
+    },
     ignoreFound: async (at) => void (await call('POST', '/found/ignored', at)),
     unignoreFound: async (at) => void (await call('POST', '/found/offered', at)),
 

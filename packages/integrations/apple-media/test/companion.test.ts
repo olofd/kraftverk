@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { validateProtocol, type Channel, type SetupContext, type Sighting } from '@kraftverk/device-sdk';
+import { memoryKept, validateProtocol, type Channel, type SetupContext, type Sighting } from '@kraftverk/device-sdk';
 
 import { COMPANION_LAN } from '../src/index.ts';
 import protocol, {
@@ -204,6 +204,7 @@ describe('the protocol, as setup meets it', () => {
   const pairAction = protocol.credentials!.actions!.find((action) => action.id === 'pair')!;
   const contextFor = (open?: () => Promise<Channel>): SetupContext => ({
     adding: { typeId: 'apple-media.tv', kind: 'hardware' },
+    kept: memoryKept(),
     draft: {},
     connection: {},
     address: '192.0.2.70',

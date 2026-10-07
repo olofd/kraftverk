@@ -518,6 +518,20 @@ export const SCHEMA = `
   );
 
   /*
+    What an integration's setups keep between them — an account's listing
+    with its keys, a code given once — sealed as a connection's secrets are.
+  */
+  CREATE TABLE integration_kv (
+    integration TEXT NOT NULL,
+    key         TEXT NOT NULL,
+    value       TEXT NOT NULL,
+    encrypted   INTEGER NOT NULL CHECK (encrypted IN (0, 1)),
+    label       TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    PRIMARY KEY (integration, key)
+  );
+
+  /*
     What this node has settled for the home it keeps, by name, each one
     named here: its policy values (how much is a load); and, in an app,
     whether its own home has moved to a server (home.moved), or the copy it

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
-import type { ConfigValues, SetupActionResult, SetupActionView, SetupChoice } from '@kraftverk/device-sdk';
+import { configDefaults, type ConfigValues, type SetupActionResult, type SetupActionView, type SetupChoice } from '@kraftverk/device-sdk';
 import { describeError, type SetupFlow } from '@kraftverk/api-client';
 import { Card, isComplete, Row, RowSeparator, SchemaForm } from '@kraftverk/ui';
 
@@ -9,8 +9,8 @@ import { Pressable } from '../../../components/Pressable';
 import { QrCode } from '../../../components/QrCode';
 import { ErrorLine, PRIMARY } from './StepFrame';
 
-/** A helper's candidates: which one is it? */
-export function Choices({ result, picking, onPick }: { result: SetupActionResult; picking: string | null; onPick: (choice: SetupChoice) => void }) {
+/** A helper's candidates: which one is it? With what it offers beside them — the same run afresh — when it does. */
+export function Choices({ result, picking, onPick, onAgain }: { result: SetupActionResult; picking: string | null; onPick: (choice: SetupChoice) => void; onAgain?: (input: ConfigValues) => void }) {
   return (
     <YStack gap="$2">
       <Text fontSize={13} color={result.ok ? '$color' : '$danger'} lineHeight={19} paddingHorizontal="$1">
@@ -27,6 +27,11 @@ export function Choices({ result, picking, onPick }: { result: SetupActionResult
             </YStack>
           ))}
         </Card>
+      ) : null}
+      {result.again && onAgain ? (
+        <Button alignSelf="flex-start" size="$3" disabled={picking !== null} onPress={() => onAgain(result.again!.input)}>
+          {result.again.label}
+        </Button>
       ) : null}
     </YStack>
   );
@@ -77,7 +82,8 @@ function Waiting({ result, onAgain, onCancel }: { result: SetupActionResult; onA
  */
 function Asked({ result, busy, onAnswer }: { result: SetupActionResult; busy: boolean; onAnswer: (answers: ConfigValues) => void }) {
   const schema = result.ask!.schema;
-  const [answers, setAnswers] = useState<ConfigValues>({});
+  // What it already knows — a code remembered — filled in, to be kept or changed.
+  const [answers, setAnswers] = useState<ConfigValues>(() => configDefaults(schema));
   const ready = isComplete(schema, answers);
   return (
     <YStack gap="$3">
@@ -128,7 +134,7 @@ export function ActionCard({
       setError(null);
       try {
         const next = await flow.action(stepId, action.id, values);
-        if (!next.ok && !next.choices?.length) {
+        if (!next.ok && !next.choices?.length && !next.again) {
           // Refused: said beside the questions, which stay, to be corrected and asked again.
           setResult(null);
           setOpen(true);
@@ -168,7 +174,7 @@ export function ActionCard({
         <Waiting result={result} onAgain={(next) => void run(next)} onCancel={() => setResult(null)} />
       ) : result?.ask ? (
         <Asked result={result} busy={busy} onAnswer={(answers) => void run({ ...input, ...answers })} />
-      ) : result?.choices?.length ? (
+      ) : result?.choices?.length || result?.again ? (
         <Choices
           result={result}
           picking={picking}
@@ -176,6 +182,7 @@ export function ActionCard({
             setPicking(choice.id);
             onDone(choice);
           }}
+          onAgain={(again) => void run(again)}
         />
       ) : open || !asks ? (
         <YStack gap="$3">

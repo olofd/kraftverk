@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { needsSignIn, validateProtocol, type SetupContext } from '@kraftverk/device-sdk';
+import { memoryKept, needsSignIn, validateProtocol, type SetupContext } from '@kraftverk/device-sdk';
 
 import protocol, { cookieHeader, cookiesSet, FindMy, IcloudAuth, keep, newState, passwordKey, srpProofs, srpServer, srpStart, stateOf, type IcloudFetch } from '../src/protocol/index.ts';
 import { APPLE_ID, DEVICE_CODE, DSID, PASSWORD, playedApple, TEXT_CODE } from './apple.ts';
@@ -18,6 +18,7 @@ const signInAction = protocol.credentials!.actions!.find((action) => action.id =
 /** The setup context an action is run with, its HTTP Apple's played one. */
 const contextFor = (fetch: IcloudFetch, password = PASSWORD): SetupContext => ({
   adding: { typeId: 'icloud.account', kind: 'account' },
+  kept: memoryKept(),
   draft: {},
   connection: { appleId: APPLE_ID },
   address: 'https://setup.icloud.com',

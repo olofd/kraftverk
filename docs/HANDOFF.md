@@ -183,6 +183,14 @@ played in the tests — not yet against the owner's Apple ID or TV. That
 completes Part C as planned; what is left is checking it on the real
 account and TV.
 
+The app's addresses are one scheme, `PATHS` in `@kraftverk/api-client`
+(collections plural, every page and every step of adding its own; a setup
+is taken up again from its URL). What a person meets is decided by a
+type's kind: devices, services, and an integration's own — its accounts
+and gateways — on its page. An integration keeps what its setups share
+(`SetupContext.kept`, sealed in `integration_kv`): Tuya its Smart Life
+listing and User Code.
+
 ## The automation language
 
 Paused at a good point on 2026-10-06, its plan's phases A–C done and

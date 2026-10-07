@@ -21,6 +21,10 @@ export function transportRoutes(deps: AppDeps): Hono {
   api.post('/found/ignored', async (c) => c.json(await homeFor(deps, c).ignoreFound(await foundAt(c))));
   api.post('/found/offered', async (c) => c.json(await homeFor(deps, c).unignoreFound(await foundAt(c))));
 
+  /** What an integration keeps between setups, said — never shown — and forgotten. */
+  api.get('/integrations/:id/kept', async (c) => c.json({ kept: await homeFor(deps, c).integrations.kept(c.req.param('id')) }));
+  api.delete('/integrations/:id/kept/:key', async (c) => c.json(await homeFor(deps, c).integrations.forget(c.req.param('id'), c.req.param('key'))));
+
   api.get('/transports/:id/diagnostics/:name', async (c) => c.json(await homeFor(deps, c).transports.diagnostic(c.req.param('id'), c.req.param('name'), c.req.query())));
 
   return api;

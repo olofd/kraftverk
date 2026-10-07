@@ -84,5 +84,8 @@ export async function answer(page: Page, yes: boolean): Promise<string> {
   return said;
 }
 
-/** Presses the row, card or option whose text is exactly this. */
-export const press = (page: Page, text: string) => page.getByText(text, { exact: true }).first().click();
+/**
+ * Presses the row, card or option whose text is exactly this — of what is
+ * shown: a page gone back from stays in the stack, hidden, with its own.
+ */
+export const press = (page: Page, text: string) => page.getByText(text, { exact: true }).filter({ visible: true }).first().click();

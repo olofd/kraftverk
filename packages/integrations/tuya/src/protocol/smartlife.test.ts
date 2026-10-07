@@ -13,6 +13,8 @@ import {
   SmartLifeError,
   type SmartLifeSession,
 } from './smartlife.ts';
+import { memoryKept } from '@kraftverk/device-sdk';
+
 import { toHex } from './bytes.ts';
 import { DISCOVERY_KEY } from './discovery.ts';
 import { encodeFrame } from './frame.ts';
@@ -185,6 +187,7 @@ describe('the Smart Life login and listing', () => {
       iv: new Uint8Array(12).fill(1),
     });
     const ctx = {
+      kept: memoryKept(),
       adding: { typeId: 'tuya.plug', kind: 'hardware' as const },
       draft: {},
       connection: {},
@@ -236,6 +239,7 @@ describe('the Smart Life login and listing', () => {
       iv: new Uint8Array(12).fill(1),
     });
     const ctx = {
+      kept: memoryKept(),
       adding: { typeId: 'tuya.gateway', kind: 'gateway' as const },
       draft: {},
       connection: {},
@@ -262,6 +266,60 @@ describe('the Smart Life login and listing', () => {
     // Adding a plug instead: the plug on Wi-Fi, and not the gateway.
     const plugs = await signIn.run({ ...ctx, adding: { typeId: 'tuya.plug', kind: 'hardware' } }, { userCode: 'user-code', token: 'QRTOKEN' });
     expect(plugs.choices?.map((choice) => choice.label)).toEqual(['Charger']);
+  });
+
+  test('kept for the next setup: the listing, offered with no sign-in and fetched again on asking; the User Code, remembered when asked', async () => {
+    const signIn = protocol.credentials!.actions!.find((action) => action.id === 'signIn')!;
+    const listing = fakeTuya({
+      '/v1.0/m/life/users/homes': () => [{ ownerId: 11, name: 'Home' }],
+      '/v1.0/m/life/ha/home/devices': () => [{ id: 'bf0e5a1c2d3b4f6a7c8d9e', name: 'Charger', local_key: 'a1b2c3d4e5f6g7h8', category: 'cz', product_name: 'Smart Socket' }],
+    });
+    let asked = 0;
+    const http = async (url: string, init?: RequestInit) => {
+      asked += 1;
+      if (new URL(url).host !== 'apigw.iotbing.com') return listing.http(url, init);
+      if (init?.method === 'POST') return Response.json({ success: true, result: { qrcode: 'QRTOKEN' } });
+      return Response.json({ success: true, result: { access_token: 'tok', refresh_token: 'ref', endpoint: 'https://apigw.tuyaeu.com', uid: 'eu123' } });
+    };
+    const kept = memoryKept();
+    const ctx = {
+      kept,
+      adding: { typeId: 'tuya.plug', kind: 'hardware' as const },
+      draft: {},
+      connection: {},
+      address: null,
+      secrets: { get: () => null },
+      http,
+      sightings: [],
+      log: { info: () => {}, warn: () => {}, error: () => {} },
+      signal: AbortSignal.timeout(10_000),
+      platform: 'system' as const,
+    };
+
+    // Nothing kept: the User Code is asked for, to be remembered by default.
+    const first = await signIn.run(ctx, {});
+    expect(first.ask?.schema.fields).toMatchObject({ userCode: { type: 'string', required: true }, remember: { type: 'boolean', default: true } });
+    expect(first.ask?.schema.fields.userCode).not.toHaveProperty('default');
+    const qr = await signIn.run(ctx, { userCode: ' user-code ', remember: true });
+    expect(qr.waiting?.qr).toBe('tuyaSmart--qrLogin?token=QRTOKEN');
+    expect(kept.get('smartlife.userCode')).toBe('user-code');
+    const done = await signIn.run(ctx, qr.waiting!.next);
+    expect(done.choices?.map((choice) => choice.label)).toEqual(['Charger']);
+    expect(done.again).toBeUndefined();
+
+    // The next device: offered from what was kept — no sign-in, nothing asked of the network — and fetched again on asking.
+    asked = 0;
+    const later = await signIn.run(ctx, {});
+    expect(asked).toBe(0);
+    expect(later.detail).toStartWith('From the keys fetched just now.');
+    expect(later.choices?.[0]).toMatchObject({ label: 'Charger', config: { deviceId: 'bf0e5a1c2d3b4f6a7c8d9e', localKey: 'a1b2c3d4e5f6g7h8' } });
+    expect(later.again).toEqual({ label: 'Fetch the keys again', input: { fresh: true } });
+    const afresh = await signIn.run(ctx, later.again!.input);
+    expect(afresh.ask?.schema.fields.userCode).toMatchObject({ default: 'user-code' });
+
+    // Not to be remembered: forgotten.
+    await signIn.run(ctx, { userCode: 'user-code', remember: false });
+    expect(kept.get('smartlife.userCode')).toBeNull();
   });
 
   test('a wrong user code says where to find the right one', async () => {

@@ -67,7 +67,7 @@ test('start charging: copied from its recipe, its parts chosen, run from its pag
   await page.getByRole('button', { name: new RegExp(`^Turn ${plug.name} on, \\+0:`) }).click();
   await expect(page.getByRole('toolbar', { name: 'Cursor' }).getByRole('status')).toHaveText(/^At \+0:/);
   // As a table: its steps and readings, in time order.
-  const [, automationId, runId] = /\/automation\/([^/]+)\/run\/([^/]+)$/.exec(page.url())!;
+  const [, automationId, runId] = /\/automations\/([^/]+)\/runs\/([^/]+)$/.exec(page.url())!;
   const csv = await request.get(`/api/automations/${automationId}/runs/${runId}/log?format=csv`, { headers: HEADERS });
   expect(csv.headers()['content-type']).toContain('text/csv');
   const table = await csv.text();

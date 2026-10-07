@@ -58,17 +58,7 @@
           {
             "id": "signIn",
             "label": "Sign in with Smart Life",
-            "description": "Scan a code with the Smart Life app, and your plugs come back with their names and keys. Nothing else is read, and nothing is kept.",
-            "input": {
-              "fields": {
-                "userCode": {
-                  "type": "string",
-                  "title": "User Code",
-                  "description": "In the Smart Life (or Tuya Smart) app: Me → the gear, top right → Account and Security → User Code.",
-                  "required": true
-                }
-              }
-            }
+            "description": "Scan a code with the Smart Life app, and your devices come back with their names and keys — kept on this server for the next one you add. Nothing else is read."
           },
           {
             "id": "fetchKey",

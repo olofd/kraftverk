@@ -73,8 +73,10 @@ export function Screen({ title, subtitle, back, backTo, status, aside, children,
       <YStack width="100%" maxWidth={560} gap="$4">
         {back ? (
           // The way back, as navigation: reachable by Tab, operable by Enter, and a landmark to jump to.
-          <XStack role="navigation" aria-label="Back" alignSelf="flex-start">
+          // Never wider than the screen: a long name — an automation's, a device's — is cut short, not pushed past its edge.
+          <XStack role="navigation" aria-label="Back" alignSelf="flex-start" maxWidth="100%">
             <XStack
+              maxWidth="100%"
               role="button"
               tabIndex={0}
               aria-label={`Back to ${back}`}
@@ -89,7 +91,7 @@ export function Screen({ title, subtitle, back, backTo, status, aside, children,
               }
             >
               <Icon name="chevron-left" size={16} color={theme.muted?.val} />
-              <Text fontSize={14} fontWeight="600" color="$muted">
+              <Text fontSize={14} fontWeight="600" color="$muted" numberOfLines={1} flexShrink={1}>
                 {back}
               </Text>
             </XStack>

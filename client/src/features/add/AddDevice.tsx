@@ -244,6 +244,9 @@ export function AgainScreen() {
 /** After the check: naming it, and how it fits the house. Not one of the plan's steps. */
 const NAME_STEP = 'name';
 
+/** Back to where it came from — the page before, still in the stack — or, opened afresh with nothing before it, to this. */
+const backTo = (path: string) => (router.canGoBack() ? router.back() : router.replace(path));
+
 export function SetupScreen() {
   const params = useLocalSearchParams<{ draft: string; step?: string; attach?: string; address?: string; through?: string; held?: string }>();
   const { devices, refresh } = useDevices();
@@ -290,11 +293,11 @@ export function SetupScreen() {
     haptic();
     if (stepIndex === 0) {
       dropFlow(flow.id);
-      router.replace(waysOf);
+      backTo(waysOf);
       return;
     }
     flow.uncheck();
-    router.replace(at(flow.plan[flow.before(stepIndex)]!.id));
+    backTo(at(flow.plan[flow.before(stepIndex)]!.id));
   }, [flow, stepIndex, waysOf]);
 
   /** Saved over the way it set up again — nothing added — and back to what it is a way of. */
@@ -342,7 +345,7 @@ export function SetupScreen() {
             // To the step before the check; with none, to choosing how to reach it.
             flow.uncheck();
             setOutcome(null);
-            if (flow.plan.length > 1) router.replace(at(flow.plan[flow.before(stepIndex)]!.id));
+            if (flow.plan.length > 1) backTo(at(flow.plan[flow.before(stepIndex)]!.id));
             else back();
           }}
           onRetry={() => (flow.uncheck(), setOutcome(null))}
@@ -369,7 +372,7 @@ export function SetupScreen() {
         <Finish
           flow={flow}
           outcome={flow.checked}
-          onBack={() => router.replace(at(flow.plan[flow.plan.length - 1]!.id))}
+          onBack={() => backTo(at(flow.plan[flow.plan.length - 1]!.id))}
           typeName={namedIn(flow.id) ?? type.meta.name}
           description={type.description}
           attachTo={attachTo}

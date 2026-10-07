@@ -10,7 +10,7 @@ import type { ConfigExported, ConfigExportRequest, ConfigSnapshotView, ImportAns
 import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, HomeElsewhere, LinkRecord, NewLink, PictureRef, ToolBody } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, HomeView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
-import type { CheckOutcome, DraftView, FoundAt, FoundView, HeldSetupInput, SaveInput, SightingView } from './setup.ts';
+import type { CheckOutcome, DraftView, FoundAt, FoundView, HeldSetupInput, KeptView, SaveInput, SightingView } from './setup.ts';
 
 /*
   The one interface (docs/ARCHITECTURE.md, decision 24): everything a home
@@ -140,6 +140,12 @@ export interface KraftverkApi {
   ignoreFound(at: FoundAt): Promise<void>;
   /** Offered again. */
   unignoreFound(at: FoundAt): Promise<void>;
+  integrations: {
+    /** What an integration keeps between setups — an account's listing with its keys — each said, never shown. */
+    kept(integration: string): Promise<KeptView[]>;
+    /** Forgotten: the next setup asks for it afresh. */
+    forget(integration: string, key: string): Promise<void>;
+  };
   transports: {
     /** What this home reaches devices over, each running or not, and why not. */
     list(): Promise<TransportList>;

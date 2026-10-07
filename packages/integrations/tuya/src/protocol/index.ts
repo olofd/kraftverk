@@ -4,14 +4,17 @@ import {
   type ConfigSchema,
   type OpenConnection,
   type Protocol,
+  type IntegrationKept,
   type SetupAction,
+  type SetupActionResult,
   type SetupChoice,
+  type SetupContext,
   type Sighting,
   channelOf,
   directOf,
 } from '@kraftverk/device-sdk';
 
-import { isRegion, REGIONS, TuyaCloud, TuyaCloudError } from './cloud.ts';
+import { isRegion, REGIONS, TuyaCloud, TuyaCloudError, type CloudDevice } from './cloud.ts';
 import { announcedBy } from './discovery.ts';
 import type { ProtocolVersion } from './frame.ts';
 import { TUYA_PORT, TuyaLink, type TuyaLinkOptions } from './session.ts';
@@ -152,16 +155,48 @@ const fetchKey: SetupAction = {
 /** How long a sign-in QR code is waited for: Tuya's token lapses about then. */
 const SIGN_IN_WAIT_MS = 3 * 60_000;
 
-const signInSchema: ConfigSchema = {
+/** What the integration keeps between setups (`SetupContext.kept`): the last listing, with its keys, and the User Code. */
+const KEPT_LISTING = 'smartlife.listing';
+const KEPT_CODE = 'smartlife.userCode';
+
+type KeptListing = { at: string; devices: CloudDevice[] };
+
+/** The listing kept from the last sign-in; null when there is none, or it cannot be read. */
+function keptListing(kept: IntegrationKept): KeptListing | null {
+  try {
+    const listing = JSON.parse(kept.get(KEPT_LISTING) ?? 'null') as KeptListing | null;
+    return listing && typeof listing.at === 'string' && Array.isArray(listing.devices) ? listing : null;
+  } catch {
+    return null;
+  }
+}
+
+/** How long ago, in words: "12 min ago", "3 h ago", "5 days ago". */
+function ago(at: string, now = Date.now()): string {
+  const minutes = Math.max(0, Math.round((now - Date.parse(at)) / 60_000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} h ago`;
+  return `${Math.round(hours / 24)} days ago`;
+}
+
+/** The User Code asked for — the one remembered already filled in — and whether to remember it. */
+const codeSchema = (remembered: string | null): ConfigSchema => ({
   fields: {
     userCode: {
       type: 'string',
       title: 'User Code',
       description: 'In the Smart Life (or Tuya Smart) app: Me → the gear, top right → Account and Security → User Code.',
       required: true,
+      ...(remembered ? { default: remembered } : {}),
     },
+    remember: { type: 'boolean', title: 'Remember it on this server', description: 'The next sign-in starts with it filled in.', default: true },
   },
-};
+});
+
+/** Offered beside devices listed from what was kept: the sign-in again, for keys fresh from the account. */
+const FETCH_AGAIN = { label: 'Fetch the keys again', input: { fresh: true } };
 
 /** Where a device is on this network, from what the transport has heard it announce. */
 function heard(sightings: readonly Sighting[]): Map<string, { address: string; version: string }> {
@@ -174,104 +209,136 @@ function heard(sightings: readonly Sighting[]): Map<string, { address: string; v
 }
 
 /**
+ * The devices on the account that fit what is being added, offered: a
+ * gateway when one is, never one when it is not; each with its key, and —
+ * matched against what the network announces — its address and protocol
+ * version, so one pick fills in all of it.
+ */
+function offer(ctx: SetupContext, account: readonly CloudDevice[], from: { kept: string } | null): SetupActionResult {
+  /*
+    What is spoken to on the home network: a plug on Wi-Fi, or a Zigbee
+    gateway. A device behind a gateway — a Zigbee plug — is not: it is
+    added through its gateway once that is here, and found there.
+  */
+  const subs = account.filter((device) => device.sub);
+  const gateways = account.filter((device) => GATEWAY_CATEGORIES.has(device.category ?? ''));
+  /*
+    Tuya lists a gateway with no key of its own, and hands the devices
+    behind it its key: with one gateway on the account, that is its key.
+  */
+  const keyOf = (device: CloudDevice) => device.localKey || (gateways.length === 1 && gateways[0] === device ? (subs.find((sub) => sub.localKey)?.localKey ?? '') : '');
+  // What fits what is being added: a gateway, when one is; anything else on the network, when it is not.
+  const wantsGateway = ctx.adding.kind === 'gateway';
+  const devices = account
+    .filter((device) => !device.sub && GATEWAY_CATEGORIES.has(device.category ?? '') === wantsGateway)
+    .map((device) => ({ ...device, localKey: keyOf(device) }))
+    .filter((device) => device.localKey);
+  const source = from ? `From the keys fetched ${from.kept}.` : 'Signed in.';
+  if (!devices.length) {
+    return {
+      ok: false,
+      detail: wantsGateway
+        ? `${source} The account has no gateway: a Zigbee gateway is listed in the Smart Life app as one.`
+        : `${source} The account has no devices that can be reached on a home network.${gateways.length ? ' Its gateway is added on the Tuya page, and what is paired with it found through it.' : ''}`,
+      ...(from ? { again: FETCH_AGAIN } : {}),
+    };
+  }
+  const here = heard(ctx.sightings);
+  const choices: SetupChoice[] = devices
+    .map((device) => {
+      const seen = here.get(device.id) ?? null;
+      const gateway = GATEWAY_CATEGORIES.has(device.category ?? '');
+      const plug = device.category === 'cz' || device.category === 'pc';
+      return {
+        id: device.id,
+        label: device.name || device.productName || device.id,
+        detail: [
+          device.productName,
+          gateway ? 'a gateway: what is paired with it is found through it' : null,
+          seen ? `on your network at ${seen.address}` : 'not heard on this network yet',
+          device.online === false ? 'offline' : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        config: {
+          deviceId: device.id,
+          localKey: device.localKey,
+          ...(seen && (VERSIONS as readonly string[]).includes(seen.version) ? { protocolVersion: seen.version } : {}),
+        },
+        ...(seen ? { address: seen.address } : {}),
+        ...(device.name ? { name: device.name } : {}),
+        recommended: (plug || gateway) && Boolean(seen),
+      };
+    })
+    // What is on this network first, then plugs, then the rest.
+    .sort((a, b) => Number(Boolean(b.address)) - Number(Boolean(a.address)) || Number(b.recommended) - Number(a.recommended) || a.label.localeCompare(b.label));
+  const behind = subs.length;
+  const through = behind ? ` ${behind} more ${behind === 1 ? 'is' : 'are'} behind a gateway: add the gateway, and ${behind === 1 ? 'it is' : 'they are'} found through it.` : '';
+  const which = wantsGateway ? 'Which gateway is it?' : 'Which is it?';
+  return {
+    ok: true,
+    detail: `${source} ${devices.length} ${wantsGateway ? 'gateway' : 'device'}${devices.length === 1 ? '' : 's'} on the account. ${which}${through}`,
+    choices,
+    ...(from ? { again: FETCH_AGAIN } : {}),
+  };
+}
+
+/**
  * Signs in with the Smart Life app: a User Code, a QR code the same app scans,
  * and every device on the account comes back with its name and local key —
- * no developer project. Matched against what the network announces, the plug
- * that is here is found as well: the key, the address and the protocol version
- * in one pick.
+ * no developer project. Kept, sealed, for the next setup (`SetupContext.kept`):
+ * the listing, so a second device is offered from it with no sign-in — and
+ * fetched again on asking — and the User Code, when asked to remember it.
  *
- * Runs in turns. The first makes the QR code; each after it asks whether it
- * has been scanned, until it has — the app asks again with what `waiting.next`
- * says. The sign-in token is used for the one listing and never kept.
+ * Runs in turns. The first offers what was kept, or asks for the User Code;
+ * the next makes the QR code; each after it asks whether it has been
+ * scanned, until it has — the app asks again with what `waiting.next` says.
+ * The sign-in token is used for the one listing and never kept.
  */
 const signIn: SetupAction = {
   id: 'signIn',
   label: 'Sign in with Smart Life',
-  description: 'Scan a code with the Smart Life app, and your plugs come back with their names and keys. Nothing else is read, and nothing is kept.',
-  input: signInSchema,
+  description: 'Scan a code with the Smart Life app, and your devices come back with their names and keys — kept on this server for the next one you add. Nothing else is read.',
   async run(ctx, input) {
-    const userCode = String(input.userCode ?? '').trim();
-    if (!userCode) return { ok: false, detail: 'The User Code is needed: the app shows it under Me → Settings → Account and Security.' };
     try {
       const token = typeof input.token === 'string' && input.token ? input.token : null;
-      const until = typeof input.until === 'string' ? input.until : new Date(Date.now() + SIGN_IN_WAIT_MS).toISOString();
-      if (!token) {
+      const userCode = String(input.userCode ?? '').trim();
+      // Scanned yet? Asked again until it is; then the listing is kept, and offered.
+      if (token) {
+        const until = typeof input.until === 'string' ? input.until : new Date(Date.now() + SIGN_IN_WAIT_MS).toISOString();
+        const session = await pollLogin(ctx.http, token, userCode);
+        if (!session) {
+          return {
+            ok: true,
+            detail: 'Waiting for the scan…',
+            waiting: { qr: qrLoginContent(token), next: { userCode, token, until }, everyMs: 2_000, until },
+          };
+        }
+        const devices = await smartLifeDevices(ctx.http, session);
+        ctx.kept.set(KEPT_LISTING, JSON.stringify({ at: new Date().toISOString(), devices } satisfies KeptListing), `Smart Life: ${devices.length} device${devices.length === 1 ? '' : 's'} and their keys`);
+        return offer(ctx, devices, null);
+      }
+      // A User Code given: remembered if asked, and the QR code for the app to scan.
+      if (userCode) {
+        ctx.kept.set(KEPT_CODE, input.remember === false ? null : userCode, 'Smart Life User Code');
         const fresh = await requestQrToken(ctx.http, userCode);
+        const until = new Date(Date.now() + SIGN_IN_WAIT_MS).toISOString();
         return {
           ok: true,
           detail: 'Open the Smart Life app, tap the scan icon (top right of Me), and scan this. It asks to authorise “Home Assistant” — the name Tuya gave this sign-in.',
           waiting: { qr: qrLoginContent(fresh), next: { userCode, token: fresh, until }, everyMs: 2_000, until },
         };
       }
-      const session = await pollLogin(ctx.http, token, userCode);
-      if (!session) {
-        return {
-          ok: true,
-          detail: 'Waiting for the scan…',
-          waiting: { qr: qrLoginContent(token), next: { userCode, token, until }, everyMs: 2_000, until },
-        };
-      }
-
-      const account = await smartLifeDevices(ctx.http, session);
-      /*
-        What is spoken to on the home network: a plug on Wi-Fi, or a Zigbee
-        gateway. A device behind a gateway — a Zigbee plug — is not: it is
-        added through its gateway once that is here, and found there.
-      */
-      const subs = account.filter((device) => device.sub);
-      const gateways = account.filter((device) => GATEWAY_CATEGORIES.has(device.category ?? ''));
-      /*
-        Tuya lists a gateway with no key of its own, and hands the devices
-        behind it its key: with one gateway on the account, that is its key.
-      */
-      const keyOf = (device: (typeof account)[number]) => device.localKey || (gateways.length === 1 && gateways[0] === device ? (subs.find((sub) => sub.localKey)?.localKey ?? '') : '');
-      // What fits what is being added: a gateway, when one is; anything else on the network, when it is not.
-      const wantsGateway = ctx.adding.kind === 'gateway';
-      const devices = account
-        .filter((device) => !device.sub && GATEWAY_CATEGORIES.has(device.category ?? '') === wantsGateway)
-        .map((device) => ({ ...device, localKey: keyOf(device) }))
-        .filter((device) => device.localKey);
-      const behind = subs.length;
-      if (!devices.length) {
-        return {
-          ok: false,
-          detail: wantsGateway
-            ? 'Signed in, but the account has no gateway: a Zigbee gateway is listed in the Smart Life app as one.'
-            : `Signed in, but the account has no devices that can be reached on a home network.${gateways.length ? ' Its gateway is added on the Tuya page, and what is paired with it found through it.' : ''}`,
-        };
-      }
-      const here = heard(ctx.sightings);
-      const choices: SetupChoice[] = devices
-        .map((device) => {
-          const seen = here.get(device.id) ?? null;
-          const gateway = GATEWAY_CATEGORIES.has(device.category ?? '');
-          const plug = device.category === 'cz' || device.category === 'pc';
-          return {
-            id: device.id,
-            label: device.name || device.productName || device.id,
-            detail: [
-              device.productName,
-              gateway ? 'a gateway: what is paired with it is found through it' : null,
-              seen ? `on your network at ${seen.address}` : 'not heard on this network yet',
-              device.online === false ? 'offline' : null,
-            ]
-              .filter(Boolean)
-              .join(' · '),
-            config: {
-              deviceId: device.id,
-              localKey: device.localKey,
-              ...(seen && (VERSIONS as readonly string[]).includes(seen.version) ? { protocolVersion: seen.version } : {}),
-            },
-            ...(seen ? { address: seen.address } : {}),
-            ...(device.name ? { name: device.name } : {}),
-            recommended: (plug || gateway) && Boolean(seen),
-          };
-        })
-        // What is on this network first, then plugs, then the rest.
-        .sort((a, b) => Number(Boolean(b.address)) - Number(Boolean(a.address)) || Number(b.recommended) - Number(a.recommended) || a.label.localeCompare(b.label));
-      const through = behind ? ` ${behind} more ${behind === 1 ? 'is' : 'are'} behind a gateway: add the gateway, and ${behind === 1 ? 'it is' : 'they are'} found through it.` : '';
-      return { ok: true, detail: `Signed in: ${devices.length} device${devices.length === 1 ? '' : 's'} on the account. Which is it?${through}`, choices };
+      // The first turn: what was kept, unless asked to fetch it again; else the User Code, the one remembered filled in.
+      const listing = input.fresh === true ? null : keptListing(ctx.kept);
+      if (listing) return offer(ctx, listing.devices, { kept: ago(listing.at) });
+      return {
+        ok: true,
+        detail: 'Your User Code, then a QR code to scan with the Smart Life app. The keys it brings are kept, so the next device is offered from them with no sign-in.',
+        ask: { schema: codeSchema(ctx.kept.get(KEPT_CODE)) },
+      };
     } catch (error) {
+      if (error instanceof SmartLifeError && /user code/i.test(error.message)) ctx.kept.set(KEPT_CODE, null);
       return { ok: false, detail: error instanceof SmartLifeError ? error.message : (error as Error).message };
     }
   },

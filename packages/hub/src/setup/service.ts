@@ -17,6 +17,7 @@ import {
   type ConfigValues,
   type DeviceType,
   type Identified,
+  type IntegrationKept,
   type NodeId,
   type NodeTraits,
   type SavedDeviceId,
@@ -72,6 +73,8 @@ export type SetupServiceDeps = {
   sessions: SessionManager;
   /** For helpers that call a vendor's API once — fetching a key. */
   http: ScopedHttp;
+  /** What an integration's setups keep between them, by integration. */
+  kept: (integration: string) => IntegrationKept;
   /** This node: what holds a way the home sets up for itself. */
   self: NodeId;
   /** What a node of the home declares it is, by its id: what a way needs of the node holding it is judged against it. */
@@ -580,6 +583,7 @@ export class SetupService {
   #setupContext(draft: Draft, signal?: AbortSignal) {
     return {
       adding: { typeId: draft.type.id, kind: draft.type.kind },
+      kept: this.deps.kept(this.deps.types.sourceOf(draft.type.id)?.integration.id ?? draft.type.id.split('.')[0]!),
       draft: draft.device as Partial<ConfigValues>,
       connection: draft.connection as ConfigValues,
       address: draft.address,

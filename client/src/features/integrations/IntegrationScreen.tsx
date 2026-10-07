@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { Text, useTheme, YStack } from 'tamagui';
+import { useState } from 'react';
+import { Button, Text, useTheme, YStack } from 'tamagui';
 
 import { byPlatform, type DeviceTypeListing, type DeviceView, pathOf, PATHS, whereTheyRunSaid } from '@kraftverk/api-client';
 import type { CategorySpec } from '@kraftverk/device-sdk';
@@ -80,6 +81,51 @@ function OwnSection({ kind, yours, types, integration }: { kind: keyof typeof OW
   );
 }
 
+/** How long ago, in words: "12 min ago", "3 h ago", "5 days ago". */
+function ago(at: string): string {
+  const minutes = Math.max(0, Math.round((Date.now() - Date.parse(at)) / 60_000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  return hours < 48 ? `${hours} h ago` : `${Math.round(hours / 24)} days ago`;
+}
+
+/**
+ * What the integration keeps between setups — an account's listing with its
+ * keys, a code remembered — said, never shown, each to be forgotten: the next
+ * device added asks for it afresh. Nothing when it keeps nothing.
+ */
+function Kept({ integration }: { integration: string }) {
+  const { api } = useHome();
+  const [asked, setAsked] = useState(0);
+  const kept = useAnswer(() => api.integrations.kept(integration), [api, integration, asked]).value ?? [];
+  if (!kept.length) return null;
+  return (
+    <YStack gap="$2">
+      <SectionLabel>Kept on this server</SectionLabel>
+      <Card inset>
+        {kept.map((item, index) => (
+          <YStack key={item.key}>
+            {index > 0 ? <RowSeparator /> : null}
+            <Row
+              title={item.label}
+              subtitle={`Kept ${ago(item.at)}, sealed: used, never shown`}
+              accessory={
+                <Button size="$2" onPress={() => void api.integrations.forget(integration, item.key).then(() => setAsked((n) => n + 1))}>
+                  Forget
+                </Button>
+              }
+            />
+          </YStack>
+        ))}
+      </Card>
+      <Text fontSize={12} color="$muted" lineHeight={17} paddingHorizontal="$1">
+        What the next device you add is offered from, with no sign-in. Fetched again whenever you ask, while adding one: “Fetch the keys again”.
+      </Text>
+    </YStack>
+  );
+}
+
 /** Yours on it, of one sort — devices, or services — each to its page. */
 function YoursSection({ label, yours, integration }: { label: string; yours: DeviceView[]; integration: string }) {
   if (!yours.length) return null;
@@ -132,6 +178,7 @@ export function IntegrationScreen() {
       {platform ? <OwnSection kind="gateway" yours={on.filter((device) => device.kind === 'gateway')} types={ownOfKind('gateway')} integration={platform.integration.id} /> : null}
 
       {platform && Page ? <Page integration={platform.integration} accounts={accounts} /> : null}
+      {platform ? <Kept integration={platform.integration.id} /> : null}
 
       {platform ? <YoursSection label="Your devices on it" yours={on.filter((device) => device.kind === 'hardware')} integration={platform.integration.id} /> : null}
       {platform ? <YoursSection label="Your services on it" yours={on.filter((device) => device.kind === 'service')} integration={platform.integration.id} /> : null}

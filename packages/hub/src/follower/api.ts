@@ -210,6 +210,12 @@ export function followerApi(h: Follower): KraftverkApi {
     },
 
     nearby: () => home.nearby(),
+    // What an integration keeps is kept where its setups are held: the master's. Each call its own, as every
+    // other here: the master's API may be a proxy across a port, whose namespaces are not objects of their own.
+    integrations: {
+      kept: (integration) => home.integrations.kept(integration),
+      forget: (integration, key) => home.integrations.forget(integration, key),
+    },
     ignoreFound: (at) => home.ignoreFound(at),
     unignoreFound: (at) => home.unignoreFound(at),
 

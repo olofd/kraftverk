@@ -95,7 +95,30 @@ export type SetupActionResult = {
    * sent to the app.
    */
   ask?: { schema: ConfigSchema; carry?: ConfigValues };
+  /**
+   * Offered beside its answer: the same action run afresh, with this input —
+   * "Fetch the keys again" beside devices listed from what was kept.
+   */
+  again?: { label: string; input: ConfigValues };
 };
+
+/**
+ * What an integration keeps on the node holding its setups, between them: an
+ * account's listing with its keys, a code given once. Sealed at rest as a
+ * connection's secrets are; never shown, never in an export, and lost — to be
+ * fetched again — when the home's database is set aside.
+ */
+export type IntegrationKept = {
+  get(key: string): string | null;
+  /** Null forgets it. `label` says what it is where the integration's page lists what it keeps: "the account: 6 devices and their keys". */
+  set(key: string, value: string | null, label?: string): void;
+};
+
+/** Kept in memory: for tests, and a holder with nowhere else to keep it. */
+export function memoryKept(): IntegrationKept {
+  const kept = new Map<string, string>();
+  return { get: (key) => kept.get(key) ?? null, set: (key, value) => void (value === null ? kept.delete(key) : kept.set(key, value)) };
+}
 
 /** What a step's function can reach. */
 export type SetupContext<Config extends ConfigValues = ConfigValues> = {
@@ -105,6 +128,8 @@ export type SetupContext<Config extends ConfigValues = ConfigValues> = {
    * gateway's sign-in only gateways, a plug's only what is not one.
    */
   adding: { typeId: string; kind: DeviceKind };
+  /** What the integration of the type being added keeps between setups: its own, and no other's. */
+  kept: IntegrationKept;
   /** The device's own config entered so far. Secrets are not in it. */
   draft: Partial<Config>;
   /** The connection's config entered or chosen so far. */

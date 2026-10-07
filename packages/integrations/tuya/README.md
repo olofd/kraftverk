@@ -16,7 +16,12 @@ back to, either way.
   framing, the session handshake, the crypto written out — so it runs on a
   phone as well as a server — the discovery broadcast, devices behind a
   Zigbee gateway by their address on it, the refresh that has a Zigbee plug
-  measure, and the Smart Life sign-in that fetches a local key once. The
+  measure, and the Smart Life sign-in that fetches local keys — offering a
+  gateway only when one is being added, and never when it is not — and
+  keeps the listing it brings, sealed (`SetupContext.kept`), so the next
+  device is offered from it with no sign-in until "Fetch the keys again";
+  the User Code too, when asked to remember it. Tuya's page lists what is
+  kept, each to be forgotten. The
   socket's session — polling, pushes, the relay, settings by profile, live
   readings, its readings dated by when they were measured — and its
   simulator; the generic plug, with one profile per socket layout it knows.
