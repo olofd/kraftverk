@@ -203,6 +203,7 @@ describe('the remote’s session', () => {
 describe('the protocol, as setup meets it', () => {
   const pairAction = protocol.credentials!.actions!.find((action) => action.id === 'pair')!;
   const contextFor = (open?: () => Promise<Channel>): SetupContext => ({
+    adding: { typeId: 'apple-media.tv', kind: 'hardware' },
     draft: {},
     connection: {},
     address: '192.0.2.70',

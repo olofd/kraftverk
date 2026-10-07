@@ -579,6 +579,7 @@ export class SetupService {
 
   #setupContext(draft: Draft, signal?: AbortSignal) {
     return {
+      adding: { typeId: draft.type.id, kind: draft.type.kind },
       draft: draft.device as Partial<ConfigValues>,
       connection: draft.connection as ConfigValues,
       address: draft.address,

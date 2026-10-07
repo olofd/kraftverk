@@ -185,6 +185,7 @@ describe('the Smart Life login and listing', () => {
       iv: new Uint8Array(12).fill(1),
     });
     const ctx = {
+      adding: { typeId: 'tuya.plug', kind: 'hardware' as const },
       draft: {},
       connection: {},
       address: null,
@@ -210,7 +211,7 @@ describe('the Smart Life login and listing', () => {
     expect(done.choices?.[0]).toMatchObject({ name: 'Charger', config: { deviceId: 'bf0e5a1c2d3b4f6a7c8d9e', localKey: 'a1b2c3d4e5f6g7h8', protocolVersion: '3.5' } });
   });
 
-  test('from setup: a Zigbee gateway comes with the key Tuya hands the plugs behind it, its address and version; the plugs are found through it', async () => {
+  test('from setup: a Zigbee gateway comes with the key Tuya hands the plugs behind it, its address and version; the plugs are found through it — and a plug on Wi-Fi is not offered as one', async () => {
     const signIn = protocol.credentials!.actions!.find((action) => action.id === 'signIn')!;
     const listing = fakeTuya({
       '/v1.0/m/life/users/homes': () => [{ ownerId: 11, name: 'Home' }],
@@ -218,6 +219,8 @@ describe('the Smart Life login and listing', () => {
         // Tuya lists a gateway with no key, and hands its devices its key.
         { id: 'bf8d0000000000000000gw', name: 'Gateway', local_key: '', category: 'wg2', product_name: 'Zigbee gateway' },
         { id: 'bf7c0000000000000000zp', name: 'Fan plug', local_key: 'g1a2t3e4w5a6y7k8', category: 'cz', product_name: 'Smart plug', sub: true, uuid: 'A4C1380000000001' },
+        // A plug on Wi-Fi beside it: never a gateway.
+        { id: 'bf9e0000000000000000wp', name: 'Charger', local_key: 'w1i2f3i4p5l6u7g8', category: 'cz', product_name: 'Smart plug' },
       ],
     });
     const http = async (url: string, init?: RequestInit) => {
@@ -233,6 +236,7 @@ describe('the Smart Life login and listing', () => {
       iv: new Uint8Array(12).fill(1),
     });
     const ctx = {
+      adding: { typeId: 'tuya.gateway', kind: 'gateway' as const },
       draft: {},
       connection: {},
       address: null,
@@ -254,6 +258,10 @@ describe('the Smart Life login and listing', () => {
       }),
     ]);
     expect(done.detail).toContain('1 more is behind a gateway: add the gateway, and it is found through it');
+
+    // Adding a plug instead: the plug on Wi-Fi, and not the gateway.
+    const plugs = await signIn.run({ ...ctx, adding: { typeId: 'tuya.plug', kind: 'hardware' } }, { userCode: 'user-code', token: 'QRTOKEN' });
+    expect(plugs.choices?.map((choice) => choice.label)).toEqual(['Charger']);
   });
 
   test('a wrong user code says where to find the right one', async () => {

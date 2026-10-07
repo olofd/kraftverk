@@ -1,7 +1,7 @@
 import type { Channel } from './channel.ts';
 import { BRIDGE_TRANSPORT } from './bridge.ts';
 import { isBridgedMethod, type ConnectionMethod } from './connection.ts';
-import type { DeviceLogger, DeviceType, ScopedHttp } from './device-type.ts';
+import type { DeviceKind, DeviceLogger, DeviceType, ScopedHttp } from './device-type.ts';
 import type { Platform } from './node.ts';
 import type { Protocol } from './protocol.ts';
 import { personFields, type ConfigSchema, type ConfigValues } from './schema.ts';
@@ -99,6 +99,12 @@ export type SetupActionResult = {
 
 /** What a step's function can reach. */
 export type SetupContext<Config extends ConfigValues = ConfigValues> = {
+  /**
+   * What is being set up: its type, and what kind of thing it is — so a
+   * protocol's helper shared by several types offers what fits this one: a
+   * gateway's sign-in only gateways, a plug's only what is not one.
+   */
+  adding: { typeId: string; kind: DeviceKind };
   /** The device's own config entered so far. Secrets are not in it. */
   draft: Partial<Config>;
   /** The connection's config entered or chosen so far. */

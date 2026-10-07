@@ -225,9 +225,21 @@ const signIn: SetupAction = {
         behind it its key: with one gateway on the account, that is its key.
       */
       const keyOf = (device: (typeof account)[number]) => device.localKey || (gateways.length === 1 && gateways[0] === device ? (subs.find((sub) => sub.localKey)?.localKey ?? '') : '');
-      const devices = account.filter((device) => !device.sub).map((device) => ({ ...device, localKey: keyOf(device) })).filter((device) => device.localKey);
+      // What fits what is being added: a gateway, when one is; anything else on the network, when it is not.
+      const wantsGateway = ctx.adding.kind === 'gateway';
+      const devices = account
+        .filter((device) => !device.sub && GATEWAY_CATEGORIES.has(device.category ?? '') === wantsGateway)
+        .map((device) => ({ ...device, localKey: keyOf(device) }))
+        .filter((device) => device.localKey);
       const behind = subs.length;
-      if (!devices.length) return { ok: false, detail: 'Signed in, but the account has no devices that can be reached on a home network.' };
+      if (!devices.length) {
+        return {
+          ok: false,
+          detail: wantsGateway
+            ? 'Signed in, but the account has no gateway: a Zigbee gateway is listed in the Smart Life app as one.'
+            : `Signed in, but the account has no devices that can be reached on a home network.${gateways.length ? ' Its gateway is added on the Tuya page, and what is paired with it found through it.' : ''}`,
+        };
+      }
       const here = heard(ctx.sightings);
       const choices: SetupChoice[] = devices
         .map((device) => {

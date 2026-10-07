@@ -17,6 +17,7 @@ const signInAction = protocol.credentials!.actions!.find((action) => action.id =
 
 /** The setup context an action is run with, its HTTP Apple's played one. */
 const contextFor = (fetch: IcloudFetch, password = PASSWORD): SetupContext => ({
+  adding: { typeId: 'icloud.account', kind: 'account' },
   draft: {},
   connection: { appleId: APPLE_ID },
   address: 'https://setup.icloud.com',
