@@ -32,6 +32,13 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "web"],
       "port": 8081
+    },
+    {
+      "name": "web:ui-check",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "web"],
+      "env": { "EXPO_PUBLIC_API_PORT": "3334" },
+      "port": 8081
     }
   ]
 }
