@@ -234,6 +234,29 @@ function offer(ctx: SetupContext, account: readonly CloudDevice[], from: { kept:
     .map((device) => ({ ...device, localKey: keyOf(device) }))
     .filter((device) => device.localKey);
   const source = from ? `From the keys fetched ${from.kept}.` : 'Signed in.';
+  /*
+    A gateway not on the account at all — paired from another one, or never
+    listed — while what is paired with it is: Tuya hands those its gateway's
+    key, so that key is the gateway's. Offered as such; where the gateway is
+    on the network is the next step's, which hears it announce itself.
+  */
+  if (wantsGateway && !devices.length) {
+    const keys = [...new Map(subs.filter((sub) => sub.localKey).map((sub) => [sub.localKey, sub])).values()];
+    if (keys.length) {
+      return {
+        ok: true,
+        detail: `${source} The gateway is not on this account, but what is paired with it is, and Tuya gives that the gateway's key. Pick it; the gateway itself is found on your network next.`,
+        choices: keys.map((sub) => ({
+          id: `behind-${sub.id}`,
+          label: `The gateway ${sub.name || sub.productName || sub.id} is paired with`,
+          detail: 'Its key, as Tuya hands it to what is paired with it',
+          config: { localKey: sub.localKey },
+          recommended: keys.length === 1,
+        })),
+        ...(from ? { again: FETCH_AGAIN } : {}),
+      };
+    }
+  }
   if (!devices.length) {
     return {
       ok: false,

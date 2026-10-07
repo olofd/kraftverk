@@ -322,6 +322,33 @@ describe('the Smart Life login and listing', () => {
     expect(kept.get('smartlife.userCode')).toBeNull();
   });
 
+  test('a gateway the account does not list, with a plug paired to it that it does: the plug’s key is offered as the gateway’s', async () => {
+    const signIn = protocol.credentials!.actions!.find((action) => action.id === 'signIn')!;
+    const kept = memoryKept();
+    // As the sign-in leaves it: only the plug behind the gateway, with the key Tuya hands it.
+    kept.set('smartlife.listing', JSON.stringify({ at: new Date().toISOString(), devices: [{ id: 'bf7c0000000000000000zp', name: 'Charger', localKey: 'g1a2t3e4w5a6y7k8', productName: 'Smart plug', category: 'cz', sub: true }] }));
+    const ctx = {
+      kept,
+      adding: { typeId: 'tuya.gateway', kind: 'gateway' as const },
+      draft: {},
+      connection: {},
+      address: null,
+      secrets: { get: () => null },
+      http: async () => Response.json({ success: false }),
+      sightings: [],
+      log: { info: () => {}, warn: () => {}, error: () => {} },
+      signal: AbortSignal.timeout(10_000),
+      platform: 'system' as const,
+    };
+    const offered = await signIn.run(ctx, {});
+    expect(offered.ok).toBe(true);
+    expect(offered.detail).toContain('The gateway is not on this account, but what is paired with it is');
+    expect(offered.choices).toEqual([
+      { id: 'behind-bf7c0000000000000000zp', label: 'The gateway Charger is paired with', detail: 'Its key, as Tuya hands it to what is paired with it', config: { localKey: 'g1a2t3e4w5a6y7k8' }, recommended: true },
+    ]);
+    expect(offered.again).toEqual({ label: 'Fetch the keys again', input: { fresh: true } });
+  });
+
   test('a wrong user code says where to find the right one', async () => {
     const http = async () => Response.json({ success: false, msg: 'user code invalid', code: 1106 });
     await expect(requestQrToken(http, 'nope')).rejects.toThrow('Account and Security');

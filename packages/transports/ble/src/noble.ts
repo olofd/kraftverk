@@ -8,8 +8,15 @@ import type { Advert, Gatt, Link, Radio } from './radio.ts';
   Linux machine asks BlueZ instead (bluez.ts).
 */
 
-type Noble = typeof import('@stoprocent/noble').default;
+/*
+  Typed loosely, at this one edge: noble is optional, and a machine that
+  installs without it — a container, a check that skips native builds —
+  must still type-check this. Its name is a value, so nothing resolves it
+  until Bluetooth starts here.
+*/
+type Noble = any;
 type Peripheral = any;
+const NOBLE = '@stoprocent/noble';
 
 const short = (uuid: string) => uuid.replace(/-/g, '').toLowerCase();
 /** 1800/1801 are Generic Access and Generic Attribute — every device has them. */
@@ -21,7 +28,7 @@ export class NobleRadio implements Radio {
   #peripherals = new Map<string, Peripheral>();
 
   async start(onAdvert: (advert: Advert) => void): Promise<void> {
-    const noble = (await import('@stoprocent/noble')).default;
+    const noble: Noble = (await import(NOBLE)).default;
     this.#noble = noble;
     noble.on('discover', (peripheral: Peripheral) => {
       this.#peripherals.set(peripheral.id, peripheral);
