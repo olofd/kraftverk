@@ -156,7 +156,7 @@ and `.set-aside.*` copies on the server's volume are the owner's to delete.
 
 ## Integrations
 
-Built to step 15 of [PLAN-INTEGRATIONS.md](PLAN-INTEGRATIONS.md) on
+Built to step 16 of [PLAN-INTEGRATIONS.md](PLAN-INTEGRATIONS.md) on
 2026-10-07 (Part A: what kraftverk has, on the model; discovery by
 declaration; mDNS and SSDP heard through the relay; the lists opened —
 quantities as records, position and `location`, `distance` in rules,
@@ -171,9 +171,11 @@ say what they are found by; the home network and the broker are watched all
 the time, so what turns up waits on Home. In Docker the home network is
 heard by the `relay` service, the only one on the host's network
 ([DOCKER.md](DOCKER.md#the-relay)); radios plugged into the host later
-(Zigbee, Thread, Matter) are services at that edge too. Next is the porting
-guide and a first port (step 16), which waits on the owner's choice of a
-small integration to port (D7).
+(Zigbee, Thread, Matter) are services at that edge too. Step 16 is done:
+[PORTING-FROM-HOME-ASSISTANT.md](PORTING-FROM-HOME-ASSISTANT.md), and
+Shelly (Gen2 and later) ported by it — experimental until checked against
+the owner's Shelly. Next is Part C (iCloud, then Apple TV), which needs the
+owner's Apple account and hardware to verify.
 
 ## The automation language
 
