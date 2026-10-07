@@ -1504,6 +1504,10 @@ the per-package files for now.
 `docs/PORTING-FROM-HOME-ASSISTANT.md`, a current document: §8's map, recipe
 and licences, kept true. Then a small integration the owner has (D7), ported
 by it, to prove it.
+**The guide written 2026-10-07:** [PORTING-FROM-HOME-ASSISTANT.md](PORTING-FROM-HOME-ASSISTANT.md),
+the map checked against the code as it is — and what is not built yet said
+so (OAuth, DHCP, the media, light and climate capabilities, a diagnostics
+bundle, translations). The first port waits on D7.
 
 ### Part C — The first new integrations
 

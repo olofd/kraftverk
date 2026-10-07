@@ -8,8 +8,9 @@
 #                   KRAFTVERK_WEB_IMAGE instead of building (CI builds once and
 #                   tests what it will ship).
 #   SMOKE_RUN       a number of this run's own (default 0): its stack is
-#                   kraftverk-smoke-<n>, its ports 18080 + 10·n and so on — so
-#                   two pipelines at once on one Docker never meet.
+#                   kraftverk-smoke-<n>, and every port it uses is in a block
+#                   of ten of its own — 18080 + 10·n to 18082 + 10·n, and so
+#                   on — so two pipelines at once on one Docker never meet.
 #   SMOKE_HOST      where the published ports are (default 127.0.0.1). From a
 #                   pipeline job on a network of its own that is the Docker
 #                   host — host.docker.internal — and the internet entrance
@@ -25,7 +26,7 @@ case $run in *[!0-9]* | '') echo "SMOKE_RUN is a number" >&2; exit 2 ;; esac
 offset=$(( (run % 100) * 10 ))
 project=kraftverk-smoke-$run
 host=${SMOKE_HOST:-127.0.0.1}
-lan_port=$((18080 + offset)) home_proxy_port=$((18081 + offset)) public_port=$((18090 + offset)) mqtt_port=$((11883 + offset))
+lan_port=$((18080 + offset)) home_proxy_port=$((18081 + offset)) public_port=$((18082 + offset)) mqtt_port=$((11883 + offset))
 export COMPOSE_PROJECT_NAME=$project
 export READ_ONLY=1
 export KRAFTVERK_ALLOWED_HOSTS=kraftverk.example.test
@@ -40,6 +41,9 @@ finish() {
   exit $status
 }
 trap finish EXIT
+
+# A stack of this number left from a run that was cancelled before it could take it down — a hundred runs ago — goes first.
+compose down --volumes --remove-orphans > /dev/null 2>&1 || true
 
 echo "Starting the stack"
 if [ "${SMOKE_BUILD:-1}" = "0" ]; then

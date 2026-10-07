@@ -24,6 +24,7 @@ here is in one list or the other.
 | [SHARED-PARTS-AND-RESERVE.md](SHARED-PARTS-AND-RESERVE.md) | Parts shared between automations, and the reserve the gateway keeps |
 | [AUTOMATION-EDITOR.md](AUTOMATION-EDITOR.md) | Building an automation from blocks, and where each piece lives |
 | [ADDING-A-DEVICE.md](ADDING-A-DEVICE.md) | How support for a new product gets in: its packages, and what each declares |
+| [PORTING-FROM-HOME-ASSISTANT.md](PORTING-FROM-HOME-ASSISTANT.md) | How an integration in Home Assistant becomes one here: the map, the recipe, licences, and what is not built yet |
 | [ACCOUNTS.md](ACCOUNTS.md) | Accounts, homes and a hosted kraftverk: what is decided, and the direction |
 | [SECURITY.md](SECURITY.md) | Who may do what, the two entrances, and recovering access |
 | [RUNNING.md](RUNNING.md) | Running it: development, production on a host, and in Docker |
