@@ -23,7 +23,10 @@ test('a Zigbee coordinator: its devices offered as what they are, one joining, a
 
   // Let devices join: a countdown, a device joining, then offered as what it is.
   await press(page, 'Let devices join');
-  await expect(page.getByText(/Letting devices join — \d:\d\d left/)).toBeVisible();
+  // At once, without a reload — and more time is more time.
+  await expect(page.getByText(/Letting devices join — \d:\d\d left/)).toBeVisible({ timeout: 5_000 });
+  await press(page, 'More time');
+  await expect(page.getByText(/Letting devices join — 4:1\d left/)).toBeVisible({ timeout: 5_000 });
   await expect(page.getByText(/Not added yet · Zigbee light/).first()).toBeVisible({ timeout: 15_000 });
   await press(page, 'Stop');
   await expect(page.getByText('Add a new device', { exact: true })).toBeVisible();
@@ -38,4 +41,9 @@ test('a Zigbee coordinator: its devices offered as what they are, one joining, a
   await expect(page).toHaveURL(/\/devices\//);
   await expect(page.getByText(name, { exact: true }).filter({ visible: true }).first()).toBeVisible();
   await expect(page.getByText('42 W', { exact: true }).filter({ visible: true }).first()).toBeVisible();
+
+  // Back on the coordinator's page: the plug among what is through it, with what it says now.
+  await page.goto(`/integrations/zigbee2mqtt/gateways/${coordinator.id}`);
+  await expect(page.getByText(name, { exact: true }).filter({ visible: true }).first()).toBeVisible();
+  await expect(page.getByText(/^42 W · On/).filter({ visible: true }).first()).toBeVisible();
 });

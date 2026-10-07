@@ -56,8 +56,8 @@ export function deviceOf(
 /** Whether a topic carries a secret, as the protocol it is under says. */
 export const isSecret = (policies: Policies, topic: string): boolean => candidates(policies, topic).some((policy) => policy.secret?.(topic) ?? false);
 
-/** Whether a topic is under the root of a protocol whose devices only a client that signed in speaks for: nothing on it is anyone else's to read. */
-export const isGuarded = (policies: Policies, topic: string): boolean => policies.some((policy) => policy.signedIn && policy.root && topic.startsWith(policy.root));
+/** The client a topic is kept for — under the root of a protocol whose devices one client that signs in speaks for — or null: nothing on it is anyone else's to read. */
+export const guardOf = (policies: Policies, topic: string): string | null => policies.find((policy) => policy.signedIn && policy.root && topic.startsWith(policy.root))?.signedIn ?? null;
 
 /** Who is publishing, as far as the rules care: the server, a client that signed in (by its name), or anyone. */
 export type Publisher = { privileged: boolean; signedIn: string | null };
@@ -96,8 +96,8 @@ export function refusalFor(policies: Policies, topic: string, payload: Uint8Arra
   }
   // A protocol whose devices are spoken for by a client that signs in: not by anyone else on the network.
   const from = deviceOf(policies, topic);
-  if (from?.policy.signedIn && !publisher.privileged && !publisher.signedIn) {
-    return `Only a client signed in to the broker may speak for a ${from.policy.protocol} device`;
+  if (from?.policy.signedIn && !publisher.privileged && publisher.signedIn !== from.policy.signedIn) {
+    return `Only ${from.policy.signedIn}, signed in to the broker, may speak for a ${from.policy.protocol} device`;
   }
   return null;
 }

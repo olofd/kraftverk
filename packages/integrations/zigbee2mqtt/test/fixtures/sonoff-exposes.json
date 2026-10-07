@@ -1,0 +1,367 @@
+{
+ "SNZB-02P": [
+  {
+   "access": 5,
+   "category": "diagnostic",
+   "description": "Remaining battery in %",
+   "label": "Battery",
+   "name": "battery",
+   "property": "battery",
+   "type": "numeric",
+   "unit": "%",
+   "value_max": 100,
+   "value_min": 0
+  },
+  {
+   "access": 5,
+   "description": "Measured temperature value",
+   "label": "Temperature",
+   "name": "temperature",
+   "property": "temperature",
+   "type": "numeric",
+   "unit": "°C"
+  },
+  {
+   "access": 5,
+   "description": "Measured relative humidity",
+   "label": "Humidity",
+   "name": "humidity",
+   "property": "humidity",
+   "type": "numeric",
+   "unit": "%"
+  },
+  {
+   "access": 7,
+   "category": "config",
+   "description": "Offset to add/subtract to the reported temperature",
+   "label": "Temperature calibration",
+   "name": "temperature_calibration",
+   "property": "temperature_calibration",
+   "type": "numeric",
+   "unit": "°C",
+   "value_max": 50,
+   "value_min": -50,
+   "value_step": 0.1
+  },
+  {
+   "access": 7,
+   "category": "config",
+   "description": "Offset to add/subtract to the reported relative humidity",
+   "label": "Humidity calibration",
+   "name": "humidity_calibration",
+   "property": "humidity_calibration",
+   "type": "numeric",
+   "unit": "%",
+   "value_max": 50,
+   "value_min": -50,
+   "value_step": 0.1
+  },
+  {
+   "access": 1,
+   "category": "diagnostic",
+   "description": "Link quality (signal strength)",
+   "label": "Linkquality",
+   "name": "linkquality",
+   "property": "linkquality",
+   "type": "numeric",
+   "unit": "lqi",
+   "value_max": 255,
+   "value_min": 0
+  }
+ ],
+ "S60ZBTPF": [
+  {
+   "access": 1,
+   "description": "Sum of consumed energy",
+   "label": "Energy",
+   "name": "energy",
+   "property": "energy",
+   "type": "numeric",
+   "unit": "kWh"
+  },
+  {
+   "features": [
+    {
+     "access": 7,
+     "description": "On/off state of the switch",
+     "label": "State",
+     "name": "state",
+     "property": "state",
+     "type": "binary",
+     "value_off": "OFF",
+     "value_on": "ON",
+     "value_toggle": "TOGGLE"
+    }
+   ],
+   "type": "switch"
+  },
+  {
+   "access": 7,
+   "category": "config",
+   "description": "Controls the behavior when the device is powered on after power loss",
+   "label": "Power-on behavior",
+   "name": "power_on_behavior",
+   "property": "power_on_behavior",
+   "type": "enum",
+   "values": [
+    "off",
+    "on",
+    "toggle",
+    "previous"
+   ]
+  },
+  {
+   "access": 7,
+   "category": "config",
+   "description": "Network indicator settings, turn off/on the blue online status network indicator.",
+   "label": "Network indicator",
+   "name": "network_indicator",
+   "property": "network_indicator",
+   "type": "binary",
+   "value_off": false,
+   "value_on": true
+  },
+  {
+   "access": 5,
+   "description": "Current",
+   "label": "Current",
+   "name": "current",
+   "property": "current",
+   "type": "numeric",
+   "unit": "A"
+  },
+  {
+   "access": 5,
+   "description": "Voltage",
+   "label": "Voltage",
+   "name": "voltage",
+   "property": "voltage",
+   "type": "numeric",
+   "unit": "V"
+  },
+  {
+   "access": 5,
+   "description": "Active power",
+   "label": "Power",
+   "name": "power",
+   "property": "power",
+   "type": "numeric",
+   "unit": "W"
+  },
+  {
+   "access": 5,
+   "description": "Electricity consumption for the yesterday",
+   "label": "Energy yesterday",
+   "name": "energy_yesterday",
+   "property": "energy_yesterday",
+   "type": "numeric",
+   "unit": "kWh"
+  },
+  {
+   "access": 5,
+   "description": "Electricity consumption for the day",
+   "label": "Energy today",
+   "name": "energy_today",
+   "property": "energy_today",
+   "type": "numeric",
+   "unit": "kWh"
+  },
+  {
+   "access": 5,
+   "description": "Electricity consumption for the month",
+   "label": "Energy this month",
+   "name": "energy_month",
+   "property": "energy_month",
+   "type": "numeric",
+   "unit": "kWh"
+  },
+  {
+   "access": 2,
+   "description": "Device Inching function Settings. The device will automatically turn off (turn on) after each turn on (turn off) for a specified period of time.",
+   "features": [
+    {
+     "access": 2,
+     "description": "Enable/disable inching function.",
+     "label": "Inching control",
+     "name": "inching_control",
+     "property": "inching_control",
+     "type": "binary",
+     "value_off": "DISABLE",
+     "value_on": "ENABLE"
+    },
+    {
+     "access": 2,
+     "description": "Delay time for executing a inching action.",
+     "label": "Inching time",
+     "name": "inching_time",
+     "property": "inching_time",
+     "type": "numeric",
+     "unit": "seconds",
+     "value_max": 3599.5,
+     "value_min": 0.5,
+     "value_step": 0.5
+    },
+    {
+     "access": 2,
+     "description": "Set inching off or inching on mode.",
+     "label": "Inching mode",
+     "name": "inching_mode",
+     "property": "inching_mode",
+     "type": "binary",
+     "value_off": "OFF",
+     "value_on": "ON",
+     "value_toggle": "ON"
+    }
+   ],
+   "label": "Inching control set",
+   "name": "inching_control_set",
+   "property": "inching_control_set",
+   "type": "composite"
+  },
+  {
+   "access": 7,
+   "category": "config",
+   "description": "Outlet overload protection Settings",
+   "label": "Outlet control protect",
+   "name": "outlet_control_protect",
+   "property": "outlet_control_protect",
+   "type": "binary",
+   "value_off": false,
+   "value_on": true
+  },
+  {
+   "access": 7,
+   "description": "Over load protection, max power and max current are required,other is optional",
+   "features": [
+    {
+     "access": 2,
+     "description": "max power",
+     "label": "Max power",
+     "name": "max_power",
+     "property": "max_power",
+     "type": "numeric",
+     "unit": "W",
+     "value_max": 4000,
+     "value_min": 0.1,
+     "value_step": 0.1
+    },
+    {
+     "access": 2,
+     "description": "Enable/disable lower limit of power overload protection.",
+     "label": "Enable min power",
+     "name": "enable_min_power",
+     "property": "enable_min_power",
+     "type": "binary",
+     "value_off": "DISABLE",
+     "value_on": "ENABLE"
+    },
+    {
+     "access": 2,
+     "description": "Lower limit of power overload protection",
+     "label": "Min power",
+     "name": "min_power",
+     "property": "min_power",
+     "type": "numeric",
+     "unit": "W",
+     "value_max": 4000,
+     "value_min": 0.1,
+     "value_step": 0.1
+    },
+    {
+     "access": 2,
+     "description": "Enable/disable upper limit of voltage overload protection..",
+     "label": "Enable max voltage",
+     "name": "enable_max_voltage",
+     "property": "enable_max_voltage",
+     "type": "binary",
+     "value_off": "DISABLE",
+     "value_on": "ENABLE"
+    },
+    {
+     "access": 2,
+     "description": "Upper limit of voltage overload protection.",
+     "label": "Max voltage",
+     "name": "max_voltage",
+     "property": "max_voltage",
+     "type": "numeric",
+     "unit": "V",
+     "value_max": 277,
+     "value_min": 165,
+     "value_step": 1
+    },
+    {
+     "access": 2,
+     "description": "Enable/disable lower limit of voltage overload protection.",
+     "label": "Enable min voltage",
+     "name": "enable_min_voltage",
+     "property": "enable_min_voltage",
+     "type": "binary",
+     "value_off": "DISABLE",
+     "value_on": "ENABLE"
+    },
+    {
+     "access": 2,
+     "description": "Lower limit of voltage overload protection.",
+     "label": "Min voltage",
+     "name": "min_voltage",
+     "property": "min_voltage",
+     "type": "numeric",
+     "unit": "V",
+     "value_max": 277,
+     "value_min": 165,
+     "value_step": 1
+    },
+    {
+     "access": 2,
+     "description": "Upper limit of current overload protection.",
+     "label": "Max current",
+     "name": "max_current",
+     "property": "max_current",
+     "type": "numeric",
+     "unit": "A",
+     "value_max": 17,
+     "value_min": 0.1,
+     "value_step": 0.1
+    },
+    {
+     "access": 2,
+     "description": "Enable/disable lower limit of current overload protection.",
+     "label": "Enable min current",
+     "name": "enable_min_current",
+     "property": "enable_min_current",
+     "type": "binary",
+     "value_off": "DISABLE",
+     "value_on": "ENABLE"
+    },
+    {
+     "access": 2,
+     "description": "Lower limit of current overload protection.",
+     "label": "Min current",
+     "name": "min_current",
+     "property": "min_current",
+     "type": "numeric",
+     "unit": "A",
+     "value_max": 17,
+     "value_min": 0.1,
+     "value_step": 0.1
+    }
+   ],
+   "label": "Overload protection",
+   "name": "overload_protection",
+   "property": "overload_protection",
+   "type": "composite"
+  },
+  {
+   "access": 1,
+   "category": "diagnostic",
+   "description": "Link quality (signal strength)",
+   "label": "Linkquality",
+   "name": "linkquality",
+   "property": "linkquality",
+   "type": "numeric",
+   "unit": "lqi",
+   "value_max": 255,
+   "value_min": 0
+  }
+ ]
+}

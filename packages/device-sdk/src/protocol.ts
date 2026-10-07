@@ -46,12 +46,14 @@ export type MessageBrokerPolicy = {
    */
   root?: string;
   /**
-   * Only a client signed in to the broker may publish this protocol's device
-   * topics, and the first such client holds a device while it is connected:
-   * what keeps anything on the home network from speaking for one. A station
-   * cannot sign in; a bridge — one client for many devices — can.
+   * The client that speaks for this protocol's devices, by the name it signs
+   * in to the broker as: only it may publish their topics, only it and the
+   * server are sent them, and it holds a device while it is connected — what
+   * keeps anything else on the home network, another bridge included, from
+   * speaking for one or listening in. A station cannot sign in; a bridge —
+   * one client for many devices — can.
    */
-  signedIn?: boolean;
+  signedIn?: string;
   /** The device a published topic comes from, and the channel within it; null when not this protocol's. */
   fromDevice(topic: string): { address: string; channel: string } | null;
   /** The device a subscription reveals: one subscribing to its own command topic. */

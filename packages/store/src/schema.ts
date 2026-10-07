@@ -141,6 +141,20 @@ export const SCHEMA = `
   );
 
   /*
+    What each device last said of each attribute, and when it said it: what
+    it shows as it was — never as it is now — until its session says again,
+    after a restart. One row per attribute, replaced as it changes; the value
+    as JSON, any shape a reading has.
+  */
+  CREATE TABLE device_reading (
+    device_id TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+    key       TEXT NOT NULL,
+    value     TEXT NOT NULL,
+    at        TEXT NOT NULL,
+    PRIMARY KEY (device_id, key)
+  );
+
+  /*
     How a device is reached: one row per way. Each is held by a node of the
     home, or goes through a bridge — another device the way's members are
     reached through (docs/PLAN-INTEGRATIONS.md §4.3): then it is held wherever

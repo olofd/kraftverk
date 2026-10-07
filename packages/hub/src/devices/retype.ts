@@ -210,8 +210,23 @@ export function retype(
   device: DeviceRecord,
   to: { typeId: string; description: DeviceDescription; config: Record<string, unknown>; methods: readonly string[] }
 ): void {
-  const plan = planRetype(deps.catalog.attributes(device.id), device.description, to.description);
+  const had = deps.catalog.attributes(device.id);
+  const plan = planRetype(had, device.description, to.description);
   const moves = plan.attributes.flatMap((move) => (move.to && (move.to.key !== move.from.key || move.scale || partOf(move.to) !== partOf(move.from)) ? [{ from: move.from.key, to: move.to.key, part: partOf(move.to), scale: move.scale }] : []));
+  /*
+    One that maps nowhere keeps its history — but not under a key the new
+    description, or another moving here, has: its values would be read as
+    that one's, and the two merge where they share a minute. It is set
+    aside under a key of its own, and keeps its label.
+  */
+  const used = new Set([...had.map((attribute) => attribute.key), ...to.description.attributes.map((attribute) => attribute.key)]);
+  for (const move of plan.attributes) {
+    if (move.to || !(to.description.attributes.some((attribute) => attribute.key === move.from.key) || moves.some((other) => other.to === move.from.key))) continue;
+    let aside = `${move.from.key}~was`;
+    for (let n = 2; used.has(aside); n++) aside = `${move.from.key}~was${n}`;
+    used.add(aside);
+    moves.push({ from: move.from.key, to: aside, part: partOf(move.from), scale: null });
+  }
   deps.history.rekey(device.id, moves);
   deps.catalog.retype(device.id, { typeId: to.typeId, description: to.description, config: to.config, keys: moves.map(({ from, to: key, part }) => ({ from, to: key, part })) });
 
@@ -219,7 +234,13 @@ export function retype(
     if (fate.kept && fate.part) deps.links.repoint(fate.id, fate.end, fate.part);
     else deps.links.remove(fate.id);
   }
-  deps.automations.repointParts(device.id, plan.parts);
+  /*
+    A part that maps nowhere keeps its id, so the automations bound to it
+    say they need attention — unless another part moves to that id: then
+    they would switch that one instead. It is set aside, and still says so.
+  */
+  const targets = new Set([...plan.parts.values()].filter((part): part is string => part !== null));
+  deps.automations.repointParts(device.id, new Map([...plan.parts].map(([from, part]) => [from, part ?? (targets.has(from) ? `${from}~gone` : null)])));
   for (const connection of deps.connections.forDevice(device.id)) {
     if (!to.methods.includes(connection.method)) deps.connections.remove(connection.id);
   }

@@ -41,6 +41,15 @@ const zigbeeIdentity = (key: string): string => identityOf('zigbee', key);
 /** The longest Zigbee lets a network stay open for joining at once. */
 const MAX_JOIN_SECONDS = 254;
 
+/** How long letting devices join waits for Zigbee2MQTT to say its new end, after it answered. */
+const INFO_WAIT_MS = 3000;
+
+/** A press said this long before the network began listening still counts: one pressed as the server started. */
+const PRESS_GRACE_MS = 2000;
+
+/** The most said on topics nothing is named by yet that is kept to hear again: a device list late by a moment, not a flood. */
+const MAX_UNNAMED = 200;
+
 /** How long a request waits for its answer. */
 const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -68,12 +77,22 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
   #pending = new Map<string, { resolve: (data: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   #transaction = 0;
   #heardAt: string | null = null;
+  /** Told when Zigbee2MQTT says its info again. */
+  #infoWaiters = new Set<() => void>();
+  /** What was said on a topic no device or group is named by yet, by its topic: heard again once one is. */
+  #unnamed = new Map<string, ChannelMessage>();
+  /** When each device last spoke, by its own time (`last_seen`): a press is one said after it. */
+  #lastSeen = new Map<string, number>();
+  /** When this network began listening: a state said before then holds no press. */
+  readonly #startedAt: number;
   #unsubscribe: (() => void) | null = null;
 
   constructor(
     private readonly channel: MessageChannel,
     private readonly ctx: NetworkContext
-  ) {}
+  ) {
+    this.#startedAt = ctx.now();
+  }
 
   /** Listens to everything Zigbee2MQTT says: what it keeps comes first. */
   start(): void {
@@ -186,14 +205,43 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
   readonly join: Joining = {
     maxSeconds: MAX_JOIN_SECONDS,
     open: async (seconds) => {
-      await this.request('permit_join', { time: Math.max(0, Math.min(MAX_JOIN_SECONDS, Math.round(seconds))) });
+      const time = Math.max(0, Math.min(MAX_JOIN_SECONDS, Math.round(seconds)));
+      const before = this.#info?.permit_join_end ?? null;
+      await this.request('permit_join', { time });
+      /*
+        Zigbee2MQTT answers first and says its new end in its info after: what
+        is told back is that end once it has said it — or, if it is slow to,
+        the end the request asked for.
+      */
+      const said = () => (time === 0 ? !this.#info?.permit_join : this.#info?.permit_join === true && (this.#info.permit_join_end ?? null) !== before);
+      await this.#infoSays(said, INFO_WAIT_MS);
+      return said() ? this.#joinUntil() : time ? new Date(this.ctx.now() + time * 1000).toISOString() : null;
     },
-    until: () => {
-      if (!this.#info?.permit_join) return null;
-      const end = this.#info.permit_join_end;
-      return typeof end === 'number' && end > this.ctx.now() ? new Date(end).toISOString() : null;
-    },
+    until: () => this.#joinUntil(),
   };
+
+  #joinUntil(): string | null {
+    if (!this.#info?.permit_join) return null;
+    const end = this.#info.permit_join_end;
+    return typeof end === 'number' && end > this.ctx.now() ? new Date(end).toISOString() : null;
+  }
+
+  /** Resolves once its info says what `said` looks for, or after `ms`. */
+  #infoSays(said: () => boolean, ms: number): Promise<void> {
+    if (said()) return Promise.resolve();
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        this.#infoWaiters.delete(check);
+        resolve();
+      };
+      const check = () => {
+        if (said()) done();
+      };
+      const timer = setTimeout(done, ms);
+      this.#infoWaiters.add(check);
+    });
+  }
 
   /**
    * Asks Zigbee2MQTT something on `bridge/request/<what>`, and answers what
@@ -225,7 +273,11 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
     if ('bridge' in parsed) return this.#bridge(parsed.bridge, message);
     if (parsed.verb === 'set' || parsed.verb === 'get' || parsed.verb === 'other') return;
     const key = this.#keyOfName(parsed.name);
-    if (!key) return;
+    if (!key) {
+      // Said before its device list named it — a device just joined, or a replay in another order: heard again once it is named.
+      if (this.#unnamed.size < MAX_UNNAMED || this.#unnamed.has(message.topic)) this.#unnamed.set(message.topic, message);
+      return;
+    }
     const json = objectOf(parseJson(message.payload));
     if (parsed.verb === 'availability') {
       const state = json?.state;
@@ -247,8 +299,18 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
     // Merged: a device that is not cached says only what changed.
     this.#states.set(key, { values: { ...kept.values, ...json }, at });
     const shape = this.#shapes.get(key);
-    // A press kept on the broker with the device's state was said before: only one said now is a press.
-    const press = shape && !message.retained ? actionOf(shape, json) : null;
+    /*
+      A press is one said now. A device's state is kept on the broker with
+      its last `action` in it and replayed whenever the server or the broker
+      starts — marked kept or not, depending on who replays it — so it is
+      the device's own time that tells: a press is one said after the last
+      this network heard from the device, and after it began listening.
+    */
+    const seenAt = seen ? Date.parse(seen) : null;
+    const before = this.#lastSeen.get(key) ?? this.#startedAt - PRESS_GRACE_MS;
+    if (seenAt !== null) this.#lastSeen.set(key, Math.max(seenAt, this.#lastSeen.get(key) ?? 0));
+    const said = !message.retained && (seenAt === null || seenAt > before);
+    const press = shape && said ? actionOf(shape, json) : null;
     if (press) for (const linked of this.#links.get(key) ?? []) linked.presses.push({ ...press, at: message.at });
     this.#tell(key);
   }
@@ -264,6 +326,7 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
       }
       case 'info':
         this.#info = objectOf(json) as BridgeInfo | null;
+        for (const check of [...this.#infoWaiters]) check();
         this.ctx.changed();
         return;
       case 'devices':
@@ -293,6 +356,7 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
     }
     for (const key of [...this.#shapes.keys()]) if (groupIdOf(key) === null && !this.#devices.has(key)) this.#shapes.delete(key);
     this.#shapeGroups();
+    this.#hearUnnamed();
     this.ctx.changed();
     this.#tellAll();
   }
@@ -301,8 +365,19 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
     this.#groups.clear();
     for (const group of list) if (typeof group.id === 'number') this.#groups.set(group.id, group);
     this.#shapeGroups();
+    this.#hearUnnamed();
     this.ctx.changed();
     this.#tellAll();
+  }
+
+  /** What was said before anything was named by its topic, heard now if something is. */
+  #hearUnnamed(): void {
+    for (const [topic, message] of [...this.#unnamed]) {
+      const parsed = parseTopic(topic);
+      if (!parsed || 'bridge' in parsed || !this.#keyOfName(parsed.name)) continue;
+      this.#unnamed.delete(topic);
+      this.#hear(message);
+    }
   }
 
   /** Each group's shape: what its members can do (§5.4). */

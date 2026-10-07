@@ -40,7 +40,7 @@ export type DeviceCardDevice = {
  * it is still trying is a card that has lied once already, and `error` is red
  * where `offline` is grey: an unplugged device is not a fault.
  */
-const DOT: Record<ConnectionHealth['status'], string> = {
+export const HEALTH_DOT: Record<ConnectionHealth['status'], string> = {
   connected: '$success',
   connecting: '$warning',
   offline: '$muted',
@@ -132,7 +132,7 @@ export function DeviceCard({ device, icon, image, secondary, onPress }: Props) {
           height={8}
           borderRadius={999}
           marginTop={6}
-          backgroundColor={DOT[device.health.status]}
+          backgroundColor={HEALTH_DOT[device.health.status]}
         />
       </XStack>
 

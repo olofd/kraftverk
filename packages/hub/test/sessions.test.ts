@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:tes
 
 import { NeedsSignIn, nodeId, NotReachable, SIMULATED_ADDRESS, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT } from '@kraftverk/device-sdk';
 import { LiveBus, type LiveMessage, SessionManager } from '@kraftverk/holder';
-import { AuditLog, ConnectionStore, DeviceCatalog, deviceStore, holding, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
+import { AuditLog, ConnectionStore, DeviceCatalog, deviceStore, holding, LastReadings, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
 
 import { DeviceTypeRegistry, ProtocolRegistry, TransportHost } from '../src/index.ts';
 import { busDefinition, FakeBus, LAMP, lampProtocol, makeLampType, MACHINE_NODE, TEST_INTEGRATION, TEST_SOURCE } from '../src/testing.ts';
@@ -30,7 +30,7 @@ let sessions: SessionManager;
 let bus: FakeBus;
 let identified: [string, string][];
 
-const build = (options: { readOnly?: boolean; bus?: LiveBus } = {}) => {
+const build = (options: { readOnly?: boolean; bus?: LiveBus; lastReadings?: LastReadings } = {}) => {
   const protocols = new ProtocolRegistry();
   expect(protocols.install(lampProtocol, 'test')).toEqual([]);
   const transports = new TransportHost({ platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } });
@@ -52,6 +52,7 @@ const build = (options: { readOnly?: boolean; bus?: LiveBus } = {}) => {
     record: (entry) => new AuditLog(db).record(entry),
     onIdentified: (deviceId, identity) => identified.push([deviceId, identity]),
     bus: options.bus,
+    ...(options.lastReadings ? { lastReadings: options.lastReadings } : {}),
   });
 };
 
@@ -364,5 +365,36 @@ describe('who a device is', () => {
     expect(sessions.health(record).detail).toContain('different device');
     const audit = db.query<{ kind: string }, [string]>("SELECT kind FROM audit WHERE resource = ? AND kind = 'device.mismatch'").all(record.id);
     expect(audit).toHaveLength(1);
+  });
+});
+
+describe('what a device last said', () => {
+  test('kept as it says it, and shown as it was after a restart until it says again: its value and when, never confirmed now', async () => {
+    const kept = new LastReadings(db);
+    sessions = build({ lastReadings: kept });
+    const hall = addLamp('Hall', 'lamp-1').record;
+    await sessions.sync(catalog.list());
+    await settle();
+    sessions.pulse();
+    const said = kept.of(hall.id);
+    expect(said).toEqual([{ key: 'on', value: true, at: expect.any(String) }]);
+
+    // A restart, and the lamp quiet: what it said, as it was.
+    await sessions.closeAll();
+    bus.lamps.get('lamp-1')!.answers = false;
+    sessions = build({ lastReadings: kept });
+    await sessions.sync(catalog.list());
+    expect(sessions.readings(hall.id)).toEqual(said);
+    expect(sessions.readings(hall.id)[0]).not.toHaveProperty('confirmedAt');
+
+    // It speaks again: its own word wins, and is kept.
+    bus.lamps.set('lamp-1', { ...bus.lamps.get('lamp-1')!, on: false, answers: true });
+    await sessions.closeAll();
+    sessions = build({ lastReadings: kept });
+    await sessions.sync(catalog.list());
+    await settle();
+    expect(sessions.readings(hall.id)[0]?.value).toBe(false);
+    sessions.pulse();
+    expect(kept.of(hall.id)[0]?.value).toBe(false);
   });
 });

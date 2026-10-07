@@ -92,7 +92,7 @@ export function OwnScreen() {
   }
 
   return (
-    <Screen back={integration?.name ?? 'Integration'} backTo={PATHS.integrations.one(integration?.id ?? id ?? '')} title={account.name} subtitle={account.meta.name} status={deviceStatus(account)}>
+    <Screen back={integration?.name ?? 'Integration'} backTo={PATHS.integrations.one(integration?.id ?? id ?? '')} title={account.name} subtitle={account.meta.name === account.name ? undefined : account.meta.name} status={deviceStatus(account)}>
       {Panel ? <Panel {...screenProps(account)} /> : null}
       <Joining device={account} onUntil={setJoiningUntil} />
       <Members device={account} joiningUntil={joiningUntil} />

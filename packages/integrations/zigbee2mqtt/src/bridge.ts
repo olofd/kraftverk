@@ -34,8 +34,6 @@ const DESCRIPTION: DeviceDescription = {
     { key: 'devices', label: 'Zigbee devices', value: { type: 'number', integer: true, min: 0 }, category: 'diagnostic' },
     { key: 'routers', label: 'Routers', description: 'Devices on mains that pass messages on for others', value: { type: 'number', integer: true, min: 0 }, category: 'diagnostic' },
     { key: 'groups', label: 'Groups', value: { type: 'number', integer: true, min: 0 }, category: 'diagnostic' },
-    { key: 'joining', label: 'Letting devices join', value: { type: 'boolean' } },
-    { key: 'joinUntil', label: 'Joining until', value: { type: 'timestamp' }, history: false },
     { key: 'version', label: 'Zigbee2MQTT', value: { type: 'string' }, category: 'diagnostic' },
     { key: 'channel', label: 'Zigbee channel', value: { type: 'number', min: 11, max: 26 }, category: 'diagnostic' },
   ],
@@ -96,13 +94,10 @@ const TOOLS = {
 function readingsOf(network: ZigbeeNetwork, at: string): Reading[] {
   const info: BridgeInfo | null = network.info;
   const devices = network.devices();
-  const until = network.join.until();
   return [
     { key: 'devices', value: devices.length, at },
     { key: 'routers', value: devices.filter((device) => device.type === 'Router').length, at },
     { key: 'groups', value: network.groups().length, at },
-    { key: 'joining', value: until !== null, at },
-    { key: 'joinUntil', value: until, at },
     { key: 'version', value: info?.version ?? null, at },
     { key: 'channel', value: info?.network?.channel ?? null, at },
   ];

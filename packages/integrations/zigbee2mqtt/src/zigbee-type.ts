@@ -25,6 +25,13 @@ import { getPayload, readingsOf, setPayload, shapeOf, type BridgeDevice, type Ex
 
 type Config = Record<string, never>;
 
+/**
+ * How long what a device on batteries last said holds: a sensor reports at
+ * least hourly (the SNZB-02P's temperature at most 3600 s apart), so twice
+ * that without a word is a device that has stopped.
+ */
+const BATTERY_CHECK_IN_MS = 2 * 3_600_000;
+
 /** How long a write waits for the device to say it took. */
 const READBACK_MS = 5000;
 
@@ -113,9 +120,15 @@ async function sessionOver(open: Open, ctx: DeviceContext<Config>, typical: Shap
         change — and otherwise at most once in a while: a sensor at 24 °C says
         nothing for an hour. While Zigbee2MQTT says it is reachable, what it
         last said still holds, so it is current from now (`confirmedAt`); when
-        Zigbee2MQTT does not say, its age alone decides.
+        Zigbee2MQTT does not say, its age alone decides. Zigbee2MQTT says a
+        device on batteries is reachable for a day after it last spoke, and a
+        sensor whose battery died would say 21 °C all that day: one on
+        batteries holds only while it has spoken within its check-in time.
       */
-      const confirmedAt = it.connected() && it.available() === true ? new Date(ctx.clock.now()).toISOString() : null;
+      const now = ctx.clock.now();
+      const battery = /battery/i.test(it.about()?.powerSource ?? '');
+      const holds = it.connected() && it.available() === true && (!battery || now - Date.parse(at) <= BATTERY_CHECK_IN_MS);
+      const confirmedAt = holds ? new Date(now).toISOString() : null;
       return readingsOf(shape, values, at).map((reading) => (confirmedAt && confirmedAt > reading.at ? { ...reading, confirmedAt } : reading));
     },
     description: () => it.shape()?.description ?? null,

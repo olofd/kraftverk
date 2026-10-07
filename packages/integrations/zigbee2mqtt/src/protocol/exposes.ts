@@ -1,6 +1,7 @@
 import {
   isUnit,
   MAIN_PART,
+  partOf,
   standardMeaning,
   type AttributeSpec,
   type DeviceDescription,
@@ -319,27 +320,37 @@ export function shapeOf(exposes: readonly Expose[]): Shape {
       ...(writable ? { access: 'write' as const } : {}),
       ...(diagnostic && !writable ? { category: 'diagnostic' as const } : writable && expose.category === 'config' ? { category: 'config' as const } : {}),
       ...(!published ? { history: false } : {}),
-      ...(options.kindOf === 'lock' && name === 'state' ? { dangerous: true } : {}),
+      ...(options.kindOf === 'lock' && name === 'state' && writable ? { dangerous: true } : {}),
       ...(/setpoint/.test(name) && writable ? { dangerous: true } : {}),
     };
     fields.push({ spec, property, read: (raw) => readAs(value, raw, expose), write: (v) => writeAs(value, v, expose), settable: writable, gettable: can(expose, ACCESS.GET) });
   };
 
+  /*
+    One switch, light, lock or cover, on no endpoint of its own, is the device
+    itself: a plug is its socket, as every other plug in kraftverk is — its
+    `on` and its power the device's, leading its card. Several, or one on a
+    named endpoint, are each a part of their own.
+  */
+  const alone = specifics.length === 1 && !specifics[0]!.endpoint ? specifics[0]! : null;
+
   for (const expose of specifics) {
     const shape = SPECIFIC[expose.type]!;
     kinds.add(expose.type);
     const base = expose.type === 'switch' ? 'switch' : expose.type;
-    let id = expose.endpoint ? `${base}.${endpointId(expose.endpoint)}` : base;
+    let id = expose === alone ? MAIN_PART : expose.endpoint ? `${base}.${endpointId(expose.endpoint)}` : base;
     for (let n = 2; partIds.has(id); n++) id = `${base}.${n}`;
     partIds.add(id);
     const offersSwitch = shape.switches && (expose.features ?? []).some((feature) => feature.name === 'state' && can(feature, ACCESS.SET));
-    parts.push({
+    const part: Part = {
       id,
       label: partLabel(shape.label, expose.endpoint),
       kind: shape.kind,
       ...(expose.type === 'switch' || expose.type === 'light' ? { energy: { role: 'load' as const } } : {}),
       ...(offersSwitch ? { offers: ['switch' as const] } : {}),
-    });
+    };
+    if (id === MAIN_PART) parts[0] = part;
+    else parts.push(part);
     for (const feature of expose.features ?? []) {
       // A light's colour is one value of its own shape, not its parts.
       if (feature.type === 'composite' || !feature.features) add(feature, where(id), { switchOf: shape.switches ? id : undefined, kindOf: expose.type });
@@ -372,6 +383,15 @@ export function shapeOf(exposes: readonly Expose[]): Shape {
     const byEndpoint = expose.endpoint ? parts.find((part) => part.id.endsWith(`.${endpointId(expose.endpoint!)}`))?.id : undefined;
     const part = byEndpoint ?? (meterPart && METER.has(name) && !(expose.unit === 'mV') ? meterPart : MAIN_PART);
     add(expose, where(part));
+  }
+
+  // One meaning once on a part — two temperatures on endpoints with no part of their own: the first means it, the next is only itself.
+  const meant = new Set<string>();
+  for (const field of fields) {
+    if (!field.spec.means) continue;
+    const at = `${partOf(field.spec)}|${field.spec.means}`;
+    if (meant.has(at)) delete (field.spec as { means?: string }).means;
+    else meant.add(at);
   }
 
   // A plug's power leads its outlet's card; a sensor's temperature, the device's.

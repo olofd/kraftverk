@@ -398,6 +398,10 @@ at a moment when losing the station for a minute is fine:
 docker compose up -d --build broker
 ```
 
+The deploy (`scripts/deploy.sh`) does that itself when the broker's build is
+not the images': a guard or a policy fixed is live once it is deployed. What
+devices said and the broker keeps (`retained.json`) carries across.
+
 **App settings → Connectivity** lists every transport and whether it runs
 here, with the reason when one does not.
 

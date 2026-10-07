@@ -2,7 +2,10 @@ import { describe, expect, test } from 'bun:test';
 
 import { MAIN_PART, type AttributeSpec, type DeviceDescription } from '@kraftverk/device-sdk';
 
-import { planRetype } from '../src/devices/retype.ts';
+import { AutomationStore, ConnectionStore, DeviceCatalog, HistoryStore, LinkStore, plainSecrets } from '@kraftverk/store';
+
+import { planRetype, retype } from '../src/devices/retype.ts';
+import { testDatabase } from './home.ts';
 
 /*
   A device changing what it is (docs/PLAN-ZIGBEE.md §2.1): the mapping from
@@ -77,5 +80,34 @@ describe('the mapping from what a device was to what it becomes', () => {
     const plan = planRetype(had(ZIGBEE), ZIGBEE, ZIGBEE);
     expect(plan.attributes.every((move) => move.to?.key === move.from.key)).toBe(true);
     expect([...plan.parts].every(([from, to]) => from === to)).toBe(true);
+  });
+});
+
+describe('moving a device to another type', () => {
+  test('one that maps nowhere is set aside where another moves to its key: no two histories merge', () => {
+    const db = testDatabase();
+    const catalog = new DeviceCatalog(db);
+    const history = new HistoryStore(db);
+    const before: DeviceDescription = {
+      attributes: [
+        { key: 'mode', label: 'Mode', value: { type: 'string' } },
+        { key: 'state', label: 'Mode', value: { type: 'number' } },
+      ],
+    };
+    const after: DeviceDescription = { attributes: [{ key: 'mode', label: 'Mode', value: { type: 'number' } }] };
+    const device = catalog.add({ typeId: 'test.before', name: 'Heater', description: before });
+    const at = '2026-01-01T10:00:00.000Z';
+    history.addSamples([
+      { deviceId: device.id, part: MAIN_PART, key: 'mode', at, value: null, text: 'eco' },
+      { deviceId: device.id, part: MAIN_PART, key: 'state', at, value: 3, text: null },
+    ]);
+
+    retype({ catalog, history, connections: new ConnectionStore(db, plainSecrets), links: new LinkStore(db), automations: new AutomationStore(db) }, device, { typeId: 'test.after', description: after, config: {}, methods: [] });
+
+    const one = (key: string) => history.samples(device.id, key, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z').map((row) => row.value ?? row.text);
+    expect(one('mode')).toEqual([3]);
+    expect(one('mode~was')).toEqual(['eco']);
+    expect(catalog.attributes(device.id).find((attribute) => attribute.key === 'mode~was')?.label).toBe('Mode');
+    db.close();
   });
 });

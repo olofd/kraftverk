@@ -56,8 +56,8 @@ export type Member = {
  * a tool that writes is: refused while read-only, and on the timeline.
  */
 export type Joining = {
-  /** Lets devices join for `seconds`; 0 closes it now. Resolves once the bridge says it did. */
-  open(seconds: number): Promise<void>;
+  /** Lets devices join for `seconds`; 0 closes it now. Resolves once the bridge says it did, with until when they may now: null when closed. */
+  open(seconds: number): Promise<string | null>;
   /** Until when devices may join, or null when they may not. */
   until(): string | null;
   /** The longest it may be open at once, in seconds: Zigbee's 254. */

@@ -1,14 +1,30 @@
 import { router } from 'expo-router';
-import { useTheme, YStack } from 'tamagui';
+import { useTheme, XStack, YStack } from 'tamagui';
 
 import { PATHS, type DeviceView } from '@kraftverk/api-client';
-import { Card, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
+import { attributesOf, MAIN_PART, readingOf } from '@kraftverk/device-sdk';
+import { Card, formatValue, HEALTH_DOT, Icon, isOld, observedAt, Row, RowSeparator, SectionLabel, shownAttributes } from '@kraftverk/ui';
 
 import { DeviceImage } from '../../components/DeviceImage';
 import { Pressable } from '../../components/Pressable';
 import { useAnswer } from '../../components/useAnswer';
 import { useDevices } from '../../state/DevicesProvider';
 import { useHome } from '../../state/HomeProvider';
+
+/**
+ * A member at a glance: what it says now — "On · 12 W", "23.2 °C · 38 %",
+ * an old value with when it was said — or, when it is not reached, why.
+ */
+function summaryOf(member: DeviceView): string {
+  if (member.health.status !== 'connected') return member.health.detail;
+  const said = shownAttributes(attributesOf(member.description, MAIN_PART)).flatMap((attribute) => {
+    const reading = readingOf(member.readings, attribute.key);
+    if (!reading || reading.value === null || typeof reading.value === 'object') return [];
+    const text = formatValue(attribute, reading.value);
+    return [isOld(attribute, reading) ? `${text} at ${observedAt(reading.at)}` : text];
+  });
+  return said.length ? said.slice(0, 3).join(' · ') : member.meta.name;
+}
 
 /**
  * What is reached through a device — an account's scooters, a gateway's
@@ -35,7 +51,17 @@ export function Members({ device, joiningUntil }: { device: DeviceView; /** Unti
           <YStack key={member.id}>
             {index > 0 ? <RowSeparator /> : null}
             <Pressable onPress={() => router.push(PATHS.devices.one(member.id))}>
-              <Row leading={<DeviceImage typeId={member.typeId} size={36} />} title={member.name} subtitle={member.meta.name} accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />} />
+              <Row
+                leading={<DeviceImage typeId={member.typeId} size={36} />}
+                title={member.name}
+                subtitle={summaryOf(member)}
+                accessory={
+                  <XStack gap="$3" alignItems="center">
+                    <YStack width={8} height={8} borderRadius={4} backgroundColor={HEALTH_DOT[member.health.status]} />
+                    <Icon name="chevron-right" size={16} color={theme.muted?.val} />
+                  </XStack>
+                }
+              />
             </Pressable>
           </YStack>
         ))}

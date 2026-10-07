@@ -329,6 +329,7 @@ erDiagram
   device ||--o{ device_connection : "is the bridge of"
   node |o--|| home : "is the master of"
   device ||--o{ device_kv : "remembers"
+  device ||--o{ device_reading : "last said"
   device ||--o{ sample : "recorded"
   device ||--o{ sample_hour : "rolled up"
   device ||--o{ sample_change : "changed"
@@ -411,6 +412,12 @@ erDiagram
     text device_id PK "d-3f9a2c61b0e43f9a"
     text key PK "sim.settings"
     text value "{acChargingWatts: 800}"
+  }
+  device_reading {
+    text device_id PK "d-21e89beca7573685"
+    text key PK "temperature"
+    text value "23.2 · JSON, any shape a reading has"
+    text at "2026-10-07T20:23:11Z · when the device said it"
   }
   device_link {
     text id PK "l-0c7f3e19a2b80c7f"
@@ -646,6 +653,7 @@ joined; elsewhere it is plain text, null.
 | `node` | Every kraftverk node of the home — the hub running somewhere: the one this database belongs to (`self`), the home's master, and the nodes that follow it, the always-on machine among them. Each declares what it is — always on, reachable, trusted — which is how the master is chosen, and what a connection's holder names: "Bluetooth, from Olof's iPhone". | when the database is made (its own); when another joins |
 | `device_link` | Facts about the house, between parts — which plug feeds which station's mains input, which station's outlet feeds another — that the gateway, the energy view and automations all read. | step 9, or later on the device's page |
 | `device_kv` | What a session keeps between runs: a simulator's settings, a plug's detected protocol version. | by the session |
+| `device_reading` | What each device last said of each attribute, and when — what it shows, as it was, after a restart until it says again (a sensor that speaks hourly, a broker recreated). Never current: the gateway reads only what the session says now. A simulator's are not kept. | by the holder, as devices say what changed |
 | `device.description`, `device_attribute` | What the device is — so a closed or removed device is still described — and every attribute it ever had, so history keeps its labels after a part is gone. | step 10, then whenever it changes |
 | `device.description_source` | Whether the description is the type's, for its config, or the device's own — a station that reports its packs. | step 10, then whenever it changes |
 | `sample` | History: every attribute the description says to keep, with its part, while its value is current. | continuously, by the holder |
@@ -687,7 +695,7 @@ joined; elsewhere it is plain text, null.
   `device_attribute` onto the new description by meaning, key or label,
   `sample`, `sample_change` and `sample_hour` re-keyed (converted where a unit
   changed), links and automation roles re-pointed by part, the ways the new
-  type has none for removed, `device_kv` cleared (docs/PLAN-ZIGBEE.md §2.1).
+  type has none for removed, `device_kv` and `device_reading` cleared (docs/PLAN-ZIGBEE.md §2.1).
 - **`method` must be one of that type's methods,** checked on write against
   the installed definitions. Each `config` is validated against the schema
   its definition declares: the type's for `device.config`, the method's for

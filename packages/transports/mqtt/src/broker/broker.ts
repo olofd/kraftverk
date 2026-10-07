@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createServer, type Server, type Socket } from 'node:net';
 
@@ -8,7 +8,7 @@ import type { Client } from 'aedes';
 import type { MessageBrokerPolicy } from '@kraftverk/device-sdk';
 
 import { duration, type Journal } from './journal.ts';
-import { commandOf, deviceOf, isGuarded, isSecret, refusalFor, type Policies } from './policy.ts';
+import { commandOf, deviceOf, guardOf, isSecret, refusalFor, type Policies } from './policy.ts';
 import { clientsFingerprint, RESERVED_CLIENT_PREFIX, SERVER_USERNAME, sameSecret, TOPIC, type DevicePresence } from './shared.ts';
 
 /**
@@ -136,6 +136,9 @@ const CHATTER = new Set(['device.message', 'mqtt.publish']);
 
 /** How long one client's traffic that no protocol knows is journalled at info, before it is debug until the next window. */
 const UNKNOWN_TRAFFIC_WINDOW_MS = 60_000;
+
+/** How long after a retained message changes what is kept is written: one write for many reports. */
+const KEEP_RETAINED_MS = 30_000;
 
 export class MessageBroker {
   #aedes: Aedes | null = null;
@@ -272,14 +275,6 @@ export class MessageBroker {
               : null,
           };
 
-          // MQTT hands a client id to the newest connection that asks for it,
-          // and closes the old one. Said here, before it happens, so the old
-          // connection's ending has a reason instead of a mystery.
-          for (const other of this.#connections.values()) {
-            if (other !== conn && other.clientId === clientId && !other.endReason) {
-              other.endReason = `replaced by a new connection with the same client id from ${conn.remote}`;
-            }
-          }
         }
         callback(null, true);
       },
@@ -291,6 +286,7 @@ export class MessageBroker {
         if (username === SERVER_USERNAME) {
           if (sameSecret(password, this.options.token)) {
             if (conn) conn.privileged = true;
+            this.#takesOver(conn);
             return done(null, true);
           }
           this.#journal.warn({
@@ -315,9 +311,30 @@ export class MessageBroker {
         // One of the broker's own clients, by name: its password is checked,
         // and a wrong one is turned away rather than let in as anyone.
         const expected = username ? this.options.clients?.get(username) : undefined;
+        const signedIn = expected !== undefined && sameSecret(password, expected) ? username! : null;
+
+        /*
+          A client that signed in keeps its client id. MQTT gives an id to the
+          newest connection that asks for it and closes the one holding it, so
+          anyone asking for Zigbee2MQTT's would push it off the broker, again
+          and again: the id a client signs in by — and one a signed-in client
+          holds now — is only for a connection signed in as that client.
+        */
+        const holder = [...this.#connections.values()].find((other) => other !== conn && other.clientId === client.id && !other.endReason && other.signedIn !== null);
+        if ((this.options.clients?.has(client.id) && signedIn !== client.id) || (holder && holder.signedIn !== signedIn)) {
+          this.#journal.warn({
+            kind: 'auth.refused',
+            message: `Refused ${who}: client id "${client.id}" belongs to a client that signs in`,
+            clientId: client.id,
+            remote: conn?.remote,
+          });
+          return done(Object.assign(new Error('Identifier rejected'), { returnCode: 2 }), null);
+        }
+
         if (expected !== undefined) {
-          if (sameSecret(password, expected)) {
-            if (conn) conn.signedIn = username!;
+          if (signedIn) {
+            if (conn) conn.signedIn = signedIn;
+            this.#takesOver(conn);
             return done(null, true);
           }
           this.#journal.warn({
@@ -332,6 +349,7 @@ export class MessageBroker {
         // A station connects with no username and no password — seen, not
         // assumed — so there is nothing to check a device by. Everyone else
         // is let in, and then held to `policy.ts`.
+        this.#takesOver(conn);
         done(null, true);
       },
 
@@ -391,7 +409,8 @@ export class MessageBroker {
           with its network's key — is the server's and its own: anyone else
           on the network may subscribe, and is sent none of it.
         */
-        if (!conn?.privileged && !conn?.signedIn && isGuarded(this.options.policies, packet.topic)) return null;
+        const guard = guardOf(this.options.policies, packet.topic);
+        if (guard && !conn?.privileged && conn?.signedIn !== guard) return null;
         if (this.#retained.has(packet.topic) && conn?.privileged) packet.retain = true;
         return packet;
       },
@@ -621,11 +640,11 @@ export class MessageBroker {
           the first, while it is connected — is the device. Otherwise a
           listener would take its presence, and leaving, take it offline.
         */
-        if (policy.signedIn) {
-          if (!conn.signedIn) continue;
-          const holder = this.#devices.get(keyOf(policy.protocol, address))?.connection;
-          if (holder && holder !== conn && !holder.socket.destroyed) continue;
-        }
+        if (policy.signedIn && conn.signedIn !== policy.signedIn) continue;
+        // A device on a live connection is not taken from it by a subscribe alone: a listener would take a station's presence, and leaving, take it offline.
+        // One replaced by its own client id reconnecting has its ending said, and is taken.
+        const holder = this.#devices.get(keyOf(policy.protocol, address))?.connection;
+        if (holder && holder !== conn && !holder.socket.destroyed && !holder.endReason) continue;
         const device = this.#claim(conn, policy, address, `subscribed to ${topic}`);
         device.subscribed = true;
         this.#announce(device);
@@ -997,6 +1016,20 @@ export class MessageBroker {
     return `${describe(this.#devices.get(keyOf(from.policy.protocol, from.address))!)} is spoken for by ${holder.clientId ?? `#${holder.n}`} on #${holder.n}`;
   }
 
+  /**
+   * MQTT hands a client id to the newest connection that asks for it, and
+   * closes the one holding it. Said once the new one is let in, before the
+   * old one is closed, so its ending has a reason instead of a mystery.
+   */
+  #takesOver(conn: Connection | null): void {
+    if (!conn?.clientId) return;
+    for (const other of this.#connections.values()) {
+      if (other !== conn && other.clientId === conn.clientId && !other.endReason) {
+        other.endReason = `replaced by a new connection with the same client id from ${conn.remote}`;
+      }
+    }
+  }
+
   #of(client: Client | null | undefined): Connection | null {
     if (!client?.conn) return null;
     return this.#connections.get(client.conn as Socket) ?? null;
@@ -1018,10 +1051,14 @@ export class MessageBroker {
     return `Client ${conn.clientId ?? `#${conn.n}`}`;
   }
 
-  /** Writes what is kept on each topic a moment from now: a burst of retained messages is one write. */
+  /**
+   * Writes what is kept on each topic within half a minute: every device's
+   * state is retained and said many times a minute, so they are written
+   * together — and on stop, so a broker recreated loses none of it.
+   */
   #keepRetainedSoon(): void {
     if (!this.options.retainedFile || this.#saveRetainedTimer) return;
-    this.#saveRetainedTimer = setTimeout(() => this.#keepRetained(), 1000);
+    this.#saveRetainedTimer = setTimeout(() => this.#keepRetained(), KEEP_RETAINED_MS);
     this.#saveRetainedTimer.unref?.();
   }
 
@@ -1034,7 +1071,9 @@ export class MessageBroker {
       mkdirSync(dirname(file), { recursive: true });
       // What carries a secret is never on disk: its bridge says it again when it connects.
       const kept = Object.fromEntries([...this.#retained].filter(([topic]) => !isSecret(this.options.policies, topic)).map(([topic, payload]) => [topic, Buffer.from(payload).toString('base64')]));
-      writeFileSync(file, JSON.stringify(kept));
+      // Whole or not at all: a broker killed mid-write leaves the last one, not half of this.
+      writeFileSync(`${file}.new`, JSON.stringify(kept));
+      renameSync(`${file}.new`, file);
     } catch {
       // Kept for the next broker's sake, not this one's: failing to write it costs nothing now.
     }

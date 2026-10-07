@@ -273,8 +273,9 @@ export function playedZigbee2Mqtt(options: PlayedOptions = {}): PlayedZigbee2Mqt
       case 'permit_join': {
         const time = Number(body.time ?? 0);
         joinEnd = time > 0 ? now() + time * 1000 : null;
-        publish(`${BASE}/bridge/info`, info(), true);
+        // Answered first, its info said a moment after: as Zigbee2MQTT does.
         respond(what, body, { time });
+        later(20, () => publish(`${BASE}/bridge/info`, info(), true));
         // Someone presses the next device's button: it joins, and is interviewed a moment later.
         if (time > 0 && joined < JOINERS.length) {
           const joining = JOINERS[joined++]!();

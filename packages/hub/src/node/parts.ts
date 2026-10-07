@@ -1,7 +1,7 @@
 import { LINK_KINDS, type AuditRecord, type Clock, type ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, type GatewayDeps } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, type SessionManagerDeps } from '@kraftverk/holder';
-import { AutomationStore, ConnectionStore, databaseLedger, DeviceCatalog, HistoryStore, HomeSettings, integrationKept, LinkStore, NodeStore, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { AutomationStore, ConnectionStore, databaseLedger, DeviceCatalog, HistoryStore, HomeSettings, integrationKept, LastReadings, LinkStore, NodeStore, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import type { Installed } from '../installed/from.ts';
 import { unfitFor } from '../installed/needs.ts';
@@ -104,6 +104,8 @@ export function nodeParts(options: NodeOptions, role: NodeRole): NodeParts {
     ...role.sessions,
     record: (entry) => role.record(entry),
     bus,
+    // What each device last said: what it shows, as it was, until it says again after a restart.
+    lastReadings: new LastReadings(db),
     log: (message) => options.log('info', `[${role.tag}] ${message}`),
   });
 

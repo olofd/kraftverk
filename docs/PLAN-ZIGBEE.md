@@ -157,8 +157,8 @@ export type MessageBrokerPolicy = {
   protocol: string;
   /** The topics it speaks for: every topic under it is this protocol's and no other's. `zigbee2mqtt/`; Sydpower has none (its topics begin with the station's MAC) and matches as now. */
   root?: string;
-  /** Only a client that signed in to the broker may publish this protocol's device topics: what keeps the home network from speaking for a device. A station cannot sign in; Zigbee2MQTT can. */
-  signedIn?: boolean;
+  /** The client that speaks for this protocol's devices, by the name it signs in as: only it may publish their topics, and only it and the server are sent them. A station cannot sign in; Zigbee2MQTT can (`'zigbee2mqtt'`). */
+  signedIn?: string;
   fromDevice(topic: string): { address: string; channel: string } | null;
   subscribedBy(filter: string): string | null;
   commandFor(topic: string): string | null;

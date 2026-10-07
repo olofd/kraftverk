@@ -81,7 +81,8 @@ const text = (payload: Uint8Array, max = 160): string => {
 export const brokerPolicy: MessageBrokerPolicy = {
   protocol: 'zigbee2mqtt',
   root: ROOT,
-  signedIn: true,
+  // As the deploy signs it in (docker-compose.yml, KRAFTVERK_BROKER_CLIENTS).
+  signedIn: 'zigbee2mqtt',
 
   fromDevice(topic) {
     return topic.startsWith(ROOT) ? { address: BASE, channel: topic.slice(ROOT.length) } : null;

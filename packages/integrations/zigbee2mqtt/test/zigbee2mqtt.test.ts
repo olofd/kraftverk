@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
 import { validateDescription, validateProtocol, type Member, type Sighting } from '@kraftverk/device-sdk';
-import { checkDeviceTypeContract, simulatorContext } from '@kraftverk/device-sdk/testing';
+import { checkDeviceTypeContract, fakeMessageChannel, simulatorContext } from '@kraftverk/device-sdk/testing';
 
 import bridge from '../src/bridge.ts';
 import type { ZigbeeLink } from '../src/link.ts';
@@ -9,6 +9,10 @@ import { groupKey, ZigbeeNetwork } from '../src/network.ts';
 import { BUTTON_EXPOSES, LIGHT_EXPOSES, PLUG_EXPOSES, SENSOR_EXPOSES, SWITCH_EXPOSES, playedZigbee2Mqtt, type PlayedZigbee2Mqtt } from '../src/played.ts';
 import protocol, { actionOf, brokerPolicy, groupExposes, parseTopic, readingsOf, setPayload, shapeOf, type Expose } from '../src/protocol/index.ts';
 import * as types from '../src/types.ts';
+import sonoff from './fixtures/sonoff-exposes.json';
+
+/** What two real SONOFF devices expose, as Zigbee2MQTT 2.14 described them: vendor definitions, no addresses. */
+const SONOFF = sonoff as unknown as Record<string, Expose[]>;
 
 /*
   Zigbee2MQTT over MQTT (docs/PLAN-ZIGBEE.md §5): the protocol and what the
@@ -46,7 +50,7 @@ describe('the protocol, and what the broker applies', () => {
 
   test('every topic under its root is the coordinator’s; its commands are /set, /get and bridge requests', () => {
     expect(brokerPolicy.root).toBe('zigbee2mqtt/');
-    expect(brokerPolicy.signedIn).toBe(true);
+    expect(brokerPolicy.signedIn).toBe('zigbee2mqtt');
     expect(brokerPolicy.fromDevice('zigbee2mqtt/0x00124b00000000a1')).toEqual({ address: 'zigbee2mqtt', channel: '0x00124b00000000a1' });
     expect(brokerPolicy.fromDevice('AABBCC001122/device/response/04')).toBeNull();
     for (const topic of ['zigbee2mqtt/lamp/set', 'zigbee2mqtt/lamp/set/state', 'zigbee2mqtt/lamp/l1/set', 'zigbee2mqtt/lamp/get', 'zigbee2mqtt/bridge/request/permit_join']) {
@@ -87,20 +91,39 @@ describe('what exposes become', () => {
     }
   });
 
-  test('a plug: an outlet that switches, its meter on the outlet with standard meanings, its power leading', () => {
+  test('a plug: the device itself is the outlet that switches, its meter its own with standard meanings, its power leading', () => {
     const shape = shapeOf(PLUG_EXPOSES);
     expect(shape.shelf).toBe('plug');
     expect(shape.description.parts?.map((part) => [part.id, part.kind, part.offers ?? []])).toEqual([
-      ['main', 'device', []],
-      ['switch', 'outlet', ['switch']],
+      ['main', 'outlet', ['switch']],
     ]);
     const key = (k: string) => shape.description.attributes.find((attribute) => attribute.key === k);
-    expect(key('switch.on')).toMatchObject({ means: 'on', part: 'switch' });
-    expect(key('switch.power')).toMatchObject({ means: 'power', category: 'primary' });
-    expect(key('switch.energy')).toMatchObject({ means: 'energy', stateClass: 'total_increasing' });
+    expect(key('on')).toMatchObject({ means: 'on', part: 'main' });
+    expect(key('power')).toMatchObject({ means: 'power', category: 'primary', part: 'main' });
+    expect(key('energy')).toMatchObject({ means: 'energy', stateClass: 'total_increasing' });
     expect(key('child_lock')).toMatchObject({ access: 'write', category: 'config', value: { type: 'boolean' } });
     expect(key('linkquality')).toMatchObject({ category: 'diagnostic' });
-    expect(shape.switches.get('switch')?.property).toBe('state');
+    expect(shape.switches.get('main')?.property).toBe('state');
+  });
+
+  test('real devices, as Zigbee2MQTT 2.14 exposes them: a SONOFF plug is its outlet, leading with its power; a SONOFF sensor with its temperature', () => {
+    const plug = shapeOf(SONOFF['S60ZBTPF']!);
+    expect(validateDescription(plug.description, 'S60ZBTPF')).toEqual([]);
+    expect(plug.shelf).toBe('plug');
+    expect(plug.description.parts?.map((part) => [part.id, part.kind])).toEqual([['main', 'outlet']]);
+    const key = (shape: typeof plug, k: string) => shape.description.attributes.find((attribute) => attribute.key === k);
+    expect(key(plug, 'on')).toMatchObject({ means: 'on' });
+    expect(key(plug, 'power')).toMatchObject({ means: 'power', category: 'primary' });
+    expect(key(plug, 'voltage')).toMatchObject({ means: 'voltage' });
+    expect(key(plug, 'energy')).toMatchObject({ means: 'energy' });
+    expect(setPayload(plug, { power_on_behavior: 'previous' })).toEqual({ payload: { power_on_behavior: 'previous' } });
+
+    const sensor = shapeOf(SONOFF['SNZB-02P']!);
+    expect(validateDescription(sensor.description, 'SNZB-02P')).toEqual([]);
+    expect(sensor.shelf).toBe('sensor');
+    expect(key(sensor, 'temperature')).toMatchObject({ means: 'temperature', category: 'primary' });
+    expect(key(sensor, 'battery')).toMatchObject({ category: 'diagnostic' });
+    expect(key(sensor, 'temperature_calibration')).toMatchObject({ access: 'write', category: 'config' });
   });
 
   test('a binary is read by its own on and off: a contact’s on is open', () => {
@@ -135,9 +158,9 @@ describe('what exposes become', () => {
     expect(shape.shelf).toBe('light');
     const at = 'x';
     const readings = readingsOf(shape, { state: 'ON', brightness: 254, color: { x: 0.3, y: 0.4 } }, at);
-    expect(readings.find((r) => r.key === 'light.brightness')?.value).toBe(100);
-    expect(readings.find((r) => r.key === 'light.color')?.value).toEqual({ x: 0.3, y: 0.4 });
-    expect(setPayload(shape, { 'light.brightness': 50 })).toEqual({ payload: { brightness: 127 } });
+    expect(readings.find((r) => r.key === 'brightness')?.value).toBe(100);
+    expect(readings.find((r) => r.key === 'color')?.value).toEqual({ x: 0.3, y: 0.4 });
+    expect(setPayload(shape, { brightness: 50 })).toEqual({ payload: { brightness: 127 } });
   });
 
   test('a button’s presses are events, with what was said beside them', () => {
@@ -190,7 +213,7 @@ describe('the network, against a played Zigbee2MQTT', () => {
     await link.set({ state: 'OFF' });
     await until(() => link.state().values.state === 'OFF', 'the plug off');
     expect(played.heard.at(-1)).toEqual({ topic: `zigbee2mqtt/0x${PLUG}/set`, payload: { state: 'OFF' } });
-    expect(readingsOf(link.shape()!, link.state().values, 'x').find((r) => r.key === 'switch.power')?.value).toBe(0);
+    expect(readingsOf(link.shape()!, link.state().values, 'x').find((r) => r.key === 'power')?.value).toBe(0);
     expect(moved).toBeGreaterThan(0);
     expect(link.available()).toBe(true);
     link.close();
@@ -224,16 +247,40 @@ describe('the network, against a played Zigbee2MQTT', () => {
     expect(link.takePresses()).toEqual([]);
   });
 
+  test('a press replayed unmarked is told by the device’s own time: said before, no press; said now, a press', async () => {
+    const button = { ieee_address: '0x00124b00000000b9', type: 'EndDevice', friendly_name: 'Hall button', supported: true, interview_state: 'SUCCESSFUL' as const, definition: { model: 'BTN', vendor: 'Simulated', description: 'Button', exposes: BUTTON_EXPOSES } };
+    const channel = fakeMessageChannel(() => []);
+    network = new ZigbeeNetwork(channel, { changed: () => {}, log: () => {}, now: () => Date.now() });
+    network.start();
+    const say = (topic: string, value: unknown) => channel.say({ topic, payload: new TextEncoder().encode(JSON.stringify(value)) });
+    // Its state first — before its device list names it — then the list: heard once it is named.
+    say('zigbee2mqtt/Hall button', { action: 'single', battery: 90, last_seen: '2026-01-01T00:00:00.000Z' });
+    say('zigbee2mqtt/bridge/devices', [button]);
+    const link = await network.link('00124b00000000b9', () => {});
+    await until(() => link.state().values.battery === 90, 'the state said before it was named');
+    expect(link.takePresses()).toEqual([]);
+    // The broker replays it to a server that just connected, unmarked: as old as it was, no press.
+    say('zigbee2mqtt/Hall button', { action: 'single', battery: 90, last_seen: '2026-01-01T00:00:00.000Z' });
+    expect(link.takePresses()).toEqual([]);
+    say('zigbee2mqtt/Hall button', { action: 'double', battery: 90, last_seen: new Date().toISOString() });
+    expect(link.takePresses().map((press) => press.id)).toEqual(['action.double']);
+  });
+
   test('devices join while it lets them: joining first, offered on their shelf once interviewed', async () => {
     open();
     await until(() => network.members().length === 3, 'the devices');
-    await network.join.open(60);
-    await until(() => network.join.until() !== null, 'joining open');
+    // Told back at once, though Zigbee2MQTT says its info after it answers.
+    const opened = await network.join.open(60);
+    expect(opened).not.toBeNull();
+    expect(network.join.until()).toBe(opened);
     await until(() => network.members().some((member) => member.joining), 'a device joining');
     await until(() => network.members().some((member) => member.key === '00124b00000000a8' && !member.joining), 'it interviewed');
     expect(network.members().find((member) => member.key === '00124b00000000a8')?.typeId).toBe('zigbee2mqtt.light');
-    await network.join.open(0);
-    await until(() => network.join.until() === null, 'joining closed');
+    // More time: its new end, not the one before.
+    const more = await network.join.open(120);
+    expect(Date.parse(more!)).toBeGreaterThan(Date.parse(opened!));
+    expect(await network.join.open(0)).toBeNull();
+    expect(network.join.until()).toBeNull();
   });
 
   test('a group made, filled and switched as one; an error answered as one', async () => {
@@ -245,7 +292,7 @@ describe('the network, against a played Zigbee2MQTT', () => {
     expect(network.members().find((member) => member.key === groupKey(1))).toMatchObject({ name: 'Desk', typeId: 'zigbee2mqtt.group', identity: 'zigbee-group:00124b0000000001-1' });
     const group = await network.link(groupKey(1), () => {});
     await until(() => group.shape() !== null, 'the group’s shape');
-    expect([...group.shape()!.switches.keys()]).toEqual(['switch']);
+    expect([...group.shape()!.switches.keys()]).toEqual(['main']);
     await group.set({ state: 'OFF' });
     const plug = await network.link(PLUG, () => {});
     await until(() => plug.state().values.state === 'OFF', 'its member off');

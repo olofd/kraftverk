@@ -62,7 +62,7 @@ const BRIDGE_CLIENT: Publisher = { privileged: false, signedIn: 'bridge' };
 const BRIDGE: MessageBrokerPolicy = {
   protocol: 'bridge-test',
   root: 'bridge-test/',
-  signedIn: true,
+  signedIn: 'bridge',
   fromDevice: (topic) => (topic.startsWith('bridge-test/') ? { address: 'bridge-test', channel: topic.slice('bridge-test/'.length) } : null),
   subscribedBy: (filter) => (filter === 'bridge-test/#' ? 'bridge-test' : null),
   commandFor: (topic) => (/^bridge-test\/.+\/set$/.test(topic) ? 'bridge-test' : null),
@@ -197,6 +197,11 @@ describe('a protocol spoken by a bridge', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(broker.devices.find((device) => device.address === 'bridge-test')).toMatchObject({ online: true, clientId: 'bridge-1' });
 
+    // Nobody pushes it off the broker by its client id: neither the one it holds, nor the name it signs in by.
+    await expect(mqttClient(broker.port!, 'bridge-1')).rejects.toThrow('refused');
+    await expect(mqttClient(broker.port!, 'bridge')).rejects.toThrow('refused');
+    expect(broker.devices.find((device) => device.address === 'bridge-test')).toMatchObject({ online: true, clientId: 'bridge-1' });
+
     const impostor = await mqttClient(broker.port!, 'impostor');
     impostor.publish('bridge-test/lamp', new TextEncoder().encode('{"state":"ON"}'));
     await until(() => impostor.isClosed, 'the impostor cut off');
@@ -262,6 +267,18 @@ describe('the broker', () => {
 
     expect(station.received.map((message) => [...message.payload])).toEqual([[...poll]]);
     expect(broker.refusals.at(-1)).toMatchObject({ clientId: 'intruder-a', topic: COMMANDS });
+    station.close();
+  });
+
+  test('a listener on a station’s command topic does not take its presence, nor leaving, take it offline', async () => {
+    const station = await mqttClient(port, 'station-l');
+    await station.subscribe(COMMANDS);
+    await until(online('station-l'), 'presence');
+    const listener = await mqttClient(port, 'listener-l');
+    await listener.subscribe(COMMANDS);
+    listener.drop();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(online('station-l')()).toBe(true);
     station.close();
   });
 

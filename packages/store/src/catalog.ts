@@ -263,12 +263,19 @@ export class DeviceCatalog {
   retype(id: SavedDeviceId, to: { typeId: string; description: DeviceDescription; config: Record<string, unknown>; keys: readonly { from: string; to: string; part: string }[] }): void {
     const parked = (index: number) => `\u0000moving:${index}`;
     to.keys.forEach((move, index) => this.#db.query('UPDATE device_attribute SET key = ? WHERE device_id = ? AND key = ?').run(parked(index), id, move.from));
-    to.keys.forEach((move, index) => this.#db.query('UPDATE OR REPLACE device_attribute SET key = ?, part = ? WHERE device_id = ? AND key = ?').run(move.to, move.part, id, parked(index)));
+    // Its spec says its key and part too: moved with them, so what its history is labelled by is read back under its new key.
+    to.keys.forEach((move, index) =>
+      this.#db
+        .query("UPDATE OR REPLACE device_attribute SET key = ?, part = ?, spec = json_set(spec, '$.key', ?, '$.part', ?) WHERE device_id = ? AND key = ?")
+        .run(move.to, move.part, move.to, move.part, id, parked(index))
+    );
     this.#db
       .query("UPDATE device SET type_id = ?, description = ?, description_source = 'type', config = ? WHERE id = ?")
       .run(to.typeId, JSON.stringify(to.description), JSON.stringify(to.config), id);
     this.#recordAttributes(id, to.description, new Date().toISOString());
     this.#db.query('DELETE FROM device_kv WHERE device_id = ?').run(id);
+    // What it last said was said as the type it was: its new type's session says again.
+    this.#db.query('DELETE FROM device_reading WHERE device_id = ?').run(id);
   }
 
   /** Which picture it shows: its owner's pick, or null for its type's first. */

@@ -10,6 +10,7 @@ import {
   type Clock,
   type ClockTimer,
   type ConnectionMethod,
+  type Reading,
   type ConnectionHealth,
   type DescriptionSource,
   type DeviceDescription,
@@ -61,7 +62,8 @@ const WATCH_MS = 15_000;
 const PULSE_MS = 1000;
 /** Health is published when it changes, and at least this often while readings keep arriving, so "last heard" stays true. */
 const HEALTH_REFRESH_MS = 30_000;
-/** How long before trying a refused device again, by how many times it has been tried: then every five minutes. */
+/** A value said again, unchanged, is kept again this long after it last was: so when it was last said stays near the truth. */
+const KEEP_AGAIN_MS = 60_000;
 /** How long a device that could not be opened waits before it is tried again: longer each time, to 5 min. */
 const RETRY_MS = [15_000, 30_000, 60_000, 120_000, 300_000];
 
@@ -149,6 +151,12 @@ export type SessionManagerDeps = {
   /** Where what devices say, as they say it, is published. */
   bus?: LiveBus;
   /**
+   * What each device last said, kept where this node keeps things: what it
+   * shows, as it was, of what it has not said again since this node started
+   * — and told what changed as devices say it.
+   */
+  lastReadings?: { of(deviceId: SavedDeviceId): readonly Reading[]; keep(deviceId: SavedDeviceId, readings: readonly Reading[]): void };
+  /**
    * For a simulator: whether what feeds a part of it gives it power now — a
    * simulated switch linked to it as `feeds` — or null when nothing
    * simulated does. Whoever keeps the links answers.
@@ -199,8 +207,54 @@ export class SessionManager {
   /** What was last published, so only what moved is published again. */
   #changes = new ReadingChanges();
   #published = new Map<SavedDeviceId, { key: string; at: number }>();
+  /** What each device last said, as kept: read from where it is kept when first asked, then kept in step. */
+  #last = new Map<SavedDeviceId, Map<string, Reading>>();
 
   constructor(private deps: SessionManagerDeps) {}
+
+  #lastOf(deviceId: SavedDeviceId): Map<string, Reading> {
+    let last = this.#last.get(deviceId);
+    if (!last) {
+      last = new Map((this.deps.lastReadings?.of(deviceId) ?? []).map((reading) => [reading.key, reading]));
+      this.#last.set(deviceId, last);
+    }
+    return last;
+  }
+
+  /**
+   * What a device says, as a screen shows it: what its session says now and,
+   * for what it has not said since this node started — a restart, a sensor
+   * that speaks hourly, a device not reached — what it last said, as it was:
+   * its value and when, never confirmed now, so its age shows and nothing
+   * takes it for current. The gateway reads the session's own, alone.
+   */
+  readings(deviceId: SavedDeviceId): Reading[] {
+    const live = this.#open.get(deviceId)?.opened.session.readings() ?? [];
+    const record = this.#records.get(deviceId);
+    if (!record || record.removedAt || !this.deps.lastReadings) return live;
+    const said = new Map(live.map((reading) => [reading.key, reading]));
+    const keys = new Set(this.description(record).attributes.map((attribute) => attribute.key));
+    const merged = live.map((reading) => (reading.value === null ? (this.#lastOf(deviceId).get(reading.key) ?? reading) : reading));
+    for (const [key, reading] of this.#lastOf(deviceId)) if (!said.has(key) && keys.has(key)) merged.push(reading);
+    return merged;
+  }
+
+  /** Keeps what an open device said that changed — or said again, a minute on — where this node keeps it. Not a simulator's: it says afresh each time it opens. */
+  #remember(deviceId: SavedDeviceId): void {
+    const keep = this.deps.lastReadings;
+    const open = this.#open.get(deviceId);
+    if (!keep || !open || isSimulated(open.connection)) return;
+    const last = this.#lastOf(deviceId);
+    const changed = open.opened.session.readings().flatMap((reading): Reading[] => {
+      if (reading.value === null) return [];
+      const was = last.get(reading.key);
+      const fresh = !was || JSON.stringify(was.value) !== JSON.stringify(reading.value) || Date.parse(reading.at) - Date.parse(was.at) >= KEEP_AGAIN_MS;
+      return fresh ? [{ key: reading.key, value: reading.value, at: reading.at }] : [];
+    });
+    if (!changed.length) return;
+    keep.keep(deviceId, changed);
+    for (const reading of changed) last.set(reading.key, reading);
+  }
 
   /** What a device is, as its type declares it, or null when no installed type claims it. */
   typeOf(record: Pick<HolderDevice, 'typeId'>): TypeDeclaration | null {
@@ -306,6 +360,8 @@ export class SessionManager {
   }
 
   async #sync(records: readonly HolderDevice[]): Promise<void> {
+    // A device moved to another type said what it said as the one it was: read again from where it is kept.
+    for (const record of records) if (this.#records.get(record.id)?.typeId !== record.typeId) this.#last.delete(record.id);
     this.#records = new Map(records.map((record) => [record.id, record]));
     // In rounds: a member opens once its bridge has, in this same sync; a bridge behind a bridge, one round later.
     for (let round = 0; round <= BRIDGE_DEPTH; round++) {
@@ -384,6 +440,7 @@ export class SessionManager {
   pulse(): void {
     for (const id of this.#records.keys()) {
       try {
+        this.#remember(id);
         this.#publish(id);
       } catch (error) {
         // A device's own code that fails to say how it is costs that device its pulse, never the others' — nor the process, from a timer.

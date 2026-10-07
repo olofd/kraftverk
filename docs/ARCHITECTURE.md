@@ -564,6 +564,7 @@ node              (id PK, name, platform, always_on, reachable, trusted, transpo
 home              (id PK, name, master_id → node, created_at)       -- one: which node is the master
 place             (id PK, key, name, latitude, longitude, time_zone, created_at)
 device_kv         (device_id → device ON DELETE CASCADE, key, value)
+device_reading    (device_id → device ON DELETE CASCADE, key, value JSON, at)     -- what it last said
 device_link       (id PK, kind, source_id → device, target_id → device, created_at)
 sample            (device_id → device ON DELETE CASCADE, key, at, value | text)     -- 14 days
 sample_hour       (device_id → device ON DELETE CASCADE, key, hour, min, avg, max, n) -- 2 years

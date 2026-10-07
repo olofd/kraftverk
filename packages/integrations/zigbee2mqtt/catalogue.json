@@ -200,21 +200,6 @@
             "category": "diagnostic"
           },
           {
-            "key": "joining",
-            "label": "Letting devices join",
-            "value": {
-              "type": "boolean"
-            }
-          },
-          {
-            "key": "joinUntil",
-            "label": "Joining until",
-            "value": {
-              "type": "timestamp"
-            },
-            "history": false
-          },
-          {
             "key": "version",
             "label": "Zigbee2MQTT",
             "value": {
@@ -266,11 +251,6 @@
         "parts": [
           {
             "id": "main",
-            "label": "Device",
-            "kind": "device"
-          },
-          {
-            "id": "switch",
             "label": "Output",
             "kind": "outlet",
             "energy": {
@@ -283,8 +263,8 @@
         ],
         "attributes": [
           {
-            "key": "switch.on",
-            "part": "switch",
+            "key": "on",
+            "part": "main",
             "label": "Switch",
             "value": {
               "type": "boolean"
@@ -293,8 +273,8 @@
             "consequence": "Switches off whatever it feeds."
           },
           {
-            "key": "switch.power",
-            "part": "switch",
+            "key": "power",
+            "part": "main",
             "label": "Power",
             "description": "Instantaneous measured power",
             "value": {
@@ -305,8 +285,8 @@
             "category": "primary"
           },
           {
-            "key": "switch.current",
-            "part": "switch",
+            "key": "current",
+            "part": "main",
             "label": "Current",
             "value": {
               "type": "number",
@@ -315,8 +295,8 @@
             "means": "current"
           },
           {
-            "key": "switch.voltage",
-            "part": "switch",
+            "key": "voltage",
+            "part": "main",
             "label": "Voltage",
             "value": {
               "type": "number",
@@ -325,8 +305,8 @@
             "means": "voltage"
           },
           {
-            "key": "switch.energy",
-            "part": "switch",
+            "key": "energy",
+            "part": "main",
             "label": "Energy",
             "description": "Sum of consumed energy",
             "value": {
@@ -506,11 +486,6 @@
         "parts": [
           {
             "id": "main",
-            "label": "Device",
-            "kind": "device"
-          },
-          {
-            "id": "light",
             "label": "Light",
             "kind": "light",
             "energy": {
@@ -523,8 +498,8 @@
         ],
         "attributes": [
           {
-            "key": "light.on",
-            "part": "light",
+            "key": "on",
+            "part": "main",
             "label": "On",
             "value": {
               "type": "boolean"
@@ -532,8 +507,8 @@
             "means": "on"
           },
           {
-            "key": "light.brightness",
-            "part": "light",
+            "key": "brightness",
+            "part": "main",
             "label": "Brightness",
             "value": {
               "type": "number",
@@ -545,8 +520,8 @@
             "access": "write"
           },
           {
-            "key": "light.color_temp",
-            "part": "light",
+            "key": "color_temp",
+            "part": "main",
             "label": "Color temp (mired)",
             "value": {
               "type": "number",
@@ -556,8 +531,8 @@
             "access": "write"
           },
           {
-            "key": "light.color",
-            "part": "light",
+            "key": "color",
+            "part": "main",
             "label": "Color (X/Y)",
             "value": {
               "type": "object",
@@ -707,19 +682,14 @@
         "parts": [
           {
             "id": "main",
-            "label": "Device",
-            "kind": "device"
-          },
-          {
-            "id": "climate",
             "label": "Thermostat",
             "kind": "other"
           }
         ],
         "attributes": [
           {
-            "key": "climate.local_temperature",
-            "part": "climate",
+            "key": "local_temperature",
+            "part": "main",
             "label": "Local temperature",
             "value": {
               "type": "number",
@@ -729,8 +699,8 @@
             "category": "primary"
           },
           {
-            "key": "climate.occupied_heating_setpoint",
-            "part": "climate",
+            "key": "occupied_heating_setpoint",
+            "part": "main",
             "label": "Heating setpoint",
             "value": {
               "type": "number",
@@ -742,8 +712,8 @@
             "dangerous": true
           },
           {
-            "key": "climate.system_mode",
-            "part": "climate",
+            "key": "system_mode",
+            "part": "main",
             "label": "System mode",
             "value": {
               "type": "enum",
@@ -765,8 +735,8 @@
             "access": "write"
           },
           {
-            "key": "climate.running_state",
-            "part": "climate",
+            "key": "running_state",
+            "part": "main",
             "label": "Running state",
             "value": {
               "type": "enum",
@@ -827,19 +797,14 @@
         "parts": [
           {
             "id": "main",
-            "label": "Device",
-            "kind": "device"
-          },
-          {
-            "id": "lock",
             "label": "Lock",
             "kind": "lock"
           }
         ],
         "attributes": [
           {
-            "key": "lock.state",
-            "part": "lock",
+            "key": "state",
+            "part": "main",
             "label": "Locked",
             "value": {
               "type": "boolean"
@@ -892,19 +857,14 @@
         "parts": [
           {
             "id": "main",
-            "label": "Device",
-            "kind": "device"
-          },
-          {
-            "id": "cover",
             "label": "Cover",
             "kind": "cover"
           }
         ],
         "attributes": [
           {
-            "key": "cover.state",
-            "part": "cover",
+            "key": "state",
+            "part": "main",
             "label": "State",
             "value": {
               "type": "enum",
@@ -926,8 +886,8 @@
             "access": "write"
           },
           {
-            "key": "cover.position",
-            "part": "cover",
+            "key": "position",
+            "part": "main",
             "label": "Position",
             "value": {
               "type": "number",
@@ -971,11 +931,6 @@
         "parts": [
           {
             "id": "main",
-            "label": "Device",
-            "kind": "device"
-          },
-          {
-            "id": "switch",
             "label": "Output",
             "kind": "outlet",
             "energy": {
@@ -988,8 +943,8 @@
         ],
         "attributes": [
           {
-            "key": "switch.on",
-            "part": "switch",
+            "key": "on",
+            "part": "main",
             "label": "Switch",
             "value": {
               "type": "boolean"
@@ -1031,11 +986,6 @@
         "parts": [
           {
             "id": "main",
-            "label": "Device",
-            "kind": "device"
-          },
-          {
-            "id": "light",
             "label": "Light",
             "kind": "light",
             "energy": {
@@ -1048,8 +998,8 @@
         ],
         "attributes": [
           {
-            "key": "light.on",
-            "part": "light",
+            "key": "on",
+            "part": "main",
             "label": "On",
             "value": {
               "type": "boolean"
@@ -1057,8 +1007,8 @@
             "means": "on"
           },
           {
-            "key": "light.brightness",
-            "part": "light",
+            "key": "brightness",
+            "part": "main",
             "label": "Brightness",
             "value": {
               "type": "number",
@@ -1070,8 +1020,8 @@
             "access": "write"
           },
           {
-            "key": "light.color_temp",
-            "part": "light",
+            "key": "color_temp",
+            "part": "main",
             "label": "Color temp (mired)",
             "value": {
               "type": "number",
@@ -1081,8 +1031,8 @@
             "access": "write"
           },
           {
-            "key": "light.color",
-            "part": "light",
+            "key": "color",
+            "part": "main",
             "label": "Color (X/Y)",
             "value": {
               "type": "object",

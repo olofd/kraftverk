@@ -427,7 +427,7 @@ export class Follower {
     const inUse = this.sessions.inUse(device.id) ?? this.connections.forDevice(device.id)[0] ?? null;
     return {
       ...device,
-      readings: session?.readings() ?? device.readings,
+      readings: session ? this.sessions.readings(device.id) : device.readings,
       health,
       tools: session ? toolsOf(this.installed.types.get(device.typeId)?.tools, session).map(({ name, spec }) => ({ name, ...spec })) : device.tools,
       joins: session ? joinsOf(session) : device.joins,

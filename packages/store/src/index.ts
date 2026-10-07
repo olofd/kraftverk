@@ -24,6 +24,7 @@ export * from './events.ts';
 export * from './nodes.ts';
 export * from './home.ts';
 export * from './device-store.ts';
+export * from './last-readings.ts';
 export * from './transport-store.ts';
 export * from './integration-kept.ts';
 export * from './ledger.ts';

@@ -443,9 +443,23 @@ export class SetupService {
     // The node that will hold it was forgotten while it was being set up.
     if (!this.deps.traits(draft.heldBy)) throw new ApiError('not-found', 'The node that was to hold it is no longer part of this home');
     const config = saveable(draft, input, this.deps.self);
+    // A move only as the check offered it: that device, found to be this one, and to move.
+    const moving = input.mode === 'move' ? ((input.deviceId ?? null) as SavedDeviceId | null) : null;
+    if (input.mode === 'move') {
+      const offered = draft.checked?.outcome === 'yours' && draft.checked.move !== null && draft.checked.device.id === moving;
+      if (!offered) throw new ApiError('conflict', 'Check it first: only the device it answered as can move here');
+    }
     // A device moving to another type is let go of first: its session is its old type's.
-    if (input.mode === 'move' && input.deviceId) await this.deps.sessions.close(input.deviceId as SavedDeviceId);
-    const { record, kind } = this.deps.db.transaction(() => writeSaved({ ...this.deps, target: this.#target(draft, draft.checked?.identified) }, draft, input, config))();
+    if (moving) await this.deps.sessions.close(moving);
+    let saved: ReturnType<typeof writeSaved>;
+    try {
+      saved = this.deps.db.transaction(() => writeSaved({ ...this.deps, target: this.#target(draft, draft.checked?.identified) }, draft, input, config))();
+    } catch (error) {
+      // Nothing was written: the device it was to move opens again as what it was.
+      if (moving) await this.deps.sessions.sync(this.deps.catalog.list());
+      throw error;
+    }
+    const { record, kind } = saved;
 
     this.deps.record({
       at: new Date().toISOString(),

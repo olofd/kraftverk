@@ -65,9 +65,9 @@ export async function joinBridge(asked: {
   const seconds = Math.max(0, Math.min(joining.maxSeconds, Math.round(Number.isFinite(asked.seconds) ? asked.seconds : 0)));
   try {
     if (asked.readOnly) throw new ApiError('not-allowed', 'Every write to hardware is refused: this holder is read-only');
-    await joining.open(seconds);
+    const until = await joining.open(seconds);
     asked.record('device.join', seconds ? `Let devices join "${device.name}" for ${seconds} s` : `Stopped devices joining "${device.name}"`, { seconds });
-    return { until: joining.until() };
+    return { until };
   } catch (error) {
     asked.record('device.join-refused', `Letting devices join "${device.name}" was refused: ${(error as Error).message}`, { seconds });
     throw error;

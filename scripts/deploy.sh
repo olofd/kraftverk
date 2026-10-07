@@ -90,7 +90,7 @@ if [ "$what" = broker ]; then
 fi
 
 # The broker first, and only if it is not there: started if it is stopped,
-# created on the very first deploy, never recreated here.
+# created on the very first deploy; recreated below only when it is not these images'.
 compose up -d --no-build --no-recreate broker
 # The server and the app, replaced with the images given.
 compose up -d --no-build --no-deps --wait --wait-timeout 180 kraftverk relay web
@@ -112,24 +112,21 @@ clients=""
 [ -n "${KRAFTVERK_ZIGBEE2MQTT_PASSWORD:-}" ] && clients="zigbee2mqtt=$KRAFTVERK_ZIGBEE2MQTT_PASSWORD"
 wanted=$(printf '%s' "$clients" | sha256sum | cut -c1-12)
 known=$(compose exec -T broker bun --eval "console.log((await (await fetch('http://127.0.0.1:3883/health')).json()).clients)")
-if [ "$installed" != "$applied" ] || [ "$wanted" != "$known" ]; then
-  echo "The broker applies [$applied] and knows clients $known; these images install [$installed], and this installation names $wanted. Recreating it: the station is gone for about a minute."
+# And the code it runs: a broker fix — a guard, a policy — is live once it is deployed,
+# not once someone remembers to recreate it. Losing the station for a minute is accepted.
+expected=$(compose exec -T kraftverk bun --eval "console.log((await import('./packages/transports/mqtt/src/broker/shared.ts')).brokerBuild())")
+running=$(compose exec -T broker bun --eval "console.log((await (await fetch('http://127.0.0.1:3883/health')).json()).build)")
+if [ "$installed" != "$applied" ] || [ "$wanted" != "$known" ] || [ "$expected" != "$running" ]; then
+  echo "The broker runs build $running, applies [$applied] and knows clients $known; these images' is $expected, installing [$installed], and this installation names $wanted. Recreating it: the station is gone for about a minute."
   compose up -d --no-build --no-deps --force-recreate --wait --wait-timeout 120 broker
+else
+  echo "The broker is current ($running)."
 fi
 
 # Zigbee2MQTT, where the dongle is (the zigbee profile): after the broker, which it signs in to.
 case ",${COMPOSE_PROFILES:-}," in
   *,zigbee,*) compose up -d --no-build --no-deps zigbee2mqtt ;;
 esac
-
-expected=$(compose exec -T kraftverk bun --eval "console.log((await import('./packages/transports/mqtt/src/broker/shared.ts')).brokerBuild())")
-running=$(compose exec -T broker bun --eval "console.log((await (await fetch('http://127.0.0.1:3883/health')).json()).build)")
-if [ "$expected" != "$running" ]; then
-  echo "The broker is running an older build ($running; these images' is $expected)."
-  echo "Run 'scripts/deploy.sh broker' when losing the station for a minute is fine."
-else
-  echo "The broker is current ($running)."
-fi
 
 # These images and the ones before stay; kraftverk images unused for a week go.
 docker image prune --all --force --filter label=se.kraftverk.image --filter until=168h > /dev/null

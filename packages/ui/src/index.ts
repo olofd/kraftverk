@@ -14,7 +14,7 @@
 
 export { AnimatedNumber } from './AnimatedNumber.tsx';
 export { Card, SectionLabel, type CardProps } from './Card.tsx';
-export { DeviceCard, type DeviceCardDevice } from './DeviceCard.tsx';
+export { DeviceCard, HEALTH_DOT, type DeviceCardDevice } from './DeviceCard.tsx';
 export { EnergyFlow } from './EnergyFlow.tsx';
 export { energyFlowOf, type Flow, type FlowNode } from './energy.ts';
 export { EventList, type ListedEvent } from './EventList.tsx';

@@ -206,7 +206,8 @@ export class DeviceViews {
       // What its session can run here; another node holding it runs its own.
       tools: remote ? [] : toolsOf(type?.tools, session).map(({ name, spec }) => ({ name, ...spec })),
       joins: remote ? null : joinsOf(session),
-      readings: remote?.readings ?? session?.readings() ?? [],
+      // What it says now, and what it last said of the rest, as it was: its last state, drawn rather than hidden.
+      readings: remote?.readings ?? (record.removedAt ? [] : this.deps.sessions.readings(record.id)),
       health: record.removedAt
         ? { status: 'offline', detail: `Removed ${new Date(record.removedAt).toLocaleDateString()}; its history is kept`, node: null, transport: null, lastReadingAt: null }
         : remote

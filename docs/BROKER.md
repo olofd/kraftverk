@@ -165,12 +165,15 @@ chooses. What a connection may *publish* is another matter.
   so nothing on the LAN can take over the server's session.
 - **A bridge signs in, and holds its devices.** A protocol spoken by one
   client for many devices — Zigbee2MQTT — says so in its policy: its topics
-  share a beginning (`root`), matched by its policy alone, and only a client
-  signed in with a name and password from `KRAFTVERK_BROKER_CLIENTS` may
-  publish them (`signedIn`). The first signed-in client to speak for a device
-  holds it while it is connected: a second is cut off, so nothing on the LAN
-  can take its presence or speak in its place. A wrong password is turned
-  away; an unknown name is let in as anyone, as a station is.
+  share a beginning (`root`), matched by its policy alone, and only the client
+  it names (`signedIn: 'zigbee2mqtt'`), signed in with its password from
+  `KRAFTVERK_BROKER_CLIENTS`, may publish them — and only it and the server
+  are sent them: nobody else on the LAN reads a device's state or the
+  network's key. The first connection of that client to speak for a device
+  holds it while it is connected: a second is cut off. Its client id is its
+  own: anyone asking for it, or for the one it holds, is refused, so nobody
+  pushes it off the broker. A wrong password is turned away; an unknown name
+  is let in as anyone, as a station is.
 - **A policy refuses by topic and frame.** `refuse(topic, payload)`: for a
   station the frame says what is dangerous; for a bridge the topic does —
   switching a lamp is not changing the network's key.
