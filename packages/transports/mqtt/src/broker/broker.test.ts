@@ -601,6 +601,31 @@ describe('hardening', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  test('what is kept on a topic outlives the broker: a new one keeps it again, for whoever subscribes next', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kraftverk-retained-'));
+    const file = join(dir, 'retained.json');
+    const first = newBroker(new Journal({ dir: null, consoleLevel: 'off' }), { retainedFile: file });
+    await first.start();
+    const station = await mqttClient(first.port!, 'kept-state');
+    station.publish(`${STATION}/device/response/state`, new TextEncoder().encode('1'), { retain: true });
+    station.publish('somewhere/cleared', new TextEncoder().encode('x'), { retain: true });
+    station.publish('somewhere/cleared', new Uint8Array(), { retain: true });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    station.close();
+    await first.stop();
+
+    const second = newBroker(new Journal({ dir: null, consoleLevel: 'off' }), { retainedFile: file });
+    await second.start();
+    const reader = await mqttClient(second.port!, 'reader');
+    await reader.subscribe('#');
+    await until(() => reader.received.some((message) => message.topic === `${STATION}/device/response/state`), 'the kept state');
+    expect(reader.received.find((message) => message.topic === `${STATION}/device/response/state`)?.payload.toString()).toBe('1');
+    expect(reader.received.some((message) => message.topic === 'somewhere/cleared')).toBe(false);
+    reader.close();
+    await second.stop();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   test('a client’s traffic that no protocol knows is said at info once a minute, not on every message', async () => {
     const journal = new Journal({ dir: null, consoleLevel: 'off' });
     const broker = newBroker(journal);

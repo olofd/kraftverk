@@ -80,6 +80,7 @@ const broker = new MessageBroker({
   journal,
   policies,
   devicesFile: files.devices,
+  retainedFile: files.retained,
 });
 
 let stopping = false;

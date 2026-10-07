@@ -52,6 +52,8 @@ function healthOf(link: ZigbeeLink, shape: Shape | null): SessionHealth {
   if (!link.connected()) return { status: 'offline', detail: 'Its coordinator is not there: Zigbee2MQTT is not running, or not connected', lastReadingAt: at };
   if (!shape) return { status: 'connecting', detail: 'Joining: Zigbee2MQTT is asking it what it is', lastReadingAt: at };
   if (link.available() === false) return { status: 'offline', detail: 'Zigbee2MQTT says it does not answer: is it powered, and in range of a router?', lastReadingAt: at };
+  // Reachable, and quiet since this server began listening: a battery device speaks when a value changes, at least hourly.
+  if (!at && link.available() === true) return { status: 'connected', detail: 'Reachable; waiting for its next report — it says a value when it changes', lastReadingAt: null };
   if (!at) return { status: 'connecting', detail: 'Waiting for it to say something', lastReadingAt: null };
   const about = link.about();
   return { status: 'connected', detail: about ? `${about.vendor ?? ''} ${about.model ?? ''}`.trim() || 'Zigbee' : 'A Zigbee group', lastReadingAt: at };

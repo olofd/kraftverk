@@ -74,6 +74,8 @@ export const paths = (dir = brokerDir()) => ({
   state: join(dir, 'broker.json'),
   /** Devices seen by any broker run, so a fresh one knows whom to expect. */
   devices: join(dir, 'devices.json'),
+  /** What is kept on each topic (retained), kept between runs. */
+  retained: join(dir, 'retained.json'),
   logs: join(dir, 'logs'),
   /** The broker's own stdout and stderr, for crashes that happen before the journal opens. */
   stdout: join(dir, 'logs', 'stdout.log'),

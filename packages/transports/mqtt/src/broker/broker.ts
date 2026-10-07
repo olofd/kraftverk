@@ -54,6 +54,13 @@ export type BrokerOptions = {
   policies: Policies;
   /** Where known devices are remembered between runs. Null to forget them. */
   devicesFile: string | null;
+  /**
+   * Where what is kept on each topic (retained) is kept between runs. A
+   * broker restarted — by a deploy — would otherwise start empty, and a
+   * bridge's quiet devices would say nothing of themselves until they next
+   * changed: a sensor, for an hour. Null to keep it in memory only.
+   */
+  retainedFile?: string | null;
   /** How often to check for devices that have not come back. */
   watchdogMs?: number;
 };
@@ -147,7 +154,8 @@ export class MessageBroker {
    * needs to know which are kept — it replays them to a channel opened later
    * (`BrokerBus`). So it is told: what it is sent on a kept topic says so.
    */
-  #retained = new Set<string>();
+  #retained = new Map<string, Uint8Array>();
+  #saveRetainedTimer: ReturnType<typeof setTimeout> | null = null;
   #nextConnection = 0;
   #startedAt = Date.now();
   #stopping = false;
@@ -336,7 +344,8 @@ export class MessageBroker {
         if (!reason) {
           if (packet.retain) {
             if (payload.length === 0) this.#retained.delete(packet.topic);
-            else this.#retained.add(packet.topic);
+            else this.#retained.set(packet.topic, payload);
+            this.#keepRetainedSoon();
           }
           return callback(null);
         }
@@ -444,6 +453,9 @@ export class MessageBroker {
       this.#publish(TOPIC.journal, JSON.stringify(entry), false);
     });
 
+    // What was kept on each topic when the last broker stopped, kept again before anyone connects.
+    await this.#restoreRetained(aedes);
+
     const server = createServer((socket) => this.#onSocket(socket));
     this.#server = server;
 
@@ -481,6 +493,7 @@ export class MessageBroker {
     this.#server = null;
     this.#aedes = null;
     this.#saveKnown();
+    this.#keepRetained();
   }
 
   // --- connection lifecycle -------------------------------------------------
@@ -985,6 +998,48 @@ export class MessageBroker {
     const device = conn.device ? this.#devices.get(conn.device) : null;
     if (device) return describe(device);
     return `Client ${conn.clientId ?? `#${conn.n}`}`;
+  }
+
+  /** Writes what is kept on each topic a moment from now: a burst of retained messages is one write. */
+  #keepRetainedSoon(): void {
+    if (!this.options.retainedFile || this.#saveRetainedTimer) return;
+    this.#saveRetainedTimer = setTimeout(() => this.#keepRetained(), 1000);
+    this.#saveRetainedTimer.unref?.();
+  }
+
+  #keepRetained(): void {
+    if (this.#saveRetainedTimer) clearTimeout(this.#saveRetainedTimer);
+    this.#saveRetainedTimer = null;
+    const file = this.options.retainedFile;
+    if (!file) return;
+    try {
+      mkdirSync(dirname(file), { recursive: true });
+      const kept = Object.fromEntries([...this.#retained].map(([topic, payload]) => [topic, Buffer.from(payload).toString('base64')]));
+      writeFileSync(file, JSON.stringify(kept));
+    } catch {
+      // Kept for the next broker's sake, not this one's: failing to write it costs nothing now.
+    }
+  }
+
+  /** What the last broker kept on each topic, published again as retained — by the broker itself, before anyone is there to receive it. */
+  async #restoreRetained(aedes: Aedes): Promise<void> {
+    const file = this.options.retainedFile;
+    if (!file) return;
+    let kept: Record<string, string> = {};
+    try {
+      kept = JSON.parse(readFileSync(file, 'utf8')) as Record<string, string>;
+    } catch {
+      return;
+    }
+    for (const [topic, base64] of Object.entries(kept)) {
+      // The broker's own topics it says afresh; the rest are the devices'.
+      if (topic.startsWith('$') || typeof base64 !== 'string') continue;
+      const payload = Buffer.from(base64, 'base64');
+      if (!payload.length) continue;
+      this.#retained.set(topic, new Uint8Array(payload));
+      await new Promise<void>((resolve) => aedes.publish({ cmd: 'publish', topic, payload, qos: 0, retain: true, dup: false } as never, () => resolve()));
+    }
+    if (this.#retained.size) this.#journal.info({ kind: 'broker.retained', message: `Kept again what the last broker kept on ${this.#retained.size} topic(s)` });
   }
 
   #loadKnown(): DeviceRecord[] {
