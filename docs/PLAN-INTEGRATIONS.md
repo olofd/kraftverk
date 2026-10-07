@@ -1456,6 +1456,12 @@ with one narrow connection to the server and its state in its
 `TransportStore` (a Matter fabric, a Zigbee network key). zigbee2mqtt needs
 nothing new: it is a client of the broker, an integration on the `mqtt`
 transport.
+**Zigbee built 2026-10-07** ([PLAN-ZIGBEE.md](PLAN-ZIGBEE.md)): Zigbee2MQTT
+is that edge service, beside the broker with the dongle, and MQTT the narrow
+connection; its network key stays in its own volume, not a `TransportStore`.
+It did need something new after all — of MQTT: retained messages replayed to
+a late subscriber, a policy with a root, topic-aware refusals and signed-in
+clients — and of the bridge contract: `Bridge.join`.
 
 **Step 14 · The lists opened.**
 Categories grown toward Home Assistant's breadth; quantities as records, with

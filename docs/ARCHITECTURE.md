@@ -133,6 +133,9 @@ packages/
                                                          account — a bridge — the scooter builder and the generic scooter
   integrations/open-meteo/ @kraftverk/integration-open-meteo the weather, a service, and its API
   integrations/elprisetjustnu/ @kraftverk/integration-elprisetjustnu Sweden's electricity prices, a service, and its API
+  integrations/zigbee2mqtt/ @kraftverk/integration-zigbee2mqtt Zigbee through Zigbee2MQTT on the broker: the coordinator, a
+                                                         gateway; every device a generic type per shelf, described from
+                                                         what it exposes; groups; devices let to join
   devices/aferiy-p280/   @kraftverk/device-aferiy-p280   a device on sydpower: power-station
   devices/atorch-s1w/    @kraftverk/device-atorch-s1w    a device on tuya: smart-plug
   devices/tuya-zigbee-plug/ @kraftverk/device-tuya-zigbee-plug a device on tuya: smart-plug, a Zigbee socket behind a Tuya
@@ -571,8 +574,15 @@ audit, home_setting, login_session (the server's own: users)
 ```
 
 - **Ids are opaque and permanent.** New ids carry no meaning.
-- **`type_id` is immutable.** Changing what a device *is* means adding a new
-  one; its history would not mean the same thing.
+- **`type_id` changes only by a mapping a person sees** (2026-10-07,
+  [PLAN-ZIGBEE.md](PLAN-ZIGBEE.md) §2.1). The same thing reached as another
+  type — a Zigbee plug moved from one coordinator to another — keeps its id,
+  its name and its history: each attribute it has had is mapped onto the new
+  description by meaning, then key, then label (converted where a unit
+  changed), its parts, links and automations re-pointed, and what maps
+  nowhere keeps its history under its old key. It was immutable before, so
+  that history could not be misread; the mapping is what keeps that promise
+  now.
 - **Identity, not address, is the device.** One device per identity among those
   not removed; an exclusive transport's address belongs to one device.
 - **A device keeps its description.** The latest — its type's, or its own — is
@@ -753,8 +763,10 @@ speaks**: a Matter-over-Thread device is an IPv6 host behind a border router
 radio — only, for commissioning a new Thread device, the network's
 credentials, from a border router or shared from another home. Open
 questions for a spike: matter.js under Bun, and IPv6 multicast from inside
-Docker. Zigbee and Z-Wave stay out, or come in through Zigbee2MQTT as another
-generic, self-describing type.
+Docker. Zigbee comes in through Zigbee2MQTT, beside kraftverk on its broker,
+its devices generic, self-describing types — `@kraftverk/integration-zigbee2mqtt`,
+[PLAN-ZIGBEE.md](PLAN-ZIGBEE.md) (2026-10-07). Z-Wave stays out until it is
+needed, and would come the same way.
 
 ## 5. Safety rules that survive every step
 

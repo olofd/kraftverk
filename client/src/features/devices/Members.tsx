@@ -16,13 +16,14 @@ import { useHome } from '../../state/HomeProvider';
  * behind it that you have not added, each a tap from being added. Nothing for
  * a device nothing is reached through.
  */
-export function Members({ device }: { device: DeviceView }) {
+export function Members({ device, joiningUntil }: { device: DeviceView; /** Until when devices may join it, as the page knows it: looked at every few seconds until then. */ joiningUntil?: string | null }) {
   const { devices } = useDevices();
   const { api } = useHome();
   const theme = useTheme();
   const yours = devices.filter((other) => other.connections.some((connection) => connection.through?.id === device.id));
   // Looked at often while devices may join it: one that joins shows up within seconds.
-  const joining = Boolean(device.joins?.until && Date.parse(device.joins.until) > Date.now());
+  const until = joiningUntil ?? device.joins?.until ?? null;
+  const joining = Boolean(until && Date.parse(until) > Date.now());
   const found = (useAnswer(() => api.nearby(), [api, device.id, joining], { every: joining ? 3_000 : 15_000 }).value ?? []).filter((entry) => entry.through?.id === device.id && !entry.ignored);
   if (!yours.length && !found.length) return null;
 

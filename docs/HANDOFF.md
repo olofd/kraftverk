@@ -253,7 +253,15 @@ From the Phase 1 review:
 
 ### Next steps
 
-**First, the rest of [PLAN-RUN-AND-CHAIN.md](PLAN-RUN-AND-CHAIN.md)**: its
+**Zigbee, being hardened** ([PLAN-ZIGBEE.md](PLAN-ZIGBEE.md), 2026-10-07):
+MQTT made sound for a bridge, the `zigbee2mqtt` integration (the coordinator,
+a generic type per shelf, groups, pairing in the bridge contract), a device's
+type changed with its history mapped, the deploy and the NUC's settings — all
+built, tested against a played Zigbee2MQTT. Left: on the NUC, the dongle up,
+four plugs, a switch and a sensor paired and added, the NIU charger moved from
+its Tuya gateway; then §5.5's next (software updates, device options).
+
+**Then the rest of [PLAN-RUN-AND-CHAIN.md](PLAN-RUN-AND-CHAIN.md)**: its
 Phases 1 (fixes), 2 (the automation editor) and 3 (shared parts, the
 reserve) are done; next, Phase 4, the language for import and export. The steps below follow it.
 

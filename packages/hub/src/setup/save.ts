@@ -141,6 +141,11 @@ export function writeSaved(deps: SaveDeps, draft: Draft, input: SaveRequest, con
     if (claim && claim.deviceId !== record.id) throw new ApiError('conflict', 'Another device you have is already reached at that address');
   }
 
+  // Moved to another type over the very way it already had — a Zigbee switch become a plug, behind the same coordinator: that way stays, as it is.
+  const same = (c: { method: string; address: string; through: SavedDeviceId | null; heldBy: NodeId | null }) =>
+    c.method === method.id && c.address === address && (draft.through ? c.through === draft.through : c.heldBy === draft.heldBy);
+  if (kind === 'device.moved' && deps.connections.forDevice(record.id).some(same)) return { record, kind };
+
   const holding = draft.through ? { through: draft.through } : { heldBy: draft.heldBy };
   const saved = deps.connections.add({ deviceId: record.id, method: method.id, transport: transportOf(method), ...holding, address, config: config.connection, secretsExportable: draft.heldBy === deps.self && input.secretsExportable === true });
   if (draft.secrets.size) keepSecrets(deps, draft, saved.id);

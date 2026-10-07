@@ -5,6 +5,7 @@ import { InfoCard } from '@kraftverk/ui';
 
 import { useDevices } from '../../state/DevicesProvider';
 import { DeviceConfig } from '../config/DeviceConfig';
+import { ChangeType } from './ChangeType';
 import { Connections } from './Connections';
 import { DeviceShell } from './DeviceShell';
 import { GenericSettings } from './GenericSettings';
@@ -36,6 +37,7 @@ function SettingsOf({ device }: { device: DeviceView }) {
       <InfoCard info={device.info} />
       <Tools device={device} />
       <DeviceConfig device={device} />
+      <ChangeType device={device} />
       <Manage device={device} />
     </>
   );

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Button, Text, YStack } from 'tamagui';
 
@@ -76,6 +77,7 @@ export function OwnScreen() {
   const { loading, screenProps } = useDevices();
   const integration = account?.integration ?? null;
   const Panel = integrationScreens(integration?.id ?? id)?.account;
+  const [joiningUntil, setJoiningUntil] = useState<string | null>(null);
 
   if (!account) {
     return (
@@ -92,8 +94,8 @@ export function OwnScreen() {
   return (
     <Screen back={integration?.name ?? 'Integration'} backTo={PATHS.integrations.one(integration?.id ?? id ?? '')} title={account.name} subtitle={account.meta.name} status={deviceStatus(account)}>
       {Panel ? <Panel {...screenProps(account)} /> : null}
-      <Joining device={account} />
-      <Members device={account} />
+      <Joining device={account} onUntil={setJoiningUntil} />
+      <Members device={account} joiningUntil={joiningUntil} />
       <Readings device={account} />
       <Tools device={account} />
       <SignIn account={account} />

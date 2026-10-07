@@ -31,12 +31,18 @@ function useSecondsLeft(until: string | null): number {
  * joins appears under *Through it*, "Joining…" until its bridge knows what
  * it is, then to add. Nothing for a device nothing joins.
  */
-export function Joining({ device }: { device: DeviceView }) {
+export function Joining({ device, onUntil }: { device: DeviceView; onUntil?: (until: string | null) => void }) {
   const { api } = useHome();
-  const [until, setUntil] = useState<string | null>(device.joins?.until ?? null);
+  const [until, setUntilHere] = useState<string | null>(device.joins?.until ?? null);
+  // Told to the page too: what is behind it is looked at often while devices may join.
+  const setUntil = (next: string | null) => {
+    setUntilHere(next);
+    onUntil?.(next);
+  };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // What the device says wins: joining ended early, or was opened elsewhere.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => setUntil(device.joins?.until ?? null), [device.joins?.until]);
   const left = useSecondsLeft(until);
   if (!device.joins) return null;

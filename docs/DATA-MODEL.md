@@ -356,7 +356,7 @@ erDiagram
   device {
     text id PK "d-3f9a2c61b0e43f9a"
     text key "garage-p280 · its name in configuration · one device you have to a key"
-    text type_id "aferiy.p280 · a DeviceType id · never changes"
+    text type_id "aferiy.p280 · a DeviceType id · changed only by a move that maps its history"
     text identity "sydpower:AABBCC001122 · read from the device · null until first read"
     text name "Garage P280"
     json config "{} · the type's own choices · tuya.plug: {profile: atorch-s1} · Open-Meteo: {lat, lon}"
@@ -681,8 +681,13 @@ joined; elsewhere it is plain text, null.
   holds, of different devices, may not share a `(transport, address)`. Step 5 greys such a
   sighting out, and the save refuses it. `https` is not exclusive: two weather
   services can use the same API.
-- **`type_id` never changes.** Changing what a device *is* means adding a new
-  one, because its history would not mean the same thing.
+- **`type_id` changes only by a mapping a person sees.** When the check finds
+  a device you have under another type (`outcome: 'yours'` with a `move`),
+  saving with `mode: 'move'` keeps the device and maps its history: each
+  `device_attribute` onto the new description by meaning, key or label,
+  `sample`, `sample_change` and `sample_hour` re-keyed (converted where a unit
+  changed), links and automation roles re-pointed by part, the ways the new
+  type has none for removed, `device_kv` cleared (docs/PLAN-ZIGBEE.md §2.1).
 - **`method` must be one of that type's methods,** checked on write against
   the installed definitions. Each `config` is validated against the schema
   its definition declares: the type's for `device.config`, the method's for
