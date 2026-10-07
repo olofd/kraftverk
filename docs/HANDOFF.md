@@ -257,9 +257,13 @@ From the Phase 1 review:
 MQTT made sound for a bridge, the `zigbee2mqtt` integration (the coordinator,
 a generic type per shelf, groups, pairing in the bridge contract), a device's
 type changed with its history mapped, the deploy and the NUC's settings — all
-built, tested against a played Zigbee2MQTT. Left: on the NUC, the dongle up,
-four plugs, a switch and a sensor paired and added, the NIU charger moved from
-its Tuya gateway; then §5.5's next (software updates, device options).
+built, tested against a played Zigbee2MQTT. On the NUC: the dongle up, the
+SNZB-02P sensor and four S60ZBTPF plugs paired and added; every device's last
+word kept by the holder (`device_reading`) and shown as it was after a
+restart. Left: the wall switch, the NIU charger moved from its Tuya gateway;
+then §5.5's next — software updates first: the four plugs run 1.0.2 and
+Zigbee2MQTT offers a newer firmware (two of them report 0 V) — and device
+options.
 
 **Then the rest of [PLAN-RUN-AND-CHAIN.md](PLAN-RUN-AND-CHAIN.md)**: its
 Phases 1 (fixes), 2 (the automation editor) and 3 (shared parts, the
