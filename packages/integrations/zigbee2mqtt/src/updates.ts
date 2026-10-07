@@ -66,6 +66,8 @@ export class FirmwareUpdates {
   /** Where each device's update stood when its state was last heard: what a change is told against. */
   #was = new Map<string, FirmwareState | null>();
   #installed = new Map<string, number | null>();
+  /** What each device was heard to run and be offered, by its name: an update this did not begin — or began before a restart — is named all the same. */
+  #heardOf = new Map<string, { build: string | null; latest: number | null; source: string | null }>();
   /** Why an update stopped short, as Zigbee2MQTT answered or as it was stopped. */
   #reasons = new Map<string, string>();
   #timers = new Set<ReturnType<typeof setTimeout>>();
@@ -255,6 +257,10 @@ export class FirmwareUpdates {
     const was = this.#was.get(key) ?? null;
     this.#was.set(key, said.state);
     if (said.installed !== null && !this.#installed.has(key)) this.#installed.set(key, said.installed);
+    // Until it is done: Zigbee2MQTT forgets the image once it is installed, and the device list says the new build.
+    if (said.state === 'available' || said.state === 'updating' || said.state === 'scheduled') {
+      this.#heardOf.set(key, { build: this.host.device(key)?.software_build_id ?? null, latest: said.latest, source: said.source });
+    }
     // Every device heard from may be the last a line kept from before waited on.
     if (first) return this.resume();
     if (said.state === 'updating' && was !== 'updating') {
@@ -279,10 +285,12 @@ export class FirmwareUpdates {
     const values = this.host.values(key);
     const said = updateOf(values.update);
     const before = this.#before.get(key);
-    const from = before?.build ?? versionName(before?.installed ?? this.#installed.get(key) ?? null, null) ?? 'unknown';
+    const heard = this.#heardOf.get(key);
+    const from = before?.build ?? heard?.build ?? versionName(before?.installed ?? this.#installed.get(key) ?? null, null) ?? 'unknown';
     if (done) {
       // Named as its image was, when it is the one offered: Zigbee2MQTT forgets the image once it is installed.
-      const to = versionName(said?.installed ?? null, said?.installed === before?.latest ? (before?.source ?? null) : (said?.source ?? null)) ?? 'unknown';
+      const offered = before ?? heard;
+      const to = versionName(said?.installed ?? null, said?.installed === offered?.latest ? (offered?.source ?? null) : (said?.source ?? null)) ?? 'unknown';
       this.host.event(key, FIRMWARE_EVENTS.updated, { from, to });
       this.host.log(`${ieeeOf(key)}: firmware updated, ${from} → ${to}`);
       if (before) this.#checkSettings(key, before);

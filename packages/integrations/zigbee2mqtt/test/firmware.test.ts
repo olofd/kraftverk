@@ -191,6 +191,9 @@ describe('updating, on a played Zigbee2MQTT', () => {
 
     network = new ZigbeeNetwork(played.channel, { changed: () => {}, log: () => {}, now: () => Date.now(), keep, updateTiming: timing });
     network.start();
+    const events: MemberEvent[] = [];
+    let adopted: ZigbeeLink | null = null;
+    adopted = await network.link(PLUG, () => events.push(...(adopted?.takeEvents() ?? [])));
     const b = await network.link(OTHER, () => {});
     await until(() => network.devices().length === 2, 'the devices, again');
     // Not begun while the first is still updating: one at a time holds for an update it did not begin.
@@ -198,6 +201,8 @@ describe('updating, on a played Zigbee2MQTT', () => {
     await until(() => updateOf(b.state().values.update)?.state === 'updating', 'the second, after the first', 5000);
     await until(() => updateOf(b.state().values.update)?.state === 'idle', 'the second done', 5000);
     expect(kept).toMatchObject({ waiting: [] });
+    // The first, begun before the restart, is told and named as one begun after it would be.
+    expect(events.find((event) => event.id === 'firmware.updated')?.data).toEqual({ from: '1.0.2', to: '2.1.3' });
   });
 
   test('refused: nothing offered, a group, a battery too low', async () => {
