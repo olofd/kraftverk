@@ -8,7 +8,7 @@ import type { Client } from 'aedes';
 import type { MessageBrokerPolicy } from '@kraftverk/device-sdk';
 
 import { duration, type Journal } from './journal.ts';
-import { commandOf, deviceOf, refusalFor, type Policies } from './policy.ts';
+import { commandOf, deviceOf, isGuarded, isSecret, refusalFor, type Policies } from './policy.ts';
 import { clientsFingerprint, RESERVED_CLIENT_PREFIX, SERVER_USERNAME, sameSecret, TOPIC, type DevicePresence } from './shared.ts';
 
 /**
@@ -371,7 +371,7 @@ export class MessageBroker {
           clientId: client?.id,
           remote: conn?.remote,
           device: command && command.address !== packet.topic ? command.address : undefined,
-          data: { ...refused, bytes: payload.length, hex: toHex(payload) },
+          data: { ...refused, bytes: payload.length, ...(isSecret(this.options.policies, packet.topic) ? {} : { hex: toHex(payload) }) },
         };
         // The server itself being refused means something upstream failed to
         // stop a frame that destroys hardware. That is an error, not a warning.
@@ -385,7 +385,14 @@ export class MessageBroker {
 
       // The server is told which of what it is sent is kept on its topic (`#retained`). The copy is its own: no other client's flag changes.
       authorizeForward: (client, packet) => {
-        if (this.#retained.has(packet.topic) && this.#of(client)?.privileged) packet.retain = true;
+        const conn = this.#of(client);
+        /*
+          What a bridge says of its devices — their state, its own configuration
+          with its network's key — is the server's and its own: anyone else
+          on the network may subscribe, and is sent none of it.
+        */
+        if (!conn?.privileged && !conn?.signedIn && isGuarded(this.options.policies, packet.topic)) return null;
+        if (this.#retained.has(packet.topic) && conn?.privileged) packet.retain = true;
         return packet;
       },
 
@@ -867,7 +874,7 @@ export class MessageBroker {
       message: `← ${address} [${channel}] ${summary}`,
       device: address,
       clientId: conn.clientId ?? undefined,
-      data: { topic, channel, bytes: payload.length, hex: toHex(payload), summary },
+      data: { topic, channel, bytes: payload.length, ...(isSecret(this.options.policies, topic) ? {} : { hex: toHex(payload) }), summary },
     });
   }
 
@@ -1025,7 +1032,8 @@ export class MessageBroker {
     if (!file) return;
     try {
       mkdirSync(dirname(file), { recursive: true });
-      const kept = Object.fromEntries([...this.#retained].map(([topic, payload]) => [topic, Buffer.from(payload).toString('base64')]));
+      // What carries a secret is never on disk: its bridge says it again when it connects.
+      const kept = Object.fromEntries([...this.#retained].filter(([topic]) => !isSecret(this.options.policies, topic)).map(([topic, payload]) => [topic, Buffer.from(payload).toString('base64')]));
       writeFileSync(file, JSON.stringify(kept));
     } catch {
       // Kept for the next broker's sake, not this one's: failing to write it costs nothing now.
@@ -1044,7 +1052,7 @@ export class MessageBroker {
     }
     for (const [topic, base64] of Object.entries(kept)) {
       // The broker's own topics it says afresh; the rest are the devices'.
-      if (topic.startsWith('$') || typeof base64 !== 'string') continue;
+      if (topic.startsWith('$') || typeof base64 !== 'string' || isSecret(this.options.policies, topic)) continue;
       const payload = Buffer.from(base64, 'base64');
       if (!payload.length) continue;
       this.#retained.set(topic, new Uint8Array(payload));

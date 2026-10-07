@@ -53,6 +53,12 @@ export function deviceOf(
   return null;
 }
 
+/** Whether a topic carries a secret, as the protocol it is under says. */
+export const isSecret = (policies: Policies, topic: string): boolean => candidates(policies, topic).some((policy) => policy.secret?.(topic) ?? false);
+
+/** Whether a topic is under the root of a protocol whose devices only a client that signed in speaks for: nothing on it is anyone else's to read. */
+export const isGuarded = (policies: Policies, topic: string): boolean => policies.some((policy) => policy.signedIn && policy.root && topic.startsWith(policy.root));
+
 /** Who is publishing, as far as the rules care: the server, a client that signed in (by its name), or anyone. */
 export type Publisher = { privileged: boolean; signedIn: string | null };
 

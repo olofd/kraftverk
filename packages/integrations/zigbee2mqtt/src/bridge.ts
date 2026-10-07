@@ -49,7 +49,9 @@ const TOOLS = {
     label: 'Back up the network',
     description: 'Zigbee2MQTT’s backup of the coordinator and its network — its key, what is paired — as a ZIP, base64: what brings the network back on a new dongle.',
     answer: { type: 'string' },
-    writes: false,
+    // Not a change to the network, but its key goes with it: a person's to ask for, never an assistant's, and on the timeline.
+    writes: true,
+    confirm: 'The backup holds the Zigbee network’s key: whoever has the file can join and listen to the network. Keep it as safe as a password.',
   },
   removeDevice: {
     label: 'Remove a device from the network',

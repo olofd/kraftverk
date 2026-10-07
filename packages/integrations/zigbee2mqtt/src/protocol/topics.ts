@@ -133,5 +133,8 @@ export const brokerPolicy: MessageBrokerPolicy = {
     return { summary: `${channel} ${text(payload, 120)}`, level: 'debug' };
   },
 
+  /** Its configuration — the network key in it — and a backup of its network. */
+  secret: (topic) => topic === TOPIC.bridgeInfo || topic === TOPIC.response('backup'),
+
   absenceAdvice: 'Zigbee2MQTT is not connected: is its container running, signed in with its password, and is the dongle plugged in?',
 };

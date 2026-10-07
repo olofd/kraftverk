@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { connect, createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -69,6 +69,7 @@ const BRIDGE: MessageBrokerPolicy = {
   refuse: (topic) => (topic.endsWith('/forbidden/set') ? 'that is never sent' : null),
   describeCommand: (topic) => ({ summary: `set ${topic}`, level: 'info' }),
   describeMessage: (channel) => ({ summary: channel, level: 'debug' }),
+  secret: (topic) => topic === 'bridge-test/bridge/info',
 };
 const BRIDGE_PASSWORD = 'bridge-password-not-a-secret';
 
@@ -142,6 +143,39 @@ describe('a protocol spoken by a bridge', () => {
 
   test('its refusals see the topic: the server is refused what the protocol never sends', () => {
     expect(refusalFor([...policies, BRIDGE], 'bridge-test/forbidden/set', new Uint8Array(), SERVER)).toBe('that is never sent');
+  });
+
+  test('what a bridge says reaches no one who did not sign in: not live, not kept, not its network key', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kraftverk-guarded-'));
+    const journal = new Journal({ dir: null, consoleLevel: 'off' });
+    const broker = newBroker(journal, { policies: [...policies, BRIDGE], clients: new Map([['bridge', BRIDGE_PASSWORD]]), retainedFile: join(dir, 'retained.json') });
+    await broker.start();
+    const bridge = await mqttClient(broker.port!, 'bridge-1', undefined, { username: 'bridge', password: BRIDGE_PASSWORD });
+    bridge.publish('bridge-test/bridge/info', new TextEncoder().encode('{"config":{"network_key":[1,2,3]}}'), { retain: true });
+    bridge.publish('bridge-test/lamp', new TextEncoder().encode('{"state":"ON"}'), { retain: true });
+
+    const snoop = await mqttClient(broker.port!, 'snoop');
+    await snoop.subscribe('#');
+    bridge.publish('bridge-test/lamp', new TextEncoder().encode('{"state":"OFF"}'));
+    // The server, signed in as itself, is sent all of it.
+    const server = new BrokerBus({ host: '127.0.0.1', port: broker.port!, token: () => TOKEN });
+    const heard: string[] = [];
+    server.on('message', (message) => heard.push(message.topic));
+    server.start();
+    await until(() => heard.includes('bridge-test/bridge/info') && heard.includes('bridge-test/lamp'), 'the server hearing it');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(snoop.received.filter((message) => message.topic.startsWith('bridge-test/'))).toEqual([]);
+
+    // Its configuration is never written down; its lamp's state is, and its journal shows no bytes of the secret.
+    await broker.stop();
+    const kept = JSON.parse(readFileSync(join(dir, 'retained.json'), 'utf8')) as Record<string, string>;
+    expect(Object.keys(kept)).toContain('bridge-test/lamp');
+    expect(Object.keys(kept)).not.toContain('bridge-test/bridge/info');
+    expect(journal.query({ level: 'debug', kinds: ['device.message'] }).filter((entry) => entry.data?.topic === 'bridge-test/bridge/info').every((entry) => entry.data?.hex === undefined)).toBe(true);
+    snoop.close();
+    bridge.close();
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
   });
 
   test('signs in with its password, holds its device, and a second client cannot speak for it', async () => {

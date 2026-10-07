@@ -66,6 +66,13 @@ export type MessageBrokerPolicy = {
   refuse(topic: string, payload: Uint8Array): string | null;
   /** A command, described. */
   describeCommand(topic: string, payload: Uint8Array): BrokerMessageNote;
+  /**
+   * Topics that carry a secret — a bridge's configuration with its network
+   * key, a backup of its network: never kept on disk, never shown in the
+   * journal, and (as every topic of a `signedIn` protocol) never sent to a
+   * client that did not sign in.
+   */
+  secret?(topic: string): boolean;
   /** A message from a device, described. */
   describeMessage(channel: string, payload: Uint8Array): BrokerMessageNote;
   /** Said when a known device has been absent a while: what to try. */

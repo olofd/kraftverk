@@ -55,7 +55,8 @@
           "answer": {
             "type": "string"
           },
-          "writes": false
+          "writes": true,
+          "confirm": "The backup holds the Zigbee network’s key: whoever has the file can join and listen to the network. Keep it as safe as a password."
         },
         "removeDevice": {
           "label": "Remove a device from the network",
