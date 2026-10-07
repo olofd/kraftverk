@@ -253,6 +253,7 @@ export class MessageBroker {
       maxClientsIdLength: 256,
 
       preConnect: (client, packet, callback) => {
+        sendEachOnce(client);
         const conn = this.#of(client);
         if (conn) {
           const clientId = packet.clientId || client.id;
@@ -1201,6 +1202,49 @@ function presenceOf(d: DeviceRecord): DevicePresence {
 const describe = (device: DevicePresence) => `Device ${device.address} (${device.protocol})`;
 
 const loopback = (remote: string) => /^(127\.|::1|localhost)/.test(remote);
+
+/** How many of the messages last sent to a client are remembered, to send each once: the same one reaches it through each of its matching subscriptions at once. */
+const SENT_REMEMBERED = 1000;
+
+type Delivering = { brokerId?: string | null; brokerCounter?: number };
+type Deliver = (packet: Delivering, cb: () => void) => void;
+
+/**
+ * Sends a client each message once — and every message.
+ *
+ * aedes sends a client a message only if its number is above the last one it
+ * sent it: what keeps a message matching two of the client's subscriptions
+ * from arriving twice. But it stores a kept (retained) message before sending
+ * it on, and one published in the same breath that is not kept overtakes it;
+ * the kept one, its number now below the last sent, was dropped. Zigbee2MQTT
+ * says its info — kept — with a log line and an answer, so its info never
+ * reached anyone live: not the server, which never saw joining open.
+ *
+ * Here a message is a duplicate only if this very one was sent. Its broker
+ * id is cleared once judged, which is how aedes is told to send it as it is:
+ * the way it sends what is kept to a new subscription.
+ */
+function sendEachOnce(client: Client): void {
+  const it = client as unknown as { deliver0: Deliver; deliverQoS: Deliver };
+  const sent = new Set<string>();
+  const order: string[] = [];
+  const once =
+    (deliver: Deliver): Deliver =>
+    (packet, cb) => {
+      if (packet.brokerId) {
+        const key = `${packet.brokerId}:${packet.brokerCounter}`;
+        if (sent.has(key)) return void setImmediate(cb);
+        sent.add(key);
+        order.push(key);
+        if (order.length > SENT_REMEMBERED) sent.delete(order.shift()!);
+        // A copy of its own, made for this subscription: clearing it changes no other client's.
+        packet.brokerId = null;
+      }
+      deliver(packet, cb);
+    };
+  it.deliver0 = once(it.deliver0);
+  it.deliverQoS = once(it.deliverQoS);
+}
 
 /** How much of a payload the journal keeps, in bytes: a bridge's device list is hundreds of kB, and its first 200 say what it was. */
 const HEX_BYTES = 200;

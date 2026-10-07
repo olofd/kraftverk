@@ -163,6 +163,11 @@ describe('a protocol spoken by a bridge', () => {
     server.on('message', (message) => heard.push(message.topic));
     server.start();
     await until(() => heard.includes('bridge-test/bridge/info') && heard.includes('bridge-test/lamp'), 'the server hearing it');
+    // Said again while the server listens — kept on its topic, and large, as Zigbee2MQTT's is — it hears it live too.
+    const live = new TextEncoder().encode(JSON.stringify({ permit_join: true, config: { network_key: [1, 2, 3] }, pad: 'x'.repeat(28_000) }));
+    heard.length = 0;
+    bridge.publish('bridge-test/bridge/info', live, { retain: true });
+    await until(() => heard.includes('bridge-test/bridge/info'), 'the server hearing it said again');
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(snoop.received.filter((message) => message.topic.startsWith('bridge-test/'))).toEqual([]);
 
@@ -175,6 +180,62 @@ describe('a protocol spoken by a bridge', () => {
     snoop.close();
     bridge.close();
     await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('a message matching two of a client’s subscriptions reaches it once', async () => {
+    const broker = newBroker(new Journal({ dir: null, consoleLevel: 'off' }));
+    await broker.start();
+    const listener = await mqttClient(broker.port!, 'listener-twice');
+    await listener.subscribe('weather/#');
+    await listener.subscribe('weather/today');
+    const sender = await mqttClient(broker.port!, 'sender-twice');
+    sender.publish('weather/today', new TextEncoder().encode('sun'));
+    sender.publish('weather/today', new TextEncoder().encode('rain'));
+    await until(() => listener.received.length >= 2, 'both');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(listener.received.map((message) => new TextDecoder().decode(message.payload))).toEqual(['sun', 'rain']);
+    listener.close();
+    sender.close();
+    await broker.stop();
+  });
+
+  test('Zigbee2MQTT, after a broker kept what the last one did: what it says again on a kept topic reaches the server live', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kraftverk-z2m-'));
+    const clients = new Map([['zigbee2mqtt', BRIDGE_PASSWORD]]);
+    const say = (client: TestClient, topic: string, value: unknown) => client.publish(topic, new TextEncoder().encode(JSON.stringify(value)), { retain: true });
+    const first = newBroker(new Journal({ dir: null, consoleLevel: 'off' }), { clients, retainedFile: join(dir, 'retained.json') });
+    await first.start();
+    let z2m = await mqttClient(first.port!, 'zigbee2mqtt', undefined, { username: 'zigbee2mqtt', password: BRIDGE_PASSWORD });
+    say(z2m, 'zigbee2mqtt/bridge/devices', [{ ieee_address: '0x00124b0000000001' }]);
+    say(z2m, 'zigbee2mqtt/0x00124b00000000a1/availability', { state: 'online' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    z2m.close();
+    await first.stop();
+
+    const broker = newBroker(new Journal({ dir: null, consoleLevel: 'off' }), { clients, retainedFile: join(dir, 'retained.json') });
+    await broker.start();
+    z2m = await mqttClient(broker.port!, 'zigbee2mqtt', undefined, { username: 'zigbee2mqtt', password: BRIDGE_PASSWORD });
+    await z2m.subscribe('zigbee2mqtt/#');
+    say(z2m, 'zigbee2mqtt/bridge/info', { permit_join: false });
+    const server = new BrokerBus({ host: '127.0.0.1', port: broker.port!, token: () => TOKEN });
+    const heard: { topic: string; body: string }[] = [];
+    server.on('message', (message) => heard.push({ topic: message.topic, body: new TextDecoder().decode(message.payload) }));
+    server.start();
+    await until(() => heard.some((message) => message.topic === 'zigbee2mqtt/bridge/info'), 'the kept info');
+    /*
+      As Zigbee2MQTT says it: its info, kept, and in the same breath its log
+      line, not kept. aedes stores a kept message before it sends it on, so
+      the log line overtakes it — and aedes's own de-duplication, which takes
+      only a number higher than the last sent, then dropped the info.
+    */
+    say(z2m, 'zigbee2mqtt/bridge/info', { permit_join: true, permit_join_end: 1 });
+    z2m.publish('zigbee2mqtt/bridge/logging', new TextEncoder().encode('{"level":"info","message":"joining"}'));
+    await until(() => heard.some((message) => message.body.includes('permit_join_end')), 'the info said again, live');
+    expect(heard.filter((message) => message.topic === 'zigbee2mqtt/bridge/logging')).toHaveLength(1);
+    z2m.close();
+    await server.stop();
+    await broker.stop();
     rmSync(dir, { recursive: true, force: true });
   });
 
