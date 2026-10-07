@@ -202,6 +202,44 @@ Bluetooth passthrough and no BlueZ: the transport says it is unavailable, and
 every other one carries on. Run the server on the host instead, or let the app
 hold the link itself from a browser.
 
+### Zigbee
+
+A Zigbee USB dongle on the host — a Sonoff ZBDongle-P (TI CC2652P, Z-Stack),
+or a ZBDongle-E (Silicon Labs, `ember`) — is driven by **Zigbee2MQTT** in a
+container of its own, `zigbee2mqtt`, which speaks to the broker above,
+signed in. kraftverk is its interface: it has no web page of its own and no
+Home Assistant discovery. Why Zigbee2MQTT, and what kraftverk does with it:
+[PLAN-ZIGBEE.md](PLAN-ZIGBEE.md).
+
+1. In the deploy's environment (`scripts/deploy.env.example`):
+   - `COMPOSE_PROFILES=zigbee` — the service is started only with it;
+   - `KRAFTVERK_ZIGBEE_ADAPTER` — the dongle by its stable path,
+     `/dev/serial/by-id/usb-…-if00-port0` (`ls /dev/serial/by-id/` on the
+     host), never `/dev/ttyUSB0`, which changes with what else is plugged in;
+   - `KRAFTVERK_ZIGBEE_ADAPTER_TYPE` — `zstack` (the default) or `ember`;
+   - `KRAFTVERK_ZIGBEE2MQTT_PASSWORD` — what Zigbee2MQTT signs in to the
+     broker with (`openssl rand -base64 24`). The broker gets it too
+     (`KRAFTVERK_BROKER_CLIENTS`): only Zigbee2MQTT, signed in, may speak for
+     a Zigbee device, and only the server may command one.
+2. Deploy. The broker is recreated if it does not apply the Zigbee2MQTT
+   protocol yet (the station is gone for about a minute), then Zigbee2MQTT
+   starts. On its first start it writes its configuration — a new network key
+   among it — into its volume, `zigbee2mqtt-data`.
+3. In the app, **Integrations → Zigbee2MQTT** offers the coordinator, found
+   when Zigbee2MQTT connects. Add it, then **Let devices join** on its page
+   and put each device in pairing mode: it appears under *Through it*, and
+   is added from there.
+
+**The volume is the network.** Its key and what is paired live in
+`zigbee2mqtt-data`, not in kraftverk's database: setting kraftverk's
+database aside pairs nothing again, losing this volume pairs everything
+again. Back it up with the host's data; the coordinator's page also has
+*Back up the network*.
+
+`docker compose logs -f zigbee2mqtt` says what it is doing — the dongle
+found, devices joining and interviewed. A dongle it cannot open is said
+there first: the wrong path, or another program holding it.
+
 ---
 
 ## Environment
@@ -217,6 +255,10 @@ settings and secrets: keep it out of any repository, readable only by you.
 | `KRAFTVERK_LAN_PORT` | `8080` | Where the home network opens the app |
 | `KRAFTVERK_PUBLIC_PORT` | `8090` | Where the reverse proxy forwards the internet to, on loopback |
 | `KRAFTVERK_MQTT_PORT` | `1883` | Where stations connect |
+| `COMPOSE_PROFILES` | — | `zigbee` starts Zigbee2MQTT, where a dongle is plugged in (*Zigbee*, above) |
+| `KRAFTVERK_ZIGBEE_ADAPTER` | — | The Zigbee dongle, by its `/dev/serial/by-id/` path |
+| `KRAFTVERK_ZIGBEE_ADAPTER_TYPE` | `zstack` | `zstack` for a TI coordinator (ZBDongle-P), `ember` for Silicon Labs (ZBDongle-E) |
+| `KRAFTVERK_ZIGBEE2MQTT_PASSWORD` | — | What Zigbee2MQTT signs in to the broker with; the broker is given it too. None: Zigbee2MQTT cannot speak for its devices |
 | `KRAFTVERK_API_PORT` | `3333` | The server's own port, on loopback |
 | `KRAFTVERK_SERVER_IMAGE` / `KRAFTVERK_WEB_IMAGE` | `kraftverk-server` / `kraftverk-web` | Images to run — built here by default, or pulled from a registry by a deploy |
 

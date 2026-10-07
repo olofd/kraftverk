@@ -1,7 +1,7 @@
 import { LINK_KINDS, type AuditRecord, type Clock, type ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, type GatewayDeps } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, type SessionManagerDeps } from '@kraftverk/holder';
-import { ConnectionStore, databaseLedger, DeviceCatalog, HomeSettings, integrationKept, LinkStore, NodeStore, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { AutomationStore, ConnectionStore, databaseLedger, DeviceCatalog, HistoryStore, HomeSettings, integrationKept, LinkStore, NodeStore, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import type { Installed } from '../installed/from.ts';
 import { unfitFor } from '../installed/needs.ts';
@@ -126,6 +126,9 @@ export function nodeParts(options: NodeOptions, role: NodeRole): NodeParts {
     catalog,
     connections,
     links,
+    // A device moving to another type takes its history and the automations that use it along (§2.1 of docs/PLAN-ZIGBEE.md).
+    history: new HistoryStore(db),
+    automations: new AutomationStore(db),
     sessions,
     http: options.http,
     kept: (integration) => integrationKept(db, options.secrets, integration),

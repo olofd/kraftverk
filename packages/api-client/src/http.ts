@@ -141,6 +141,7 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
       query: (id, part, capability, query, args) => call('POST', `/devices/${enc(id)}/parts/${enc(part)}/queries/${enc(capability)}/${enc(query)}`, { args }),
       tool: (id, name, body) =>
         body.reading ? get(`/devices/${enc(id)}/tools/${enc(name)}`, body.input ?? {}) : call('POST', `/devices/${enc(id)}/tools/${enc(name)}`, { input: body.input, confirmation: body.confirmation }),
+      join: (id, seconds) => call('POST', `/devices/${enc(id)}/join`, { seconds }),
     },
 
     problems: async (limit) => (await get<{ problems: ProblemView[] }>('/problems', { limit })).problems,

@@ -2,7 +2,7 @@ import { ApiError, type AutomationView, type DeviceView, type DraftView, type Kr
 import { capabilityIn, connectionId as asConnectionId, methodOf, transportOf, type SavedDeviceId } from '@kraftverk/device-sdk';
 import { deviceReader } from '@kraftverk/holder';
 
-import { runAskedTool } from '../devices/tools.ts';
+import { joinBridge, runAskedTool } from '../devices/tools.ts';
 import { coalesced } from '../live/stream.ts';
 import { checkSecretFields } from '../installed/connection-schema.ts';
 import { holdableHere } from '../installed/holdable.ts';
@@ -125,6 +125,18 @@ export function followerApi(h: Follower): KraftverkApi {
           body,
           by: intent().by,
           confirmations: h.yes,
+          readOnly: h.readOnly() && !h.sessions.simulated(device.id),
+          record: (kind, summary, detail) => h.owe('audit', null, { at: new Date().toISOString(), kind, actor: intent().by, resourceKind: 'device', resource: device.id, summary, detail }),
+        });
+      },
+      /** A bridge this node holds lets devices join here; any other, where it is held. */
+      async join(id, seconds) {
+        if (!h.holds(id)) return home.devices.join(id, seconds);
+        const { device, session } = heldDevice(id);
+        return joinBridge({
+          device,
+          joining: session.bridge?.join ?? null,
+          seconds,
           readOnly: h.readOnly() && !h.sessions.simulated(device.id),
           record: (kind, summary, detail) => h.owe('audit', null, { at: new Date().toISOString(), kind, actor: intent().by, resourceKind: 'device', resource: device.id, summary, detail }),
         });

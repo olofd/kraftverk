@@ -44,8 +44,8 @@ export type BrokerOptions = {
   /** The secret the server proves itself with. */
   token: string;
   /**
-   * Clients that sign in, by name, each with its password: a bridge such as
-   * Zigbee2MQTT. Signed in, a client may speak for the devices of a protocol
+   * Clients that sign in, by name, each with its password: a bridge, one
+   * client for many devices. Signed in, a client may speak for the devices of a protocol
    * that asks for it (`MessageBrokerPolicy.signedIn`). None by default.
    */
   clients?: ReadonlyMap<string, string>;

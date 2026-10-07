@@ -1,5 +1,5 @@
 import type { ConnectionView, DeviceView, LinkView, PictureRef } from '@kraftverk/api-contract';
-import { deviceCapabilities, MAIN_PART, methodOf, partsOf, type DeviceDescription, type NodeId, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { deviceCapabilities, MAIN_PART, methodOf, partsOf, type DeviceDescription, type DeviceSession, type NodeId, type SavedDeviceId } from '@kraftverk/device-sdk';
 import { activeConnection, toolsOf } from '@kraftverk/holder';
 
 import type { TransportHost } from '../installed/transports.ts';
@@ -205,6 +205,7 @@ export class DeviceViews {
       links,
       // What its session can run here; another node holding it runs its own.
       tools: remote ? [] : toolsOf(type?.tools, session).map(({ name, spec }) => ({ name, ...spec })),
+      joins: remote ? null : joinsOf(session),
       readings: remote?.readings ?? session?.readings() ?? [],
       health: record.removedAt
         ? { status: 'offline', detail: `Removed ${new Date(record.removedAt).toLocaleDateString()}; its history is kept`, node: null, transport: null, lastReadingAt: null }
@@ -223,6 +224,10 @@ export class DeviceViews {
     };
   }
 }
+
+/** For a bridge new devices join, open here: until when they may, and for how long at most. */
+export const joinsOf = (session: DeviceSession | null | undefined): DeviceView['joins'] =>
+  session?.bridge?.join ? { until: session.bridge.join.until(), maxSeconds: session.bridge.join.maxSeconds } : null;
 
 /** What a picture reference may be: one of its type's, or (not built yet) its owner's own. */
 export const PICTURE_REF = /^(type:(0|[1-9]\d?)|own:[a-z0-9-]{1,40})$/;

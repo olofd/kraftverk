@@ -107,6 +107,12 @@ export function deviceRoutes(deps: AppDeps, confirm: ConfirmPassword): Hono {
     return c.json(await homeFor(deps, c).devices.tool(id(c.req.param('id')), c.req.param('name'), request));
   });
 
+  /** Lets devices join a bridge that devices join — a Zigbee coordinator — for a while; 0 stops them. */
+  api.post('/devices/:id/join', async (c) => {
+    const { seconds } = await body(c, z.object({ seconds: z.number().int().min(0).max(3600) }).strict());
+    return c.json(await homeFor(deps, c).devices.join(id(c.req.param('id')), seconds));
+  });
+
   // --- how it is reached ---------------------------------------------------------
 
   api.post('/devices/:id/connections/:connection/prefer', async (c) => c.json(await homeFor(deps, c).connections.prefer(...ids(c))));

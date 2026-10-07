@@ -28,7 +28,7 @@ export type RelayLink = MemberLink & {
 
 function hubBridge(watch: HubWatch): Bridge<RelayLink> {
   return {
-    members: () => [...watch.lamps].map(([key, lamp]) => ({ key, name: lamp.name, model: 'R1', identity: null, typeId: 'test.relayed-lamp' })),
+    members: () => [...watch.lamps].map(([key, lamp]) => ({ key, name: lamp.name, model: 'R1', identity: null, typeId: 'test.relayed-lamp', about: null, joining: false })),
     async link(key, changed) {
       if (!watch.lamps.has(key)) throw new Error('No such lamp behind the hub');
       watch.opened.push(key);

@@ -1,5 +1,5 @@
 import { ApiError, type ToolBody } from '@kraftverk/api-contract';
-import type { DeviceSession, ToolSpec, Value } from '@kraftverk/device-sdk';
+import type { DeviceSession, Joining, ToolSpec, Value } from '@kraftverk/device-sdk';
 import { subjectOf, type Confirmations } from '@kraftverk/gateway';
 import { runTool } from '@kraftverk/holder';
 
@@ -43,6 +43,33 @@ export async function runAskedTool(asked: AskedTool): Promise<unknown> {
     return answer;
   } catch (error) {
     if (spec.writes) asked.record('device.tool-refused', `${spec.label} on "${device.name}" was refused: ${(error as Error).message}`, { tool: name, input });
+    throw error;
+  }
+}
+
+/**
+ * Lets devices join a bridge that devices join (a Zigbee coordinator) for a
+ * while, or stops them: what can join the home changes, so it is run as a
+ * tool that writes is — refused while read-only, on the timeline whether it
+ * was done or refused. Answers until when devices may join.
+ */
+export async function joinBridge(asked: {
+  device: { id: string; name: string };
+  joining: Joining | null;
+  seconds: number;
+  readOnly: boolean;
+  record: (kind: 'device.join' | 'device.join-refused', summary: string, detail: { seconds: number }) => void;
+}): Promise<{ until: string | null }> {
+  const { device, joining } = asked;
+  if (!joining) throw new ApiError('not-found', `Nothing joins ${device.name}`);
+  const seconds = Math.max(0, Math.min(joining.maxSeconds, Math.round(Number.isFinite(asked.seconds) ? asked.seconds : 0)));
+  try {
+    if (asked.readOnly) throw new ApiError('not-allowed', 'Every write to hardware is refused: this holder is read-only');
+    await joining.open(seconds);
+    asked.record('device.join', seconds ? `Let devices join "${device.name}" for ${seconds} s` : `Stopped devices joining "${device.name}"`, { seconds });
+    return { until: joining.until() };
+  } catch (error) {
+    asked.record('device.join-refused', `Letting devices join "${device.name}" was refused: ${(error as Error).message}`, { seconds });
     throw error;
   }
 }

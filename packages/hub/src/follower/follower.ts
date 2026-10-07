@@ -7,7 +7,7 @@ import { ConnectionStore, DeviceCatalog, deviceStore, HomeSettings, HomeStore, L
 import type { PassphraseSealing } from '../configuration/seal.ts';
 import { MovingToMaster } from '../handover/move.ts';
 import { startTransports, type Installed } from '../installed/from.ts';
-import { FIRST_PICTURE } from '../devices/views.ts';
+import { FIRST_PICTURE, joinsOf } from '../devices/views.ts';
 import { nodeParts } from '../node/parts.ts';
 import { SetupService } from '../setup/service.ts';
 import { unref } from '../timers.ts';
@@ -430,6 +430,7 @@ export class Follower {
       readings: session?.readings() ?? device.readings,
       health,
       tools: session ? toolsOf(this.installed.types.get(device.typeId)?.tools, session).map(({ name, spec }) => ({ name, ...spec })) : device.tools,
+      joins: session ? joinsOf(session) : device.joins,
       // Held here: whether writes are refused is this node's own switch.
       readOnly: this.readOnly() && !this.sessions.simulated(device.id),
       // What this node holds, it knows first: whether its own way reaches the device.

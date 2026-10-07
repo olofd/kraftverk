@@ -84,6 +84,8 @@ export type DeviceView = {
   links: LinkView[];
   /** The tools of its type its session can run now: what each asks for, what it answers, and whether it changes the device. */
   tools: ToolView[];
+  /** For a bridge new devices join (a Zigbee coordinator), held here: until when they may, and for how long at most. Null for any other. */
+  joins: { until: string | null; maxSeconds: number } | null;
   readings: Reading[];
   health: ConnectionHealth;
   /**

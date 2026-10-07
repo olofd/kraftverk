@@ -88,6 +88,8 @@ export class Nearby {
             detail: recognised.detail ?? null,
             identity: recognised.identity ?? null,
             model: recognised.model ?? null,
+            about: null,
+            joining: false,
             seenAt: sighting.seenAt,
             types: picked
               .filter(({ method }) => method.protocol === protocolId)
@@ -115,6 +117,8 @@ export class Nearby {
           detail: `Through ${bridge.name}`,
           identity: member.identity,
           model: member.model,
+          about: member.about,
+          joining: member.joining,
           seenAt: now,
           types: types.map(({ type, methodId }) => ({ typeId: type.id, methodId, name: type.meta.name, category: type.meta.category })),
         },

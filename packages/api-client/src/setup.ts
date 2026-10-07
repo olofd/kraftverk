@@ -140,6 +140,8 @@ export function mayContinue(outcome: CheckOutcome, attachingTo: string | null): 
     outcome.outcome === 'new' ||
     outcome.outcome === 'removed' ||
     (outcome.outcome === 'yours' && attachingTo !== null && outcome.device.id === attachingTo) ||
+    // Yours as another type: on to moving it, its history mapped (docs/PLAN-ZIGBEE.md §2.1).
+    (outcome.outcome === 'yours' && outcome.move !== null && attachingTo === null) ||
     (outcome.outcome === 'no-answer' && Boolean(outcome.saveAnyway))
   );
 }

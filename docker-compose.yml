@@ -48,6 +48,10 @@ services:
       # Listen on the container's network, so the server's container can reach
       # the admin API. Still not reachable from outside: the port is not published.
       BROKER_ADMIN_HOST: "0.0.0.0"
+      # Clients that sign in (docs/BROKER.md): Zigbee2MQTT, with the password the
+      # deploy gives both — none set, none signs in, and its devices' topics are
+      # refused to everyone.
+      KRAFTVERK_BROKER_CLIENTS: zigbee2mqtt=${KRAFTVERK_ZIGBEE2MQTT_PASSWORD:-}
 
     volumes:
       # Shared with the server: the token it proves itself with, the broker's
@@ -152,6 +156,50 @@ services:
       start_period: 30s
       retries: 3
 
+  # Zigbee, where a coordinator is plugged into the host (docs/DOCKER.md#zigbee):
+  # Zigbee2MQTT, at the edge as the relay is, given the dongle and nothing
+  # else of the host's, publishing to the broker above. The zigbee2mqtt
+  # integration makes a device of each thing on it. Only with the profile:
+  # COMPOSE_PROFILES=zigbee, and the dongle's path in KRAFTVERK_ZIGBEE_ADAPTER.
+  zigbee2mqtt:
+    profiles: [zigbee]
+    logging: *logging
+    # Pinned: its MQTT API and its exposes are what the integration reads; a new
+    # release is taken in a commit of its own, its notes read (docs/PLAN-ZIGBEE.md §5.5).
+    image: ghcr.io/koenkk/zigbee2mqtt:2.14.2
+    restart: ${KRAFTVERK_RESTART:-unless-stopped}
+    depends_on:
+      - broker
+    devices:
+      # The dongle, by its stable /dev/serial/by-id path on the host.
+      - ${KRAFTVERK_ZIGBEE_ADAPTER:-/dev/null}:/dev/zigbee
+    environment:
+      TZ: ${TZ:-Europe/Stockholm}
+      # Configured by these alone: no onboarding page, and on first start it
+      # writes its own configuration — a new network key — into its volume.
+      Z2M_ONBOARD_NO_SERVER: "1"
+      ZIGBEE2MQTT_CONFIG_SERIAL_PORT: /dev/zigbee
+      # zstack for a TI coordinator (Sonoff ZBDongle-P), ember for Silicon Labs (ZBDongle-E).
+      ZIGBEE2MQTT_CONFIG_SERIAL_ADAPTER: ${KRAFTVERK_ZIGBEE_ADAPTER_TYPE:-zstack}
+      ZIGBEE2MQTT_CONFIG_MQTT_SERVER: mqtt://broker:1883
+      # The integration's base topic: fixed, it is the coordinator's address on the broker.
+      ZIGBEE2MQTT_CONFIG_MQTT_BASE_TOPIC: zigbee2mqtt
+      ZIGBEE2MQTT_CONFIG_MQTT_CLIENT_ID: zigbee2mqtt
+      # Signed in: only it may speak for a Zigbee device on the broker.
+      ZIGBEE2MQTT_CONFIG_MQTT_USER: zigbee2mqtt
+      ZIGBEE2MQTT_CONFIG_MQTT_PASSWORD: ${KRAFTVERK_ZIGBEE2MQTT_PASSWORD:-}
+      # Whether each device answers, said on its availability topic; off, kraftverk cannot tell.
+      ZIGBEE2MQTT_CONFIG_AVAILABILITY_ENABLED: "true"
+      # What a device last said, kept on the broker: a server restarting reads it at once.
+      ZIGBEE2MQTT_CONFIG_DEVICE_OPTIONS_RETAIN: "true"
+      # kraftverk is its interface: no web page of its own, no Home Assistant discovery.
+      ZIGBEE2MQTT_CONFIG_FRONTEND_ENABLED: "false"
+      ZIGBEE2MQTT_CONFIG_HOMEASSISTANT_ENABLED: "false"
+    volumes:
+      # Its network — the key every paired device knows — and what is paired.
+      # Lose it and every device pairs again.
+      - zigbee2mqtt-data:/app/data
+
   web:
     logging: *logging
     build: { context: ., target: web }
@@ -177,5 +225,7 @@ services:
 
 volumes:
   kraftverk-data:
+  # Zigbee2MQTT's network and what is paired with it (the zigbee profile).
+  zigbee2mqtt-data:
   # The relay's token, shared by the server, which makes it, and the relay, which reads it.
   kraftverk-relay:

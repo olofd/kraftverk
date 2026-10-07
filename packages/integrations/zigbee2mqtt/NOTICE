@@ -1,0 +1,12 @@
+@kraftverk/integration-zigbee2mqtt speaks the MQTT API of Zigbee2MQTT
+(https://github.com/Koenkk/zigbee2mqtt, GPL-3.0), and reads the "exposes"
+that zigbee-herdsman-converters (https://github.com/Koenkk/zigbee-herdsman-converters,
+MIT) describes devices with.
+
+No code of either is copied or imported. The shapes in src/protocol/wire.ts
+are written from Zigbee2MQTT's documentation (zigbee2mqtt.io, "MQTT topics
+and messages" and "Exposes") and from what a Zigbee2MQTT 2.x publishes.
+How exposes become kraftverk's attributes was informed by reading
+Zigbee2MQTT's own Home Assistant mapping (lib/extension/homeassistant.ts),
+for knowledge only. Zigbee2MQTT runs as a separate program, in its own
+container, and is spoken to over MQTT.

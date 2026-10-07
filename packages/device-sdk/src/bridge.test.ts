@@ -66,7 +66,7 @@ test('a member reads its bridge through a link of plain calls, and lets go of it
   let changed = () => {};
   let closed = 0;
   const bridge: Bridge<Lamp> = {
-    members: () => [{ key: 'lamp-1', name: 'Hall', model: null, identity: null, typeId: null }],
+    members: () => [{ key: 'lamp-1', name: 'Hall', model: null, identity: null, typeId: null, about: null, joining: false }],
     link: async (key, onChange) => {
       if (key !== 'lamp-1') throw new Error('Not behind this hub');
       changed = onChange;

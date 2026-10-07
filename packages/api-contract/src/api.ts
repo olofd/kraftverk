@@ -88,6 +88,12 @@ export interface KraftverkApi {
      * cannot undo wants a person's yes, sent back as `confirmation`.
      */
     tool(id: SavedDeviceId, name: string, body: ToolBody & { reading?: boolean }): Promise<unknown>;
+    /**
+     * Lets devices join a bridge that new devices join (a Zigbee coordinator)
+     * for `seconds` — 0 closes it — and answers until when. Refused while
+     * read-only; on the timeline.
+     */
+    join(id: SavedDeviceId, seconds: number): Promise<{ until: string | null }>;
   };
   /** Warnings and errors across the devices you have, newest first. */
   problems(limit?: number): Promise<ProblemView[]>;

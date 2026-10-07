@@ -80,6 +80,11 @@ export class LinkStore {
     return record;
   }
 
+  /** One end of a link moved to another part of its device: the device's type changed, and the part is called otherwise. */
+  repoint(id: string, end: 'source' | 'target', part: string): void {
+    this.#db.query(`UPDATE device_link SET ${end === 'source' ? 'source_part' : 'target_part'} = ? WHERE id = ?`).run(part, id);
+  }
+
   remove(id: string): void {
     this.#db.query('DELETE FROM device_link WHERE id = ?').run(id);
   }

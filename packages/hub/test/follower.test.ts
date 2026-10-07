@@ -369,6 +369,7 @@ test('this app holds its way only while nothing above it reaches the device, and
       connections: [way({ id: connectionId('c-00000000ab00'), heldBy: { kind: 'master', id: MACHINE_NODE.id, name: 'Test machine' }, priority: 0, reachable: serverWayReachable }), way({})],
       links: [],
       tools: [],
+      joins: null,
       readings: [],
     health: { status: 'connected', detail: 'Connected', lastReadingAt: null, node: MACHINE_NODE.id, transport: 'bus' },
     readOnly: false,

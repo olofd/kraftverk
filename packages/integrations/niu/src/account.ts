@@ -59,7 +59,7 @@ export class Scooters implements Bridge<ScooterLink> {
   constructor(private readonly source: Source) {}
 
   members(): Member[] {
-    return [...this.#kept.values()].map(({ vehicle }) => ({ key: vehicle.serial, name: vehicle.name, model: vehicle.model, identity: identityOf('niu-cloud', vehicle.serial), typeId: null }));
+    return [...this.#kept.values()].map(({ vehicle }) => ({ key: vehicle.serial, name: vehicle.name, model: vehicle.model, identity: identityOf('niu-cloud', vehicle.serial), typeId: null, about: null, joining: false }));
   }
 
   /** The account's list, as NIU gives it: scooters bound since are added, those unbound go. */

@@ -3,7 +3,7 @@ import { capabilityIn, CATEGORIES, describeDeviceType, isBridgedMethod, isSimula
 import { deviceReader } from '@kraftverk/holder';
 
 import { openBridges } from '../devices/members.ts';
-import { runAskedTool } from '../devices/tools.ts';
+import { joinBridge, runAskedTool } from '../devices/tools.ts';
 import { FIRST_PICTURE, PICTURE_REF } from '../devices/views.ts';
 import { changesOf } from '../history/changes.ts';
 import { MAX_SPAN_MS } from '../history/retention.ts';
@@ -265,6 +265,19 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
           body,
           by: actor,
           confirmations: hub.yes.tools,
+          readOnly: hub.readOnly() && !sessions.simulated(device.id),
+          record: (kind, summary, detail) => record(kind, 'device', device.id, summary, detail),
+        });
+      },
+
+      /** Lets devices join a bridge that devices join — a Zigbee coordinator — held here: as a tool that writes is, refused while read-only and on the timeline. */
+      async join(id, seconds) {
+        const device = deviceOf(id);
+        const session = sessions.get(device.id);
+        return joinBridge({
+          device,
+          joining: session?.bridge?.join ?? null,
+          seconds,
           readOnly: hub.readOnly() && !sessions.simulated(device.id),
           record: (kind, summary, detail) => record(kind, 'device', device.id, summary, detail),
         });

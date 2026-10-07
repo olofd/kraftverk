@@ -26,7 +26,7 @@ import {
   type SetupChoice,
 } from '@kraftverk/device-sdk';
 import { judgeCheck, withTimeout, type SessionManager } from '@kraftverk/holder';
-import type { ConnectionStore, DeviceCatalog, DeviceRecord, LinkStore, SqlDatabase } from '@kraftverk/store';
+import type { AutomationStore, ConnectionStore, DeviceCatalog, DeviceRecord, HistoryStore, LinkStore, SqlDatabase } from '@kraftverk/store';
 
 import type { ProtocolRegistry } from '../installed/protocols.ts';
 import { unfitFor } from '../installed/needs.ts';
@@ -38,6 +38,7 @@ import { DRAFT_TTL_MS, viewOf, type Draft, type SaveRequest } from './draft.ts';
 import { membersOnOffer, openBridges, type MemberOffer } from '../devices/members.ts';
 import { overHardware, SIMULATED_REACH, throughBridge } from './reach.ts';
 import { keepSecrets, saveable, writeSaved } from './save.ts';
+import { moveView } from '../devices/retype.ts';
 
 export type { SaveRequest } from './draft.ts';
 
@@ -70,6 +71,8 @@ export type SetupServiceDeps = {
   catalog: DeviceCatalog;
   connections: ConnectionStore;
   links: LinkStore;
+  history: HistoryStore;
+  automations: AutomationStore;
   sessions: SessionManager;
   /** For helpers that call a vendor's API once — fetching a key. */
   http: ScopedHttp;
@@ -403,13 +406,13 @@ export class SetupService {
       if (said && draft.again.identity && said !== draft.again.identity) {
         return this.#checked(draft, { outcome: 'no-answer', summary: `That answered as another device, not ${draft.again.name}: nothing is changed.`, saveAnyway: null });
       }
-      return this.#checked(draft, { outcome: 'yours', summary: `${draft.again.name} answered: it is reached this way from now on.`, device: { id: draft.again.deviceId, name: draft.again.name } }, read.identified);
+      return this.#checked(draft, { outcome: 'yours', summary: `${draft.again.name} answered: it is reached this way from now on.`, device: { id: draft.again.deviceId, name: draft.again.name }, move: null }, read.identified);
     }
 
     if (draft.reach.exclusive) {
       const claim = draft.through ? this.deps.connections.member(draft.through, draft.address) : this.deps.connections.claimant(transportOf(method), draft.address);
       const claimed = claim ? this.deps.catalog.active(claim.deviceId) : null;
-      if (claimed) return this.#checked(draft, { outcome: 'yours', summary: `This is your ${claimed.name}, already reached this way.`, device: { id: claimed.id, name: claimed.name } });
+      if (claimed) return this.#checked(draft, { outcome: 'yours', summary: `This is your ${claimed.name}, already reached this way.`, device: { id: claimed.id, name: claimed.name }, move: null });
     }
     const read = await draft.reach.identify(draft);
     return 'outcome' in read ? this.#checked(draft, read.outcome) : this.#judge(draft, read.identified);
@@ -440,7 +443,9 @@ export class SetupService {
     // The node that will hold it was forgotten while it was being set up.
     if (!this.deps.traits(draft.heldBy)) throw new ApiError('not-found', 'The node that was to hold it is no longer part of this home');
     const config = saveable(draft, input, this.deps.self);
-    const { record, kind } = this.deps.db.transaction(() => writeSaved(this.deps, draft, input, config))();
+    // A device moving to another type is let go of first: its session is its old type's.
+    if (input.mode === 'move' && input.deviceId) await this.deps.sessions.close(input.deviceId as SavedDeviceId);
+    const { record, kind } = this.deps.db.transaction(() => writeSaved({ ...this.deps, target: this.#target(draft, draft.checked?.identified) }, draft, input, config))();
 
     this.deps.record({
       at: new Date().toISOString(),
@@ -451,7 +456,9 @@ export class SetupService {
       summary:
         kind === 'device.added'
           ? `Added "${record.name}" (${draft.type.meta.name}) over ${method.label}`
-          : kind === 'device.restored'
+          : kind === 'device.moved'
+            ? `"${record.name}" is a ${draft.type.meta.name} now, over ${method.label}: its history, links and automations came with it`
+            : kind === 'device.restored'
             ? `Brought back "${record.name}" with its history, over ${method.label}`
             : `Added ${method.label} as another way to reach "${record.name}"`,
       detail: { typeId: draft.type.id, method: method.id, transport: method.transport, links: input.links ?? [] },
@@ -559,8 +566,31 @@ export class SetupService {
         },
       },
     });
+    // Yours, as another type: what moving it to this one keeps and changes, for a person to see first.
+    if (outcome.outcome === 'yours') {
+      const mine = this.deps.catalog.active(outcome.device.id);
+      if (mine && mine.typeId !== draft.type.id) {
+        const from = this.deps.types.get(mine.typeId);
+        const view = moveView(this.deps, mine, { typeId: mine.typeId, name: from?.meta.name ?? mine.typeId }, this.#target(draft, identified));
+        return this.#checked(
+          draft,
+          { ...outcome, summary: `This is your ${mine.name}, now reached as a ${draft.type.meta.name}. ${identified.summary}`, move: view },
+          identified
+        );
+      }
+    }
     // Another model is not this device: what it said is not kept for the save.
     return this.#checked(draft, outcome, outcome.outcome === 'other-model' ? undefined : identified);
+  }
+
+  /** What a device becomes as the draft's type: its description — the device's own, when it said one — and the ways it has. */
+  #target(draft: Draft, identified: Identified | undefined) {
+    return {
+      typeId: draft.type.id,
+      name: draft.type.meta.name,
+      description: identified?.description ?? draft.type.describe(draft.device as never),
+      methods: draft.type.connections.map((method) => method.id),
+    };
   }
 
   #draft(id: string): Draft {

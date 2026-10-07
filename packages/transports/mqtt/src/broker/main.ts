@@ -19,7 +19,7 @@ import { brokerBuild, brokerClients, brokerDir, brokerToken, DEFAULTS, paths } f
  *   BROKER_ADMIN_HOST / BROKER_ADMIN_PORT the admin API (127.0.0.1:3883)
  *   KRAFTVERK_BROKER_DIR                  token, state and logs (server/data/broker)
  *   KRAFTVERK_BROKER_TOKEN                the server's secret, instead of the token file
- *   KRAFTVERK_BROKER_CLIENTS              clients that sign in, name=password, comma-separated: a bridge such as Zigbee2MQTT
+ *   KRAFTVERK_BROKER_CLIENTS              clients that sign in, name=password, comma-separated: a bridge, one client for many devices
  *   BROKER_LOG_LEVEL                      console verbosity: debug, info, warn, error, off (info)
  *   BROKER_LOG_DAYS                       days of journal files to keep (14)
  */

@@ -7,7 +7,13 @@
 #   scripts/deploy.sh              the server and the app, from the images named
 #                                  by KRAFTVERK_SERVER_IMAGE and KRAFTVERK_WEB_IMAGE.
 #                                  The broker is started if it is not running,
-#                                  and never recreated: that drops the station.
+#                                  and recreated only when the protocols it
+#                                  applies are not the ones these images install:
+#                                  that drops the station for about a minute,
+#                                  and without it a new protocol's devices could
+#                                  be commanded by anything on the network.
+#                                  Zigbee2MQTT is started where the zigbee
+#                                  profile is on (COMPOSE_PROFILES).
 #   scripts/deploy.sh --build      the images built first, from this checkout as
 #                                  committed, and named by its commit.
 #   scripts/deploy.sh broker       recreate the broker, for when it is behind.
@@ -93,6 +99,21 @@ compose ps
 # Proof it answers, through the same door a browser uses.
 compose exec -T web wget -qO- http://127.0.0.1:8080/api/auth/state
 echo
+
+# The protocols the broker applies, against those these images install. One new
+# to it is a protocol whose commands it would forward unrecognised — and unguarded,
+# to anyone — so the broker is recreated for it, whatever that costs the station.
+installed=$(compose exec -T kraftverk bun --eval "console.log((await (await import('./packages/transports/mqtt/src/broker/policy.ts')).loadPolicies()).map((p) => p.protocol).sort().join(','))")
+applied=$(compose exec -T broker bun --eval "console.log((await (await fetch('http://127.0.0.1:3883/health')).json()).protocols.sort().join(','))")
+if [ "$installed" != "$applied" ]; then
+  echo "The broker applies [$applied]; these images install [$installed]. Recreating it: the station is gone for about a minute."
+  compose up -d --no-build --no-deps --force-recreate --wait --wait-timeout 120 broker
+fi
+
+# Zigbee2MQTT, where the dongle is (the zigbee profile): after the broker, which it signs in to.
+case ",${COMPOSE_PROFILES:-}," in
+  *,zigbee,*) compose up -d --no-build --no-deps zigbee2mqtt ;;
+esac
 
 expected=$(compose exec -T kraftverk bun --eval "console.log((await import('./packages/transports/mqtt/src/broker/shared.ts')).brokerBuild())")
 running=$(compose exec -T broker bun --eval "console.log((await (await fetch('http://127.0.0.1:3883/health')).json()).build)")

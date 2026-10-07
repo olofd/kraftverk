@@ -123,8 +123,8 @@ export function brokerToken(dir = brokerDir()): string {
 }
 
 /**
- * The broker's own clients — a bridge such as Zigbee2MQTT — by name, each
- * with its password: `KRAFTVERK_BROKER_CLIENTS=zigbee2mqtt=<password>,…`,
+ * The broker's own clients — a bridge, one client for many devices — by
+ * name, each with its password: `KRAFTVERK_BROKER_CLIENTS=<name>=<password>,…`,
  * handed to the broker and to the client by the deploy. A name with an empty
  * password is no client: an empty secret matches nothing (`sameSecret`).
  */

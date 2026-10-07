@@ -39,7 +39,7 @@ export type BrokerMessageNote = {
 export type MessageBrokerPolicy = {
   protocol: string;
   /**
-   * The topics it speaks for, when they share a beginning: `zigbee2mqtt/`.
+   * The topics it speaks for, when they share a beginning: `<base>/`.
    * Every topic under it is this protocol's and no other's — matched by this
    * policy alone. Absent for a protocol whose topics begin with the device's
    * own name (a station's MAC): matched among the others.
@@ -49,7 +49,7 @@ export type MessageBrokerPolicy = {
    * Only a client signed in to the broker may publish this protocol's device
    * topics, and the first such client holds a device while it is connected:
    * what keeps anything on the home network from speaking for one. A station
-   * cannot sign in; a bridge such as Zigbee2MQTT can.
+   * cannot sign in; a bridge — one client for many devices — can.
    */
   signedIn?: boolean;
   /** The device a published topic comes from, and the channel within it; null when not this protocol's. */

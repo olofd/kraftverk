@@ -49,6 +49,35 @@ export class HistoryStore {
     return kept;
   }
 
+  /**
+   * Moves a device's history from keys to others — its type changed, and
+   * its attributes are called otherwise now (docs/PLAN-ZIGBEE.md §2.1) —
+   * its part with it, and a number's values converted where its unit did.
+   * Through keys of no one's first, so one move into a key another moves out
+   * of cannot collide. Run in the caller's transaction.
+   */
+  rekey(deviceId: string, moves: readonly { from: string; to: string; part: string; scale: { factor: number; offset: number } | null }[]): void {
+    const tables = ['sample', 'sample_change', 'sample_hour'] as const;
+    const parked = (index: number) => `\u0000moving:${index}`;
+    moves.forEach((move, index) => {
+      for (const table of tables) this.#db.query(`UPDATE ${table} SET key = ? WHERE device_id = ? AND key = ?`).run(parked(index), deviceId, move.from);
+    });
+    moves.forEach((move, index) => {
+      const { factor, offset } = move.scale ?? { factor: 1, offset: 0 };
+      for (const table of ['sample', 'sample_change'] as const) {
+        this.#db
+          .query(`UPDATE OR REPLACE ${table} SET key = ?, part = ?, value = CASE WHEN value IS NULL THEN NULL ELSE value * ? + ? END WHERE device_id = ? AND key = ?`)
+          .run(move.to, move.part, factor, offset, deviceId, parked(index));
+      }
+      // A scale that is not positive would turn the hour's least into its most: kept honest by ordering the two again.
+      this.#db
+        .query(
+          'UPDATE OR REPLACE sample_hour SET key = ?, part = ?, min = MIN(min * ? + ?, max * ? + ?), max = MAX(min * ? + ?, max * ? + ?), avg = avg * ? + ? WHERE device_id = ? AND key = ?'
+        )
+        .run(move.to, move.part, factor, offset, factor, offset, factor, offset, factor, offset, factor, offset, deviceId, parked(index));
+    });
+  }
+
   /** One attribute's samples between two times, oldest first, as kept. */
   samples(deviceId: string, key: string, fromIso: string, toIso: string): Kept[] {
     return this.#db

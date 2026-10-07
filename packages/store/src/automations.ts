@@ -189,6 +189,23 @@ export class AutomationStore implements AutomationStorage {
     );
   }
 
+  /**
+   * A device's parts called otherwise — its type changed — in every role
+   * filled by one of them. A part that maps to nothing is left as it was: its
+   * automation is checked against the device as it is now, and says what to
+   * choose again.
+   */
+  repointParts(deviceId: string, parts: ReadonlyMap<string, string | null>): void {
+    // Through parts of no one's first: two parts that swap names must not meet on the way.
+    const moves = [...parts].flatMap(([from, to], index) => (to && to !== from ? [{ from, to, parked: `\u0000moving:${index}` }] : []));
+    for (const step of [moves.map(({ from, parked }) => [from, parked]), moves.map(({ to, parked }) => [parked, to])]) {
+      for (const [was, now] of step) {
+        this.#db.query('UPDATE automation_role SET part = ? WHERE device_id = ? AND part = ?').run(now, deviceId, was);
+        this.#db.query('UPDATE automation_group_part SET part = ? WHERE device_id = ? AND part = ?').run(now, deviceId, was);
+      }
+    }
+  }
+
   /** The automations on the home page, in their places. */
   onHome(): AutomationRecord[] {
     return this.#records(this.#db.query<Row, []>('SELECT * FROM automation WHERE home_place IS NOT NULL ORDER BY home_place').all());

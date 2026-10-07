@@ -9,7 +9,10 @@ import { Screen } from '../../components/Screen';
 import { useDevice, useDevices } from '../../state/DevicesProvider';
 import { deviceStatus } from '../devices/DeviceShell';
 import { Manage } from '../devices/Manage';
+import { Joining } from '../devices/Joining';
 import { Members } from '../devices/Members';
+import { Readings } from '../devices/Readings';
+import { Tools } from '../devices/Tools';
 import { integrationScreens } from './registry';
 
 /**
@@ -89,7 +92,10 @@ export function OwnScreen() {
   return (
     <Screen back={integration?.name ?? 'Integration'} backTo={PATHS.integrations.one(integration?.id ?? id ?? '')} title={account.name} subtitle={account.meta.name} status={deviceStatus(account)}>
       {Panel ? <Panel {...screenProps(account)} /> : null}
+      <Joining device={account} />
       <Members device={account} />
+      <Readings device={account} />
+      <Tools device={account} />
       <SignIn account={account} />
       <Manage device={account} />
     </Screen>

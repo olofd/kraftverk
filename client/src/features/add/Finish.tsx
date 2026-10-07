@@ -6,6 +6,7 @@ import { LINK_KIND_IDS, linkableParts, linkKindSpec, linkOffers, MAIN_PART, part
 import { Card, haptic, Row, RowSeparator, SectionLabel, ToggleRow } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
+import { MovePlan } from './MovePlan';
 import { Pressable } from '../../components/Pressable';
 import { secretWords } from '../../components/ProblemList';
 import { confirmAction } from '../../platform/confirm';
@@ -33,7 +34,9 @@ export function Finish({
   devices: DeviceView[];
   onSaved: (id: string) => Promise<void>;
 }) {
-  const [name, setName] = useState(typeName);
+  // A device you have, moved to this type: its own name kept, unless changed.
+  const move = outcome.outcome === 'yours' && !attachTo ? outcome.move : null;
+  const [name, setName] = useState(move ? move.device.name : typeName);
   const [restore, setRestore] = useState<string | null>(outcome.outcome === 'removed' ? (outcome.devices[0]?.id ?? null) : null);
   /** By question, the other end chosen: "device|part", or empty for none. */
   const [links, setLinks] = useState<Record<string, string>>({});
@@ -66,7 +69,9 @@ export function Finish({
     try {
       const input: SaveInput = attachTo
         ? { name: '', mode: 'attach', deviceId: attachTo.id }
-        : restore
+        : move
+          ? { name, mode: 'move', deviceId: move.device.id }
+          : restore
           ? { name, mode: 'restore', deviceId: restore }
           : {
               name,
@@ -91,6 +96,8 @@ export function Finish({
 
   return (
     <YStack gap="$3">
+      {move ? <MovePlan move={move} /> : null}
+
       {outcome.outcome === 'removed' && !attachTo ? (
         <YStack gap="$2">
           <SectionLabel>Bring it back?</SectionLabel>
@@ -123,7 +130,7 @@ export function Finish({
         </YStack>
       )}
 
-      {!attachTo && !restore
+      {!attachTo && !restore && !move
         ? questions.map((question) => (
             <YStack key={question.key} gap="$2">
               <SectionLabel>{question.question}</SectionLabel>
@@ -181,7 +188,7 @@ export function Finish({
           Back
         </Button>
         <Button size="$4" backgroundColor="$accent" color="$background" disabled={busy || (!attachTo && !name.trim())} onPress={() => void save()}>
-          {busy ? 'Saving…' : attachTo ? `Add it to ${attachTo.name}` : restore ? 'Bring it back' : 'Save'}
+          {busy ? 'Saving…' : attachTo ? `Add it to ${attachTo.name}` : move ? `Move ${move.device.name}` : restore ? 'Bring it back' : 'Save'}
         </Button>
       </XStack>
       {error ? (

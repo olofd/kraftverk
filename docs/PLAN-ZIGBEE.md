@@ -346,8 +346,9 @@ members by IEEE address and endpoint, its scenes), publishes a group's state
 
 - **A group is a member of the coordinator**, key `group:<id>`, of type
   `zigbee2mqtt.group` (its shelf the members': lights, switches). Its
-  description is what its members share: a light group's `on`, brightness and
-  colour temperature where every member has them, offering `switch` — so an
+  description is what its members can do, as Zigbee2MQTT works it out (§5.6):
+  a light group's `on`, and brightness or colour where any member has them,
+  its colour temperature the range all share, offering `switch` — so an
   automation switches "the living room" as one part, through the gateway, and
   the gateway verifies it from the group's state.
 - **Made and changed in kraftverk**, on the coordinator's page: *New group*,
@@ -390,7 +391,48 @@ a need.
 | Zigbee2MQTT's settings (`options`), restart, extensions, external converters | Refused to everyone at the broker: the deploy configures Zigbee2MQTT, never kraftverk at run time | Never |
 | Zigbee2MQTT's own upgrades | The pinned image, raised in a commit: its release notes read, the recorded fixtures re-checked | Each release |
 
-### 5.6 Tests
+### 5.6 What Zigbee2MQTT's own Home Assistant mapping teaches
+
+Home Assistant has no Zigbee2MQTT integration: Zigbee2MQTT publishes Home
+Assistant's MQTT discovery itself (`lib/extension/homeassistant.ts`, read in
+2.14.2 for knowledge — GPL-3.0, nothing copied). What it knows that this
+plan must too:
+
+- **Read a binary by its `value_on`/`value_off`, never by its name.** A
+  `contact` has `value_on: false`: open is "on". kraftverk's attribute is
+  *Open*, true when the value is `value_on`.
+- **A battery's voltage is `voltage` too** — in mV, diagnostic. A standard
+  meaning is taken only where the unit is the meaning's own and the
+  attribute is not diagnostic.
+- **A group can do what any member can** (a union), its colour temperature
+  the range all share (an intersection); only lights, switches, locks and
+  covers. §5.4 follows it; the gateway's verification of a group reads the
+  group's state, which Zigbee2MQTT works out optimistically from its members.
+- **Availability is off unless asked for** (`availability.enabled`): with no
+  availability topic a device's reachability is unknown, never offline.
+- **Nothing of a device's state is retained by default**: `/get` on link,
+  and Zigbee2MQTT's own cached state, are what a session starts from.
+- **An interview may fail and still count as done**; `interview_state`
+  (`PENDING`, `IN_PROGRESS`, `SUCCESSFUL`, `FAILED`) replaces the old flags.
+  A device with no `definition` is joining; one whose definition's `source`
+  is `generated` is offered, said to be guessed.
+- **Exposes change** — after an option, an update, a re-interview or an
+  upgrade — so a device's description is taken again on every
+  `bridge/devices`, and its shelf with it (§2.1).
+- **Endpoints**: `state_l1` is the property; `/set` with `{"state_l1":"ON"}`
+  reaches the endpoint. Commands go to `zigbee2mqtt/0x<IEEE>/set`, which
+  Zigbee2MQTT resolves as it resolves a friendly name.
+- **Requests carry a `transaction`** echoed in their response
+  (`{data, status, error?, transaction}`); an OTA update answers only when it
+  is done — minutes to an hour — so its progress is read from the device's
+  `update` state, not awaited.
+- **`action`** is an event, published in the device's state; its values may
+  name a button (`button_1_single`), and `action_*` properties beside it are
+  the event's data.
+- **`output: json`** is assumed (`attribute` is refused by Zigbee2MQTT with
+  Home Assistant, and by kraftverk).
+
+### 5.7 Tests
 
 A Zigbee2MQTT played from fixtures recorded on the owner's (ids made up):
 the coordinator found, its members offered by shelf, a plug switched and

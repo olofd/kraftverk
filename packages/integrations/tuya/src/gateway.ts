@@ -75,7 +75,7 @@ export class ZigbeeDevices implements Bridge<ZigbeeLink> {
   }
 
   members(): Member[] {
-    return [...this.#kept].map(([cid, kept]) => ({ key: cid, name: kept.name, model: null, identity: zigbeeIdentity(cid), typeId: null }));
+    return [...this.#kept].map(([cid, kept]) => ({ key: cid, name: kept.name, model: null, identity: zigbeeIdentity(cid), typeId: null, about: null, joining: false }));
   }
 
   /** Every device known behind it, by Zigbee address: what a gateway on 3.3 is proven by asking about. */

@@ -57,7 +57,7 @@ const BRIDGE_CLIENT: Publisher = { privileged: false, signedIn: 'bridge' };
 /**
  * A protocol spoken by a bridge: one client for every device behind it, its
  * topics under one root, its devices spoken for only by a client that signed
- * in — the shape of Zigbee2MQTT, named for no product.
+ * in — the shape of a bridge client, named for no product.
  */
 const BRIDGE: MessageBrokerPolicy = {
   protocol: 'bridge-test',

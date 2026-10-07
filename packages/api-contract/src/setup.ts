@@ -8,10 +8,43 @@ import type { ConfigValues, LinkEnd, LinkKind, NodeId, SavedDeviceId, SetupStepV
 /** What the check step found. */
 export type CheckOutcome =
   | { outcome: 'new'; summary: string; identity: string | null }
-  | { outcome: 'yours'; summary: string; device: { id: SavedDeviceId; name: string } }
+  | {
+      outcome: 'yours';
+      summary: string;
+      device: { id: SavedDeviceId; name: string };
+      /**
+       * When the device you have is of another type than the one being added
+       * — the same Zigbee plug, once behind one vendor's gateway, now behind the
+       * dongle — what moving it to this type keeps and changes. Null when it
+       * is of this type already.
+       */
+      move: MoveView | null;
+    }
   | { outcome: 'removed'; summary: string; identity: string; devices: { id: SavedDeviceId; name: string; removedAt: string }[] }
   | { outcome: 'other-model'; summary: string; model: string; type: { id: string; name: string } | null }
   | { outcome: 'no-answer'; summary: string; saveAnyway: string | null };
+
+/**
+ * A device changing what it is, as a person sees it before anything moves
+ * (docs/PLAN-ZIGBEE.md §2.1): each attribute it has ever had and where its
+ * history goes, each part, the links and automations that use it, and the
+ * ways it is reached that the new type has no way for.
+ */
+export type MoveView = {
+  device: { id: SavedDeviceId; name: string };
+  from: { typeId: string; name: string };
+  to: { typeId: string; name: string };
+  /** Each attribute it has had: its history moves to `to`, or stays where it is (`to` null) — still kept, no longer reported. */
+  attributes: { key: string; label: string; to: string | null; toLabel: string | null; how: 'meaning' | 'key' | 'label' | null }[];
+  /** Each part of it: the part it becomes, or none. */
+  parts: { id: string; label: string; to: string | null; toLabel: string | null }[];
+  /** Its links: kept, re-pointed to the part it becomes, or removed — with why. */
+  links: { id: string; summary: string; kept: boolean }[];
+  /** The automations that use it: still filled, or needing a part chosen again. */
+  automations: { id: string; name: string; kept: boolean }[];
+  /** Its ways that the new type has none for: removed when it moves. */
+  connectionsRemoved: { id: string; label: string }[];
+};
 
 /** Something a transport can see that this type's protocol recognises. */
 export type SightingView = {
@@ -55,8 +88,12 @@ export type DraftView = {
 /** `POST /setup/:id/save`, as sent: the name may be empty (the type's name is used) and `mode` defaults to `new`. */
 export type SaveInput = {
   name?: string;
-  /** Add a new device; attach this connection to one you have; or bring a removed one back. */
-  mode?: 'new' | 'attach' | 'restore';
+  /**
+   * Add a new device; attach this connection to one you have; bring a
+   * removed one back; or move one you have to this type, with this
+   * connection — its history mapped as the check's `move` said.
+   */
+  mode?: 'new' | 'attach' | 'restore' | 'move';
   deviceId?: string;
   /** Save after a check the type expects to fail sometimes: a sleeping station. */
   anyway?: boolean;
@@ -103,6 +140,10 @@ export type FoundView = {
   detail: string | null;
   identity: string | null;
   model: string | null;
+  /** What it is, in a few words, where its bridge knows. */
+  about: string | null;
+  /** Still joining its bridge: not ready to add until its bridge knows what it is. */
+  joining: boolean;
   seenAt: string;
   types: { typeId: string; methodId: string; name: string; category: string }[];
 };

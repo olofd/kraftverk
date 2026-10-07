@@ -45,7 +45,7 @@ export function judgeCheck(
   if (identity) {
     const known = context.known.byIdentity(identity);
     if (known.active) {
-      return { outcome: 'yours', summary: `This is your ${known.active.name}. ${identified.summary}`, device: { id: known.active.id, name: known.active.name } };
+      return { outcome: 'yours', summary: `This is your ${known.active.name}. ${identified.summary}`, device: { id: known.active.id, name: known.active.name }, move: null };
     }
     if (known.removed.length) {
       return {

@@ -44,6 +44,24 @@ export type Member = {
   readonly identity: string | null;
   /** The type it is, where the bridge itself knows. */
   readonly typeId: string | null;
+  /** What it is, in a few words, where the bridge knows: "IKEA E1603 smart plug". */
+  readonly about: string | null;
+  /** Joining and not ready yet: its bridge is still asking it what it is. Offered once it is ready. */
+  readonly joining: boolean;
+};
+
+/**
+ * A bridge new devices join — a Zigbee coordinator: open for a while, then
+ * closed again. Opening it changes what can join the home, so it is run as
+ * a tool that writes is: refused while read-only, and on the timeline.
+ */
+export type Joining = {
+  /** Lets devices join for `seconds`; 0 closes it now. Resolves once the bridge says it did. */
+  open(seconds: number): Promise<void>;
+  /** Until when devices may join, or null when they may not. */
+  until(): string | null;
+  /** The longest it may be open at once, in seconds: Zigbee's 254. */
+  readonly maxSeconds: number;
 };
 
 /**
@@ -70,6 +88,8 @@ export interface Bridge<Link extends MemberLink = MemberLink> {
    * with a sentence for a person, for a key that is not a member.
    */
   link(member: string, changed: () => void): Promise<Link>;
+  /** For a bridge new devices join: letting them, and until when. Read again when its session says it changed. */
+  readonly join?: Joining;
 }
 
 /** Whether a kept connection goes through a bridge: held wherever its bridge is, opened by the bridge's session. */

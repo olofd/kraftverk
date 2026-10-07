@@ -21,7 +21,9 @@ export function Members({ device }: { device: DeviceView }) {
   const { api } = useHome();
   const theme = useTheme();
   const yours = devices.filter((other) => other.connections.some((connection) => connection.through?.id === device.id));
-  const found = (useAnswer(() => api.nearby(), [api, device.id], { every: 15_000 }).value ?? []).filter((entry) => entry.through?.id === device.id && !entry.ignored);
+  // Looked at often while devices may join it: one that joins shows up within seconds.
+  const joining = Boolean(device.joins?.until && Date.parse(device.joins.until) > Date.now());
+  const found = (useAnswer(() => api.nearby(), [api, device.id, joining], { every: joining ? 3_000 : 15_000 }).value ?? []).filter((entry) => entry.through?.id === device.id && !entry.ignored);
   if (!yours.length && !found.length) return null;
 
   return (
@@ -38,15 +40,24 @@ export function Members({ device }: { device: DeviceView }) {
         ))}
         {/* One that does not say what it is is offered as each thing it could be: a person picks, rather than a first guess being made for them. */}
         {found
+          .filter((entry) => entry.joining)
+          .map((entry, index) => (
+            <YStack key={`joining-${entry.address}`}>
+              {yours.length + index > 0 ? <RowSeparator /> : null}
+              <Row title={entry.name} subtitle={entry.about ? `Joining · ${entry.about}` : 'Joining: being asked what it is. Ready to add in a moment.'} accessory={<Icon name="loader" size={16} color={theme.muted?.val} />} />
+            </YStack>
+          ))}
+        {found
+          .filter((entry) => !entry.joining)
           .flatMap((entry) => entry.types.map((type) => ({ entry, type, several: entry.types.length > 1 })))
           .map(({ entry, type, several }, index) => (
             <YStack key={`found-${entry.address}-${type.typeId}`}>
-              {yours.length + index > 0 ? <RowSeparator /> : null}
+              {yours.length + found.filter((other) => other.joining).length + index > 0 ? <RowSeparator /> : null}
               <Pressable onPress={() => router.push(PATHS.add(type.typeId, { method: type.methodId, address: entry.address, through: device.id }))}>
                 <Row
                   leading={<DeviceImage typeId={type.typeId} size={36} />}
                   title={entry.name}
-                  subtitle={several ? `Not added yet · add it as a ${type.name}` : `Not added yet · ${type.name}`}
+                  subtitle={[several ? `Not added yet · add it as a ${type.name}` : `Not added yet · ${type.name}`, entry.about].filter(Boolean).join(' · ')}
                   accessory={<Icon name="plus" size={16} color={theme.accent?.val} />}
                 />
               </Pressable>

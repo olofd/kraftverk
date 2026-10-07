@@ -1,0 +1,57 @@
+{
+  "name": "@kraftverk/integration-zigbee2mqtt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zigbee through Zigbee2MQTT beside kraftverk: the coordinator as a gateway, every device on it described from what it exposes, groups, and devices let to join — over the server's own MQTT broker.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "kraftverk": {
+    "integration": {
+      "id": "zigbee2mqtt",
+      "name": "Zigbee2MQTT",
+      "protocols": [
+        "./src/protocol/index.ts"
+      ],
+      "types": [
+        { "id": "zigbee2mqtt.bridge", "entry": "./src/bridge.ts" },
+        { "id": "zigbee2mqtt.plug", "entry": "./src/types/plug.ts" },
+        { "id": "zigbee2mqtt.switch", "entry": "./src/types/switch.ts" },
+        { "id": "zigbee2mqtt.light", "entry": "./src/types/light.ts" },
+        { "id": "zigbee2mqtt.sensor", "entry": "./src/types/sensor.ts" },
+        { "id": "zigbee2mqtt.climate", "entry": "./src/types/climate.ts" },
+        { "id": "zigbee2mqtt.lock", "entry": "./src/types/lock.ts" },
+        { "id": "zigbee2mqtt.cover", "entry": "./src/types/cover.ts" },
+        { "id": "zigbee2mqtt.group", "entry": "./src/types/group.ts" },
+        { "id": "zigbee2mqtt.light-group", "entry": "./src/types/light-group.ts" }
+      ]
+    },
+    "words": [
+      "Zigbee2MQTT"
+    ]
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./protocol": "./src/protocol/index.ts",
+    "./bridge": "./src/bridge.ts",
+    "./types/plug": "./src/types/plug.ts",
+    "./types/switch": "./src/types/switch.ts",
+    "./types/light": "./src/types/light.ts",
+    "./types/sensor": "./src/types/sensor.ts",
+    "./types/climate": "./src/types/climate.ts",
+    "./types/lock": "./src/types/lock.ts",
+    "./types/cover": "./src/types/cover.ts",
+    "./types/group": "./src/types/group.ts",
+    "./types/light-group": "./src/types/light-group.ts"
+  },
+  "scripts": {
+    "test": "node ../../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kraftverk/device-sdk": "*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

@@ -452,7 +452,7 @@ export function fakeMessageChannel(
       const first = [...kept.values()].filter((message) => matches(filter, message.topic));
       setTimeout(() => {
         const at = new Date().toISOString();
-        for (const message of first) if (subscriptions.includes(entry)) listener({ topic: message.topic, payload: message.payload, at });
+        for (const message of first) if (subscriptions.includes(entry)) listener({ topic: message.topic, payload: message.payload, at, retained: true });
       }, 0);
       return () => void subscriptions.splice(subscriptions.indexOf(entry), 1);
     },

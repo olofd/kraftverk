@@ -71,7 +71,7 @@ export class Family implements Bridge<FindMyLink> {
   constructor(private readonly source: FindMySource) {}
 
   members(): Member[] {
-    return [...this.#devices.values()].map((device) => ({ key: device.id, name: device.name, model: device.model, identity: identityOf('icloud-web', device.id), typeId: null }));
+    return [...this.#devices.values()].map((device) => ({ key: device.id, name: device.name, model: device.model, identity: identityOf('icloud-web', device.id), typeId: null, about: null, joining: false }));
   }
 
   /** How long until Find My is asked again: soon while a device someone added moves, rarely otherwise. */

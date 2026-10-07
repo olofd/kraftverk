@@ -26,7 +26,7 @@ describe('what is paired with a gateway', () => {
 
   test('its members from the start, by name — and one it hears of later beside them', () => {
     const devices = new ZigbeeDevices(wire, memoryStore() as never, () => {}, pairedOf('a4c1380000000001=Fan plug'));
-    expect(devices.members()).toEqual([{ key: 'a4c1380000000001', name: 'Fan plug', model: null, identity: 'zigbee:a4c1380000000001', typeId: null }]);
+    expect(devices.members()).toEqual([{ key: 'a4c1380000000001', name: 'Fan plug', model: null, identity: 'zigbee:a4c1380000000001', typeId: null, about: null, joining: false }]);
     devices.presence('a4c1380000000002', true);
     expect(devices.members().map((member) => [member.key, member.name])).toEqual([
       ['a4c1380000000001', 'Fan plug'],

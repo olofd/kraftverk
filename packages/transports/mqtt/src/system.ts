@@ -90,13 +90,13 @@ class MqttChannel implements MessageChannel {
    */
   subscribe(filter: string, listener: (message: ChannelMessage) => void): () => void {
     let open = true;
-    const deliver = (message: BusMessage) => listener({ topic: message.topic, payload: message.payload, at: message.at.toISOString() });
+    const deliver = (message: BusMessage, retained: boolean) => listener({ topic: message.topic, payload: message.payload, at: message.at.toISOString(), ...(retained ? { retained } : {}) });
     const onMessage = (message: BusMessage) => {
-      if (matches(filter, message.topic)) deliver(message);
+      if (matches(filter, message.topic)) deliver(message, false);
     };
     const kept = this.bus.retained(filter, matches);
     queueMicrotask(() => {
-      for (const message of kept) if (open) deliver(message);
+      for (const message of kept) if (open) deliver(message, true);
     });
     this.bus.on('message', onMessage);
     return () => {

@@ -27,7 +27,14 @@ export function Outcome({
     outcome.outcome === 'new'
       ? (['$success', attachTo ? `It answered. Is it ${attachTo.name}?` : 'It answered'] as const)
       : outcome.outcome === 'yours'
-        ? (['$accent', attachTo && outcome.device.id === attachTo.id ? `This is ${attachTo.name}` : `You already have this: ${outcome.device.name}`] as const)
+        ? ([
+            '$accent',
+            attachTo && outcome.device.id === attachTo.id
+              ? `This is ${attachTo.name}`
+              : outcome.move
+                ? `This is your ${outcome.device.name}, as a ${outcome.move.from.name}`
+                : `You already have this: ${outcome.device.name}`,
+          ] as const)
         : outcome.outcome === 'removed'
           ? (['$accent', 'You had this before'] as const)
           : outcome.outcome === 'other-model'
@@ -51,7 +58,7 @@ export function Outcome({
       <XStack gap="$2" flexWrap="wrap">
         {canContinue ? (
           <Button size="$3" backgroundColor="$accent" color="$background" onPress={onContinue}>
-            {outcome.outcome === 'no-answer' ? 'Save it anyway' : 'Continue'}
+            {outcome.outcome === 'no-answer' ? 'Save it anyway' : outcome.outcome === 'yours' && outcome.move ? `Move it here, with its history` : 'Continue'}
           </Button>
         ) : null}
         {outcome.outcome === 'yours' && (!attachTo || outcome.device.id !== attachTo.id) ? (

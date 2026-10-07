@@ -13,7 +13,9 @@ import {
 } from '@kraftverk/device-sdk';
 
 import { ApiError } from '@kraftverk/api-contract';
-import type { DeviceCatalog, DeviceRecord, ConnectionStore, LinkStore } from '@kraftverk/store';
+import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, HistoryStore, LinkStore } from '@kraftverk/store';
+import type { DeviceDescription } from '@kraftverk/device-sdk';
+import { retype } from '../devices/retype.ts';
 import { bySource, connectionSchema } from '../installed/connection-schema.ts';
 import type { Draft, SaveRequest } from './draft.ts';
 
@@ -23,7 +25,16 @@ import type { Draft, SaveRequest } from './draft.ts';
  * its links, all or nothing.
  */
 
-export type SaveDeps = { catalog: DeviceCatalog; connections: ConnectionStore; links: LinkStore; self: NodeId };
+export type SaveDeps = {
+  catalog: DeviceCatalog;
+  connections: ConnectionStore;
+  links: LinkStore;
+  history: HistoryStore;
+  automations: AutomationStore;
+  self: NodeId;
+  /** What the device is as the draft's type — for a device you have, moved to it. */
+  target: { typeId: string; description: DeviceDescription; methods: readonly string[] };
+};
 
 /** A draft's secrets, kept for its connection: what a person gave, and what its check kept for its session — a sign-in token. */
 export function keepSecrets(deps: Pick<SaveDeps, 'connections'>, draft: Draft, connectionId: string): void {
@@ -88,6 +99,16 @@ function deviceFor(deps: SaveDeps, draft: Draft, input: SaveRequest, deviceConfi
       throw new ApiError('conflict', `${existing.name} is already reached this way`);
     }
     return { record: existing, kind: 'device.connection-added' };
+  }
+
+  if (input.mode === 'move') {
+    const existing = input.deviceId ? deps.catalog.active(input.deviceId as SavedDeviceId) : null;
+    if (!existing) throw new ApiError('not-found', 'That device has gone');
+    // Only the device the check found, as another type: never a device it is not.
+    if (checked.outcome !== 'yours' || checked.device.id !== existing.id || !checked.move) throw new ApiError('conflict', `That is not ${existing.name} as another type`);
+    retype(deps, existing, { ...deps.target, config: deviceConfig });
+    const moved = deps.catalog.update(existing.id, { name: input.name?.trim() || existing.name }) ?? existing;
+    return { record: moved, kind: 'device.moved' };
   }
 
   if (input.mode === 'restore') {

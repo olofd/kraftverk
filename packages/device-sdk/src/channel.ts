@@ -32,8 +32,12 @@ export type ByteChannel = ChannelBase & {
    */
   reset?(): Promise<void>;
 };
-/** A message received on a topic. */
-export type ChannelMessage = { topic: string; payload: Uint8Array; at: string };
+/**
+ * One message on a topic. `retained`: what the broker keeps on the topic,
+ * sent to a new subscription — said before, not happening now: a press kept
+ * in a device's state is not a press.
+ */
+export type ChannelMessage = { topic: string; payload: Uint8Array; at: string; retained?: boolean };
 /**
  * Topics on a message broker, scoped to one device.
  *
