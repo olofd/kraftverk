@@ -13,6 +13,7 @@ import {
   sightingMatches,
   type AuditRecord,
   type ConfigValues,
+  type DeviceType,
   type Identified,
   type NodeId,
   type NodeTraits,
@@ -106,8 +107,8 @@ export class SetupService {
    * home. Refused when the method's transport cannot be used here, saying why.
    */
   async start(input: { typeId: string; methodId?: string | null; by: string; through?: string }): Promise<DraftView> {
-    const type = this.deps.types.get(input.typeId);
-    if (!type) throw new ApiError('not-found', `Nothing installed here knows what "${input.typeId}" is`);
+    // Its integration's code is loaded now, if it has not been: adding one is what it is needed for.
+    const type = await this.#load(input.typeId);
 
     const method = input.methodId ? methodOf(type, input.methodId) : type.connections.length === 1 ? type.connections[0]! : null;
     if (!method) throw new ApiError('invalid', input.methodId ? `${type.meta.name} has no way called "${input.methodId}"` : 'Choose how to connect first');
@@ -128,7 +129,7 @@ export class SetupService {
       through = bridges.length === 1 ? bridges[0]!.id : null;
       reach = throughBridge((id) => this.deps.sessions.get(id)?.bridge ?? null, this.deps.transports.platform);
     } else if (!isSimulated(method)) {
-      const protocol = this.deps.protocols.get(method.protocol);
+      const protocol = await this.deps.protocols.load(method.protocol);
       if (!protocol?.bindings[method.transport]) throw new ApiError('conflict', `${platformWords(this.deps.transports.platform).this} cannot reach a ${type.meta.name} by ${method.label}: it needs updating`);
       transport = await this.deps.transports.start(method.transport);
       const available = this.deps.transports.available(method.transport);
@@ -165,14 +166,13 @@ export class SetupService {
    * for its own check, and saves the connection held by that app. Its secrets
    * never come here: they stay in the app.
    */
-  startHeld(input: HeldSetupInput & { by: string }): DraftView {
-    const type = this.deps.types.get(input.typeId);
-    if (!type) throw new ApiError('not-found', `Nothing installed here knows what "${input.typeId}" is`);
+  async startHeld(input: HeldSetupInput & { by: string }): Promise<DraftView> {
+    const type = await this.#load(input.typeId);
     const method = type.connections.find((candidate) => candidate.id === input.methodId);
     if (!method) throw new ApiError('invalid', `${type.meta.name} has no way called "${input.methodId}"`);
     const unfit = unfitFor(method, this.#traits(nodeId(input.nodeId)));
     if (unfit) throw new ApiError('invalid', `${method.label}: ${unfit}`);
-    const protocol = this.deps.protocols.get(method.protocol) ?? null;
+    const protocol = await this.deps.protocols.load(method.protocol);
     const secret = new Set(
       Object.entries(connectionSchema(method, protocol).fields)
         .filter(([, spec]) => isSecretField(spec))
@@ -194,6 +194,14 @@ export class SetupService {
     if (input.identified) this.#judge(draft, input.identified);
     else this.#checked(draft, { outcome: 'no-answer', summary: input.failure ?? 'It did not answer.', saveAnyway: type.setup?.saveAnyway ?? null });
     return viewOf(draft);
+  }
+
+  /** A type's code, its integration loaded first: what setting one up runs. Refused, saying why, when there is none. */
+  async #load(typeId: string): Promise<DeviceType<any>> {
+    if (!this.deps.types.has(typeId)) throw new ApiError('not-found', `Nothing installed here knows what "${typeId}" is`);
+    const type = await this.deps.types.load(typeId);
+    if (!type) throw new ApiError('unavailable', `${this.deps.types.get(typeId)?.meta.name ?? typeId} could not be loaded here: its package is refused, see the diagnostics`);
+    return type;
   }
 
   view(id: string): DraftView {
@@ -458,10 +466,10 @@ export class SetupService {
     const connection = device ? this.deps.connections.forDevice(device.id).find((each) => each.id === input.connectionId) : undefined;
     if (!device || !connection) throw new ApiError('not-found', 'No such way to reach it');
     if (connection.heldBy !== this.deps.self) throw new ApiError('conflict', 'That way is kept by the node that holds it: set it up again there');
-    const type = this.deps.types.get(device.typeId);
-    const method = type ? methodOf(type, connection.method) : null;
-    if (!type || !method || isBridgedMethod(method) || isSimulated(method)) throw new ApiError('conflict', 'That way has nothing to sign in with: its bridge, or nothing, is');
-    const protocol = this.deps.protocols.get(method.protocol);
+    const type = await this.#load(device.typeId);
+    const method = methodOf(type, connection.method);
+    if (!method || isBridgedMethod(method) || isSimulated(method)) throw new ApiError('conflict', 'That way has nothing to sign in with: its bridge, or nothing, is');
+    const protocol = await this.deps.protocols.load(method.protocol);
     const transport = await this.deps.transports.start(method.transport);
     const available = this.deps.transports.available(method.transport);
     if (!protocol || !transport || !available.ok) throw new ApiError('conflict', available.ok ? `${method.label} cannot be used here` : available.reason);

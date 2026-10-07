@@ -159,6 +159,8 @@ export class Hub {
 
   #log: NonNullable<HubOptions['log']>;
   #stopFreshness: (() => void) | null = null;
+  /** Stops the library hearing of packages as they load. */
+  #stopContributions: () => void;
   #started = false;
 
   constructor(options: HubOptions) {
@@ -222,6 +224,8 @@ export class Hub {
 
     /** What the installed packages bring to automations: their recipes and functions. None of the core's own. */
     this.library = new AutomationLibrary(types.contributions(), (message) => this.#log('warn', message));
+    // What a package brings to automations comes with its code: when its integration loads.
+    this.#stopContributions = types.onContribution((contributed) => this.library.add([contributed]));
     this.engine = new AutomationEngine({ store: automations, library: this.library, device: homeDevices(catalog, sessions), gateway: this.gateway, record, bus: this.bus, history: this.history, location: () => this.home.get()?.location ?? null, clock: options.clock });
     this.drafts = drafts({ history: this.history, events, catalog, sessions, library: this.library, engine: this.engine, automations });
 
@@ -310,6 +314,7 @@ export class Hub {
   /** Stops everything it started, together, and lets go of what it opened. The database is the place's to close. */
   async stop(): Promise<void> {
     this.#stopFreshness?.();
+    this.#stopContributions();
     this.#stopFreshness = null;
     this.configuration.stop();
     this.engine.stop();

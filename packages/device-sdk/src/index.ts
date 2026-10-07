@@ -21,6 +21,7 @@ export * from './values.ts';
 export * from './schema.ts';
 export * from './meanings.ts';
 export * from './quantities.ts';
+export * from './catalogue.ts';
 export * from './units.ts';
 export * from './capabilities.ts';
 export * from './description.ts';

@@ -1457,6 +1457,25 @@ decision of its own. `SupportLevel`, `LINK_KINDS`, `EventLevel` and
 Lazy registries in the server, dynamic imports in the app.
 *Done when* the server starts without importing an integration no device
 uses.
+**Done 2026-10-07.** Each integration and device package carries a
+generated `catalogue.json` beside its package.json — its types (entries:
+every declaration, the description with the default config, its ways
+without their steps) and an integration's protocols (bindings' instructions
+and labels, credentials' schema and actions without their code) — kept
+current by `gen:devices --check` in `check:architecture`. The registries
+hold an entry for every installed type and protocol from the start, and code
+per integration once it loads (`load`, `loaded`, `loadIntegration`): a
+device's session loads its type's integration as it opens, setup as it
+starts, an import for the types a file names, discovery when a way's
+matchers pick a sighting out (offered from the next look), and what a
+package brings to automations joins the library as it loads. A loaded
+type is checked against its entry, and the code's word taken, said, when
+the catalogue is stale. The app's generated list is lazy too — each
+integration its catalogue inline and a loader of dynamic imports. The
+server's discovery test asserts nothing is loaded by finding the packages.
+Not done: the app's screens (`registry.ts`) are still imported up front,
+and one catalogue for brands as records (§12, step 2's `gen:catalogue`) is
+the per-package files for now.
 
 **Step 16 · The porting guide, and a first port.**
 `docs/PORTING-FROM-HOME-ASSISTANT.md`, a current document: §8's map, recipe

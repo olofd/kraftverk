@@ -1,3 +1,4 @@
+import type { TypeEntry } from './catalogue.ts';
 import type { Bridge, BridgeSpec } from './bridge.ts';
 import type { CapabilityId, CommandResult } from './capabilities.ts';
 import type { CategoryId } from './categories.ts';
@@ -7,7 +8,7 @@ import { deviceCapabilities, type DeviceDescription, type DeviceInfo, type Readi
 import type { SessionHealth } from './health.ts';
 import type { SavedDeviceId } from './ids.ts';
 import type { Platform } from './node.ts';
-import { configDefaults, type ConfigSchema, type ConfigValues } from './schema.ts';
+import type { ConfigSchema, ConfigValues } from './schema.ts';
 import type { SetupStep } from './setup.ts';
 import type { Value, ValueType } from './values.ts';
 
@@ -350,8 +351,8 @@ export type DeviceTypeView = {
   saveAnyway: string | null;
 };
 
-export const describeDeviceType = (type: DeviceType<any>): DeviceTypeView => {
-  const description = type.describe(configDefaults(type.config));
+export const describeDeviceType = (type: TypeEntry): DeviceTypeView => {
+  const description = type.description;
   return {
     id: type.id,
     kind: type.kind,

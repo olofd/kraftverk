@@ -37,7 +37,7 @@ const build = (node: { id: NodeId; name: string }) => {
     platform: 'system',
     node,
     types,
-    protocols,
+    protocols: { get: (id) => protocols.loaded(id) },
     transports,
     ...holding(connections, node.id),
     store: (deviceId) => deviceStore(db, deviceId),

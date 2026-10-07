@@ -1,0 +1,421 @@
+{
+  "protocols": [
+    {
+      "id": "niu-cloud",
+      "label": "NIU cloud",
+      "bindings": {
+        "https": {}
+      },
+      "credentials": {
+        "schema": {
+          "help": "NIU scooters of this age are reached through NIU’s cloud, with the account you use in the NIU app. Signing in finds every scooter on it.",
+          "fields": {
+            "account": {
+              "type": "string",
+              "title": "Email or phone number",
+              "description": "The one you sign in to the NIU app with.",
+              "required": true
+            },
+            "password": {
+              "type": "string",
+              "presentation": "secret",
+              "title": "Password",
+              "description": "Kept encrypted where the account is held, and sent only to NIU, to sign in.",
+              "required": true
+            },
+            "session": {
+              "type": "string",
+              "presentation": "secret",
+              "kept": "session",
+              "title": "Signed in",
+              "description": "NIU’s sign-in, kept by the account itself. Never asked of you."
+            }
+          }
+        },
+        "actions": [
+          {
+            "id": "signIn",
+            "label": "Sign in with your NIU account",
+            "description": "The account you use in the NIU app. Your scooters are found on it; nothing is changed on them.",
+            "input": {
+              "help": "NIU scooters of this age are reached through NIU’s cloud, with the account you use in the NIU app. Signing in finds every scooter on it.",
+              "fields": {
+                "account": {
+                  "type": "string",
+                  "title": "Email or phone number",
+                  "description": "The one you sign in to the NIU app with.",
+                  "required": true
+                },
+                "password": {
+                  "type": "string",
+                  "presentation": "secret",
+                  "title": "Password",
+                  "description": "Kept encrypted where the account is held, and sent only to NIU, to sign in.",
+                  "required": true
+                }
+              }
+            }
+          }
+        ],
+        "first": true,
+        "title": "Your NIU account"
+      }
+    }
+  ],
+  "types": [
+    {
+      "id": "niu.account",
+      "kind": "account",
+      "meta": {
+        "name": "NIU account",
+        "brand": "NIU",
+        "category": "account",
+        "icon": "user",
+        "description": "The account you use in the NIU app: signed in once, it finds every scooter on it, each added as a device of its own and read through it.",
+        "support": "experimental",
+        "supportNote": "Signs in the way the NIU app does, as others found it."
+      },
+      "config": {
+        "fields": {}
+      },
+      "connections": [
+        {
+          "id": "cloud",
+          "label": "NIU’s cloud",
+          "description": "Through NIU’s servers, with the account you use in the NIU app. Needs the internet: its scooters report to NIU over the mobile network.",
+          "protocol": "niu-cloud",
+          "transport": "https",
+          "address": "https://app-api-fk.niu.com",
+          "reach": "cloud",
+          "updates": "poll",
+          "platforms": [
+            "system",
+            "native"
+          ],
+          "needs": {
+            "trusted": "your NIU password stays at home"
+          }
+        }
+      ],
+      "bridge": {
+        "fallback": "niu.scooter"
+      },
+      "description": {
+        "parts": [
+          {
+            "id": "main",
+            "label": "Account",
+            "kind": "device",
+            "icon": "user"
+          }
+        ],
+        "attributes": [
+          {
+            "key": "scooters",
+            "label": "Scooters on it",
+            "value": {
+              "type": "number",
+              "integer": true
+            },
+            "category": "diagnostic"
+          }
+        ]
+      },
+      "automation": false
+    },
+    {
+      "id": "niu.scooter",
+      "kind": "hardware",
+      "meta": {
+        "icon": "navigation",
+        "name": "NIU scooter",
+        "description": "A NIU electric scooter, read from NIU’s cloud with your NIU account: its charge, whether it is charging, its range and its odometer. With a smart plug in front of its charger, charge it to a limit.",
+        "support": "experimental",
+        "supportNote": "Read from NIU’s cloud the way others found it. A model of its own, where there is one, knows more.",
+        "brand": "NIU",
+        "category": "vehicle"
+      },
+      "config": {
+        "fields": {}
+      },
+      "connections": [
+        {
+          "id": "account",
+          "label": "Through your NIU account",
+          "description": "Through the NIU account it is on, which asks NIU’s servers for it. Needs the internet: the scooter reports to NIU over the mobile network.",
+          "through": [
+            "niu.account"
+          ],
+          "reach": "cloud",
+          "updates": "poll"
+        }
+      ],
+      "tools": {
+        "raw": {
+          "label": "What NIU says",
+          "description": "Everything NIU’s cloud says about the scooter, exactly as it says it: its state, its battery and its totals — never where it is. For working out what a value means: change one thing on the scooter, read again, and compare.",
+          "writes": false,
+          "answer": {
+            "type": "object",
+            "fields": {
+              "from": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "batteries": {
+                "type": "string"
+              },
+              "totals": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "from",
+              "state"
+            ]
+          }
+        }
+      },
+      "description": {
+        "parts": [
+          {
+            "id": "main",
+            "label": "Scooter",
+            "kind": "device",
+            "icon": "navigation",
+            "energy": {
+              "role": "storage"
+            }
+          },
+          {
+            "id": "battery",
+            "label": "Battery",
+            "kind": "battery"
+          }
+        ],
+        "attributes": [
+          {
+            "key": "soc",
+            "label": "Charge",
+            "value": {
+              "type": "number",
+              "unit": "%",
+              "precision": 0
+            },
+            "means": "charge",
+            "category": "primary",
+            "currentFor": 1800000
+          },
+          {
+            "key": "range",
+            "label": "Range",
+            "value": {
+              "type": "number",
+              "unit": "km",
+              "precision": 0
+            },
+            "quantity": "distance",
+            "currentFor": 1800000
+          },
+          {
+            "key": "charging",
+            "label": "Charging",
+            "value": {
+              "type": "boolean",
+              "words": {
+                "true": "Yes",
+                "false": "No"
+              }
+            },
+            "currentFor": 1800000
+          },
+          {
+            "key": "minutesToFull",
+            "label": "Until full",
+            "value": {
+              "type": "number",
+              "unit": "min",
+              "precision": 0
+            },
+            "quantity": "duration",
+            "currentFor": 1800000
+          },
+          {
+            "key": "odometer",
+            "label": "Odometer",
+            "value": {
+              "type": "number",
+              "unit": "km",
+              "precision": 1
+            },
+            "quantity": "distance",
+            "stateClass": "total_increasing",
+            "currentFor": 3600000
+          },
+          {
+            "key": "poweredOn",
+            "label": "Switched on",
+            "value": {
+              "type": "boolean",
+              "words": {
+                "true": "Yes",
+                "false": "No"
+              }
+            },
+            "currentFor": 1800000
+          },
+          {
+            "key": "alarmArmed",
+            "label": "Alarm",
+            "value": {
+              "type": "boolean",
+              "words": {
+                "true": "Armed",
+                "false": "Not armed"
+              }
+            },
+            "currentFor": 1800000
+          },
+          {
+            "key": "battery.health",
+            "part": "battery",
+            "label": "Health",
+            "value": {
+              "type": "number",
+              "unit": "%",
+              "precision": 0
+            },
+            "quantity": "percent",
+            "category": "diagnostic",
+            "currentFor": 3600000
+          },
+          {
+            "key": "battery.temperature",
+            "part": "battery",
+            "label": "Temperature",
+            "value": {
+              "type": "number",
+              "unit": "°C",
+              "precision": 0
+            },
+            "quantity": "temperature",
+            "category": "diagnostic",
+            "currentFor": 3600000
+          },
+          {
+            "key": "battery.cycles",
+            "part": "battery",
+            "label": "Charge cycles",
+            "value": {
+              "type": "number",
+              "integer": true
+            },
+            "stateClass": "total_increasing",
+            "category": "diagnostic",
+            "currentFor": 3600000
+          },
+          {
+            "key": "speed",
+            "label": "Speed at its last report",
+            "value": {
+              "type": "number",
+              "unit": "km/h",
+              "precision": 0
+            },
+            "quantity": "speed",
+            "category": "diagnostic",
+            "history": false,
+            "currentFor": 1800000
+          },
+          {
+            "key": "online",
+            "label": "Reaching NIU",
+            "value": {
+              "type": "boolean",
+              "words": {
+                "true": "Yes",
+                "false": "No"
+              }
+            },
+            "category": "diagnostic",
+            "history": false,
+            "currentFor": 1800000
+          },
+          {
+            "key": "lockStatus",
+            "label": "Lock status (raw)",
+            "value": {
+              "type": "number",
+              "integer": true
+            },
+            "category": "diagnostic",
+            "history": false,
+            "currentFor": 1800000
+          },
+          {
+            "key": "mobileSignal",
+            "label": "Mobile signal",
+            "value": {
+              "type": "number",
+              "integer": true
+            },
+            "category": "diagnostic",
+            "history": false,
+            "currentFor": 1800000
+          },
+          {
+            "key": "gpsSignal",
+            "label": "GPS signal",
+            "value": {
+              "type": "number",
+              "integer": true
+            },
+            "category": "diagnostic",
+            "history": false,
+            "currentFor": 1800000
+          },
+          {
+            "key": "controlUnitBattery",
+            "label": "Control unit battery",
+            "value": {
+              "type": "number",
+              "unit": "%",
+              "precision": 0
+            },
+            "quantity": "percent",
+            "category": "diagnostic",
+            "history": false,
+            "currentFor": 1800000
+          }
+        ],
+        "events": [
+          {
+            "id": "charging.started",
+            "label": "Started charging",
+            "level": "info",
+            "data": {
+              "soc": {
+                "type": "number",
+                "unit": "%"
+              }
+            }
+          },
+          {
+            "id": "charging.finished",
+            "label": "Stopped charging",
+            "level": "info",
+            "data": {
+              "soc": {
+                "type": "number",
+                "unit": "%"
+              }
+            }
+          }
+        ]
+      },
+      "automation": false
+    }
+  ]
+}

@@ -1,0 +1,105 @@
+{
+  "protocols": [
+    {
+      "id": "open-meteo",
+      "label": "Open-Meteo",
+      "bindings": {
+        "https": {}
+      }
+    }
+  ],
+  "types": [
+    {
+      "id": "open-meteo.weather",
+      "kind": "service",
+      "meta": {
+        "name": "Open-Meteo",
+        "brand": "Open-Meteo",
+        "category": "weather",
+        "description": "Free weather forecasts for anywhere, with no account. Your place is sent to Open-Meteo to ask for its forecast.",
+        "support": "verified",
+        "supportNote": "A public API, read the way its documentation says.",
+        "icon": "cloud",
+        "docsUrl": "https://open-meteo.com/en/docs"
+      },
+      "config": {
+        "fields": {
+          "place": {
+            "type": "string",
+            "title": "Place",
+            "description": "What you call it: “Home”, “The cabin”.",
+            "placeholder": "Home"
+          },
+          "latitude": {
+            "type": "number",
+            "title": "Latitude",
+            "description": "Degrees north; south is negative.",
+            "required": true,
+            "min": -90,
+            "max": 90
+          },
+          "longitude": {
+            "type": "number",
+            "title": "Longitude",
+            "description": "Degrees east; west is negative.",
+            "required": true,
+            "min": -180,
+            "max": 180
+          }
+        }
+      },
+      "connections": [
+        {
+          "id": "api",
+          "label": "Open-Meteo",
+          "description": "Its public forecast API, over the internet. No account and no key.",
+          "protocol": "open-meteo",
+          "transport": "https",
+          "address": "https://api.open-meteo.com",
+          "reach": "cloud",
+          "updates": "poll"
+        }
+      ],
+      "description": {
+        "parts": [
+          {
+            "id": "main",
+            "label": "Weather",
+            "kind": "place",
+            "offers": [
+              "weather.forecast"
+            ]
+          }
+        ],
+        "attributes": [
+          {
+            "key": "temperature",
+            "label": "Temperature",
+            "value": {
+              "type": "number",
+              "unit": "°C",
+              "precision": 1
+            },
+            "quantity": "temperature",
+            "means": "temperature",
+            "category": "primary",
+            "currentFor": 3600000
+          },
+          {
+            "key": "cloudCover",
+            "label": "Cloud cover",
+            "value": {
+              "type": "number",
+              "unit": "%",
+              "precision": 0
+            },
+            "quantity": "percent",
+            "means": "cloudCover",
+            "currentFor": 3600000
+          }
+        ]
+      },
+      "automation": true
+    }
+  ]
+}

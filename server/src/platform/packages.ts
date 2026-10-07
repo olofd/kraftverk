@@ -6,10 +6,12 @@ import type { AutomationContribution } from '@kraftverk/automation';
 import {
   deviceManifestProblems,
   integrationManifestProblems,
+  type CatalogueType,
   type DeviceManifest,
   type DeviceType,
   type FileMigration,
   type IntegrationManifest,
+  type PackageCatalogue,
   type PackageTypeEntry,
   type Protocol,
   type TransportDefinition,
@@ -25,6 +27,12 @@ import { DeviceTypeRegistry, installIntegration, ProtocolRegistry, type Installe
  * the folder for its kind; an integration names its protocols there. Adding
  * one is adding the package: nothing here names a product, a platform, a
  * protocol or a transport, and nothing needs editing.
+ *
+ * What is read at start is only what each package declares: its manifest,
+ * and the catalogue generated beside it (`catalogue.json`,
+ * docs/PLAN-INTEGRATIONS.md §6.1). An integration's code — and the device
+ * packages' on it — is imported the first time it is needed, so an
+ * integration nobody uses is never imported.
  */
 
 const REPOSITORY = resolve(import.meta.dirname, '../../..');
@@ -71,6 +79,24 @@ async function findPackages(roots: readonly string[], key: string): Promise<{ fo
   return { found, problems };
 }
 
+/** A package's catalogue, as generated beside its package.json: what it declares, with none of its code. */
+async function catalogueOf(pkg: FoundPackage): Promise<PackageCatalogue> {
+  try {
+    return JSON.parse(await readFile(resolve(pkg.dir, 'catalogue.json'), 'utf8')) as PackageCatalogue;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('it has no catalogue.json: run npm run gen:devices');
+    throw error;
+  }
+}
+
+/** A catalogue's types, held to what the manifest lists: one generated before the package changed is refused, saying so. */
+function listedTypes(catalogue: PackageCatalogue, entries: readonly PackageTypeEntry[]): readonly CatalogueType[] {
+  const listed = entries.map((entry) => entry.id).join(', ');
+  const catalogued = catalogue.types.map((type) => type.id).join(', ');
+  if (listed !== catalogued) throw new Error(`its catalogue.json lists ${catalogued || 'no types'}, its manifest ${listed || 'none'}: run npm run gen:devices`);
+  return catalogue.types;
+}
+
 /** A package's module, by a path from its own folder. */
 async function load<T>(pkg: FoundPackage, path: string): Promise<T> {
   const loaded = (await import(pathToFileURL(resolve(pkg.dir, path)).href)) as { default?: T };
@@ -115,9 +141,11 @@ async function loadTypes(pkg: FoundPackage, entries: readonly PackageTypeEntry[]
 /**
  * Every integration, with its protocols, its own types and the products the
  * device packages built on it declare (docs/PLAN-INTEGRATIONS.md §1), each with
- * what it brings to automations. A device package whose integration is not
+ * what it brings to automations — declared from their catalogues, their code
+ * loaded when it is first needed. A device package whose integration is not
  * installed is refused, saying so: a product is reached only through its
- * platform.
+ * platform. How an integration's entries in a file changed is read at once:
+ * a file kept before is read as soon as the home starts.
  */
 export async function discoverIntegrations(
   { types, protocols }: { types: DeviceTypeRegistry; protocols: ProtocolRegistry },
@@ -127,8 +155,8 @@ export async function discoverIntegrations(
   const products = await findPackages(roots.devices, 'device');
   for (const problem of [...platforms.problems, ...products.problems]) types.refuse(problem.source, problem.problems);
 
-  // Each product, loaded and grouped under the platform it names.
-  const onPlatform = new Map<string, { pkg: FoundPackage; types: InstalledType[] }[]>();
+  // Each product, declared from its catalogue and grouped under the platform it names; its code loads with the platform's.
+  const onPlatform = new Map<string, { pkg: FoundPackage; declared: readonly CatalogueType[]; load: () => Promise<InstalledType[]> }[]>();
   for (const pkg of products.found) {
     const problems = deviceManifestProblems(pkg.kraftverk.device);
     if (problems.length) {
@@ -137,7 +165,8 @@ export async function discoverIntegrations(
     }
     const manifest = pkg.kraftverk.device as DeviceManifest;
     try {
-      onPlatform.set(manifest.integration, [...(onPlatform.get(manifest.integration) ?? []), { pkg, types: await loadTypes(pkg, manifest.types) }]);
+      const declared = listedTypes(await catalogueOf(pkg), manifest.types);
+      onPlatform.set(manifest.integration, [...(onPlatform.get(manifest.integration) ?? []), { pkg, declared, load: () => loadTypes(pkg, manifest.types) }]);
     } catch (error) {
       types.refuse(pkg.folder, [(error as Error).message]);
     }
@@ -151,12 +180,37 @@ export async function discoverIntegrations(
     }
     const manifest = pkg.kraftverk.integration as IntegrationManifest;
     try {
-      const spoken = await Promise.all((manifest.protocols ?? []).map((path) => load<Protocol>(pkg, path)));
-      const own = await loadTypes(pkg, manifest.types);
+      const catalogue = await catalogueOf(pkg);
+      listedTypes(catalogue, manifest.types);
       const built = onPlatform.get(manifest.id) ?? [];
       onPlatform.delete(manifest.id);
       const migrations = manifest.migrations ? await load<FileMigration[]>(pkg, manifest.migrations) : [];
-      installIntegration({ types, protocols }, { id: manifest.id, name: manifest.name, protocols: spoken, types: own, products: built.flatMap((product) => product.types), migrations }, pkg.name);
+      installIntegration(
+        { types, protocols },
+        {
+          id: manifest.id,
+          name: manifest.name,
+          catalogue,
+          products: built.flatMap((product) => product.declared),
+          migrations,
+          load: async () => ({
+            protocols: await Promise.all((manifest.protocols ?? []).map((path) => load<Protocol>(pkg, path))),
+            types: await loadTypes(pkg, manifest.types),
+            // One product that will not load is refused alone: the platform, and the other products on it, still load.
+            products: (
+              await Promise.all(
+                built.map((product) =>
+                  product.load().catch((error: unknown) => {
+                    types.refuse(product.pkg.folder, [`its code would not load: ${(error as Error).message}`]);
+                    return [];
+                  })
+                )
+              )
+            ).flat(),
+          }),
+        },
+        pkg.name
+      );
     } catch (error) {
       types.refuse(pkg.folder, [(error as Error).message]);
     }
@@ -181,7 +235,7 @@ export async function installedFromDisk(transports: TransportHost): Promise<{ ty
   types.checkConnections({ protocols, transport: (id) => transports.definition(id) });
   console.log(
     `[devices] Installed: integrations ${types.integrations().map((integration) => integration.id).join(', ') || 'none'}; ` +
-      `device types ${types.all().map((type) => type.id).join(', ') || 'none'}; ` +
+      `device types ${types.all().map((type) => type.id).join(', ') || 'none'} (each loaded when first needed); ` +
       `protocols ${protocols.all().map((protocol) => protocol.id).join(', ') || 'none'}; ` +
       `transports ${transports.definitions().map((definition) => definition.id).join(', ') || 'none'}`
   );

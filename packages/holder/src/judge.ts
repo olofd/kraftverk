@@ -1,5 +1,5 @@
 import type { CheckOutcome } from '@kraftverk/api-contract';
-import { coversModel, modelCloseness, type DeviceType, type Identified, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { coversModel, modelCloseness, type Identified, type TypeDeclaration, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 /**
  * What a device's answer to the check step means, against the devices you
@@ -19,9 +19,9 @@ export type KnownDevices = {
 export function judgeCheck(
   identified: Identified,
   context: {
-    type: DeviceType<any>;
+    type: TypeDeclaration;
     /** Every installed type: which one covers a model this one does not. */
-    types: Iterable<DeviceType<any>>;
+    types: Iterable<TypeDeclaration>;
     known: KnownDevices;
     /** An identity the setup already knew — from the sighting that was chosen — when the device itself did not say. */
     identityHint?: string | null;
@@ -31,7 +31,7 @@ export function judgeCheck(
   // A model this type does not cover, which another installed type may — the one naming it most closely.
   const models = type.meta.models ?? [];
   if (identified.model && models.length && !models.some((model) => coversModel(model, identified.model!))) {
-    const closeness = (candidate: DeviceType<any>) => modelCloseness(candidate.meta.models, identified.model!);
+    const closeness = (candidate: TypeDeclaration) => modelCloseness(candidate.meta.models, identified.model!);
     const other = [...context.types].filter((candidate) => closeness(candidate) > 0).sort((a, b) => closeness(b) - closeness(a))[0];
     return {
       outcome: 'other-model',

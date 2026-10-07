@@ -326,7 +326,11 @@ migration is what carries every home over — none keeps the old way.
 ## Before you open a pull request
 
 - `npm test`, `npm run typecheck` and `npm run check:architecture` pass.
-- `npm run gen:devices -- --check` passes, if it has screens.
+- `npm run gen:devices` has been run and what it wrote committed: the
+  package's `catalogue.json` — what it declares, as data, which a home lists,
+  offers and finds devices by before it imports any of its code — and the
+  app's registry. `check:architecture` fails a catalogue that is not its
+  code's.
 - Its `support` level is honest, with a `supportNote` saying why.
 - What was verified on real hardware is written down, as
   [`P280-FINDINGS.md`](P280-FINDINGS.md) and [`ATORCH-S1W.md`](ATORCH-S1W.md) do.

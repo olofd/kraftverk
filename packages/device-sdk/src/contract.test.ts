@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { channelOf, isSimulated, methodOf, methodsOf, platformsOf, SIMULATED_METHOD, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, simulatedMethodOf, type DirectMethod } from './connection.ts';
 import { MAIN_PART, type DeviceDescription } from './description.ts';
 import type { DeviceContext, DeviceSession, DeviceType } from './device-type.ts';
+import { entryOf } from './catalogue.ts';
 import { defineDeviceType, describeDeviceType } from './device-type.ts';
 import { unmetNeed, type NodeNeeds, type Platform } from './node.ts';
 import type { Protocol } from './protocol.ts';
@@ -180,7 +181,7 @@ describe('validating a declaration', () => {
     expect(methodOf(type, SIMULATED_METHOD_ID)).toBe(SIMULATED_METHOD);
     expect(simulatedMethodOf({ ...type, simulation: { fields: { level: { type: 'number', title: 'Starts at', default: 50 } } } }).config?.fields).toHaveProperty('level');
     expect(isSimulated(SIMULATED_METHOD)).toBe(true);
-    expect(describeDeviceType(type).connections.at(-1)).toMatchObject({ id: 'simulated', label: 'Simulated' });
+    expect(describeDeviceType(entryOf(type)).connections.at(-1)).toMatchObject({ id: 'simulated', label: 'Simulated' });
 
     const own = type.connections[0]! as DirectMethod;
     expect(broken((candidate) => ({ ...candidate, connections: [{ ...own, id: SIMULATED_METHOD_ID }] }))).toContain(

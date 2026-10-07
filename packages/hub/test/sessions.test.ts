@@ -42,7 +42,7 @@ const build = (options: { readOnly?: boolean; bus?: LiveBus } = {}) => {
     platform: 'system',
     node: { id: MACHINE_NODE.id, name: MACHINE_NODE.name },
     types,
-    protocols,
+    protocols: { get: (id) => protocols.loaded(id) },
     transports,
     ...holding(connections, MACHINE_NODE.id),
     store: (deviceId) => deviceStore(db, deviceId),

@@ -1,5 +1,4 @@
 import {
-  configDefaults,
   isBridgedMethod,
   isSecretField,
   LINK_KIND_IDS,
@@ -7,8 +6,8 @@ import {
   partsOf,
   POLICY_VALUES,
   type ConfigSchema,
-  type DeviceType,
-  type Protocol,
+  type ProtocolDeclaration,
+  type TypeEntry,
 } from '@kraftverk/device-sdk';
 
 /*
@@ -55,8 +54,8 @@ const split = (schema: ConfigSchema | undefined, secret: boolean): ConfigSchema 
  * the server has, when it is given.
  */
 export function vocabularyOf(
-  types: readonly DeviceType<any>[],
-  protocol: (id: string) => Pick<Protocol, 'credentials'> | null,
+  types: readonly TypeEntry[],
+  protocol: (id: string) => Pick<ProtocolDeclaration, 'credentials'> | null,
   have: { devices?: Vocabulary['devices']; automations?: Vocabulary['automations'] } = {}
 ): Vocabulary {
   return {
@@ -64,7 +63,7 @@ export function vocabularyOf(
       id: type.id,
       name: type.meta.name,
       settings: type.config ?? { fields: {} },
-      parts: partsOf(type.describe(configDefaults(type.config ?? { fields: {} }))).map((part) => part.id),
+      parts: partsOf(type.description).map((part) => part.id),
       methods: methodsOf(type).map((method) => {
         // A way through a bridge signs in as the bridge does: it carries no credentials of its own.
         const credentials = isBridgedMethod(method) ? undefined : protocol(method.protocol)?.credentials?.schema;

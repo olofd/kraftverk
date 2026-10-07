@@ -1,0 +1,1247 @@
+{
+  "protocols": [],
+  "types": [
+    {
+      "id": "aferiy.p280",
+      "kind": "hardware",
+      "meta": {
+        "name": "AFERIY P280",
+        "brand": "AFERIY",
+        "models": [
+          "P280",
+          "AFERIY P280"
+        ],
+        "category": "power-station",
+        "description": "A 2 kWh power station on the Sydpower stack.",
+        "support": "verified",
+        "supportNote": "Every setting confirmed on real hardware.",
+        "icon": "zap"
+      },
+      "config": {
+        "fields": {}
+      },
+      "connections": [
+        {
+          "id": "wifi",
+          "label": "Wi-Fi",
+          "description": "Always on: history and automations keep running. The station must be set to use this server’s broker.",
+          "protocol": "sydpower",
+          "transport": "mqtt",
+          "reach": "local",
+          "updates": "both",
+          "recommended": true,
+          "discovery": [
+            {
+              "kind": "client",
+              "protocol": "sydpower"
+            }
+          ]
+        },
+        {
+          "id": "bluetooth",
+          "label": "Bluetooth",
+          "description": "Within about 10 m of whatever holds it. The station takes one Bluetooth connection at a time.",
+          "protocol": "sydpower",
+          "transport": "ble",
+          "reach": "local",
+          "updates": "both",
+          "discovery": [
+            {
+              "kind": "advert",
+              "service": "a002"
+            },
+            {
+              "kind": "advert",
+              "service": "fff0"
+            },
+            {
+              "kind": "advert",
+              "name": "POWER*"
+            },
+            {
+              "kind": "advert",
+              "name": "AFERIY*"
+            },
+            {
+              "kind": "advert",
+              "name": "FOSSIBOT*"
+            },
+            {
+              "kind": "advert",
+              "name": "SYDPOWER*"
+            },
+            {
+              "kind": "advert",
+              "name": "ABOK*"
+            },
+            {
+              "kind": "advert",
+              "name": "ECOPLAY*"
+            }
+          ]
+        }
+      ],
+      "simulation": {
+        "fields": {
+          "level": {
+            "type": "number",
+            "title": "Starts at",
+            "description": "Its charge when it starts.",
+            "unit": "%",
+            "min": 0,
+            "max": 100,
+            "default": 68
+          },
+          "packs": {
+            "type": "number",
+            "title": "Expansion packs",
+            "description": "Beside its own 2048 Wh, each as much again.",
+            "min": 0,
+            "max": 2,
+            "integer": true,
+            "default": 1
+          },
+          "acLoadWatts": {
+            "type": "number",
+            "title": "Load on its AC outlets",
+            "description": "What is plugged into it draws about this much.",
+            "unit": "W",
+            "min": 0,
+            "max": 2000,
+            "default": 145
+          }
+        }
+      },
+      "tools": {
+        "registers": {
+          "label": "Registers",
+          "description": "Every register, raw and decoded, diffed against this station’s own baseline.",
+          "writes": false,
+          "answer": {
+            "type": "object",
+            "fields": {
+              "mac": {
+                "type": "string"
+              },
+              "readOnly": {
+                "type": "boolean"
+              },
+              "baselineAt": {
+                "type": "timestamp"
+              },
+              "input": {
+                "type": "list",
+                "of": {
+                  "type": "object",
+                  "fields": {
+                    "register": {
+                      "type": "number",
+                      "integer": true
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "number",
+                      "integer": true
+                    },
+                    "hex": {
+                      "type": "string"
+                    },
+                    "asTenths": {
+                      "type": "number"
+                    },
+                    "writable": {
+                      "type": "object",
+                      "fields": {
+                        "kind": {
+                          "type": "enum",
+                          "options": [
+                            {
+                              "value": "set",
+                              "label": "set"
+                            },
+                            {
+                              "value": "range",
+                              "label": "range"
+                            }
+                          ]
+                        },
+                        "values": {
+                          "type": "list",
+                          "of": {
+                            "type": "number",
+                            "integer": true
+                          }
+                        },
+                        "min": {
+                          "type": "number",
+                          "integer": true
+                        },
+                        "max": {
+                          "type": "number",
+                          "integer": true
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ]
+                    },
+                    "previous": {
+                      "type": "number",
+                      "integer": true
+                    },
+                    "changed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "register",
+                    "raw",
+                    "hex",
+                    "asTenths",
+                    "changed"
+                  ]
+                }
+              },
+              "holding": {
+                "type": "list",
+                "of": {
+                  "type": "object",
+                  "fields": {
+                    "register": {
+                      "type": "number",
+                      "integer": true
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "number",
+                      "integer": true
+                    },
+                    "hex": {
+                      "type": "string"
+                    },
+                    "asTenths": {
+                      "type": "number"
+                    },
+                    "writable": {
+                      "type": "object",
+                      "fields": {
+                        "kind": {
+                          "type": "enum",
+                          "options": [
+                            {
+                              "value": "set",
+                              "label": "set"
+                            },
+                            {
+                              "value": "range",
+                              "label": "range"
+                            }
+                          ]
+                        },
+                        "values": {
+                          "type": "list",
+                          "of": {
+                            "type": "number",
+                            "integer": true
+                          }
+                        },
+                        "min": {
+                          "type": "number",
+                          "integer": true
+                        },
+                        "max": {
+                          "type": "number",
+                          "integer": true
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ]
+                    },
+                    "previous": {
+                      "type": "number",
+                      "integer": true
+                    },
+                    "changed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "register",
+                    "raw",
+                    "hex",
+                    "asTenths",
+                    "changed"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "readOnly",
+              "input",
+              "holding"
+            ]
+          }
+        },
+        "snapshot": {
+          "label": "Snapshot a baseline",
+          "description": "Takes the baseline the next register dump is compared with. Changes nothing on the station.",
+          "writes": false,
+          "answer": {
+            "type": "object",
+            "fields": {
+              "at": {
+                "type": "timestamp"
+              },
+              "input": {
+                "type": "number",
+                "integer": true
+              },
+              "holding": {
+                "type": "number",
+                "integer": true
+              }
+            },
+            "required": [
+              "at",
+              "input",
+              "holding"
+            ]
+          }
+        },
+        "scan": {
+          "label": "Scan registers",
+          "description": "Reads any register range, shown as ASCII too: strings the station keeps are packed two characters to a register. Reads only.",
+          "writes": false,
+          "input": {
+            "fields": {
+              "fn": {
+                "type": "number",
+                "title": "Function",
+                "description": "3 for holding registers, 4 for input registers.",
+                "integer": true,
+                "min": 3,
+                "max": 4,
+                "default": 3
+              },
+              "start": {
+                "type": "number",
+                "title": "First register",
+                "integer": true,
+                "min": 0,
+                "max": 65535,
+                "default": 0
+              },
+              "count": {
+                "type": "number",
+                "title": "How many",
+                "integer": true,
+                "min": 1,
+                "max": 125,
+                "default": 40
+              }
+            }
+          },
+          "answer": {
+            "type": "object",
+            "fields": {
+              "fn": {
+                "type": "number",
+                "integer": true
+              },
+              "start": {
+                "type": "number",
+                "integer": true
+              },
+              "count": {
+                "type": "number",
+                "integer": true
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "values": {
+                "type": "list",
+                "of": {
+                  "type": "object",
+                  "fields": {
+                    "register": {
+                      "type": "number",
+                      "integer": true
+                    },
+                    "raw": {
+                      "type": "number",
+                      "integer": true
+                    },
+                    "hex": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "register",
+                    "raw",
+                    "hex"
+                  ]
+                }
+              },
+              "ascii": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "fn",
+              "start",
+              "count",
+              "ok",
+              "values",
+              "ascii"
+            ]
+          }
+        },
+        "blocked": {
+          "label": "Refused writes",
+          "description": "Writes this station refused while read-only: its own, not somebody else’s.",
+          "writes": false,
+          "answer": {
+            "type": "list",
+            "of": {
+              "type": "object",
+              "fields": {
+                "at": {
+                  "type": "timestamp"
+                },
+                "register": {
+                  "type": "number",
+                  "integer": true
+                },
+                "value": {
+                  "type": "number",
+                  "integer": true
+                }
+              },
+              "required": [
+                "at",
+                "register",
+                "value"
+              ]
+            }
+          }
+        },
+        "link": {
+          "label": "Link",
+          "description": "How the link is doing: what it rides, and what the transport reports about it.",
+          "writes": false,
+          "answer": {
+            "type": "object",
+            "fields": {
+              "transport": {
+                "type": "string"
+              },
+              "address": {
+                "type": "string"
+              },
+              "connected": {
+                "type": "boolean"
+              },
+              "status": {
+                "type": "object",
+                "fields": {
+                  "mode": {
+                    "type": "enum",
+                    "options": [
+                      {
+                        "value": "device",
+                        "label": "device"
+                      },
+                      {
+                        "value": "simulator",
+                        "label": "simulator"
+                      }
+                    ]
+                  },
+                  "state": {
+                    "type": "enum",
+                    "options": [
+                      {
+                        "value": "connected",
+                        "label": "connected"
+                      },
+                      {
+                        "value": "waiting",
+                        "label": "waiting"
+                      },
+                      {
+                        "value": "offline",
+                        "label": "offline"
+                      }
+                    ]
+                  },
+                  "transport": {
+                    "type": "string"
+                  },
+                  "mac": {
+                    "type": "string"
+                  },
+                  "lastSeen": {
+                    "type": "timestamp"
+                  }
+                },
+                "required": [
+                  "mode",
+                  "state"
+                ]
+              }
+            },
+            "required": [
+              "transport",
+              "address",
+              "connected",
+              "status"
+            ]
+          }
+        },
+        "raw": {
+          "label": "Send a raw frame",
+          "description": "The escape hatch for protocol work: sends any frame, when the holder was started with raw access. Never past the protocol’s guard, and while read-only only a frame that is plainly a read.",
+          "writes": true,
+          "honoursReadOnly": true,
+          "input": {
+            "fields": {
+              "hex": {
+                "type": "string",
+                "title": "Frame",
+                "description": "Whole bytes of hexadecimal.",
+                "required": true
+              }
+            }
+          },
+          "answer": {
+            "type": "object",
+            "fields": {
+              "sent": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "described": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sent",
+              "to",
+              "described"
+            ]
+          }
+        }
+      },
+      "setup": {
+        "saveAnyway": "A station that is asleep, or not on Wi-Fi yet, connects when it wakes — its card says so until then."
+      },
+      "description": {
+        "parts": [
+          {
+            "id": "main",
+            "label": "Station",
+            "kind": "device",
+            "icon": "battery-charging",
+            "energy": {
+              "role": "storage"
+            }
+          },
+          {
+            "id": "input.ac",
+            "label": "Mains",
+            "kind": "input",
+            "icon": "zap",
+            "energy": {
+              "role": "source"
+            }
+          },
+          {
+            "id": "input.solar",
+            "label": "Solar",
+            "kind": "input",
+            "icon": "sun",
+            "energy": {
+              "role": "source"
+            }
+          },
+          {
+            "id": "outlet.ac",
+            "label": "AC outlets",
+            "kind": "outlet",
+            "energy": {
+              "role": "load"
+            },
+            "offers": [
+              "switch"
+            ]
+          },
+          {
+            "id": "outlet.dc",
+            "label": "12V DC / car port",
+            "kind": "outlet",
+            "energy": {
+              "role": "load"
+            },
+            "offers": [
+              "switch"
+            ]
+          },
+          {
+            "id": "outlet.usb",
+            "label": "USB-A + USB-C",
+            "kind": "outlet",
+            "energy": {
+              "role": "load"
+            },
+            "offers": [
+              "switch"
+            ]
+          },
+          {
+            "id": "light",
+            "label": "Light",
+            "kind": "light",
+            "energy": {
+              "role": "load"
+            }
+          }
+        ],
+        "attributes": [
+          {
+            "key": "soc",
+            "label": "Charge",
+            "value": {
+              "type": "number",
+              "unit": "%",
+              "precision": 1
+            },
+            "quantity": "percent",
+            "means": "charge",
+            "category": "primary"
+          },
+          {
+            "key": "capacityWh",
+            "label": "Capacity",
+            "value": {
+              "type": "number",
+              "unit": "Wh",
+              "precision": 0
+            },
+            "quantity": "energy",
+            "means": "capacity",
+            "category": "diagnostic"
+          },
+          {
+            "key": "inputWatts",
+            "label": "Input",
+            "value": {
+              "type": "number",
+              "unit": "W",
+              "precision": 0
+            },
+            "quantity": "power",
+            "means": "input"
+          },
+          {
+            "key": "outputWatts",
+            "label": "Output",
+            "value": {
+              "type": "number",
+              "unit": "W",
+              "precision": 0
+            },
+            "quantity": "power",
+            "means": "output"
+          },
+          {
+            "key": "state",
+            "label": "Doing",
+            "value": {
+              "type": "enum",
+              "options": [
+                {
+                  "value": "charging",
+                  "label": "Charging"
+                },
+                {
+                  "value": "discharging",
+                  "label": "Supplying"
+                },
+                {
+                  "value": "idle",
+                  "label": "Idle"
+                },
+                {
+                  "value": "standby",
+                  "label": "Standby"
+                }
+              ]
+            },
+            "means": "p280.state"
+          },
+          {
+            "key": "minutesRemaining",
+            "label": "Runtime left",
+            "value": {
+              "type": "number",
+              "unit": "min",
+              "precision": 0
+            },
+            "quantity": "duration",
+            "means": "p280.minutesRemaining"
+          },
+          {
+            "key": "minutesToFull",
+            "label": "Time to full",
+            "value": {
+              "type": "number",
+              "unit": "min",
+              "precision": 0
+            },
+            "quantity": "duration",
+            "means": "p280.minutesToFull"
+          },
+          {
+            "key": "acOutputVolts",
+            "label": "Inverter voltage",
+            "value": {
+              "type": "number",
+              "unit": "V",
+              "precision": 1
+            },
+            "quantity": "voltage",
+            "means": "p280.inverterVolts",
+            "category": "diagnostic"
+          },
+          {
+            "key": "acOutputHz",
+            "label": "Inverter frequency",
+            "value": {
+              "type": "number",
+              "unit": "Hz",
+              "precision": 1
+            },
+            "quantity": "frequency",
+            "means": "p280.inverterHz",
+            "category": "diagnostic"
+          },
+          {
+            "key": "chargeBookingMinutes",
+            "label": "Charging deferred",
+            "value": {
+              "type": "number",
+              "unit": "min",
+              "precision": 0
+            },
+            "quantity": "duration",
+            "means": "p280.chargeDeferred"
+          },
+          {
+            "key": "input.ac.present",
+            "part": "input.ac",
+            "label": "Mains present",
+            "value": {
+              "type": "boolean"
+            },
+            "means": "mainsPresent"
+          },
+          {
+            "key": "input.ac.watts",
+            "part": "input.ac",
+            "label": "From mains",
+            "value": {
+              "type": "number",
+              "unit": "W",
+              "precision": 0
+            },
+            "quantity": "power",
+            "means": "mainsInput",
+            "category": "primary"
+          },
+          {
+            "key": "input.ac.volts",
+            "part": "input.ac",
+            "label": "Mains voltage",
+            "value": {
+              "type": "number",
+              "unit": "V",
+              "precision": 1
+            },
+            "quantity": "voltage",
+            "means": "voltage"
+          },
+          {
+            "key": "input.ac.hz",
+            "part": "input.ac",
+            "label": "Mains frequency",
+            "value": {
+              "type": "number",
+              "unit": "Hz",
+              "precision": 1
+            },
+            "quantity": "frequency",
+            "means": "frequency",
+            "category": "diagnostic"
+          },
+          {
+            "key": "input.solar.present",
+            "part": "input.solar",
+            "label": "Solar connected",
+            "value": {
+              "type": "boolean"
+            },
+            "means": "p280.solarPresent"
+          },
+          {
+            "key": "input.solar.watts",
+            "part": "input.solar",
+            "label": "Solar",
+            "value": {
+              "type": "number",
+              "unit": "W",
+              "precision": 0
+            },
+            "quantity": "power",
+            "means": "solarInput",
+            "category": "primary"
+          },
+          {
+            "key": "light.on",
+            "part": "light",
+            "label": "Light on",
+            "value": {
+              "type": "boolean"
+            },
+            "means": "p280.lightOn"
+          },
+          {
+            "key": "light.watts",
+            "part": "light",
+            "label": "Light draw",
+            "value": {
+              "type": "number",
+              "unit": "W",
+              "precision": 0
+            },
+            "quantity": "power",
+            "means": "power"
+          },
+          {
+            "key": "outlet.ac.on",
+            "part": "outlet.ac",
+            "label": "AC outlets",
+            "value": {
+              "type": "boolean"
+            },
+            "means": "on"
+          },
+          {
+            "key": "outlet.ac.watts",
+            "part": "outlet.ac",
+            "label": "AC outlets draw",
+            "value": {
+              "type": "number",
+              "unit": "W",
+              "precision": 0
+            },
+            "quantity": "power",
+            "means": "power",
+            "category": "primary"
+          },
+          {
+            "key": "outlet.dc.on",
+            "part": "outlet.dc",
+            "label": "12V DC / car port",
+            "value": {
+              "type": "boolean"
+            },
+            "means": "on"
+          },
+          {
+            "key": "outlet.dc.watts",
+            "part": "outlet.dc",
+            "label": "12V DC / car port draw",
+            "value": {
+              "type": "number",
+              "unit": "W",
+              "precision": 0
+            },
+            "quantity": "power",
+            "means": "power",
+            "category": "primary"
+          },
+          {
+            "key": "outlet.usb.on",
+            "part": "outlet.usb",
+            "label": "USB-A + USB-C",
+            "value": {
+              "type": "boolean"
+            },
+            "means": "on"
+          },
+          {
+            "key": "outlet.usb.watts",
+            "part": "outlet.usb",
+            "label": "USB-A + USB-C draw",
+            "value": {
+              "type": "number",
+              "unit": "W",
+              "precision": 0
+            },
+            "quantity": "power",
+            "means": "power",
+            "category": "primary"
+          },
+          {
+            "key": "chargeLimit",
+            "label": "AC charge limit",
+            "description": "Caps charging from mains only — solar will still fill the pack past this.",
+            "value": {
+              "type": "number",
+              "min": 60,
+              "max": 100,
+              "unit": "%",
+              "integer": true
+            },
+            "means": "chargeLimit",
+            "access": "write",
+            "category": "config",
+            "section": "Battery"
+          },
+          {
+            "key": "dischargeFloor",
+            "label": "Discharge floor",
+            "description": "Outputs cut off below this level.",
+            "value": {
+              "type": "number",
+              "min": 0,
+              "max": 50,
+              "unit": "%",
+              "integer": true
+            },
+            "means": "dischargeFloor",
+            "access": "write",
+            "category": "config",
+            "section": "Battery"
+          },
+          {
+            "key": "acChargingWatts",
+            "label": "AC charging power",
+            "description": "How hard the station pulls from the wall: 600 W to 1.8 kW, in the P280’s five steps.",
+            "value": {
+              "type": "number",
+              "min": 600,
+              "max": 1800,
+              "step": 300,
+              "unit": "W",
+              "integer": true
+            },
+            "means": "mainsInputLimit",
+            "access": "write",
+            "category": "config",
+            "section": "Charging"
+          },
+          {
+            "key": "acSilentCharging",
+            "label": "Silent AC charging",
+            "description": "Slower, but keeps the fans down.",
+            "value": {
+              "type": "boolean"
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Charging"
+          },
+          {
+            "key": "dcInputType",
+            "label": "DC input type",
+            "description": "What is plugged into the XT90 input. Changing this also moves the current ceiling.",
+            "value": {
+              "type": "enum",
+              "options": [
+                {
+                  "value": "pv",
+                  "label": "Solar (PV)"
+                },
+                {
+                  "value": "dc",
+                  "label": "DC charger"
+                }
+              ]
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Charging"
+          },
+          {
+            "key": "maxChargingCurrent",
+            "label": "Max charging current",
+            "description": "Ceiling for the XT90 input.",
+            "value": {
+              "type": "number",
+              "min": 1,
+              "max": 20,
+              "unit": "A",
+              "integer": true
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Charging"
+          },
+          {
+            "key": "stopChargeAfterMinutes",
+            "label": "Delay charging",
+            "description": "A live countdown, not a clock time. Zero means charge now.",
+            "value": {
+              "type": "number",
+              "min": 0,
+              "max": 1439,
+              "unit": "min",
+              "integer": true
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Charging"
+          },
+          {
+            "key": "ledMode",
+            "label": "LED mode",
+            "value": {
+              "type": "enum",
+              "options": [
+                {
+                  "value": "off",
+                  "label": "Off"
+                },
+                {
+                  "value": "on",
+                  "label": "On"
+                },
+                {
+                  "value": "sos",
+                  "label": "SOS"
+                },
+                {
+                  "value": "flash",
+                  "label": "Flash"
+                }
+              ]
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Light and sound"
+          },
+          {
+            "key": "keySound",
+            "label": "Key sound",
+            "value": {
+              "type": "boolean"
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Light and sound"
+          },
+          {
+            "key": "usbStandbyMinutes",
+            "label": "USB no-load standby",
+            "description": "Short by design — USB switches itself off quickly with nothing drawing.",
+            "value": {
+              "type": "enum",
+              "options": [
+                {
+                  "value": "0",
+                  "label": "Never"
+                },
+                {
+                  "value": "3",
+                  "label": "3m"
+                },
+                {
+                  "value": "5",
+                  "label": "5m"
+                },
+                {
+                  "value": "10",
+                  "label": "10m"
+                },
+                {
+                  "value": "30",
+                  "label": "30m"
+                }
+              ]
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Standby"
+          },
+          {
+            "key": "acStandbyMinutes",
+            "label": "AC no-load standby",
+            "value": {
+              "type": "enum",
+              "options": [
+                {
+                  "value": "0",
+                  "label": "Never"
+                },
+                {
+                  "value": "480",
+                  "label": "8h"
+                },
+                {
+                  "value": "960",
+                  "label": "16h"
+                },
+                {
+                  "value": "1440",
+                  "label": "24h"
+                }
+              ]
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Standby"
+          },
+          {
+            "key": "dcStandbyMinutes",
+            "label": "DC no-load standby",
+            "value": {
+              "type": "enum",
+              "options": [
+                {
+                  "value": "0",
+                  "label": "Never"
+                },
+                {
+                  "value": "480",
+                  "label": "8h"
+                },
+                {
+                  "value": "960",
+                  "label": "16h"
+                },
+                {
+                  "value": "1440",
+                  "label": "24h"
+                }
+              ]
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Standby"
+          },
+          {
+            "key": "screenRestSeconds",
+            "label": "Screen shutdown",
+            "description": "How long the station’s own display stays lit.",
+            "value": {
+              "type": "enum",
+              "options": [
+                {
+                  "value": "0",
+                  "label": "Never"
+                },
+                {
+                  "value": "180",
+                  "label": "3 min"
+                },
+                {
+                  "value": "300",
+                  "label": "5 min"
+                },
+                {
+                  "value": "600",
+                  "label": "10 min"
+                },
+                {
+                  "value": "1800",
+                  "label": "30 min"
+                }
+              ]
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Standby"
+          },
+          {
+            "key": "sleepMinutes",
+            "label": "Whole machine unused time",
+            "description": "Idle time before the station powers down completely. There is deliberately no “never”: that value permanently destroys the station, and the vendor app omits it too.",
+            "value": {
+              "type": "enum",
+              "options": [
+                {
+                  "value": "5",
+                  "label": "5m"
+                },
+                {
+                  "value": "10",
+                  "label": "10m"
+                },
+                {
+                  "value": "30",
+                  "label": "30m"
+                },
+                {
+                  "value": "480",
+                  "label": "8h"
+                }
+              ]
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Standby",
+            "dangerous": true,
+            "consequence": "The wrong value here can leave the station unable to wake."
+          },
+          {
+            "key": "temperatureUnit",
+            "label": "Temperature unit",
+            "description": "Display preference only — the station has no register for this.",
+            "value": {
+              "type": "enum",
+              "options": [
+                {
+                  "value": "C",
+                  "label": "Celsius"
+                },
+                {
+                  "value": "F",
+                  "label": "Fahrenheit"
+                }
+              ]
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Display"
+          }
+        ],
+        "events": [
+          {
+            "id": "mains.lost",
+            "label": "Mains lost",
+            "level": "warn",
+            "part": "input.ac",
+            "description": "Mains power went away: the station runs its outlets from its battery."
+          },
+          {
+            "id": "mains.restored",
+            "label": "Mains back",
+            "level": "info",
+            "part": "input.ac",
+            "description": "Mains power came back."
+          }
+        ]
+      },
+      "automation": false
+    }
+  ]
+}

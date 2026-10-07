@@ -1,0 +1,123 @@
+{
+  "protocols": [
+    {
+      "id": "elprisetjustnu",
+      "label": "Elpriset just nu",
+      "bindings": {
+        "https": {}
+      }
+    }
+  ],
+  "types": [
+    {
+      "id": "elprisetjustnu.prices",
+      "kind": "service",
+      "meta": {
+        "name": "Elpriset just nu",
+        "brand": "elprisetjustnu.se",
+        "category": "energy-price",
+        "description": "Sweden’s electricity spot prices for your price area, per quarter hour, with no account. Only your price area is sent.",
+        "support": "verified",
+        "supportNote": "A public API, read the way its documentation says, and checked against its answers.",
+        "icon": "tag",
+        "docsUrl": "https://www.elprisetjustnu.se/elpris-api"
+      },
+      "config": {
+        "fields": {
+          "area": {
+            "type": "enum",
+            "title": "Price area",
+            "description": "Where you are: your electricity bill says which.",
+            "options": [
+              {
+                "value": "SE1",
+                "label": "SE1 — Luleå"
+              },
+              {
+                "value": "SE2",
+                "label": "SE2 — Sundsvall"
+              },
+              {
+                "value": "SE3",
+                "label": "SE3 — Stockholm"
+              },
+              {
+                "value": "SE4",
+                "label": "SE4 — Malmö"
+              }
+            ],
+            "default": "SE3",
+            "required": true
+          },
+          "currency": {
+            "type": "enum",
+            "title": "Currency",
+            "options": [
+              {
+                "value": "SEK",
+                "label": "Kronor (SEK)"
+              },
+              {
+                "value": "EUR",
+                "label": "Euro (EUR)"
+              }
+            ],
+            "default": "SEK",
+            "required": true
+          }
+        }
+      },
+      "connections": [
+        {
+          "id": "api",
+          "label": "elprisetjustnu.se",
+          "description": "Its public price API, over the internet. No account and no key.",
+          "protocol": "elprisetjustnu",
+          "transport": "https",
+          "address": "https://www.elprisetjustnu.se",
+          "reach": "cloud",
+          "updates": "poll"
+        }
+      ],
+      "description": {
+        "parts": [
+          {
+            "id": "main",
+            "label": "Price area",
+            "kind": "place"
+          }
+        ],
+        "attributes": [
+          {
+            "key": "price",
+            "label": "Electricity price",
+            "value": {
+              "type": "number",
+              "unit": "SEK/kWh",
+              "precision": 2
+            },
+            "quantity": "price",
+            "means": "price",
+            "category": "primary",
+            "currentFor": 1200000
+          },
+          {
+            "key": "rank",
+            "label": "Price rank today",
+            "description": "Where the hour now stands among the day’s hours by price: 1 is the cheapest.",
+            "value": {
+              "type": "number",
+              "integer": true,
+              "min": 1,
+              "max": 25
+            },
+            "quantity": "rank",
+            "means": "priceRank",
+            "currentFor": 1200000
+          }
+        ]
+      },
+      "automation": false
+    }
+  ]
+}

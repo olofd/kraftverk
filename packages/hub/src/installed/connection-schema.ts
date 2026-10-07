@@ -1,18 +1,21 @@
 import { ApiError } from '@kraftverk/api-contract';
-import { isBridgedMethod, isSecretField, isSessionKept, type ConfigField, type ConfigSchema, type ConnectionMethod, type Protocol } from '@kraftverk/device-sdk';
+import { isBridgedMethod, isSecretField, isSessionKept, type ConfigField, type ConfigSchema, type ConnectionMethod, type ProtocolDeclaration } from '@kraftverk/device-sdk';
+
+/** What of a protocol a connection's schema is made from: its declared credentials, loaded or not. */
+type Credentials = Pick<ProtocolDeclaration, 'credentials'> | null;
 
 /**
  * The schema of everything a connection stores for a method: its own config
  * and its protocol's credentials — but for a way through a bridge, whose
  * sign-in is the bridge's: it carries none of its own.
  */
-export function connectionSchema(method: ConnectionMethod | null, protocol: Protocol | null): ConfigSchema {
+export function connectionSchema(method: ConnectionMethod | null, protocol: Credentials): ConfigSchema {
   const credentials = method && isBridgedMethod(method) ? {} : (protocol?.credentials?.schema.fields ?? {});
   return { fields: { ...credentials, ...(method?.config?.fields ?? {}) } };
 }
 
 /** The fields of a connection that are secrets, each with its spec, as its method and protocol declare them: what setup asks for, an export seals and an import carries. */
-export function secretFieldsOf(method: ConnectionMethod | null, protocol: Protocol | null): [string, ConfigField][] {
+export function secretFieldsOf(method: ConnectionMethod | null, protocol: Credentials): [string, ConfigField][] {
   return Object.entries(connectionSchema(method, protocol).fields).filter(([, spec]) => isSecretField(spec));
 }
 
@@ -21,7 +24,7 @@ export function secretFieldsOf(method: ConnectionMethod | null, protocol: Protoc
  * protocol declare them: whoever holds the connection — the master, or a
  * node following it — sets its secrets by this one rule.
  */
-export function checkSecretFields(method: ConnectionMethod | null, protocol: Protocol | null, given: Readonly<Record<string, string>>): void {
+export function checkSecretFields(method: ConnectionMethod | null, protocol: Credentials, given: Readonly<Record<string, string>>): void {
   const { fields } = connectionSchema(method, protocol);
   const refused = Object.keys(given).filter((field) => !fields[field] || !isSecretField(fields[field]!));
   if (refused.length) throw new ApiError('invalid', `Not a secret of this connection: ${refused.join(', ')}`);
@@ -31,7 +34,7 @@ export function checkSecretFields(method: ConnectionMethod | null, protocol: Pro
 }
 
 /** Secrets as given, split by who keeps them: what a person gave, and what its session keeps — a file carries both. */
-export function bySource(method: ConnectionMethod | null, protocol: Protocol | null, secrets: Readonly<Record<string, string>>): { person: Record<string, string>; session: Record<string, string> } {
+export function bySource(method: ConnectionMethod | null, protocol: Credentials, secrets: Readonly<Record<string, string>>): { person: Record<string, string>; session: Record<string, string> } {
   const { fields } = connectionSchema(method, protocol);
   const person: Record<string, string> = {};
   const session: Record<string, string> = {};

@@ -85,7 +85,8 @@ export function nodeParts(options: NodeOptions, role: NodeRole): NodeParts {
     platform: transports.platform,
     node: { id: self.id, name: self.name },
     types,
-    protocols,
+    // A device opens after its integration has loaded: its protocols' code is there by then.
+    protocols: { get: (id) => protocols.loaded(id) },
     transports,
     ...role.ways({ connections, self }),
     // A way this node is not what it needs of — brought in by a file, or a home handed over — waits for one that is.

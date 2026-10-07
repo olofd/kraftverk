@@ -170,15 +170,21 @@ The rule, checked in CI by `npm run check:architecture` (§7):
 - **The core** — `server/src`, `client/src`, `client/app`,
   `packages/api-client`, `packages/ui`, `packages/gateway`, the SDK — never imports an
   integration, a device package or a transport package. The
-  server finds them at runtime and loads them by path, and starts only the
-  transports its installed device types need. The app cannot — Metro bundles
-  what is imported, and a store build must not download code — so `npm run
-  gen:devices` writes `client/src/generated/` from the installed packages:
-  what a hub installs (integrations, with their protocols, their own types
-  and the products on them and what those bring to automations; transport
-  definitions — no React), each transport's entry for a phone and for a
-  browser's page, and the screens and pictures. Those files are the app's
-  exception. CI checks they are current.
+  server finds them at runtime — each package's manifest, and the
+  `catalogue.json` generated beside it: what it declares, as data — and
+  imports an integration's code by path only when it is first needed (a
+  device of its types opens, a sighting its ways are found by needs
+  confirming, someone starts adding one; docs/PLAN-INTEGRATIONS.md §6.1). It
+  starts only the transports its installed device types need. The app
+  cannot find them — Metro bundles what is imported, and a store build must
+  not download code — so `npm run gen:devices` writes every package's
+  catalogue and `client/src/generated/` from the installed packages: what a
+  hub installs (integrations, each its catalogue and a loader importing its
+  code — its protocols, its own types, the products on it and what those
+  bring to automations; transport definitions — no React), each transport's
+  entry for a phone and for a browser's page, and the screens and pictures.
+  Those files are the app's exception. CI checks they, and every catalogue,
+  are current.
 - **A transport** imports the SDK only. It is the one place for platform code
   — sockets, radios, the broker — with a separate entry for each place it runs
   (`system`, `web`, `native`), so the app never bundles server code.

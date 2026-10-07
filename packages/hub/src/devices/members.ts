@@ -1,4 +1,4 @@
-import { isBridgedMethod, modelCloseness, type Bridge, type DeviceType, type Member, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { isBridgedMethod, modelCloseness, type Bridge, type Member, type SavedDeviceId, type TypeEntry } from '@kraftverk/device-sdk';
 import type { SessionManager } from '@kraftverk/holder';
 import type { ConnectionStore, DeviceCatalog } from '@kraftverk/store';
 
@@ -11,7 +11,7 @@ import type { DeviceTypeRegistry } from '../installed/types.ts';
 */
 
 /** A type that could be a member, and its way through the bridge. */
-type MemberType = { type: DeviceType<any>; methodId: string };
+type MemberType = { type: TypeEntry; methodId: string };
 
 /** A bridge open here, by its device. */
 export type OpenBridge = { id: SavedDeviceId; name: string; typeId: string; host: Bridge };

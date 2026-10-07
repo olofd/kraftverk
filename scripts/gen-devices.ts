@@ -1,6 +1,6 @@
 /**
- * Writes the app's registry of installed packages: client/src/generated/.
- * See docs/ARCHITECTURE.md §3.
+ * Writes each package's catalogue, and the app's registry of installed
+ * packages: client/src/generated/. See docs/ARCHITECTURE.md §3.
  *
  * The server finds integrations, device types and transports at runtime. The app
  * cannot: Metro bundles what is imported, and an app store build must not
@@ -18,17 +18,37 @@
  *                      screens integrations ship for their own pages
  *
  * The app runs the same code the server does, and these are the only files
- * in it that import an integration, a device package or a transport.
+ * in it that import an integration, a device package or a transport. A
+ * hub's — installed.ts — imports an integration's code only when it is first
+ * needed, as the server does (docs/PLAN-INTEGRATIONS.md §6.1).
+ *
+ * And beside each integration's and device package's package.json, its
+ * catalogue.json: what it declares, as data — its types (and an
+ * integration's protocols) with none of their code — which the server and
+ * the app list, offer and find devices by before they import anything.
  *
  *   npm run gen:devices              write them
  *   npm run gen:devices -- --check   fail if one is out of date (CI)
  */
 
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { deviceManifestProblems, integrationManifestProblems, type DeviceManifest, type IntegrationManifest, type PackageTypeEntry } from '@kraftverk/device-sdk';
+import {
+  asJson,
+  deviceManifestProblems,
+  entryOf,
+  integrationManifestProblems,
+  protocolDeclarationOf,
+  type CatalogueType,
+  type DeviceManifest,
+  type DeviceType,
+  type IntegrationManifest,
+  type PackageCatalogue,
+  type PackageTypeEntry,
+  type Protocol,
+} from '@kraftverk/device-sdk';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const GENERATED = resolve(ROOT, 'client/src/generated');
@@ -132,13 +152,18 @@ let protocolCount = 0;
 const definitions: string[] = [];
 const entries = { native: [] as string[], web: [] as string[] };
 
-/** One type a package lists: imported for the hub, its screens and pictures for the app; its line in the integration's list. */
-async function typeLine(dir: string, manifest: Manifest, entry: PackageTypeEntry): Promise<string> {
-  const type = ((await import(pathToFileURL(resolve(dir, entry.entry)).href)) as { default?: { id?: string } }).default;
+/** Each package's catalogue, by where it is written. */
+const catalogues: { path: string; source: string }[] = [];
+
+/** A package's catalogue as written: the same JSON every time, so a check can compare it. */
+const catalogueSource = (catalogue: PackageCatalogue): string => `${JSON.stringify(catalogue, null, 2)}\n`;
+
+/** One type a package lists: its catalogue entry; imported for the hub when needed, its screens and pictures for the app; its line in the integration's list. */
+async function typeLine(dir: string, manifest: Manifest, entry: PackageTypeEntry, catalogue: CatalogueType[]): Promise<string> {
+  const type = ((await import(pathToFileURL(resolve(dir, entry.entry)).href)) as { default?: DeviceType<any> }).default;
   if (type?.id !== entry.id) fail(`${manifest.name}: ${entry.entry} is "${type?.id}", but the manifest lists it as "${entry.id}"`);
+  catalogue.push(asJson({ ...entryOf(type!), automation: Boolean(entry.automation) }));
   typeCount += 1;
-  installed.imports.push(`import ${local(entry.id, 'Type')} from '${exported(manifest, entry.entry)}';`);
-  if (entry.automation) installed.imports.push(`import ${local(entry.id, 'Automation')} from '${exported(manifest, entry.automation)}';`);
   if (entry.ui) {
     screens.imports.push(`import ${local(entry.id, 'Ui')} from '${exported(manifest, entry.ui)}';`);
     uis.push(`  '${entry.id}': ${local(entry.id, 'Ui')},`);
@@ -149,7 +174,9 @@ async function typeLine(dir: string, manifest: Manifest, entry: PackageTypeEntry
     const required = entry.images.map((image) => `require('${exported(manifest, image)}')`).join(', ');
     pictures.push(`  '${entry.id}': { images: [${required}] },`);
   }
-  return `{ type: ${local(entry.id, 'Type')}, automation: ${entry.automation ? local(entry.id, 'Automation') : 'null'} }`;
+  // Its code, imported when its integration is first needed.
+  const automation = entry.automation ? `(await import('${exported(manifest, entry.automation)}')).default` : 'null';
+  return `{ type: (await import('${exported(manifest, entry.entry)}')).default, automation: ${automation} }`;
 }
 
 // Each product, under the platform it names: a device package whose integration is not installed fails here, as it is refused there.
@@ -167,20 +194,30 @@ for (const { dir, manifest } of packages('packages/integrations')) {
   if (!integration) continue;
   const problems = integrationManifestProblems(integration);
   if (problems.length) fail(`${manifest.name}: ${problems.join('; ')}`);
+  const ownCatalogue: CatalogueType[] = [];
   const own: string[] = [];
-  for (const entry of integration.types) own.push(await typeLine(dir, manifest, entry));
+  for (const entry of integration.types) own.push(await typeLine(dir, manifest, entry, ownCatalogue));
   const products: string[] = [];
+  const productCatalogue: CatalogueType[] = [];
   for (const product of productsOn.get(integration.id) ?? []) {
-    for (const entry of product.device.types) products.push(await typeLine(product.dir, product.manifest, entry));
+    const theirs: CatalogueType[] = [];
+    for (const entry of product.device.types) products.push(await typeLine(product.dir, product.manifest, entry, theirs));
+    catalogues.push({ path: resolve(product.dir, 'catalogue.json'), source: catalogueSource({ protocols: [], types: theirs }) });
+    productCatalogue.push(...theirs);
   }
   productsOn.delete(integration.id);
-  // How it speaks to its service: each protocol, by its module.
-  const spoken = (integration.protocols ?? []).map((entry, index) => {
-    const name = local(integration.id, `Protocol${index ? index + 1 : ''}`);
-    installed.imports.push(`import ${name} from '${exported(manifest, entry)}';`);
+  // How it speaks to its service: each protocol, declared in its catalogue, its module imported when needed.
+  const declared = [];
+  const spoken: string[] = [];
+  for (const entry of integration.protocols ?? []) {
+    const protocol = ((await import(pathToFileURL(resolve(dir, entry)).href)) as { default?: Protocol }).default;
+    if (!protocol?.id) fail(`${manifest.name}: ${entry} has no default export with an id`);
+    declared.push(asJson(protocolDeclarationOf(protocol!)));
+    spoken.push(`(await import('${exported(manifest, entry)}')).default`);
     protocolCount += 1;
-    return name;
-  });
+  }
+  const catalogue: PackageCatalogue = { protocols: declared, types: ownCatalogue };
+  catalogues.push({ path: resolve(dir, 'catalogue.json'), source: catalogueSource(catalogue) });
   // Its own screens: its page, and an account's.
   if (integration.ui) {
     screens.imports.push(`import ${local(integration.id, 'IntegrationUi')} from '${exported(manifest, integration.ui)}';`);
@@ -189,7 +226,18 @@ for (const { dir, manifest } of packages('packages/integrations')) {
   // How its entries in a file changed: what reading a file kept before brings it to now.
   const migrations = integration.migrations ? local(integration.id, 'Migrations') : null;
   if (migrations) installed.imports.push(`import ${migrations} from '${exported(manifest, integration.migrations!)}';`);
-  platforms.push(`  { id: '${integration.id}', name: '${integration.name.replace(/[\\']/g, '\\$&')}', protocols: [${spoken.join(', ')}], types: [${own.join(', ')}], products: [${products.join(', ')}]${migrations ? `, migrations: ${migrations}` : ''} },`);
+  platforms.push(
+    [
+      '  {',
+      `    id: '${integration.id}',`,
+      `    name: '${integration.name.replace(/[\\']/g, '\\$&')}',`,
+      `    catalogue: ${JSON.stringify(catalogue)},`,
+      `    products: ${JSON.stringify(productCatalogue)},`,
+      ...(migrations ? [`    migrations: ${migrations},`] : []),
+      `    load: async () => ({ protocols: [${spoken.join(', ')}], types: [${own.join(', ')}], products: [${products.join(', ')}] }),`,
+      '  },',
+    ].join('\n')
+  );
 }
 for (const [id, products] of productsOn) fail(`${products.map((product) => product.manifest.name).join(', ')}: built on "${id}", which is not installed`);
 
@@ -211,12 +259,15 @@ for (const { dir, manifest } of packages('packages/transports')) {
 
 installed.body = [
   "import type { TransportDefinition } from '@kraftverk/device-sdk';",
-  "import type { InstalledIntegration } from '@kraftverk/hub';",
+  "import type { LazyIntegration } from '@kraftverk/hub';",
   '',
   ...installed.imports,
   '',
-  '/** Every installed integration, its protocols, its own types and the products on it, each with what it brings to automations: the same code the server runs. */',
-  'export const INTEGRATIONS: readonly InstalledIntegration[] = [',
+  '/**',
+  ' * Every installed integration: its catalogue — its protocols, its own types and the products on it, as data — and its code, with what each',
+  ' * type brings to automations, imported when it is first needed: the same code the server runs.',
+  ' */',
+  'export const INTEGRATIONS: readonly LazyIntegration[] = [',
   ...platforms,
   '];',
   '',
@@ -264,7 +315,10 @@ for (const [platform, written] of [['native', onPhone], ['web', onPage]] as cons
   ];
 }
 
-const files = [installed, screens, onPhone, onPage].map((written) => ({ path: resolve(GENERATED, written.file), source: [...HEADER(written.what), ...written.body].join('\n'), file: written.file }));
+const files = [
+  ...[installed, screens, onPhone, onPage].map((written) => ({ path: resolve(GENERATED, written.file), source: [...HEADER(written.what), ...written.body].join('\n') })),
+  ...catalogues,
+].map((file) => ({ ...file, file: relative(ROOT, file.path).replaceAll('\\', '/') }));
 const summary = `${platforms.length} integration(s), ${typeCount} device type(s), ${uis.length} with screens, ${pictures.length} with a picture, ${protocolCount} protocol(s), ${definitions.length} transport(s)`;
 
 if (process.argv.includes('--check')) {
@@ -276,11 +330,11 @@ if (process.argv.includes('--check')) {
     }
   });
   if (stale.length) {
-    console.error(`${stale.map(({ file }) => `client/src/generated/${file}`).join(', ')} out of date. Run: npm run gen:devices`);
+    console.error(`${stale.map(({ file }) => file).join(', ')} out of date. Run: npm run gen:devices`);
     process.exit(1);
   }
-  console.log(`The app's registry is current: ${summary}.`);
+  console.log(`The app's registry and every catalogue are current: ${summary}.`);
 } else {
   for (const { path, source } of files) writeFileSync(path, source);
-  console.log(`Wrote the app's registry: ${summary}.`);
+  console.log(`Wrote the app's registry and ${catalogues.length} catalogue(s): ${summary}.`);
 }

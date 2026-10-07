@@ -1,0 +1,447 @@
+{
+  "protocols": [
+    {
+      "id": "tuya-local",
+      "label": "Tuya local",
+      "bindings": {
+        "lan": {
+          "instructions": {
+            "title": "Get the plug ready",
+            "body": "Set the plug up in the Smart Life (or Tuya Smart) app first, as its maker intends, on your home Wi-Fi — most plugs only join 2.4 GHz. When it switches from the app, it is ready. Then close the app on your phone: while it is open it can keep the plug to itself. Giving the plug a fixed address in your router keeps it where kraftverk expects it."
+          },
+          "addressLabel": "IP address"
+        }
+      },
+      "credentials": {
+        "schema": {
+          "help": "A plug talks on your network only to someone who knows its local key, and the key comes from the Smart Life account it is paired with — once. Signing in fetches it; if you already have it, type it here.",
+          "fields": {
+            "deviceId": {
+              "type": "string",
+              "title": "Device id",
+              "description": "Filled in when the plug or gateway is found on the network; the Smart Life app calls it \"Virtual ID\". A plug cannot be spoken to without it; a gateway on 3.4 or 3.5 can."
+            },
+            "localKey": {
+              "type": "string",
+              "presentation": "secret",
+              "title": "Local key",
+              "description": "16 characters. It never leaves the server.",
+              "required": true
+            },
+            "protocolVersion": {
+              "type": "enum",
+              "title": "Version",
+              "description": "Leave on Detect unless you have a reason not to: a wrong choice looks exactly like a wrong key.",
+              "default": "auto",
+              "options": [
+                {
+                  "value": "auto",
+                  "label": "Detect"
+                },
+                {
+                  "value": "3.3",
+                  "label": "3.3"
+                },
+                {
+                  "value": "3.4",
+                  "label": "3.4"
+                },
+                {
+                  "value": "3.5",
+                  "label": "3.5"
+                }
+              ]
+            }
+          }
+        },
+        "actions": [
+          {
+            "id": "signIn",
+            "label": "Sign in with Smart Life",
+            "description": "Scan a code with the Smart Life app, and your plugs come back with their names and keys. Nothing else is read, and nothing is kept.",
+            "input": {
+              "fields": {
+                "userCode": {
+                  "type": "string",
+                  "title": "User Code",
+                  "description": "In the Smart Life (or Tuya Smart) app: Me → the gear, top right → Account and Security → User Code.",
+                  "required": true
+                }
+              }
+            }
+          },
+          {
+            "id": "fetchKey",
+            "label": "Use a Tuya developer project",
+            "description": "If you already have a Tuya IoT Platform cloud project: its Access ID and Secret fetch the keys instead.",
+            "input": {
+              "help": "From a Tuya IoT Platform cloud project — free, and needed once. docs/TUYA-LOCAL-KEY.md walks through it.",
+              "fields": {
+                "region": {
+                  "type": "enum",
+                  "title": "Data centre",
+                  "description": "The one you picked when creating the cloud project.",
+                  "default": "eu",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "eu",
+                      "label": "Central Europe"
+                    },
+                    {
+                      "value": "eu-w",
+                      "label": "Western Europe"
+                    },
+                    {
+                      "value": "us",
+                      "label": "Western America"
+                    },
+                    {
+                      "value": "us-e",
+                      "label": "Eastern America"
+                    },
+                    {
+                      "value": "cn",
+                      "label": "China"
+                    },
+                    {
+                      "value": "in",
+                      "label": "India"
+                    },
+                    {
+                      "value": "sg",
+                      "label": "Singapore"
+                    }
+                  ]
+                },
+                "clientId": {
+                  "type": "string",
+                  "title": "Access ID",
+                  "required": true
+                },
+                "clientSecret": {
+                  "type": "string",
+                  "presentation": "secret",
+                  "title": "Access Secret",
+                  "required": true
+                }
+              }
+            }
+          }
+        ],
+        "first": true,
+        "title": "Your Smart Life account"
+      }
+    }
+  ],
+  "types": [
+    {
+      "id": "tuya.gateway",
+      "kind": "hardware",
+      "meta": {
+        "name": "Tuya Zigbee gateway",
+        "brand": "Tuya",
+        "category": "gateway",
+        "icon": "share-2",
+        "description": "A Tuya or Smart Life Zigbee gateway on your home network: spoken to with its own key and no cloud, and through it every Zigbee plug paired with it.",
+        "support": "experimental",
+        "supportNote": "Mapped on an RSH GW018-DM, Tuya 3.4; other Tuya Zigbee gateways speak the same way."
+      },
+      "config": {
+        "fields": {}
+      },
+      "connections": [
+        {
+          "id": "lan",
+          "label": "Home network",
+          "description": "Straight to the gateway on your home network, with no cloud. Needs its local key, once: signing in with Smart Life brings it.",
+          "protocol": "tuya-local",
+          "transport": "lan",
+          "reach": "cloud-at-setup",
+          "updates": "both",
+          "discovery": [
+            {
+              "kind": "broadcast",
+              "port": 6666
+            },
+            {
+              "kind": "broadcast",
+              "port": 6667
+            },
+            {
+              "kind": "broadcast",
+              "port": 7000
+            }
+          ]
+        }
+      ],
+      "bridge": {
+        "fallback": "tuya.plug"
+      },
+      "description": {
+        "parts": [
+          {
+            "id": "main",
+            "label": "Gateway",
+            "kind": "device",
+            "icon": "share-2"
+          }
+        ],
+        "attributes": [
+          {
+            "key": "devices",
+            "label": "Zigbee devices",
+            "value": {
+              "type": "number",
+              "integer": true
+            },
+            "category": "diagnostic"
+          }
+        ]
+      },
+      "automation": false
+    },
+    {
+      "id": "tuya.plug",
+      "kind": "hardware",
+      "meta": {
+        "icon": "power",
+        "name": "Tuya smart plug",
+        "brand": "Tuya",
+        "models": [
+          "Tuya energy socket",
+          "Smart Life plug"
+        ],
+        "description": "Any Tuya or Smart Life plug that measures power, over your home network with no cloud.",
+        "support": "community",
+        "supportNote": "The layout most Tuya energy sockets use; the check step confirms it on yours.",
+        "category": "smart-plug"
+      },
+      "config": {
+        "fields": {
+          "profile": {
+            "type": "enum",
+            "title": "Datapoint layout",
+            "description": "Which datapoint is the relay, what scale each measurement is sent in, and which settings the plug has.",
+            "default": "generic-tuya-plug",
+            "options": [
+              {
+                "value": "generic-tuya-plug",
+                "label": "Generic Tuya energy socket"
+              }
+            ]
+          },
+          "pollSeconds": {
+            "type": "number",
+            "title": "Poll interval",
+            "default": 10,
+            "min": 2,
+            "max": 300,
+            "unit": "s",
+            "integer": true
+          }
+        }
+      },
+      "connections": [
+        {
+          "id": "lan",
+          "label": "Home network",
+          "description": "Straight to the plug on your home network, with no cloud. Needs its local key, once.",
+          "protocol": "tuya-local",
+          "transport": "lan",
+          "reach": "cloud-at-setup",
+          "updates": "both",
+          "discovery": [
+            {
+              "kind": "broadcast",
+              "port": 6666
+            },
+            {
+              "kind": "broadcast",
+              "port": 6667
+            },
+            {
+              "kind": "broadcast",
+              "port": 7000
+            }
+          ]
+        },
+        {
+          "id": "gateway",
+          "label": "Through its Zigbee gateway",
+          "description": "Through the Tuya gateway it is paired with, on your home network, with no cloud: add the gateway, and the plug is found through it.",
+          "through": [
+            "tuya.gateway"
+          ],
+          "reach": "local",
+          "updates": "both"
+        }
+      ],
+      "tools": {
+        "datapoints": {
+          "label": "Datapoints",
+          "description": "Every datapoint the plug reports, raw, beside what its layout makes of them. How a new plug’s layout is established: change one thing in the maker’s app, read again, see what moved.",
+          "writes": false,
+          "answer": {
+            "type": "object",
+            "fields": {
+              "protocolVersion": {
+                "type": "string"
+              },
+              "profile": {
+                "type": "string"
+              },
+              "raw": {
+                "type": "list",
+                "of": {
+                  "type": "object",
+                  "fields": {
+                    "dp": {
+                      "type": "number",
+                      "integer": true
+                    },
+                    "kind": {
+                      "type": "enum",
+                      "options": [
+                        {
+                          "value": "boolean",
+                          "label": "On/off"
+                        },
+                        {
+                          "value": "number",
+                          "label": "Number"
+                        },
+                        {
+                          "value": "string",
+                          "label": "Text"
+                        }
+                      ]
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "dp",
+                    "kind",
+                    "value"
+                  ]
+                }
+              },
+              "decoded": {
+                "type": "object",
+                "fields": {
+                  "relayOn": {
+                    "type": "boolean"
+                  },
+                  "watts": {
+                    "type": "number",
+                    "unit": "W"
+                  },
+                  "volts": {
+                    "type": "number",
+                    "unit": "V"
+                  },
+                  "amps": {
+                    "type": "number",
+                    "unit": "A"
+                  },
+                  "kwh": {
+                    "type": "number",
+                    "unit": "kWh"
+                  },
+                  "hz": {
+                    "type": "number",
+                    "unit": "Hz"
+                  },
+                  "powerFactor": {
+                    "type": "number"
+                  }
+                }
+              }
+            },
+            "required": [
+              "protocolVersion",
+              "profile",
+              "raw",
+              "decoded"
+            ]
+          }
+        }
+      },
+      "description": {
+        "parts": [
+          {
+            "id": "main",
+            "label": "Socket",
+            "kind": "outlet",
+            "energy": {
+              "role": "load"
+            },
+            "offers": [
+              "switch"
+            ]
+          }
+        ],
+        "attributes": [
+          {
+            "key": "watts",
+            "label": "Power",
+            "value": {
+              "type": "number",
+              "unit": "W",
+              "precision": 0
+            },
+            "quantity": "power",
+            "means": "power",
+            "category": "primary"
+          },
+          {
+            "key": "volts",
+            "label": "Voltage",
+            "value": {
+              "type": "number",
+              "unit": "V",
+              "precision": 1
+            },
+            "quantity": "voltage",
+            "means": "voltage"
+          },
+          {
+            "key": "amps",
+            "label": "Current",
+            "value": {
+              "type": "number",
+              "unit": "A",
+              "precision": 2
+            },
+            "quantity": "current",
+            "means": "current"
+          },
+          {
+            "key": "kwh",
+            "label": "Energy",
+            "value": {
+              "type": "number",
+              "unit": "kWh",
+              "precision": 2
+            },
+            "quantity": "energy",
+            "means": "energy",
+            "stateClass": "total_increasing"
+          },
+          {
+            "key": "relay",
+            "label": "Switch",
+            "value": {
+              "type": "boolean"
+            },
+            "means": "on",
+            "consequence": "Switches off whatever is plugged into it."
+          }
+        ]
+      },
+      "automation": false
+    }
+  ]
+}

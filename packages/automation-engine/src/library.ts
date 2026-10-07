@@ -24,22 +24,33 @@ export class AutomationLibrary {
   #functions = new Map<string, AutomationFunction>();
   #refused: { id: string; problems: string[] }[] = [];
 
-  constructor(contributed: readonly Contributed[], log: (message: string) => void = console.warn) {
+  constructor(
+    contributed: readonly Contributed[],
+    private log: (message: string) => void = console.warn
+  ) {
+    for (const recipe of STANDARD_RECIPES) this.#offer(recipe, null);
+    this.add(contributed);
+  }
+
+  /**
+   * What packages bring, as each loads: their functions, then their recipes,
+   * each checked against every function there is by then. A package's code
+   * is loaded when it is first needed (docs/PLAN-INTEGRATIONS.md §6.1), so
+   * the library grows with what a home uses.
+   */
+  add(contributed: readonly Contributed[]): void {
     for (const { contribution } of contributed) for (const fn of contribution.functions ?? []) this.#functions.set(fn.id, fn);
-    const offer = (recipe: Recipe, from: RecipeEntry['from']) => {
-      const problems = [
-        ...(this.#recipes.has(recipe.id) ? [`another package already has a recipe "${recipe.id}"`] : []),
-        ...checkRule(recipe, { fn: (id) => this.fn(id) }),
-      ];
-      if (problems.length) {
-        this.#refused.push({ id: recipe.id, problems });
-        log(`[automations] The recipe ${recipe.id} from ${from?.typeId ?? 'the shared vocabulary'} is not offered:\n  - ${problems.join('\n  - ')}`);
-        return;
-      }
-      this.#recipes.set(recipe.id, { recipe, from });
-    };
-    for (const recipe of STANDARD_RECIPES) offer(recipe, null);
-    for (const { contribution, from } of contributed) for (const recipe of contribution.recipes ?? []) offer(recipe, from);
+    for (const { contribution, from } of contributed) for (const recipe of contribution.recipes ?? []) this.#offer(recipe, from);
+  }
+
+  #offer(recipe: Recipe, from: RecipeEntry['from']): void {
+    const problems = [...(this.#recipes.has(recipe.id) ? [`another package already has a recipe "${recipe.id}"`] : []), ...checkRule(recipe, { fn: (id) => this.fn(id) })];
+    if (problems.length) {
+      this.#refused.push({ id: recipe.id, problems });
+      this.log(`[automations] The recipe ${recipe.id} from ${from?.typeId ?? 'the shared vocabulary'} is not offered:\n  - ${problems.join('\n  - ')}`);
+      return;
+    }
+    this.#recipes.set(recipe.id, { recipe, from });
   }
 
   recipe(id: string): Recipe | null {

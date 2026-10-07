@@ -328,7 +328,7 @@ npm run dev:write            # the same, with writes allowed — read the hardwa
 npm test                     # the whole repo
 npm run typecheck            # every workspace
 npm run check:architecture   # the dependency rule, the leak ratchet, the app's generated registry
-npm run gen:devices          # regenerate the app's registry after adding a package
+npm run gen:devices          # regenerate every package's catalogue.json and the app's registry, after changing a package
 npm run new:integration -- name           # start a platform and its protocol (new:transport too)
 npm run new:device -- name integration     # start a product on one
 npm run scan:tuya            # find Tuya plugs — no credentials needed

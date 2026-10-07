@@ -1,0 +1,24 @@
+{
+  "protocols": [
+    {
+      "id": "sydpower",
+      "label": "Sydpower",
+      "bindings": {
+        "mqtt": {
+          "instructions": {
+            "title": "Point the station at this server",
+            "body": "Over Wi-Fi the station talks to an MQTT broker instead of the vendor’s cloud, and this server runs one. In BrightEMS, open the station, then Settings → Local MQTT broker, and enter {host}, port {port}. Older firmware without that setting can be caught by pointing mqtt.sydpower.com at {host} in your router. The station appears in the next step once it connects — a sleeping one when you press its power button."
+          },
+          "addressLabel": "MAC address"
+        },
+        "ble": {
+          "instructions": {
+            "title": "Wake the station",
+            "body": "Turn the station on and stay within a few metres of it. Close BrightEMS on your phone first: the station takes one Bluetooth connection at a time."
+          }
+        }
+      }
+    }
+  ],
+  "types": []
+}

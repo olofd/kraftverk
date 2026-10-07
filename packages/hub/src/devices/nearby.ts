@@ -1,5 +1,5 @@
 import type { FoundView } from '@kraftverk/api-contract';
-import { BRIDGE_TRANSPORT, isBridgedMethod, sightingMatches, type DeviceType, type DirectMethod, type Matcher, type Sighting } from '@kraftverk/device-sdk';
+import { BRIDGE_TRANSPORT, isBridgedMethod, sightingMatches, type DirectMethod, type Matcher, type Sighting, type TypeEntry } from '@kraftverk/device-sdk';
 import type { SessionManager } from '@kraftverk/holder';
 import type { ConnectionStore, DeviceCatalog, IgnoredSightings } from '@kraftverk/store';
 
@@ -15,9 +15,10 @@ import { membersOnOffer } from './members.ts';
  * (docs/DATA-MODEL.md §1, step 1; docs/PLAN-INTEGRATIONS.md §4.4).
  *
  * Found by declaration: every way says what it is found by (its
- * `discovery` matchers), and a sighting is matched against those as data —
- * no integration's code runs until a way's matchers pick a sighting out,
- * and then only its protocol's `recognise`, to confirm it and read it. Each
+ * `discovery` matchers, from its package's catalogue), and a sighting is
+ * matched against those as data — no integration's code is even loaded
+ * until a way's matchers pick a sighting out; then it is, and its
+ * protocol's `recognise` confirms and reads it, offered from the next look. Each
  * sighting is one host, gathered by its transport, so a device that
  * announces itself five ways is offered once.
  *
@@ -34,7 +35,7 @@ const IDLE_MS = 60_000;
 type Watching = { stop: () => void; sightings: readonly Sighting[]; background: boolean };
 
 /** A way that is found, with its type. */
-type Findable = { type: DeviceType<any>; method: DirectMethod & { discovery: readonly Matcher[] } };
+type Findable = { type: TypeEntry; method: DirectMethod & { discovery: readonly Matcher[] } };
 
 export class Nearby {
   #watching = new Map<string, Watching>();
@@ -67,7 +68,13 @@ export class Nearby {
         if (this.deps.connections.claimant(transportId, sighting.address)) continue;
         const picked = ways.filter(({ method }) => sightingMatches(method.discovery, sighting));
         for (const protocolId of new Set(picked.map(({ method }) => method.protocol))) {
-          const recognised = this.deps.protocols.get(protocolId)?.bindings[transportId]?.recognise(sighting);
+          // Its protocol confirms what the matchers picked: its integration's code is loaded for that, and asked when it has.
+          const protocol = this.deps.protocols.loaded(protocolId);
+          if (!protocol) {
+            void this.deps.protocols.load(protocolId);
+            continue;
+          }
+          const recognised = protocol.bindings[transportId]?.recognise(sighting);
           if (!recognised) continue;
           // Yours already, at another address — a plug the router gave a new one: not something new.
           if (recognised.identity && this.deps.catalog.byIdentity(recognised.identity).active) continue;

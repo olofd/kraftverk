@@ -1,0 +1,305 @@
+{
+  "protocols": [],
+  "types": [
+    {
+      "id": "niu.uqi-gt",
+      "kind": "hardware",
+      "meta": {
+        "icon": "navigation",
+        "name": "NIU UQi GT",
+        "models": [
+          "UQi GT Sport",
+          "UQi GT",
+          "UQi GT Pro",
+          "UQi-GT Citi"
+        ],
+        "description": "The NIU UQi GT and GT Sport: a 45 km/h scooter with one removable 48 V battery. Its charge, charging, range and odometer from NIU’s cloud; with a smart plug in front of its charger, charge it to a limit.",
+        "support": "experimental",
+        "supportNote": "The common NIU scooter until it is mapped on a 2019 UQi GT Sport.",
+        "brand": "NIU",
+        "category": "vehicle"
+      },
+      "config": {
+        "fields": {}
+      },
+      "connections": [
+        {
+          "id": "account",
+          "label": "Through your NIU account",
+          "description": "Through the NIU account it is on, which asks NIU’s servers for it. Needs the internet: the scooter reports to NIU over the mobile network.",
+          "through": [
+            "niu.account"
+          ],
+          "reach": "cloud",
+          "updates": "poll"
+        }
+      ],
+      "tools": {
+        "raw": {
+          "label": "What NIU says",
+          "description": "Everything NIU’s cloud says about the scooter, exactly as it says it: its state, its battery and its totals — never where it is. For working out what a value means: change one thing on the scooter, read again, and compare.",
+          "writes": false,
+          "answer": {
+            "type": "object",
+            "fields": {
+              "from": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "batteries": {
+                "type": "string"
+              },
+              "totals": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "from",
+              "state"
+            ]
+          }
+        }
+      },
+      "description": {
+        "parts": [
+          {
+            "id": "main",
+            "label": "Scooter",
+            "kind": "device",
+            "icon": "navigation",
+            "energy": {
+              "role": "storage"
+            }
+          },
+          {
+            "id": "battery",
+            "label": "Battery",
+            "kind": "battery"
+          }
+        ],
+        "attributes": [
+          {
+            "key": "soc",
+            "label": "Charge",
+            "value": {
+              "type": "number",
+              "unit": "%",
+              "precision": 0
+            },
+            "means": "charge",
+            "category": "primary",
+            "currentFor": 1800000
+          },
+          {
+            "key": "range",
+            "label": "Range",
+            "value": {
+              "type": "number",
+              "unit": "km",
+              "precision": 0
+            },
+            "quantity": "distance",
+            "currentFor": 1800000
+          },
+          {
+            "key": "charging",
+            "label": "Charging",
+            "value": {
+              "type": "boolean",
+              "words": {
+                "true": "Yes",
+                "false": "No"
+              }
+            },
+            "currentFor": 1800000
+          },
+          {
+            "key": "minutesToFull",
+            "label": "Until full",
+            "value": {
+              "type": "number",
+              "unit": "min",
+              "precision": 0
+            },
+            "quantity": "duration",
+            "currentFor": 1800000
+          },
+          {
+            "key": "odometer",
+            "label": "Odometer",
+            "value": {
+              "type": "number",
+              "unit": "km",
+              "precision": 1
+            },
+            "quantity": "distance",
+            "stateClass": "total_increasing",
+            "currentFor": 3600000
+          },
+          {
+            "key": "poweredOn",
+            "label": "Switched on",
+            "value": {
+              "type": "boolean",
+              "words": {
+                "true": "Yes",
+                "false": "No"
+              }
+            },
+            "currentFor": 1800000
+          },
+          {
+            "key": "alarmArmed",
+            "label": "Alarm",
+            "value": {
+              "type": "boolean",
+              "words": {
+                "true": "Armed",
+                "false": "Not armed"
+              }
+            },
+            "currentFor": 1800000
+          },
+          {
+            "key": "battery.health",
+            "part": "battery",
+            "label": "Health",
+            "value": {
+              "type": "number",
+              "unit": "%",
+              "precision": 0
+            },
+            "quantity": "percent",
+            "category": "diagnostic",
+            "currentFor": 3600000
+          },
+          {
+            "key": "battery.temperature",
+            "part": "battery",
+            "label": "Temperature",
+            "value": {
+              "type": "number",
+              "unit": "°C",
+              "precision": 0
+            },
+            "quantity": "temperature",
+            "category": "diagnostic",
+            "currentFor": 3600000
+          },
+          {
+            "key": "battery.cycles",
+            "part": "battery",
+            "label": "Charge cycles",
+            "value": {
+              "type": "number",
+              "integer": true
+            },
+            "stateClass": "total_increasing",
+            "category": "diagnostic",
+            "currentFor": 3600000
+          },
+          {
+            "key": "speed",
+            "label": "Speed at its last report",
+            "value": {
+              "type": "number",
+              "unit": "km/h",
+              "precision": 0
+            },
+            "quantity": "speed",
+            "category": "diagnostic",
+            "history": false,
+            "currentFor": 1800000
+          },
+          {
+            "key": "online",
+            "label": "Reaching NIU",
+            "value": {
+              "type": "boolean",
+              "words": {
+                "true": "Yes",
+                "false": "No"
+              }
+            },
+            "category": "diagnostic",
+            "history": false,
+            "currentFor": 1800000
+          },
+          {
+            "key": "lockStatus",
+            "label": "Lock status (raw)",
+            "value": {
+              "type": "number",
+              "integer": true
+            },
+            "category": "diagnostic",
+            "history": false,
+            "currentFor": 1800000
+          },
+          {
+            "key": "mobileSignal",
+            "label": "Mobile signal",
+            "value": {
+              "type": "number",
+              "integer": true
+            },
+            "category": "diagnostic",
+            "history": false,
+            "currentFor": 1800000
+          },
+          {
+            "key": "gpsSignal",
+            "label": "GPS signal",
+            "value": {
+              "type": "number",
+              "integer": true
+            },
+            "category": "diagnostic",
+            "history": false,
+            "currentFor": 1800000
+          },
+          {
+            "key": "controlUnitBattery",
+            "label": "Control unit battery",
+            "value": {
+              "type": "number",
+              "unit": "%",
+              "precision": 0
+            },
+            "quantity": "percent",
+            "category": "diagnostic",
+            "history": false,
+            "currentFor": 1800000
+          }
+        ],
+        "events": [
+          {
+            "id": "charging.started",
+            "label": "Started charging",
+            "level": "info",
+            "data": {
+              "soc": {
+                "type": "number",
+                "unit": "%"
+              }
+            }
+          },
+          {
+            "id": "charging.finished",
+            "label": "Stopped charging",
+            "level": "info",
+            "data": {
+              "soc": {
+                "type": "number",
+                "unit": "%"
+              }
+            }
+          }
+        ]
+      },
+      "automation": false
+    }
+  ]
+}

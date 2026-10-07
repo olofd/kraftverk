@@ -1,0 +1,796 @@
+{
+  "protocols": [],
+  "types": [
+    {
+      "id": "atorch.s1w",
+      "kind": "hardware",
+      "meta": {
+        "icon": "power",
+        "name": "ATORCH S1W",
+        "brand": "ATORCH",
+        "models": [
+          "S1W",
+          "S1WP",
+          "S1BW"
+        ],
+        "description": "A Wi-Fi socket with a power meter, a display and its own safety cut-off, switched and read over your home network with no cloud.",
+        "support": "verified",
+        "supportNote": "Every datapoint established on an S1BW, protocol 3.5.",
+        "docsUrl": "packages/devices/atorch-s1w/README.md",
+        "category": "smart-plug"
+      },
+      "config": {
+        "fields": {
+          "profile": {
+            "type": "enum",
+            "title": "Datapoint layout",
+            "description": "Which datapoint is the relay, what scale each measurement is sent in, and which settings the plug has.",
+            "default": "atorch-s1",
+            "options": [
+              {
+                "value": "atorch-s1",
+                "label": "ATORCH S1W / S1WP / S1BW"
+              }
+            ]
+          },
+          "pollSeconds": {
+            "type": "number",
+            "title": "Poll interval",
+            "default": 10,
+            "min": 2,
+            "max": 300,
+            "unit": "s",
+            "integer": true
+          }
+        }
+      },
+      "connections": [
+        {
+          "id": "lan",
+          "label": "Home network",
+          "description": "Straight to the plug on your home network, with no cloud. Needs its local key, once.",
+          "protocol": "tuya-local",
+          "transport": "lan",
+          "reach": "cloud-at-setup",
+          "updates": "both",
+          "discovery": [
+            {
+              "kind": "broadcast",
+              "port": 6666
+            },
+            {
+              "kind": "broadcast",
+              "port": 6667
+            },
+            {
+              "kind": "broadcast",
+              "port": 7000
+            }
+          ]
+        }
+      ],
+      "tools": {
+        "datapoints": {
+          "label": "Datapoints",
+          "description": "Every datapoint the plug reports, raw, beside what its layout makes of them. How a new plug’s layout is established: change one thing in the maker’s app, read again, see what moved.",
+          "writes": false,
+          "answer": {
+            "type": "object",
+            "fields": {
+              "protocolVersion": {
+                "type": "string"
+              },
+              "profile": {
+                "type": "string"
+              },
+              "raw": {
+                "type": "list",
+                "of": {
+                  "type": "object",
+                  "fields": {
+                    "dp": {
+                      "type": "number",
+                      "integer": true
+                    },
+                    "kind": {
+                      "type": "enum",
+                      "options": [
+                        {
+                          "value": "boolean",
+                          "label": "On/off"
+                        },
+                        {
+                          "value": "number",
+                          "label": "Number"
+                        },
+                        {
+                          "value": "string",
+                          "label": "Text"
+                        }
+                      ]
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "dp",
+                    "kind",
+                    "value"
+                  ]
+                }
+              },
+              "decoded": {
+                "type": "object",
+                "fields": {
+                  "relayOn": {
+                    "type": "boolean"
+                  },
+                  "watts": {
+                    "type": "number",
+                    "unit": "W"
+                  },
+                  "volts": {
+                    "type": "number",
+                    "unit": "V"
+                  },
+                  "amps": {
+                    "type": "number",
+                    "unit": "A"
+                  },
+                  "kwh": {
+                    "type": "number",
+                    "unit": "kWh"
+                  },
+                  "hz": {
+                    "type": "number",
+                    "unit": "Hz"
+                  },
+                  "powerFactor": {
+                    "type": "number"
+                  }
+                }
+              }
+            },
+            "required": [
+              "protocolVersion",
+              "profile",
+              "raw",
+              "decoded"
+            ]
+          }
+        },
+        "rotateScreen": {
+          "label": "Turn the screen around",
+          "description": "Turns what the plug’s screen shows upside down, or back: for a plug that sits the other way up in its socket.",
+          "writes": true,
+          "answer": {
+            "type": "boolean"
+          }
+        },
+        "resetEnergy": {
+          "label": "Reset the energy counter",
+          "description": "Sets the energy total the plug counts, and the cost its screen shows, back to zero. kraftverk’s own history is kept.",
+          "writes": true,
+          "answer": {
+            "type": "boolean"
+          },
+          "confirm": "The plug’s energy total and cost go back to zero, and cannot be brought back. kraftverk’s history of it is kept."
+        }
+      },
+      "description": {
+        "parts": [
+          {
+            "id": "main",
+            "label": "Socket",
+            "kind": "outlet",
+            "energy": {
+              "role": "load"
+            },
+            "offers": [
+              "switch"
+            ]
+          }
+        ],
+        "attributes": [
+          {
+            "key": "watts",
+            "label": "Power",
+            "value": {
+              "type": "number",
+              "unit": "W",
+              "precision": 0
+            },
+            "quantity": "power",
+            "means": "power",
+            "category": "primary"
+          },
+          {
+            "key": "volts",
+            "label": "Voltage",
+            "value": {
+              "type": "number",
+              "unit": "V",
+              "precision": 1
+            },
+            "quantity": "voltage",
+            "means": "voltage"
+          },
+          {
+            "key": "amps",
+            "label": "Current",
+            "value": {
+              "type": "number",
+              "unit": "A",
+              "precision": 2
+            },
+            "quantity": "current",
+            "means": "current"
+          },
+          {
+            "key": "kwh",
+            "label": "Energy",
+            "value": {
+              "type": "number",
+              "unit": "kWh",
+              "precision": 2
+            },
+            "quantity": "energy",
+            "means": "energy",
+            "stateClass": "total_increasing"
+          },
+          {
+            "key": "hz",
+            "label": "Frequency",
+            "value": {
+              "type": "number",
+              "unit": "Hz",
+              "precision": 1
+            },
+            "quantity": "frequency",
+            "means": "frequency",
+            "category": "diagnostic"
+          },
+          {
+            "key": "powerFactor",
+            "label": "Power factor",
+            "value": {
+              "type": "number",
+              "precision": 2,
+              "min": 0,
+              "max": 1
+            },
+            "category": "diagnostic"
+          },
+          {
+            "key": "relay",
+            "label": "Switch",
+            "value": {
+              "type": "boolean"
+            },
+            "means": "on",
+            "consequence": "Switches off whatever is plugged into it."
+          },
+          {
+            "key": "cutBy",
+            "label": "Switched itself off",
+            "description": "Why the plug switched its power off by itself: its safety cut-off, or a rule set in the maker’s app.",
+            "value": {
+              "type": "enum",
+              "options": [
+                {
+                  "value": "none",
+                  "label": "No"
+                },
+                {
+                  "value": "underVoltage",
+                  "label": "The voltage was too low"
+                },
+                {
+                  "value": "overVoltage",
+                  "label": "The voltage was too high"
+                },
+                {
+                  "value": "overCurrent",
+                  "label": "The current was too high"
+                },
+                {
+                  "value": "overPower",
+                  "label": "The power was too high"
+                },
+                {
+                  "value": "lowPower",
+                  "label": "A rule in the maker’s app: the draw stayed low"
+                },
+                {
+                  "value": "highPower",
+                  "label": "A rule in the maker’s app: the draw stayed high"
+                },
+                {
+                  "value": "timedOn",
+                  "label": "A timer in the maker’s app"
+                },
+                {
+                  "value": "timedOff",
+                  "label": "A timer in the maker’s app"
+                },
+                {
+                  "value": "cycle",
+                  "label": "A timer in the maker’s app"
+                },
+                {
+                  "value": "countdown",
+                  "label": "A countdown in the maker’s app"
+                }
+              ]
+            },
+            "category": "diagnostic"
+          },
+          {
+            "key": "backOnIn",
+            "label": "Back on in",
+            "description": "After a safety cut-off the plug waits until the fault has cleared, counts this down, and switches itself back on.",
+            "value": {
+              "type": "number",
+              "unit": "s",
+              "integer": true,
+              "min": 0
+            },
+            "quantity": "duration",
+            "category": "diagnostic",
+            "history": false
+          },
+          {
+            "key": "rule",
+            "label": "Rule inside the plug",
+            "description": "A rule set in the maker’s app that the plug can run by itself. kraftverk shows it so a cut is explained; its own automations do the same job.",
+            "value": {
+              "type": "enum",
+              "options": [
+                {
+                  "value": "none",
+                  "label": "None"
+                },
+                {
+                  "value": "lowPower",
+                  "label": "Off when the draw stays low"
+                },
+                {
+                  "value": "highPower",
+                  "label": "Off when the draw stays high"
+                },
+                {
+                  "value": "timedOff",
+                  "label": "Off after a time"
+                },
+                {
+                  "value": "timedOn",
+                  "label": "On after a time"
+                },
+                {
+                  "value": "cycle",
+                  "label": "On and off in a cycle"
+                }
+              ]
+            },
+            "access": "write",
+            "category": "diagnostic",
+            "history": false
+          },
+          {
+            "key": "lowPowerWatts",
+            "label": "Low-draw rule: under",
+            "value": {
+              "type": "number",
+              "unit": "W",
+              "min": 1,
+              "max": 999,
+              "integer": true
+            },
+            "quantity": "power",
+            "category": "diagnostic",
+            "history": false
+          },
+          {
+            "key": "lowPowerMinutes",
+            "label": "Low-draw rule: for",
+            "value": {
+              "type": "number",
+              "unit": "min",
+              "min": 1,
+              "max": 99,
+              "integer": true
+            },
+            "quantity": "duration",
+            "category": "diagnostic",
+            "history": false
+          },
+          {
+            "key": "highPowerWatts",
+            "label": "High-draw rule: over",
+            "value": {
+              "type": "number",
+              "unit": "W",
+              "min": 1,
+              "max": 9999,
+              "integer": true
+            },
+            "quantity": "power",
+            "category": "diagnostic",
+            "history": false
+          },
+          {
+            "key": "highPowerHours",
+            "label": "High-draw rule: for",
+            "value": {
+              "type": "number",
+              "unit": "h",
+              "min": 1,
+              "max": 99,
+              "integer": true
+            },
+            "quantity": "duration",
+            "category": "diagnostic",
+            "history": false
+          },
+          {
+            "key": "temperature",
+            "label": "Temperature inside",
+            "value": {
+              "type": "number",
+              "unit": "°C",
+              "integer": true
+            },
+            "quantity": "temperature",
+            "stateClass": "measurement",
+            "category": "diagnostic"
+          },
+          {
+            "key": "afterPowerCut",
+            "label": "After a power cut",
+            "description": "What the plug does when the mains comes back. It keeps this itself, so it holds even with kraftverk down.",
+            "value": {
+              "type": "enum",
+              "options": [
+                {
+                  "value": "asItWas",
+                  "label": "Back to how it was"
+                },
+                {
+                  "value": "on",
+                  "label": "Always on"
+                },
+                {
+                  "value": "off",
+                  "label": "Stay off"
+                }
+              ]
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Power",
+            "consequence": "Stay off leaves whatever it feeds without power after every cut until someone switches it on — a flat station with no way to charge."
+          },
+          {
+            "key": "safetyCutOff",
+            "label": "Safety cut-off",
+            "description": "Cuts the power when the supply or the load goes outside the limits below, and turns it back on once the fault has cleared.",
+            "value": {
+              "type": "boolean"
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Safety cut-off",
+            "dangerous": true,
+            "consequence": "Off, the plug no longer cuts on too much current or power, or a bad supply."
+          },
+          {
+            "key": "maxVoltage",
+            "label": "Voltage above",
+            "value": {
+              "type": "number",
+              "unit": "V",
+              "min": 0.1,
+              "max": 275,
+              "step": 0.1,
+              "precision": 1
+            },
+            "quantity": "voltage",
+            "access": "write",
+            "category": "config",
+            "section": "Safety cut-off",
+            "dangerous": true,
+            "consequence": "Set below the mains voltage, the plug cuts at once."
+          },
+          {
+            "key": "minVoltage",
+            "label": "Voltage below",
+            "value": {
+              "type": "number",
+              "unit": "V",
+              "min": 0.1,
+              "max": 275,
+              "step": 0.1,
+              "precision": 1
+            },
+            "quantity": "voltage",
+            "access": "write",
+            "category": "config",
+            "section": "Safety cut-off",
+            "dangerous": true,
+            "consequence": "Set above the mains voltage, the plug cuts at once."
+          },
+          {
+            "key": "maxCurrent",
+            "label": "Current above",
+            "value": {
+              "type": "number",
+              "unit": "A",
+              "min": 0.01,
+              "max": 20,
+              "step": 0.01,
+              "precision": 2
+            },
+            "quantity": "current",
+            "access": "write",
+            "category": "config",
+            "section": "Safety cut-off",
+            "dangerous": true,
+            "consequence": "Set below what the load draws, the plug cuts it."
+          },
+          {
+            "key": "maxPower",
+            "label": "Power above",
+            "value": {
+              "type": "number",
+              "unit": "W",
+              "min": 1,
+              "max": 4500,
+              "integer": true
+            },
+            "quantity": "power",
+            "access": "write",
+            "category": "config",
+            "section": "Safety cut-off",
+            "dangerous": true,
+            "consequence": "Set below what the load draws, the plug cuts it."
+          },
+          {
+            "key": "cutAfter",
+            "label": "Wait before cutting",
+            "description": "How long a fault must last. Short spikes shorter than this are ridden through.",
+            "value": {
+              "type": "number",
+              "unit": "s",
+              "min": 0,
+              "max": 2,
+              "step": 0.1,
+              "precision": 1
+            },
+            "quantity": "duration",
+            "access": "write",
+            "category": "config",
+            "section": "Safety cut-off",
+            "dangerous": true
+          },
+          {
+            "key": "backOnAfter",
+            "label": "Back on after",
+            "description": "How long the fault must have been gone before the plug switches itself back on.",
+            "value": {
+              "type": "number",
+              "unit": "min",
+              "min": 0,
+              "max": 99,
+              "integer": true
+            },
+            "quantity": "duration",
+            "access": "write",
+            "category": "config",
+            "section": "Safety cut-off",
+            "dangerous": true
+          },
+          {
+            "key": "brightness",
+            "label": "Brightness",
+            "value": {
+              "type": "number",
+              "min": 1,
+              "max": 9,
+              "integer": true
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Display"
+          },
+          {
+            "key": "dimmedBrightness",
+            "label": "Dimmed brightness",
+            "value": {
+              "type": "number",
+              "min": 1,
+              "max": 9,
+              "integer": true
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Display"
+          },
+          {
+            "key": "dimAfter",
+            "label": "Dim after",
+            "value": {
+              "type": "number",
+              "unit": "s",
+              "min": 3,
+              "max": 99,
+              "integer": true
+            },
+            "quantity": "duration",
+            "access": "write",
+            "category": "config",
+            "section": "Display"
+          },
+          {
+            "key": "dimmedShows",
+            "label": "When dimmed, show",
+            "value": {
+              "type": "enum",
+              "options": [
+                {
+                  "value": "readings",
+                  "label": "The readings"
+                },
+                {
+                  "value": "clock",
+                  "label": "The start screen"
+                },
+                {
+                  "value": "nothing",
+                  "label": "Nothing"
+                }
+              ]
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Display"
+          },
+          {
+            "key": "keyBeep",
+            "label": "Beep on key press",
+            "value": {
+              "type": "boolean"
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Display"
+          },
+          {
+            "key": "language",
+            "label": "Language",
+            "value": {
+              "type": "enum",
+              "options": [
+                {
+                  "value": "english",
+                  "label": "English"
+                },
+                {
+                  "value": "chinese",
+                  "label": "Chinese"
+                }
+              ]
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Display"
+          },
+          {
+            "key": "price",
+            "label": "Price per kWh",
+            "description": "What its screen multiplies the energy by to show a cost. In your own currency: the plug keeps no unit.",
+            "value": {
+              "type": "number",
+              "min": 0,
+              "max": 999.99,
+              "step": 0.01,
+              "precision": 2
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Bill"
+          },
+          {
+            "key": "cost",
+            "label": "Cost on its screen",
+            "value": {
+              "type": "number",
+              "precision": 2,
+              "min": 0
+            },
+            "category": "diagnostic"
+          },
+          {
+            "key": "live",
+            "label": "Live readings",
+            "description": "A reading every second instead of every few. It stays on for a quarter of an hour at a time, and a screen that shows it keeps it on while it is open.",
+            "value": {
+              "type": "boolean"
+            },
+            "access": "write",
+            "category": "diagnostic",
+            "history": false
+          },
+          {
+            "key": "liveUntil",
+            "label": "Live until",
+            "value": {
+              "type": "timestamp"
+            },
+            "category": "diagnostic",
+            "history": false
+          }
+        ],
+        "events": [
+          {
+            "id": "cut",
+            "label": "The plug switched itself off",
+            "level": "warn",
+            "data": {
+              "reason": {
+                "type": "enum",
+                "options": [
+                  {
+                    "value": "none",
+                    "label": "No"
+                  },
+                  {
+                    "value": "underVoltage",
+                    "label": "The voltage was too low"
+                  },
+                  {
+                    "value": "overVoltage",
+                    "label": "The voltage was too high"
+                  },
+                  {
+                    "value": "overCurrent",
+                    "label": "The current was too high"
+                  },
+                  {
+                    "value": "overPower",
+                    "label": "The power was too high"
+                  },
+                  {
+                    "value": "lowPower",
+                    "label": "A rule in the maker’s app: the draw stayed low"
+                  },
+                  {
+                    "value": "highPower",
+                    "label": "A rule in the maker’s app: the draw stayed high"
+                  },
+                  {
+                    "value": "timedOn",
+                    "label": "A timer in the maker’s app"
+                  },
+                  {
+                    "value": "timedOff",
+                    "label": "A timer in the maker’s app"
+                  },
+                  {
+                    "value": "cycle",
+                    "label": "A timer in the maker’s app"
+                  },
+                  {
+                    "value": "countdown",
+                    "label": "A countdown in the maker’s app"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "automation": false
+    }
+  ]
+}

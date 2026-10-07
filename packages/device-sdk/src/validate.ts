@@ -5,6 +5,7 @@ import { isBridgedMethod, REACHES, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, UPD
 import { DEVICE_KINDS, type DeviceType } from './device-type.ts';
 import { CAMEL_NAME, NAMESPACED_ID, PLAIN_ID } from './names.ts';
 import { NODE_TRAITS, PLATFORMS } from './node.ts';
+import type { ProtocolDeclaration, TypeDeclaration } from './catalogue.ts';
 import type { Protocol } from './protocol.ts';
 import { configDefaults, isSecretField, schemaProblems, type ConfigSchema } from './schema.ts';
 import { ANNOUNCEMENT_KINDS, type Matcher, type TransportDefinition } from './transport.ts';
@@ -198,8 +199,8 @@ export function validateProtocol(protocol: Protocol): string[] {
  * transport.
  */
 export function connectionProblems(
-  type: DeviceType<any>,
-  installed: { protocol(id: string): Protocol | null; transport(id: string): TransportDefinition | null; type?(id: string): DeviceType<any> | null }
+  type: TypeDeclaration,
+  installed: { protocol(id: string): Pick<ProtocolDeclaration, 'id' | 'bindings'> | null; transport(id: string): TransportDefinition | null; type?(id: string): TypeDeclaration | null }
 ): string[] {
   const problems: string[] = [];
   for (const method of type.connections ?? []) {

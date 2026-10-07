@@ -1,0 +1,304 @@
+{
+  "protocols": [],
+  "types": [
+    {
+      "id": "tuya.zigbee-plug",
+      "kind": "hardware",
+      "meta": {
+        "icon": "power",
+        "name": "Tuya Zigbee plug",
+        "brand": "Tuya",
+        "models": [
+          "Smart plug",
+          "TS011F"
+        ],
+        "description": "A 16 A Zigbee plug that measures power, paired with a Tuya Zigbee gateway in Smart Life: switched and read through the gateway on your home network, with no cloud.",
+        "support": "experimental",
+        "supportNote": "Mapped on one plug behind an RSH GW018-DM gateway; other Tuya Zigbee gateways speak the same way.",
+        "category": "smart-plug"
+      },
+      "config": {
+        "fields": {
+          "profile": {
+            "type": "enum",
+            "title": "Datapoint layout",
+            "description": "Which datapoint is the relay, what scale each measurement is sent in, and which settings the plug has.",
+            "default": "tuya-zigbee-plug-16a",
+            "options": [
+              {
+                "value": "tuya-zigbee-plug-16a",
+                "label": "Tuya Zigbee energy plug, 16 A"
+              }
+            ]
+          },
+          "pollSeconds": {
+            "type": "number",
+            "title": "Poll interval",
+            "default": 15,
+            "min": 2,
+            "max": 300,
+            "unit": "s",
+            "integer": true
+          }
+        }
+      },
+      "connections": [
+        {
+          "id": "gateway",
+          "label": "Through its Zigbee gateway",
+          "description": "Through the Tuya gateway it is paired with, on your home network, with no cloud: add the gateway, and the plug is found through it.",
+          "through": [
+            "tuya.gateway"
+          ],
+          "reach": "local",
+          "updates": "both"
+        }
+      ],
+      "tools": {
+        "datapoints": {
+          "label": "Datapoints",
+          "description": "Every datapoint the plug reports, raw, beside what its layout makes of them. How a new plug’s layout is established: change one thing in the maker’s app, read again, see what moved.",
+          "writes": false,
+          "answer": {
+            "type": "object",
+            "fields": {
+              "protocolVersion": {
+                "type": "string"
+              },
+              "profile": {
+                "type": "string"
+              },
+              "raw": {
+                "type": "list",
+                "of": {
+                  "type": "object",
+                  "fields": {
+                    "dp": {
+                      "type": "number",
+                      "integer": true
+                    },
+                    "kind": {
+                      "type": "enum",
+                      "options": [
+                        {
+                          "value": "boolean",
+                          "label": "On/off"
+                        },
+                        {
+                          "value": "number",
+                          "label": "Number"
+                        },
+                        {
+                          "value": "string",
+                          "label": "Text"
+                        }
+                      ]
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "dp",
+                    "kind",
+                    "value"
+                  ]
+                }
+              },
+              "decoded": {
+                "type": "object",
+                "fields": {
+                  "relayOn": {
+                    "type": "boolean"
+                  },
+                  "watts": {
+                    "type": "number",
+                    "unit": "W"
+                  },
+                  "volts": {
+                    "type": "number",
+                    "unit": "V"
+                  },
+                  "amps": {
+                    "type": "number",
+                    "unit": "A"
+                  },
+                  "kwh": {
+                    "type": "number",
+                    "unit": "kWh"
+                  },
+                  "hz": {
+                    "type": "number",
+                    "unit": "Hz"
+                  },
+                  "powerFactor": {
+                    "type": "number"
+                  }
+                }
+              }
+            },
+            "required": [
+              "protocolVersion",
+              "profile",
+              "raw",
+              "decoded"
+            ]
+          }
+        }
+      },
+      "description": {
+        "parts": [
+          {
+            "id": "main",
+            "label": "Socket",
+            "kind": "outlet",
+            "energy": {
+              "role": "load"
+            },
+            "offers": [
+              "switch"
+            ]
+          }
+        ],
+        "attributes": [
+          {
+            "key": "watts",
+            "label": "Power",
+            "value": {
+              "type": "number",
+              "unit": "W",
+              "precision": 0
+            },
+            "quantity": "power",
+            "means": "power",
+            "category": "primary"
+          },
+          {
+            "key": "volts",
+            "label": "Voltage",
+            "value": {
+              "type": "number",
+              "unit": "V",
+              "precision": 1
+            },
+            "quantity": "voltage",
+            "means": "voltage"
+          },
+          {
+            "key": "amps",
+            "label": "Current",
+            "value": {
+              "type": "number",
+              "unit": "A",
+              "precision": 2
+            },
+            "quantity": "current",
+            "means": "current"
+          },
+          {
+            "key": "kwh",
+            "label": "Energy",
+            "value": {
+              "type": "number",
+              "unit": "kWh",
+              "precision": 2
+            },
+            "quantity": "energy",
+            "means": "energy",
+            "stateClass": "total_increasing"
+          },
+          {
+            "key": "relay",
+            "label": "Switch",
+            "value": {
+              "type": "boolean"
+            },
+            "means": "on",
+            "consequence": "Switches off whatever is plugged into it."
+          },
+          {
+            "key": "afterPowerCut",
+            "label": "After a power cut",
+            "description": "What the plug does when the mains comes back. It keeps this itself, so it holds even with kraftverk and the gateway down.",
+            "value": {
+              "type": "enum",
+              "options": [
+                {
+                  "value": "asItWas",
+                  "label": "Back to how it was"
+                },
+                {
+                  "value": "on",
+                  "label": "Always on"
+                },
+                {
+                  "value": "off",
+                  "label": "Stay off"
+                }
+              ]
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Power",
+            "consequence": "Stay off leaves whatever it feeds without power after every cut until someone switches it on."
+          },
+          {
+            "key": "indicator",
+            "label": "Indicator light",
+            "description": "The light on the plug.",
+            "value": {
+              "type": "enum",
+              "options": [
+                {
+                  "value": "showsOn",
+                  "label": "Lit while it is on"
+                },
+                {
+                  "value": "findInDark",
+                  "label": "Lit while it is off, to find it in the dark"
+                },
+                {
+                  "value": "off",
+                  "label": "Always off"
+                }
+              ]
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Light"
+          },
+          {
+            "key": "buttonLocked",
+            "label": "Button locked",
+            "description": "The button on the plug does nothing — a child lock. Undone at the plug too: press its button four times, or unplug it.",
+            "value": {
+              "type": "boolean",
+              "words": {
+                "true": "Locked",
+                "false": "Unlocked"
+              }
+            },
+            "access": "write",
+            "category": "config",
+            "section": "Button"
+          },
+          {
+            "key": "countdown",
+            "label": "Countdown",
+            "description": "A countdown set in the maker’s app: when it runs out, the plug switches. Read, so a switch nobody pressed is explained.",
+            "value": {
+              "type": "number",
+              "unit": "s",
+              "integer": true,
+              "min": 0
+            },
+            "quantity": "duration",
+            "category": "diagnostic",
+            "history": false
+          }
+        ]
+      },
+      "automation": false
+    }
+  ]
+}

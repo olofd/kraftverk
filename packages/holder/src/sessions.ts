@@ -17,6 +17,7 @@ import {
   type DeviceSession,
   type DeviceStore,
   type DeviceType,
+  type TypeDeclaration,
   type NodeId,
   type Platform,
   type Protocol,
@@ -101,7 +102,12 @@ export type SessionManagerDeps = {
   platform: Platform;
   /** The node this is: what a device's health names as holding it, and the timeline as acting. */
   node: { id: NodeId; name: string };
-  types: { get(typeId: string): DeviceType<any> | null | undefined };
+  /**
+   * The installed types: each one's declaration now, and its code loaded
+   * when a device of it opens — an integration nobody uses is never loaded.
+   */
+  types: { get(typeId: string): TypeDeclaration | null | undefined; load(typeId: string): Promise<DeviceType<any> | null> };
+  /** The protocols whose code has loaded: a device opens after its type's integration, and its protocols with it, has. */
   protocols: { get(id: string): Protocol | null | undefined };
   /** The transports here; one that is started on demand, and can say whether it is available, says so. */
   transports: TransportSource & { start?(id: string): Promise<unknown>; available?(id: string): Availability };
@@ -196,8 +202,8 @@ export class SessionManager {
 
   constructor(private deps: SessionManagerDeps) {}
 
-  /** What a device is, or null when no installed type claims it. */
-  typeOf(record: Pick<HolderDevice, 'typeId'>): DeviceType<any> | null {
+  /** What a device is, as its type declares it, or null when no installed type claims it. */
+  typeOf(record: Pick<HolderDevice, 'typeId'>): TypeDeclaration | null {
     return this.deps.types.get(record.typeId) ?? null;
   }
 
@@ -410,7 +416,7 @@ export class SessionManager {
    * transport is available here — a simulated one always is. A device only
    * another holds has no session here: its card says who holds it.
    */
-  async #choose(record: HolderDevice, type: DeviceType<any>): Promise<{ connection: HolderConnection } | { refusal: Refusal }> {
+  async #choose(record: HolderDevice, type: TypeDeclaration): Promise<{ connection: HolderConnection } | { refusal: Refusal }> {
     const all = this.deps.connections(record.id);
     if (!all.length) return { refusal: { status: 'unconfigured', detail: 'Nothing can reach this device yet: add a way to reach it' } };
 
@@ -463,7 +469,6 @@ export class SessionManager {
   }
 
   async #openDevice(record: HolderDevice, connection: HolderConnection): Promise<void> {
-    const type = this.typeOf(record)!;
     const simulated = isSimulated(connection);
     // Tried again: what it was refused for goes, and how often it has been is kept — a dead one waits longer each time.
     const tried = this.#refusals.get(record.id)?.attempts ?? 0;
@@ -471,6 +476,9 @@ export class SessionManager {
     const log = (level: 'log' | 'warn' | 'error') => (message: string, extra?: unknown) => console[level](`[${record.name}] ${message}`, extra ?? '');
 
     try {
+      // Its integration's code, loaded the first time a device of it opens.
+      const type = await this.deps.types.load(record.typeId);
+      if (!type) throw new Error(`The package for "${record.typeId}" could not be loaded here: see the diagnostics`);
       const opened = await openDevice({
         type,
         device: record,

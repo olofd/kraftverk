@@ -154,6 +154,8 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
   const empty: ImportPlan = { id: null, from: read.from, problems: read.problems.map((each) => ({ ...each, path: [...each.path] })), devices: [], links: [], automations: [], policy: [], location: null, needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
   if (!read.document) return empty;
   const document = read.document;
+  // What a device it brings is, with its settings, is its type's code to say: each type it names is loaded now.
+  await Promise.all([...new Set(Object.values(document.devices).map((entry) => entry.type))].map((type) => deps.types.load(type)));
   const problems: ImportPlan['problems'] = [];
   const needs: ImportPlan['needs'] = { passphrase: null, secrets: [], rebind: [], confirm: [] };
   const notes: string[] = [];
@@ -371,7 +373,7 @@ function bindingProblems(deps: ImportDeps, entry: AutomationEntry, document: Con
     const brought = leftOut.has(use.device) ? undefined : document.devices[use.device];
     const here = deps.catalog.byKey(use.device);
     // The file's own word on it first: what it will be once imported.
-    const description = brought ? deps.types.get(brought.type)?.describe(brought.settings as never) : here?.description;
+    const description = brought ? deps.types.loaded(brought.type)?.describe(brought.settings as never) : here?.description;
     const name = brought?.name ?? here?.name;
     if (!description || !name) return null;
     if (!partsOf(description).some((part) => part.id === use.part)) {
@@ -417,7 +419,7 @@ function candidatesFor(deps: ImportDeps, need: PartRole | null, document: Config
   const added = Object.entries(document.devices)
     .filter(([key]) => !deps.catalog.byKey(key))
     .flatMap(([key, entry]) => {
-      const type = deps.types.get(entry.type);
+      const type = deps.types.loaded(entry.type);
       return type ? [{ key, name: entry.name, description: type.describe(entry.settings as never) }] : [];
     });
   return [...yours, ...added].flatMap((device) =>
@@ -655,7 +657,8 @@ export async function startWritten(deps: ImportDeps, written: Written): Promise<
 
 /** A device added or changed as its entry says: what it is, how it is reached, its secrets, kept or given. */
 function writeDevice(deps: ImportDeps, key: string, entry: DeviceEntry, opened: Map<string, string>, given: Record<string, string>): void {
-  const type = deps.types.get(entry.type)!;
+  // Loaded when its plan was made: what it is, with its settings, is its code's to say.
+  const type = deps.types.loaded(entry.type)!;
   const settings = validateConfig(type.config ?? { fields: {} }, entry.settings);
   if (!settings.ok) throw new ApiError('invalid', `${entry.name}: ${settings.issues.map((issue) => issue.message).join('; ')}`);
   const config: ConfigValues = settings.value;
