@@ -85,8 +85,9 @@ One word for each thing, in code, in docs and on screen.
 | **Connection** | One way a device is reached: a method, the node that holds it — or the bridge it goes through — and an address, with its own secrets, kept on that node. A device may have several; one is in use at a time. | Garage P280 over Wi-Fi, held by the NAS |
 | **Bridge** | A device through which others are reached — its members: a role, not a kind. A member's way goes through it: its session hands the member a **link**, an object of plain calls its integration declares, and it is held wherever the bridge is (PLAN-INTEGRATIONS.md §4.3). | A NIU account and its scooters; a Zigbee gateway and its plugs |
 | **Sighting** | Something a transport can see that no connection claims. Live state, never stored. | "A power station is connected to this server" |
-| **Service** | A device type with `kind: 'service'`: no hardware. Added and shown the same way, in its own section. | "Weather (Open-Meteo)" |
-| **Account** | A device type with `kind: 'account'`, always an integration's own: a sign-in to someone's cloud, usually a bridge to the devices on it. Held as a device is, managed on its integration's page. Not a person's account in kraftverk. | "Family iCloud", "NIU account" |
+| **Service** | A device type with `kind: 'service'`: no hardware. Added under "Add a service" and shown in a section of its own, never among devices. | "Weather (Open-Meteo)" |
+| **Account** | A device type with `kind: 'account'`, always an integration's own: a sign-in to someone's cloud, usually a bridge to the devices on it. Held as a device is, signed in to and shown on its integration's page, never among devices. Not a person's account in kraftverk. | "Family iCloud", "NIU account" |
+| **Gateway** | A device type with `kind: 'gateway'`, an integration's own like an account: a box it reaches devices through. Set up and shown on its integration's page; the devices behind it are devices. Each kind is met in one place, and a type's category must be on that shelf (`CategorySpec.shelf`, `SHELF_OF`). | "Tuya Zigbee gateway" |
 | **Description** | What a device is, as data: its parts, their attributes, and its events. Declared by its type, or reported by the device. | — |
 | **Part** | The device itself (`main`), or one of what it has several of, as a Matter endpoint is. | `main`, `outlet.ac`, `pack.1` |
 | **Attribute** | A value a part reports, with a stable key, a type and — where one applies — a standard meaning. | `soc` meaning `charge` |
@@ -264,7 +265,7 @@ in the code say the rest. There is one version of it (decision 21).
 ```ts
 export interface DeviceType<Config extends ConfigValues = ConfigValues> {
   id: string;                        // 'atorch.s1w' — stable forever, namespaced
-  kind: 'hardware' | 'service';
+  kind: 'hardware' | 'service' | 'account' | 'gateway';  // where a person meets it: devices, services, its integration's page
   meta: {
     name: string; brand?: string; models?: string[]; description?: string;
     category: CategoryId;            // from the SDK's fixed list: 'power-station', 'smart-plug', 'weather'

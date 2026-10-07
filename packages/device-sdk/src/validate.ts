@@ -2,7 +2,7 @@ import { CATEGORIES, isCategory } from './categories.ts';
 import { validateDescription } from './check-description.ts';
 import { BRIDGE_TRANSPORT } from './bridge.ts';
 import { isBridgedMethod, REACHES, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, UPDATES } from './connection.ts';
-import { DEVICE_KINDS, type DeviceType } from './device-type.ts';
+import { DEVICE_KINDS, SHELF_OF, type DeviceType } from './device-type.ts';
 import { CAMEL_NAME, NAMESPACED_ID, PLAIN_ID } from './names.ts';
 import { NODE_TRAITS, PLATFORMS } from './node.ts';
 import type { ProtocolDeclaration, TypeDeclaration } from './catalogue.ts';
@@ -47,6 +47,10 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
   const meta = type.meta ?? ({} as DeviceType['meta']);
   if (!meta.name?.trim()) problem('meta.name is required');
   if (!isCategory(meta.category ?? '')) problem(`meta.category "${meta.category}" is not one of: ${Object.keys(CATEGORIES).join(', ')}`);
+  // Where a person meets it is its kind's, and its shelf must agree: a service is not shown among devices, nor an account.
+  else if (DEVICE_KINDS.includes(type.kind) && CATEGORIES[meta.category].shelf !== SHELF_OF[type.kind]) {
+    problem(`${type.kind === 'account' ? 'an' : 'a'} ${type.kind} type belongs on a shelf of ${SHELF_OF[type.kind]}, and "${meta.category}" is one of ${CATEGORIES[meta.category].shelf}`);
+  }
   if (!meta.icon?.trim()) problem('meta.icon is required');
   if (!['verified', 'community', 'experimental'].includes(meta.support)) {
     problem('meta.support must be verified, community or experimental');

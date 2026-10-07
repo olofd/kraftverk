@@ -12,7 +12,7 @@ import { press } from './helpers';
 test('Integrations, from Home: each platform, where it runs, and its own page with what it knows', async ({ page }) => {
   await page.goto('/');
   await press(page, 'Integrations');
-  await expect(page.getByText('Where kraftverk meets each service and platform: your accounts on it, and the devices it knows')).toBeVisible();
+  await expect(page.getByText('Where kraftverk meets each service and platform: your accounts and gateways on it, and what it knows')).toBeVisible();
 
   // Each platform, and where it runs: NIU's, and apart from that, what the node holding it must be, and why.
   await expect(page.getByText('Sydpower', { exact: true })).toBeVisible();

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Input, Spinner } from 'tamagui';
 
-import { SetupFlow, typeMatches, waySaid, type CheckOutcome } from '@kraftverk/api-client';
+import { SetupFlow, typeMatches, waySaid, type CheckOutcome, type DeviceTypeListing } from '@kraftverk/api-client';
+import { isIntegrationsOwn, SIMULATED_METHOD_ID } from '@kraftverk/device-sdk';
 import { Card, haptic } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
@@ -30,12 +31,19 @@ import { Ways, type Way } from './Ways';
  * will be held: the home — a server, or the app's own — or this app, for a
  * server. `?attach=<id>` adds another way to
  * reach a device you have; `?type=&method=&address=` comes from "Found near you" — with `&through=` for one found behind a bridge.
+ * `?what=service` adds a service instead: weather, prices. An account or a
+ * gateway is its integration's, opened here at its type (`?type=`) from its
+ * integration's page, and never listed.
  */
 
 type Stage = 'category' | 'type' | 'method' | 'steps' | 'finish';
 
+/** What a person calls what they are adding, by its kind. */
+const KIND_WORD: Readonly<Record<DeviceTypeListing['kind'], string>> = { hardware: 'device', service: 'service', account: 'account', gateway: 'gateway' };
+
 export function AddDevice() {
-  const params = useLocalSearchParams<{ type?: string; method?: string; address?: string; through?: string; attach?: string; again?: string; connection?: string }>();
+  const params = useLocalSearchParams<{ type?: string; method?: string; address?: string; through?: string; attach?: string; again?: string; connection?: string; what?: string }>();
+  const shelf = params.what === 'service' ? 'services' : 'devices';
   const { devices, refresh } = useDevices();
   const { api, role } = useHome();
   const reach = useReach();
@@ -61,6 +69,8 @@ export function AddDevice() {
   useEffect(() => () => flowRef.current?.discard(), []);
 
   const type = types?.find((candidate) => candidate.id === typeId) ?? null;
+  // What this list is of: devices, or services. An account or a gateway is its integration's, opened here from its page.
+  const listed = types?.filter((candidate) => candidate.kind === (shelf === 'services' ? 'service' : 'hardware')) ?? [];
 
   const ways = useMemo((): Way[] => {
     if (!type) return [];
@@ -70,21 +80,31 @@ export function AddDevice() {
       server, this app's own radio for it. Each says whether it can be used
       now, and why not.
     */
+    // Who would hold it is said only where there is a choice: through your server, or in this app.
+    const holders = new Set(type.ways.map((way) => way.holder));
     return type.connections.flatMap((method): Way[] =>
       type.ways
         .filter((way) => way.method === method.id)
-        .map((way) => ({
-          methodId: method.id,
-          label: `${method.label}, ${reach.holder(way.holder).words}`,
-          description: way.holder === 'this-node' ? `While ${HERE} has it: kept by your server, which hears what it says when it can.` : method.description,
-          reaches: waySaid(method),
-          holder: way.holder,
-          available: way.availability.ok,
-          reason: way.availability.ok ? null : way.availability.reason,
-          recommended: way.holder === 'master' && Boolean(method.recommended),
-        }))
+        .map((way) => {
+          // Reached through an account or a gateway you do not have yet: that comes first, and is a step to take, not a dead end.
+          const bridges = method.through ?? [];
+          const haveOne = devices.some((device) => bridges.includes(device.typeId) && !device.removedAt);
+          const needed = bridges.length && !haveOne ? (types?.find((candidate) => candidate.id === bridges[0]) ?? null) : null;
+          return {
+            methodId: method.id,
+            label: holders.size > 1 ? `${method.label}, ${reach.holder(way.holder).words}` : method.label,
+            description: way.holder === 'this-node' ? `While ${HERE} has it: kept by your server, which hears what it says when it can.` : method.description,
+            // A simulator reaches nothing: what it is is said by its description alone.
+            reaches: method.id === SIMULATED_METHOD_ID ? '' : waySaid(method),
+            holder: way.holder,
+            available: way.availability.ok,
+            reason: way.availability.ok ? null : way.availability.reason,
+            recommended: way.holder === 'master' && Boolean(method.recommended),
+            ...(needed ? { needs: { typeId: needed.id, name: needed.meta.name, kind: needed.kind } } : {}),
+          };
+        })
     );
-  }, [role, type]);
+  }, [devices, role, type, types]);
 
   const begin = useCallback(
     async (way: Way) => {
@@ -138,7 +158,10 @@ export function AddDevice() {
     void begin(way);
   }, [begin, params.method, type, ways]);
 
-  const title = againOf ? `Sign ${againOf.name} in again` : attachTo ? `Another way to reach ${attachTo.name}` : 'Add a device';
+  const adding = type ? KIND_WORD[type.kind] : shelf === 'services' ? 'service' : 'device';
+  // An account or a gateway is added from its integration's page, and goes back there.
+  const ownOf = type && isIntegrationsOwn(type.kind) ? type.source.integration : null;
+  const title = againOf ? `Sign ${againOf.name} in again` : attachTo ? `Another way to reach ${attachTo.name}` : `Add ${adding === 'account' ? 'an' : 'a'} ${adding}`;
 
   // --- moving through the steps ---------------------------------------------------------
 
@@ -172,7 +195,12 @@ export function AddDevice() {
   }, []);
 
   return (
-    <Screen back={attachTo ? attachTo.name : 'Your devices'} backTo={attachTo ? `/device/${encodeURIComponent(attachTo.id)}/settings` : '/'} title={title} subtitle={type?.meta.name}>
+    <Screen
+      back={attachTo ? attachTo.name : ownOf ? ownOf.name : 'Your devices'}
+      backTo={attachTo ? `/device/${encodeURIComponent(attachTo.id)}/settings` : ownOf ? `/integration/${encodeURIComponent(ownOf.id)}` : '/'}
+      title={title}
+      subtitle={type?.meta.name}
+    >
       {loadError ? (
         <Card borderColor="$danger">
           <ErrorText>
@@ -187,16 +215,16 @@ export function AddDevice() {
           <Input
             size="$3"
             value={query}
-            placeholder="Search by brand or model"
+            placeholder={shelf === 'services' ? 'Search by name' : 'Search by brand or model'}
             autoCapitalize="none"
             onChangeText={setQuery}
             backgroundColor="$background"
             borderColor="$borderColor"
-            aria-label="Search by brand or model"
+            aria-label={shelf === 'services' ? 'Search by name' : 'Search by brand or model'}
           />
           {query.trim() ? (
             <Types
-              types={types.filter((candidate) => typeMatches(candidate, query))}
+              types={listed.filter((candidate) => typeMatches(candidate, query))}
               onPick={(id) => {
                 setTypeId(id);
                 setStage('method');
@@ -204,14 +232,14 @@ export function AddDevice() {
               onBack={() => setQuery('')}
             />
           ) : (
-            <Categories types={types} onPick={(id) => (setCategory(id), setStage('type'))} />
+            <Categories types={listed} shelf={shelf} onPick={(id) => (setCategory(id), setStage('type'))} />
           )}
         </>
       ) : null}
 
       {types && stage === 'type' ? (
         <Types
-          types={types.filter((candidate) => candidate.meta.category === category)}
+          types={listed.filter((candidate) => candidate.meta.category === category)}
           onPick={(id) => {
             setTypeId(id);
             setStage('method');
@@ -221,7 +249,7 @@ export function AddDevice() {
       ) : null}
 
       {stage === 'method' && type ? (
-        <Ways ways={ways} busy={busy} onPick={(way) => void begin(way)} onBack={params.type ? undefined : () => setStage('type')} />
+        <Ways ways={ways} busy={busy} onPick={(way) => void begin(way)} onNeed={(need) => router.push(`/add-device?type=${encodeURIComponent(need.typeId)}`)} onBack={params.type ? undefined : () => setStage('type')} />
       ) : null}
 
       {(stage === 'steps' || stage === 'finish') && flow ? (

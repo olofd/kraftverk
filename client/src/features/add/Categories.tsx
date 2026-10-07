@@ -9,27 +9,23 @@ import { Card, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 import { featherName } from '../../components/icons';
 import { Pressable } from '../../components/Pressable';
 
-type Section = 'devices' | 'services' | 'empty';
+type Shelf = 'devices' | 'services';
+type Section = Shelf | 'empty';
 
 const SECTION_LABELS: Record<Section, string> = { devices: 'Devices', services: 'Services', empty: 'Nothing installed yet' };
 
-export function Categories({ types, onPick }: { types: DeviceTypeListing[]; onPick: (id: string) => void }) {
+/** The categories of one shelf — devices, or services — with what is installed on each; `types` are that shelf's. */
+export function Categories({ types, shelf, onPick }: { types: DeviceTypeListing[]; shelf: Shelf; onPick: (id: string) => void }) {
   const theme = useTheme();
   // The shelves nothing is installed on are many, and say only that: folded away until asked.
   const [showEmpty, setShowEmpty] = useState(false);
-  /*
-    Where a shelf goes is what is installed on it says: services when all of
-    it is, devices otherwise. A shelf with nothing on it has nothing to say
-    which it is, so it is listed apart rather than guessed into one.
-  */
-  const sectionOf = (id: string): Section => {
-    const installed = types.filter((type) => type.meta.category === id);
-    if (!installed.length) return 'empty';
-    return installed.every((type) => type.kind === 'service') ? 'services' : 'devices';
-  };
-  const sections = (['devices', 'services', 'empty'] as const)
-    .map((section) => ({ section, categories: Object.entries(CATEGORIES).filter(([id]) => sectionOf(id) === section) }))
-    .filter(({ categories }) => categories.length > 0);
+  // Each category says its shelf: this one's, with something installed on it, then those with nothing yet.
+  const mine = Object.entries(CATEGORIES).filter(([, spec]) => spec.shelf === shelf);
+  const installedOn = (id: string) => types.some((type) => type.meta.category === id);
+  const sections = [
+    { section: shelf as Section, categories: mine.filter(([id]) => installedOn(id)) },
+    { section: 'empty' as Section, categories: mine.filter(([id]) => !installedOn(id)) },
+  ].filter(({ categories }) => categories.length > 0);
   return (
     <>
       {sections.map(({ section, categories }) => (
@@ -39,7 +35,7 @@ export function Categories({ types, onPick }: { types: DeviceTypeListing[]; onPi
             {section === 'empty' ? (
               <Pressable onPress={() => setShowEmpty((shown) => !shown)}>
                 <Row
-                  title={`${categories.length} more kinds of thing`}
+                  title={categories.length === 1 ? 'One more kind of thing' : `${categories.length} more kinds of thing`}
                   subtitle={showEmpty ? 'No package for these is installed' : categories.map(([, spec]) => spec.label).join(', ')}
                   accessory={<Icon name={showEmpty ? 'chevron-up' : 'chevron-down'} size={16} color={theme.muted?.val} />}
                 />

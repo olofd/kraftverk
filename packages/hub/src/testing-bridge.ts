@@ -77,7 +77,7 @@ export function makeHubType(): { type: ReturnType<typeof defineDeviceType>; watc
   const type = defineDeviceType({
     id: 'test.hub',
     kind: 'account',
-    meta: { name: 'Test hub', category: 'smart-plug', support: 'experimental', icon: 'server' },
+    meta: { name: 'Test hub', category: 'account', support: 'experimental', icon: 'server' },
     describe: () => ({
       parts: [{ id: MAIN_PART, label: 'Hub', kind: 'device' }],
       attributes: [{ key: 'members', label: 'Lamps', value: { type: 'number', integer: true }, category: 'diagnostic' }],

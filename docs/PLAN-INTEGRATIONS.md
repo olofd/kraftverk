@@ -139,9 +139,10 @@ Assistant arrived at the same place: a weather service is a device of type
 | **Integration** | A package that teaches kraftverk one **platform**: a vendor's system, a cloud, a standard — how things on it are reached, signed into and found, apart from any one product. | Code | `tuya`, `niu`, `sydpower`, `icloud`, `open-meteo`, `matter` |
 | **Device package** | A package that teaches kraftverk one **product** or product family: what it is. Built on an integration. | Code | `aferiy-p280`, `atorch-s1w`, `niu-uqi-gt` |
 | **Device type** | One kind of thing, declared by either: a product by a device package; the platform's own things — an account, a gateway, a service, the generic type for products nobody has described — by its integration. | Code | `aferiy.p280`, `niu.uqi-gt`; `niu.account`, `tuya.plug` |
-| **Device** | One thing a person added, of a type. Kind *hardware*. | Instance | "Garage P280", "Living room Apple TV" |
-| **Service** | A device without hardware, as today. Kind *service*. | Instance | "Weather here", "Electricity prices", "Phone notifications" |
-| **Account** | A device that is a sign-in to someone's cloud. Kind *account*. New. | Instance | "Family iCloud", "NIU account" |
+| **Device** | One thing a person added, of a type. Kind *hardware*. Added under "Add a device", shown among devices. | Instance | "Garage P280", "Living room Apple TV" |
+| **Service** | A device without hardware. Kind *service*. Added under "Add a service", shown among services. | Instance | "Weather here", "Electricity prices", "Phone notifications" |
+| **Account** | A sign-in to someone's cloud. Kind *account*. An integration's own: signed in to and shown on its page. | Instance | "Family iCloud", "NIU account" |
+| **Gateway** | A box an integration reaches devices through. Kind *gateway*. An integration's own: set up and shown on its page. | Instance | "Tuya Zigbee gateway" |
 | **Bridge** | Not a kind: a role. A device through which other devices are reached — its *members*. Hardware, a service or an account may be one. | Role | A Hue bridge (hardware), an iCloud account, a Home Assistant (service) |
 
 ### Two kinds of package: the platform, and the product

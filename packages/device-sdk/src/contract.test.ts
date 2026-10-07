@@ -195,11 +195,14 @@ describe('validating a declaration', () => {
     );
   });
 
-  test('a category comes from the fixed list; which section it is listed in is the type’s kind', () => {
+  test('a category comes from the fixed list, on the shelf its kind is met on', () => {
     expect(broken((type) => ({ ...type, meta: { ...type.meta, category: 'smartplug' as never } }))[0]).toContain(
       'meta.category "smartplug" is not one of'
     );
-    expect(broken((type) => ({ ...type, meta: { ...type.meta, category: 'weather' } }))).toEqual([]);
+    // A device is not shown among services, nor an account among devices.
+    expect(broken((type) => ({ ...type, meta: { ...type.meta, category: 'weather' } }))).toEqual(['a hardware type belongs on a shelf of devices, and "weather" is one of services']);
+    expect(broken((type) => ({ ...type, kind: 'service', meta: { ...type.meta, category: 'weather' } }))).toEqual([]);
+    expect(broken((type) => ({ ...type, kind: 'account' }))).toEqual(['an account type belongs on a shelf of integrations, and "smart-plug" is one of devices']);
   });
 
   test('every way to reach a device says what it needs beyond the home network', () => {

@@ -26,7 +26,7 @@ test('without a server, the app keeps its own home: a simulated plug added, swit
   await page.goto('/add-device');
   await press(page, 'Smart plugs');
   await press(page, 'Tuya smart plug');
-  await press(page, 'Simulated, from this browser');
+  await press(page, 'Simulated');
   await expect(page.getByText('It answered')).toBeVisible();
   await press(page, 'Continue');
   await page.getByRole('textbox').first().fill('Desk plug');

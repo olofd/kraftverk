@@ -237,7 +237,7 @@ function simulatedGateway(ctx: DeviceContext<Config>): DeviceSession {
 
 export default defineDeviceType<Config>({
   id: 'tuya.gateway',
-  kind: 'hardware',
+  kind: 'gateway',
   meta: {
     name: 'Tuya Zigbee gateway',
     brand: 'Tuya',

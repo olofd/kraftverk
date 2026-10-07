@@ -69,7 +69,7 @@ export type IdentifyContext = {
 export interface DeviceType<Config extends ConfigValues = ConfigValues> {
   /** Namespaced and stable forever: `acme.plug`, `acme.weather`. Saved devices name it. */
   readonly id: string;
-  /** What a person calls it: hardware; a service, with none — weather, prices; or an account, a sign-in to someone's cloud. Each shown in a section of its own. */
+  /** What a person calls it, and so where they meet it (`DeviceKind`): a device, a service, an account or a gateway. */
   readonly kind: DeviceKind;
   readonly meta: DeviceTypeMeta;
   /** Choices kraftverk keeps about each device: a profile, a location. Never secrets. */
@@ -126,10 +126,24 @@ export interface DeviceType<Config extends ConfigValues = ConfigValues> {
   readonly bridge?: BridgeSpec;
 }
 
-/** What a person calls a kind of thing: a device, a service, or an account. */
-export type DeviceKind = 'hardware' | 'service' | 'account';
+/**
+ * What a person calls a kind of thing, and where they meet it:
+ *
+ * - `hardware` — a device: a thing in the home. Added under "Add a device", shown among devices.
+ * - `service` — something with no hardware: weather, prices. Added under "Add a service", shown among services.
+ * - `account` — a sign-in to someone's cloud, an integration's own: signed in to, and shown, on its integration's page.
+ * - `gateway` — a box an integration reaches devices through, a Zigbee hub: an integration's own too, set up and
+ *   shown on its page. The devices behind it are devices.
+ */
+export type DeviceKind = 'hardware' | 'service' | 'account' | 'gateway';
 
-export const DEVICE_KINDS: readonly DeviceKind[] = ['hardware', 'service', 'account'];
+export const DEVICE_KINDS: readonly DeviceKind[] = ['hardware', 'service', 'account', 'gateway'];
+
+/** Where a person meets each kind: the shelf its category must be on (`CategorySpec.shelf`). */
+export const SHELF_OF: Readonly<Record<DeviceKind, 'devices' | 'services' | 'integrations'>> = { hardware: 'devices', service: 'services', account: 'integrations', gateway: 'integrations' };
+
+/** An integration's own: an account or a gateway, met on its integration's page rather than among devices. */
+export const isIntegrationsOwn = (kind: DeviceKind): boolean => SHELF_OF[kind] === 'integrations';
 
 /** A command to one part of a device: `switch.set({ on: true })` on `outlet.ac`. */
 export type CommandRequest = {

@@ -21,36 +21,41 @@ export type CategorySpec = {
   singular: string;
   /** A Feather icon name. */
   icon: string;
+  /**
+   * Where a person meets what is on it: among `devices`, among `services`, or
+   * on an integration's page — an account, a gateway (`DeviceKind`).
+   */
+  shelf: 'devices' | 'services' | 'integrations';
 };
 
 export const CATEGORIES = {
-  'power-station': { label: 'Power stations', singular: 'power station', icon: 'battery-charging' },
-  'smart-plug': { label: 'Smart plugs', singular: 'smart plug', icon: 'power' },
-  weather: { label: 'Weather', singular: 'weather forecast', icon: 'cloud' },
-  'energy-price': { label: 'Electricity prices', singular: 'electricity price', icon: 'tag' },
-  vehicle: { label: 'Vehicles', singular: 'vehicle', icon: 'navigation' },
+  'power-station': { label: 'Power stations', singular: 'power station', icon: 'battery-charging', shelf: 'devices' },
+  'smart-plug': { label: 'Smart plugs', singular: 'smart plug', icon: 'power', shelf: 'devices' },
+  weather: { label: 'Weather', singular: 'weather forecast', icon: 'cloud', shelf: 'services' },
+  'energy-price': { label: 'Electricity prices', singular: 'electricity price', icon: 'tag', shelf: 'services' },
+  vehicle: { label: 'Vehicles', singular: 'vehicle', icon: 'navigation', shelf: 'devices' },
   // A sign-in to someone's cloud, and what is reached through it: an account and the scooters on it.
-  account: { label: 'Accounts', singular: 'account', icon: 'user' },
+  account: { label: 'Accounts', singular: 'account', icon: 'user', shelf: 'integrations' },
   // A device other devices are reached through, on the home network: a Zigbee gateway and the plugs paired with it.
-  gateway: { label: 'Gateways', singular: 'gateway', icon: 'share-2' },
+  gateway: { label: 'Gateways', singular: 'gateway', icon: 'share-2', shelf: 'integrations' },
   // Grown toward Home Assistant's breadth (docs/PLAN-INTEGRATIONS.md §4.5): a shelf each, ready for its first type.
   // A relay in a wall box or a DIN rail switching a circuit: not a plug, though it switches as one.
-  relay: { label: 'Switches and relays', singular: 'switch', icon: 'toggle-right' },
-  light: { label: 'Lights', singular: 'light', icon: 'sun' },
-  sensor: { label: 'Sensors', singular: 'sensor', icon: 'activity' },
-  climate: { label: 'Heating and cooling', singular: 'thermostat', icon: 'thermometer' },
-  lock: { label: 'Locks', singular: 'lock', icon: 'lock' },
-  cover: { label: 'Blinds and doors', singular: 'blind or door', icon: 'columns' },
-  vacuum: { label: 'Vacuums', singular: 'vacuum', icon: 'disc' },
-  camera: { label: 'Cameras', singular: 'camera', icon: 'camera' },
-  'media-player': { label: 'TVs and media players', singular: 'media player', icon: 'tv' },
-  speaker: { label: 'Speakers', singular: 'speaker', icon: 'speaker' },
+  relay: { label: 'Switches and relays', singular: 'switch', icon: 'toggle-right', shelf: 'devices' },
+  light: { label: 'Lights', singular: 'light', icon: 'sun', shelf: 'devices' },
+  sensor: { label: 'Sensors', singular: 'sensor', icon: 'activity', shelf: 'devices' },
+  climate: { label: 'Heating and cooling', singular: 'thermostat', icon: 'thermometer', shelf: 'devices' },
+  lock: { label: 'Locks', singular: 'lock', icon: 'lock', shelf: 'devices' },
+  cover: { label: 'Blinds and doors', singular: 'blind or door', icon: 'columns', shelf: 'devices' },
+  vacuum: { label: 'Vacuums', singular: 'vacuum', icon: 'disc', shelf: 'devices' },
+  camera: { label: 'Cameras', singular: 'camera', icon: 'camera', shelf: 'devices' },
+  'media-player': { label: 'TVs and media players', singular: 'media player', icon: 'tv', shelf: 'devices' },
+  speaker: { label: 'Speakers', singular: 'speaker', icon: 'speaker', shelf: 'devices' },
   // A person's own device, where it is and how charged: a phone, a watch, a tablet.
-  phone: { label: 'Phones and tablets', singular: 'phone', icon: 'smartphone' },
+  phone: { label: 'Phones and tablets', singular: 'phone', icon: 'smartphone', shelf: 'devices' },
   // Something that only says where it is: a tag on keys, a tracker in a bag.
-  tracker: { label: 'Trackers', singular: 'tracker', icon: 'map-pin' },
+  tracker: { label: 'Trackers', singular: 'tracker', icon: 'map-pin', shelf: 'devices' },
   // A way to tell people: a push service, a chat.
-  notifications: { label: 'Notifications', singular: 'notification service', icon: 'bell' },
+  notifications: { label: 'Notifications', singular: 'notification service', icon: 'bell', shelf: 'services' },
 } as const satisfies Record<string, CategorySpec>;
 
 export type CategoryId = keyof typeof CATEGORIES;

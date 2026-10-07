@@ -117,10 +117,13 @@ export function DeviceShell({ id, tab, children }: { id: string | undefined; tab
   if (device.kind === 'account' && device.integration && !device.removedAt) return <Redirect href={accountPath(device.integration.id, device.id)} />;
 
   const path = `/device/${encodeURIComponent(device.id)}`;
+  // A gateway is its integration's, and goes back to its page; a device and a service, to Home.
+  const fromIntegration = device.kind === 'gateway' && device.integration ? device.integration : null;
 
   return (
     <Screen
-      back="Your devices"
+      back={fromIntegration ? fromIntegration.name : 'Your devices'}
+      {...(fromIntegration ? { backTo: `/integration/${encodeURIComponent(fromIntegration.id)}` } : {})}
       title={device.name}
       subtitle={device.meta.name}
       status={deviceStatus(device)}

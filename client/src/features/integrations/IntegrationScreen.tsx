@@ -27,7 +27,7 @@ function TypeRow({ type, categories, devices }: { type: DeviceTypeListing; categ
   const detail = [
     type.meta.brand ?? null,
     categories[type.meta.category]?.label ?? null,
-    type.source.product ? null : type.kind === 'service' ? 'Its service' : type.kind === 'account' ? 'Its account' : 'For one nobody has described yet',
+    type.source.product ? null : type.kind === 'service' ? 'Its service' : type.kind === 'account' ? 'Its account' : type.kind === 'gateway' ? 'Its gateway' : 'For one nobody has described yet',
     SUPPORT[type.meta.support] ?? null,
     devices ? `${devices} of yours` : null,
   ];
@@ -50,23 +50,72 @@ function YoursRow({ device, integration }: { device: DeviceView; integration: st
   );
 }
 
+/** What an integration's own kind is called on its page, and what adding one does. */
+const OWN = {
+  account: { label: 'Accounts', word: 'account', adds: 'Signed in once: what is on it is found, each added as a device of its own' },
+  gateway: { label: 'Gateways', word: 'gateway', adds: 'Set up once: the devices behind it are found, each added as a device of its own' },
+} as const;
+
+/** An integration's own of one kind — its accounts, or its gateways: yours, each to its page, and another added from here. */
+function OwnSection({ kind, yours, types, integration }: { kind: keyof typeof OWN; yours: DeviceView[]; types: DeviceTypeListing[]; integration: string }) {
+  const theme = useTheme();
+  if (!types.length && !yours.length) return null;
+  return (
+    <YStack gap="$2">
+      <SectionLabel>{OWN[kind].label}</SectionLabel>
+      <Card inset>
+        {yours.map((device, index) => (
+          <YStack key={device.id}>
+            {index > 0 ? <RowSeparator /> : null}
+            <YoursRow device={device} integration={integration} />
+          </YStack>
+        ))}
+        {types.map((type, index) => (
+          <YStack key={type.id}>
+            {yours.length + index > 0 ? <RowSeparator /> : null}
+            <Pressable onPress={() => router.push(`/add-device?type=${encodeURIComponent(type.id)}`)}>
+              <Row title={`Add ${yours.length ? 'another' : 'your'} ${type.meta.name}`} subtitle={OWN[kind].adds} accessory={<Icon name="plus" size={16} color={theme.accent?.val} />} />
+            </Pressable>
+          </YStack>
+        ))}
+      </Card>
+    </YStack>
+  );
+}
+
+/** Yours on it, of one sort — devices, or services — each to its page. */
+function YoursSection({ label, yours, integration }: { label: string; yours: DeviceView[]; integration: string }) {
+  if (!yours.length) return null;
+  return (
+    <YStack gap="$2">
+      <SectionLabel>{label}</SectionLabel>
+      <Card inset>
+        {yours.map((device, index) => (
+          <YStack key={device.id}>
+            {index > 0 ? <RowSeparator /> : null}
+            <YoursRow device={device} integration={integration} />
+          </YStack>
+        ))}
+      </Card>
+    </YStack>
+  );
+}
+
 /**
  * One integration's page (docs/PLAN-INTEGRATIONS.md §1.1): where it runs;
- * your accounts on it — each to its own page, where it is signed into again —
- * and a new one added from here; its own screens; the devices you have on it;
- * and every kind of device it knows.
+ * its own — your accounts on it, each to its own page where it is signed into
+ * again, and its gateways — each added from here; its own screens; the
+ * devices and the services you have on it; and every kind of thing it knows.
  */
 export function IntegrationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { api } = useHome();
   const { devices } = useDevices();
-  const theme = useTheme();
   const { value: list, error } = useAnswer(() => api.deviceTypes(), [api], { failure: 'What is installed could not be read' });
   const platform = list ? (byPlatform(list).find((each) => each.integration.id === id) ?? null) : null;
   const on = devices.filter((device) => device.integration?.id === id && !device.removedAt);
   const accounts = on.filter((device) => device.kind === 'account');
-  const others = on.filter((device) => device.kind !== 'account');
-  const accountTypes = platform?.own.filter((type) => type.kind === 'account') ?? [];
+  const ownOfKind = (kind: DeviceView['kind']) => platform?.own.filter((type) => type.kind === kind) ?? [];
   const types = platform ? [...platform.products, ...platform.own] : [];
   const yours = (typeId: string) => on.filter((device) => device.typeId === typeId).length;
   const Page = platform ? integrationScreens(platform.integration.id)?.page : undefined;
@@ -82,43 +131,13 @@ export function IntegrationScreen() {
         </Card>
       ) : null}
 
-      {platform && accountTypes.length ? (
-        <YStack gap="$2">
-          <SectionLabel>Accounts</SectionLabel>
-          <Card inset>
-            {accounts.map((account, index) => (
-              <YStack key={account.id}>
-                {index > 0 ? <RowSeparator /> : null}
-                <YoursRow device={account} integration={platform.integration.id} />
-              </YStack>
-            ))}
-            {accountTypes.map((type, index) => (
-              <YStack key={type.id}>
-                {accounts.length + index > 0 ? <RowSeparator /> : null}
-                <Pressable onPress={() => router.push(`/add-device?type=${encodeURIComponent(type.id)}`)}>
-                  <Row title={`Add ${accounts.length ? 'another' : 'your'} ${type.meta.name}`} subtitle="Signed in once: what is on it is found, each added as a device of its own" accessory={<Icon name="plus" size={16} color={theme.accent?.val} />} />
-                </Pressable>
-              </YStack>
-            ))}
-          </Card>
-        </YStack>
-      ) : null}
+      {platform ? <OwnSection kind="account" yours={accounts} types={ownOfKind('account')} integration={platform.integration.id} /> : null}
+      {platform ? <OwnSection kind="gateway" yours={on.filter((device) => device.kind === 'gateway')} types={ownOfKind('gateway')} integration={platform.integration.id} /> : null}
 
       {platform && Page ? <Page integration={platform.integration} accounts={accounts} /> : null}
 
-      {platform && others.length ? (
-        <YStack gap="$2">
-          <SectionLabel>Your devices on it</SectionLabel>
-          <Card inset>
-            {others.map((device, index) => (
-              <YStack key={device.id}>
-                {index > 0 ? <RowSeparator /> : null}
-                <YoursRow device={device} integration={platform.integration.id} />
-              </YStack>
-            ))}
-          </Card>
-        </YStack>
-      ) : null}
+      {platform ? <YoursSection label="Your devices on it" yours={on.filter((device) => device.kind === 'hardware')} integration={platform.integration.id} /> : null}
+      {platform ? <YoursSection label="Your services on it" yours={on.filter((device) => device.kind === 'service')} integration={platform.integration.id} /> : null}
 
       {platform ? (
         <YStack gap="$2">

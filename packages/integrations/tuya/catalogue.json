@@ -137,7 +137,7 @@
   "types": [
     {
       "id": "tuya.gateway",
-      "kind": "hardware",
+      "kind": "gateway",
       "meta": {
         "name": "Tuya Zigbee gateway",
         "brand": "Tuya",

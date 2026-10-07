@@ -25,21 +25,24 @@ export function IntegrationsScreen() {
   const platforms = list ? byPlatform(list) : [];
 
   return (
-    <Screen back="Your devices" backTo="/" title="Integrations" subtitle="Where kraftverk meets each service and platform: your accounts on it, and the devices it knows">
+    <Screen back="Your devices" backTo="/" title="Integrations" subtitle="Where kraftverk meets each service and platform: your accounts and gateways on it, and what it knows">
       {error ? <ErrorText>{error}</ErrorText> : null}
       <Card inset>
         {platforms.map(({ integration, products, own }, index) => {
           const on = devices.filter((device) => device.integration?.id === integration.id && !device.removedAt);
-          const accounts = on.filter((device) => device.kind === 'account').length;
-          const devicesOn = on.length - accounts;
-          const yours = [accounts ? `${accounts} account${accounts === 1 ? '' : 's'}` : null, devicesOn ? `${devicesOn} device${devicesOn === 1 ? '' : 's'}` : null].filter(Boolean);
+          // Each sort said apart: what is the integration's own, and what you have on it.
+          const count = (kind: string, word: string) => {
+            const n = on.filter((device) => device.kind === kind).length;
+            return n ? `${n} ${word}${n === 1 ? '' : 's'}` : null;
+          };
+          const yours = [count('account', 'account'), count('gateway', 'gateway'), count('hardware', 'device'), count('service', 'service')].filter(Boolean);
           return (
             <YStack key={integration.id}>
               {index > 0 ? <RowSeparator /> : null}
               <Pressable onPress={() => router.push(`/integration/${encodeURIComponent(integration.id)}`)}>
                 <Row
                   title={integration.name}
-                  subtitle={[yours.length ? `${yours.join(' and ')} of yours` : null, whereTheyRunSaid([...products, ...own])].filter(Boolean).join(' · ')}
+                  subtitle={[yours.length ? `${yours.join(', ')} of yours` : null, whereTheyRunSaid([...products, ...own])].filter(Boolean).join(' · ')}
                   accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />}
                 />
               </Pressable>

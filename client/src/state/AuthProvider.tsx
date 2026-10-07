@@ -113,11 +113,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signedIn = useCallback(
     async () => {
-      const problem = notKept(await refresh());
+      const next = await refresh();
+      const problem = notKept(next);
       setNotice(problem);
       if (problem) throw new Error(problem);
+      /*
+        Signed in from the form — the first account just made, or after a
+        sign-out: what was asked before it was refused, so the home is opened
+        again and everything read afresh. Opening with a session kept from
+        before needs none of this.
+      */
+      if (next?.user && serverUrl) lastSignedIn.current = `${serverUrl} ${next.user.id}`;
+      setGeneration((n) => n + 1);
     },
-    [refresh]
+    [refresh, serverUrl]
   );
 
   const logIn = useCallback(

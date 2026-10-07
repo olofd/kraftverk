@@ -8,14 +8,22 @@ import { addSimulated, press, unique } from './helpers';
   part.
 */
 
-test('the add screen lists its shelves under devices and services, naming what each holds', async ({ page }) => {
+test('devices and services are added apart, each shelf naming what it holds; an account or a gateway is its integration’s', async ({ page }) => {
   await page.goto('/add-device');
   await expect(page.getByText('Devices', { exact: true })).toBeVisible();
-  await expect(page.getByText('Services', { exact: true })).toBeVisible();
   await expect(page.getByText('Power stations', { exact: true })).toBeVisible();
   // Each shelf says which products it holds, not prose about one of them: products first, the platform's generic one last.
   await expect(page.getByText('ATORCH S1W, Tuya Zigbee plug, Tuya smart plug')).toBeVisible();
+  // Not a service, an account or a gateway: each is met in its own place.
+  await expect(page.getByText('Open-Meteo', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Accounts', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Gateways', { exact: true })).toHaveCount(0);
+
+  await page.goto('/add-device?what=service');
+  await expect(page.getByText('Add a service', { exact: true })).toBeVisible();
+  await expect(page.getByText('Services', { exact: true })).toBeVisible();
   await expect(page.getByText('Open-Meteo', { exact: true })).toBeVisible();
+  await expect(page.getByText('Power stations', { exact: true })).toHaveCount(0);
 });
 
 test('every step can go back, and a choice changed there is the one that counts', async ({ page }) => {
@@ -23,7 +31,7 @@ test('every step can go back, and a choice changed there is the one that counts'
   await page.goto('/add-device');
   await press(page, 'Smart plugs');
   await press(page, 'ATORCH S1W');
-  await press(page, 'Simulated, through your server');
+  await press(page, 'Simulated');
   await expect(page.getByText('It answered')).toBeVisible();
   await expect(page.getByText('Step 1 of 2')).toBeVisible();
   await press(page, 'Continue');
@@ -35,7 +43,7 @@ test('every step can go back, and a choice changed there is the one that counts'
   await press(page, 'Reach it another way');
   await expect(page.getByText('How do you want to connect?')).toBeVisible();
 
-  await press(page, 'Simulated, through your server');
+  await press(page, 'Simulated');
   await expect(page.getByText('It answered')).toBeVisible();
   await press(page, 'Continue');
   await page.getByRole('textbox').first().fill(name);
@@ -51,7 +59,7 @@ test('a plug added beside a station is asked what it feeds, and the answer is a 
   await page.goto('/add-device');
   await press(page, 'Smart plugs');
   await press(page, 'ATORCH S1W');
-  await press(page, 'Simulated, through your server');
+  await press(page, 'Simulated');
   await expect(page.getByText('It answered')).toBeVisible();
   await press(page, 'Continue');
 

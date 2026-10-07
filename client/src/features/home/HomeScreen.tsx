@@ -24,8 +24,12 @@ import { NeedsYou } from './NeedsYou';
 const addSubtitle = (installed: readonly { meta: { category: string } }[]) =>
   Object.entries(CATEGORIES)
     .filter(([id]) => installed.some((type) => type.meta.category === id))
-    .map(([, category], index) => (index ? category.label.toLowerCase() : category.label))
+    // Lower-cased in a sentence, but not a word in capitals: "TVs" stays.
+    .map(([, category], index) => (index && !/^[A-Z]{2}/.test(category.label) ? category.label[0]!.toLowerCase() + category.label.slice(1) : category.label))
     .join(', ');
+
+/** "3 devices", "1 service"; nothing for none. */
+const counted = (count: number, what: string): string | null => (count ? `${count} ${what}${count === 1 ? '' : 's'}` : null);
 
 /** The products installed here, by name: "Brand station, Brand plug and a weather service". */
 const productList = (installed: readonly { meta: { name: string } }[]) => {
@@ -47,6 +51,9 @@ export function HomeScreen() {
   const theme = useTheme();
   // What the home can add: the installed types, as it lists them.
   const installed: readonly DeviceTypeListing[] = useAnswer(() => api.deviceTypes(), [api]).value?.types ?? [];
+  // Devices and services are added apart: an account or a gateway is its integration's.
+  const deviceTypes = installed.filter((type) => type.kind === 'hardware');
+  const serviceTypes = installed.filter((type) => type.kind === 'service');
 
   // How many warnings and errors there are to look at, read again when the stream carries an event.
   const problemCount = useAnswer(() => api.problems(PROBLEMS_SHOWN), [api, heard.count]).value?.length ?? null;
@@ -57,12 +64,8 @@ export function HomeScreen() {
   // Every device here shows its readings: while this page is in front, the home reads them more often.
   useShowing(devices.map((device) => ({ kind: 'device', id: device.id })));
 
-  const subtitle =
-    devices.length === 0
-        ? undefined
-        : devices.length === 1
-          ? '1 device'
-          : `${devices.length} devices`;
+  // Counted as they are shown: devices, then services. Accounts and gateways are on their integrations' pages.
+  const subtitle = [counted(hardware.length, 'device'), counted(services.length, 'service')].filter(Boolean).join(' · ') || undefined;
 
   return (
     <Screen title="Your devices" subtitle={subtitle}>
@@ -95,8 +98,8 @@ export function HomeScreen() {
             </Text>
             <Text fontSize={13} color="$muted" lineHeight={19}>
               {role === 'master'
-                ? `This app keeps its own devices, their history and their automations, and reaches them itself — while it is open. Add a server in App settings for what runs while the app is closed. It can add ${productList(installed)}.`
-                : `Add your first device to watch it, set it up and let automations use it. This install can add ${productList(installed)}.`}
+                ? `This app keeps its own devices, their history and their automations, and reaches them itself — while it is open. Add a server in App settings for what runs while the app is closed. It can add ${productList(deviceTypes)}.`
+                : `Add your first device to watch it, set it up and let automations use it. This install can add ${productList(deviceTypes)}.`}
             </Text>
           </YStack>
           <Button
@@ -128,10 +131,18 @@ export function HomeScreen() {
           <Pressable onPress={() => router.push('/add-device')}>
             <Row
               title="Add a device"
-              subtitle={addSubtitle(installed)}
+              subtitle={addSubtitle(deviceTypes)}
               accessory={<Icon name="plus" size={16} color={theme.muted?.val} />}
             />
           </Pressable>
+          {serviceTypes.length ? (
+            <>
+              <RowSeparator />
+              <Pressable onPress={() => router.push('/add-device?what=service')}>
+                <Row title="Add a service" subtitle={addSubtitle(serviceTypes)} accessory={<Icon name="plus" size={16} color={theme.muted?.val} />} />
+              </Pressable>
+            </>
+          ) : null}
           <RowSeparator />
           <Pressable onPress={() => router.push('/integrations')}>
             <Row
