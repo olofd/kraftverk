@@ -134,6 +134,13 @@ services:
     volumes:
       # Its token, which the server makes: nothing else of the home's.
       - kraftverk-relay:/relay:ro
+    # Healthy while the server has taken it: the image's own check is the server's.
+    healthcheck:
+      test: ["CMD", "bun", "--eval", "process.exit(require('node:fs').existsSync('/tmp/relay-connected') ? 0 : 1)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
 
   web:
     logging: *logging

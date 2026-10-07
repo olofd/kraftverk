@@ -192,7 +192,7 @@ export function hearThroughRelay(options: { port: number; token: string; log: Lo
  * passing on what it hears. Connects again, waiting longer each time, when
  * the connection drops. Returns how to stop.
  */
-export function relayTo(options: { host: string; port: number; token: () => string | null; hearing: Hearing; log: Log }): () => void {
+export function relayTo(options: { host: string; port: number; token: () => string | null; hearing: Hearing; log: Log; connected?: (connected: boolean) => void }): () => void {
   let stopped = false;
   let socket: Socket | null = null;
   let backoff = 1_000;
@@ -229,6 +229,8 @@ export function relayTo(options: { host: string; port: number; token: () => stri
     lines(current, (message) => {
       const said = message as ToRelay;
       if (said.kind !== 'watch' || !Array.isArray(said.matchers)) return;
+      // Told what to listen for: the server took its token, and this is the relay it hears through.
+      options.connected?.(true);
       release();
       matchers = said.matchers;
       release = options.hearing.want(matchers);
@@ -236,6 +238,7 @@ export function relayTo(options: { host: string; port: number; token: () => stri
     });
     current.on('error', (error) => options.log('warn', `[relay] ${error.message}`));
     current.on('close', () => {
+      options.connected?.(false);
       release();
       stopHearing();
       clearInterval(resay);
