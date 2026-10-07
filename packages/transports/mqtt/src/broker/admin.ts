@@ -39,6 +39,7 @@ export function adminApp(deps: AdminDeps): Hono {
     admin: deps.admin,
     devicesOnline: deps.broker.devices.filter((d) => d.online).length,
     protocols: deps.broker.protocols,
+    clients: deps.broker.clientsFingerprint,
   });
 
   app.get('/health', (c) => c.json(health()));

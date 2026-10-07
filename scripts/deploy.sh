@@ -105,8 +105,15 @@ echo
 # to anyone — so the broker is recreated for it, whatever that costs the station.
 installed=$(compose exec -T kraftverk bun --eval "console.log((await (await import('./packages/transports/mqtt/src/broker/policy.ts')).loadPolicies()).map((p) => p.protocol).sort().join(','))")
 applied=$(compose exec -T broker bun --eval "console.log((await (await fetch('http://127.0.0.1:3883/health')).json()).protocols.sort().join(','))")
-if [ "$installed" != "$applied" ]; then
-  echo "The broker applies [$applied]; these images install [$installed]. Recreating it: the station is gone for about a minute."
+# And the clients it lets sign in, against those this installation names: a
+# bridge whose password it was not given is one whose devices it refuses.
+# Worked out as the broker does (shared.ts, clientsFingerprint).
+clients=""
+[ -n "${KRAFTVERK_ZIGBEE2MQTT_PASSWORD:-}" ] && clients="zigbee2mqtt=$KRAFTVERK_ZIGBEE2MQTT_PASSWORD"
+wanted=$(printf '%s' "$clients" | sha256sum | cut -c1-12)
+known=$(compose exec -T broker bun --eval "console.log((await (await fetch('http://127.0.0.1:3883/health')).json()).clients)")
+if [ "$installed" != "$applied" ] || [ "$wanted" != "$known" ]; then
+  echo "The broker applies [$applied] and knows clients $known; these images install [$installed], and this installation names $wanted. Recreating it: the station is gone for about a minute."
   compose up -d --no-build --no-deps --force-recreate --wait --wait-timeout 120 broker
 fi
 

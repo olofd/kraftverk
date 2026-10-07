@@ -141,6 +141,18 @@ export function brokerClients(text = process.env.KRAFTVERK_BROKER_CLIENTS ?? '')
 }
 
 /**
+ * A fingerprint of the clients a broker lets sign in — names and passwords —
+ * so a deploy can tell the running broker was given others than these, and
+ * recreate it: a bridge it does not know is a bridge whose devices it
+ * refuses. Twelve hex digits of a SHA-256: nothing of a password can be read
+ * back from it. The deploy works it out the same way (`scripts/deploy.sh`).
+ */
+export function clientsFingerprint(clients: ReadonlyMap<string, string>): string {
+  const text = [...clients].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([name, password]) => `${name}=${password}`).join(',');
+  return createHash('sha256').update(text).digest('hex').slice(0, 12);
+}
+
+/**
  * Compares secrets without leaking, through timing, how much of a guess was right.
  *
  * An empty secret matches nothing — including another empty one. Whatever went
@@ -214,6 +226,8 @@ export type BrokerHealth = {
   devicesOnline: number;
   /** The protocols whose policies it applies. */
   protocols: string[];
+  /** Which clients may sign in, as a fingerprint (`clientsFingerprint`). */
+  clients: string;
 };
 
 /** A device as the broker sees it. Retained on its presence topic. */

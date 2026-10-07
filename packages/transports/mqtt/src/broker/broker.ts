@@ -9,7 +9,7 @@ import type { MessageBrokerPolicy } from '@kraftverk/device-sdk';
 
 import { duration, type Journal } from './journal.ts';
 import { commandOf, deviceOf, refusalFor, type Policies } from './policy.ts';
-import { RESERVED_CLIENT_PREFIX, SERVER_USERNAME, sameSecret, TOPIC, type DevicePresence } from './shared.ts';
+import { clientsFingerprint, RESERVED_CLIENT_PREFIX, SERVER_USERNAME, sameSecret, TOPIC, type DevicePresence } from './shared.ts';
 
 /**
  * The MQTT broker devices talk to instead of their vendor's cloud.
@@ -184,6 +184,11 @@ export class MessageBroker {
 
   get devices(): DevicePresence[] {
     return [...this.#devices.values()].map(presenceOf);
+  }
+
+  /** Which clients it lets sign in, as a fingerprint a deploy compares against its own. */
+  get clientsFingerprint(): string {
+    return clientsFingerprint(this.options.clients ?? new Map());
   }
 
   /** The protocols whose rules this broker applies. */
