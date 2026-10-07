@@ -28,6 +28,4 @@ test('Integrations, from Home: each platform, where it runs, and its own page wi
   // A service is the platform's own.
   await page.goto('/integration/open-meteo');
   await expect(page.getByText(/Its service/).first()).toBeVisible();
-
-  await page.screenshot({ path: 'test-results/integrations-page.png', fullPage: true });
 });
