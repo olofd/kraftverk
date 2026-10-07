@@ -310,7 +310,7 @@ export function shapeOf(exposes: readonly Expose[]): Shape {
       key: uniqueKey(`${at.prefix}${keyName(expose.type === 'composite' ? property : name)}`),
       part: at.part,
       // A contact's `on` is open (§5.6), a lock's locked: said so.
-      label: name === 'contact' ? 'Open' : options.kindOf === 'lock' && name === 'state' ? 'Locked' : labelOf(expose) + (expose.unit && !unit ? ` (${expose.unit})` : ''),
+      label: name === 'contact' ? 'Open' : options.kindOf === 'lock' && name === 'state' ? 'Locked' : name === 'linkquality' ? 'Link quality' : labelOf(expose) + (expose.unit && !unit ? ` (${expose.unit})` : ''),
       ...(expose.description ? { description: expose.description } : {}),
       value,
       ...(meansIt ? { means: meaning } : {}),

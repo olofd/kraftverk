@@ -105,7 +105,16 @@ async function sessionOver(open: Open, ctx: DeviceContext<Config>, typical: Shap
     readings: (): Reading[] => {
       const shape = it.shape();
       const { values, at } = it.state();
-      return shape && at ? readingsOf(shape, values, at) : [];
+      if (!shape || !at) return [];
+      /*
+        A Zigbee device says a value when it changes — beyond its reportable
+        change — and otherwise at most once in a while: a sensor at 24 °C says
+        nothing for an hour. While Zigbee2MQTT says it is reachable, what it
+        last said still holds, so it is current from now (`confirmedAt`); when
+        Zigbee2MQTT does not say, its age alone decides.
+      */
+      const confirmedAt = it.connected() && it.available() === true ? new Date(ctx.clock.now()).toISOString() : null;
+      return readingsOf(shape, values, at).map((reading) => (confirmedAt && confirmedAt > reading.at ? { ...reading, confirmedAt } : reading));
     },
     description: () => it.shape()?.description ?? null,
     info: () => {

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
 import { validateDescription, validateProtocol, type Member, type Sighting } from '@kraftverk/device-sdk';
-import { checkDeviceTypeContract } from '@kraftverk/device-sdk/testing';
+import { checkDeviceTypeContract, simulatorContext } from '@kraftverk/device-sdk/testing';
 
 import bridge from '../src/bridge.ts';
 import type { ZigbeeLink } from '../src/link.ts';
@@ -252,6 +252,20 @@ describe('the network, against a played Zigbee2MQTT', () => {
     expect(link.connected()).toBe(false);
     played.setOnline(true);
     await until(() => network.connected, 'it back');
+  });
+});
+
+describe('a quiet sensor', () => {
+  test('what it last said holds while Zigbee2MQTT says it is reachable: current now, not when it last spoke', async () => {
+    const { context, stop } = simulatorContext(types.zigbeeSensor);
+    const session = await types.zigbeeSensor.createSimulator(context);
+    await until(() => session.readings().length > 0, 'its readings');
+    const temperature = session.readings().find((reading) => reading.key === 'temperature')!;
+    expect(temperature.value).toBe(21.4);
+    expect(temperature.confirmedAt).toBeDefined();
+    expect(temperature.confirmedAt! >= temperature.at).toBe(true);
+    await session.close();
+    stop();
   });
 });
 

@@ -373,7 +373,7 @@
           {
             "key": "linkquality",
             "part": "main",
-            "label": "Linkquality (lqi)",
+            "label": "Link quality",
             "value": {
               "type": "number",
               "min": 0,
@@ -465,7 +465,7 @@
           {
             "key": "linkquality",
             "part": "main",
-            "label": "Linkquality (lqi)",
+            "label": "Link quality",
             "value": {
               "type": "number"
             },
@@ -573,7 +573,7 @@
           {
             "key": "linkquality",
             "part": "main",
-            "label": "Linkquality (lqi)",
+            "label": "Link quality",
             "value": {
               "type": "number"
             },
@@ -666,7 +666,7 @@
           {
             "key": "linkquality",
             "part": "main",
-            "label": "Linkquality (lqi)",
+            "label": "Link quality",
             "value": {
               "type": "number"
             },
