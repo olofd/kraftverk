@@ -156,16 +156,18 @@ and `.set-aside.*` copies on the server's volume are the owner's to delete.
 
 ## Integrations
 
-Built to step 11 of [PLAN-INTEGRATIONS.md](PLAN-INTEGRATIONS.md) on
-2026-10-07 (Part A: what kraftverk has, on the model), on the model its §1.1
-sets out: an integration is the one place kraftverk meets a service — its
-protocol, accounts, gateways and own screens — and a device package builds
-on one integration and nothing else; parts talk by typed calls, never
-publish/subscribe; accounts live on their integration's page. Next is Part B
-(discovery by declaration, mDNS and SSDP, the lists opened, code loaded on
-demand, the porting guide), which waits on two of the owner's choices: how
-the server's container hears mDNS (host networking or a reflector), and
-which small integration is ported first (D7).
+Built to step 12 of [PLAN-INTEGRATIONS.md](PLAN-INTEGRATIONS.md) on
+2026-10-07 (Part A: what kraftverk has, on the model; and discovery by
+declaration), on the model its §1.1 sets out: an integration is the one
+place kraftverk meets a service — its protocol, accounts, gateways and own
+screens — and a device package builds on one integration and nothing else;
+parts talk by typed calls, never publish/subscribe; accounts live on their
+integration's page. Ways say what they are found by; the home network and
+the broker are watched all the time, so what turns up waits on Home. Next
+in Part B (mDNS and SSDP, the lists opened, code loaded on demand, the
+porting guide) are two of the owner's choices: how the server's container
+hears mDNS (host networking or a reflector), and which small integration is
+ported first (D7).
 
 ## The automation language
 
