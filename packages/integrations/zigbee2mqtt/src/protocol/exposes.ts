@@ -300,6 +300,13 @@ export function shapeOf(exposes: readonly Expose[]): Shape {
     if (!value) return;
     // A setting is one value: a structured one — a light's colour — is read, and set by a capability of its own when there is one.
     const writable = settable && value.type !== 'object' && value.type !== 'list';
+    /*
+      A device's own structured setting — a plug's overload protection, its
+      inching — is a setting, not a reading, and one kraftverk cannot write
+      yet: left out, rather than shown as a value nobody can read, until
+      structured settings are written (docs/PLAN-ZIGBEE.md §5.5).
+    */
+    if (settable && !writable && !options.kindOf) return;
     const diagnostic = DIAGNOSTIC.has(name) || expose.category === 'diagnostic' || (value.type === 'number' && value.unit === 'mV');
     const unit = value.type === 'number' ? (value.unit ?? null) : null;
     const meaning = MEANING_BY_NAME[name];
