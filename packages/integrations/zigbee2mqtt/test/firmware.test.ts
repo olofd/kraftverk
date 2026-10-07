@@ -170,6 +170,36 @@ describe('updating, on a played Zigbee2MQTT', () => {
     expect(updateOf(b.link.state().values.update)?.state).toBe('available');
   });
 
+  test('the line outlives a restart of the server: the update under way is waited out, then the next begins', async () => {
+    const first = playedZigbee2Mqtt().devices()[0]!;
+    const second: BridgeDevice = { ...first, ieee_address: `0x${OTHER}`, friendly_name: `0x${OTHER}` };
+    let kept: unknown = null;
+    const keep = { load: () => kept as never, save: (value: unknown) => void (kept = value) };
+    played = playedZigbee2Mqtt({ devices: [first, second], stepMs: 150 });
+    const timing = { reasonWaitMs: 30, settingsAskMs: 20, settingsCompareMs: 60, startWaitMs: 2000 };
+    const before = new ZigbeeNetwork(played.channel, { changed: () => {}, log: () => {}, now: () => Date.now(), keep, updateTiming: timing });
+    before.start();
+    await until(() => before.devices().length === 2, 'the devices');
+    const a = await before.link(PLUG, () => {});
+    await until(() => updateOf(a.state().values.update)?.state === 'available', 'the update offered');
+    await a.firmware.update();
+    await (await before.link(OTHER, () => {})).firmware.update();
+    await until(() => updateOf(a.state().values.update)?.state === 'updating', 'the first updating');
+    // The server restarts: what it knew in memory is gone; the line was kept.
+    before.close();
+    expect(kept).toMatchObject({ waiting: [OTHER] });
+
+    network = new ZigbeeNetwork(played.channel, { changed: () => {}, log: () => {}, now: () => Date.now(), keep, updateTiming: timing });
+    network.start();
+    const b = await network.link(OTHER, () => {});
+    await until(() => network.devices().length === 2, 'the devices, again');
+    // Not begun while the first is still updating: one at a time holds for an update it did not begin.
+    expect(updateOf(b.state().values.update)?.state).toBe('available');
+    await until(() => updateOf(b.state().values.update)?.state === 'updating', 'the second, after the first', 5000);
+    await until(() => updateOf(b.state().values.update)?.state === 'idle', 'the second done', 5000);
+    expect(kept).toMatchObject({ waiting: [] });
+  });
+
   test('refused: nothing offered, a group, a battery too low', async () => {
     open();
     await until(() => network.devices().length === 3, 'the devices');

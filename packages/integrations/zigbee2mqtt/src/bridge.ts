@@ -14,6 +14,10 @@ import {
 import { ZigbeeNetwork } from './network.ts';
 import { playedZigbee2Mqtt } from './played.ts';
 import { TOPIC, type BridgeInfo } from './protocol/index.ts';
+import type { KeptUpdates } from './updates.ts';
+
+/** Where the coordinator keeps the line of firmware updates waiting their turn. */
+const FIRMWARE_LINE = 'firmware.waiting';
 
 /**
  * The coordinator: Zigbee2MQTT and the dongle it drives, as a gateway
@@ -126,7 +130,13 @@ const said = (data: unknown): string => (typeof data === 'object' && data !== nu
 
 /** A coordinator's session over a channel to Zigbee2MQTT: the real one's, through the broker, and the simulator's, to a played one. */
 function sessionOver(channel: MessageChannel, ctx: DeviceContext<Config>, simulated: boolean, close: () => Promise<void>): DeviceSession {
-  const network = new ZigbeeNetwork(channel, { changed: () => ctx.changed(), log: (message) => ctx.log.info(message), now: () => ctx.clock.now() });
+  const network = new ZigbeeNetwork(channel, {
+    changed: () => ctx.changed(),
+    log: (message) => ctx.log.info(message),
+    now: () => ctx.clock.now(),
+    // The line of firmware updates waiting their turn outlives a restart of the server.
+    keep: { load: () => ctx.store.get<KeptUpdates>(FIRMWARE_LINE), save: (kept) => ctx.store.set(FIRMWARE_LINE, kept) },
+  });
   network.start();
   const unwatch = channel.onConnectedChange(() => ctx.changed());
   // While devices may join, its countdown is read again; when it ends, it ends without a word from Zigbee2MQTT.

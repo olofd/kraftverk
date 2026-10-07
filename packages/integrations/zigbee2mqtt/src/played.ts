@@ -209,7 +209,8 @@ export function playedZigbee2Mqtt(options: PlayedOptions = {}): PlayedZigbee2Mqt
   /** What a device reports, as Zigbee2MQTT publishes it: everything, cached — and its groups' state, worked out from their members (optimistic, as Zigbee2MQTT does). */
   const report = (key: string) => {
     const state = states.get(key) ?? {};
-    publish(`${BASE}/${nameOf(key)}`, state);
+    // Kept, as the deploy has Zigbee2MQTT keep each device's state (`device_options.retain`).
+    publish(`${BASE}/${nameOf(key)}`, state, true);
     if (options.availability !== false) publish(`${BASE}/${nameOf(key)}/availability`, { state: 'online' }, true);
     for (const group of groups) if (group.members.some((member) => ieeeKey(member.ieee_address) === key)) reportGroup(group);
   };

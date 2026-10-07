@@ -22,11 +22,13 @@ export const UPDATE_TIMING = {
   settingsAskMs: 60_000,
   /** And for their answers, before they are compared. */
   settingsCompareMs: 15_000,
+  /** After a restart, the longest a line waits to hear where every device's update stands. */
+  settleMs: 15_000,
 };
 /** The least a device on batteries must have to start: Zigbee2MQTT's advice. */
 const BATTERY_MIN = 70;
-/** How long a check waits: Zigbee2MQTT asks the device what it runs first. */
-const CHECK_TIMEOUT_MS = 60_000;
+/** How long a check waits: Zigbee2MQTT asks the device what it runs first, and gives it 60 s. */
+const CHECK_TIMEOUT_MS = 75_000;
 
 /** What the network gives the updates: its requests, its devices, and the way to tell a device's links. */
 export type UpdatesHost = {
@@ -41,7 +43,16 @@ export type UpdatesHost = {
   event(key: string, id: string, data: Record<string, Value>): void;
   changed(): void;
   log(message: string): void;
+  /** A device Zigbee2MQTT says is updating now, whoever asked: one at a time holds for it too. */
+  updating(): string | null;
+  /** The devices Zigbee2MQTT can update. */
+  updatable(): string[];
+  /** Where the line of devices waiting their turn is kept, so a server restarted meanwhile still updates them. */
+  keep?: { load(): KeptUpdates | null; save(kept: KeptUpdates): void };
 };
+
+/** What is kept of the line: the devices waiting their turn, and what each ran and was set to before. */
+export type KeptUpdates = { waiting: string[]; before: Record<string, Before> };
 
 /** What a device ran and was offered, and its settings, when it was asked to update. */
 type Before = { installed: number | null; build: string | null; latest: number | null; source: string | null; settings: Record<string, unknown> };
@@ -61,12 +72,48 @@ export class FirmwareUpdates {
   #startTimer: ReturnType<typeof setTimeout> | null = null;
 
   readonly #timing: typeof UPDATE_TIMING;
+  /** When it began following: what a line kept from before waits on. */
+  readonly #since = Date.now();
 
   constructor(
     private readonly host: UpdatesHost,
     timing: Partial<typeof UPDATE_TIMING> = {}
   ) {
     this.#timing = { ...UPDATE_TIMING, ...timing };
+    const kept = host.keep?.load();
+    if (kept && Array.isArray(kept.waiting)) {
+      this.#waiting = kept.waiting.filter((key) => typeof key === 'string');
+      for (const [key, before] of Object.entries(kept.before ?? {})) this.#before.set(key, before);
+      // Should not every device say where its update stands, the line goes on all the same.
+      if (this.#waiting.length) this.#later(this.#timing.settleMs, () => this.resume());
+    }
+  }
+
+  /** Keeps the line where it is kept. */
+  #save(): void {
+    this.host.keep?.save({ waiting: [...this.#waiting], before: Object.fromEntries(this.#before) });
+  }
+
+  /**
+   * Begins the next in line, when nothing is updating: after one ended, or
+   * once the network is known again after a restart — the line was kept, and
+   * an update Zigbee2MQTT is still running is waited out.
+   */
+  resume(): void {
+    if (this.#current || !this.#waiting.length || !this.#settled()) return;
+    if (this.host.updating()) return;
+    this.#next();
+  }
+
+  /**
+   * Whether where each device's update stands is known: after a restart its
+   * state is replayed device by device, and one updating may be heard after
+   * the one waiting for it. Every device Zigbee2MQTT can update has said, or
+   * enough time has passed for all to have.
+   */
+  #settled(): boolean {
+    if (Date.now() - this.#since >= this.#timing.settleMs) return true;
+    return this.host.updatable().every((key) => updateOf(this.host.values(key).update) !== null);
   }
 
   /** The device being updated now and how far along, for its coordinator to say; null when none is. */
@@ -110,8 +157,10 @@ export class FirmwareUpdates {
     }
 
     this.#remember(key);
-    if (this.#current) {
+    const busy = this.#current ?? this.host.updating();
+    if (busy && busy !== key) {
       this.#waiting.push(key);
+      this.#save();
       this.host.changed();
       return `Waiting its turn: another device is updating, and one at a time keeps the network responsive. ${this.#waiting.length === 1 ? 'It is next' : `${this.#waiting.length - 1} before it`}`;
     }
@@ -123,6 +172,7 @@ export class FirmwareUpdates {
     if (this.#waiting.includes(key)) {
       this.#waiting = this.#waiting.filter((other) => other !== key);
       this.#before.delete(key);
+      this.#save();
       this.host.changed();
       return 'Taken out of line: it keeps the firmware it has';
     }
@@ -141,8 +191,17 @@ export class FirmwareUpdates {
   }
 
   async #check(key: string): Promise<string> {
-    this.#updatable(key);
-    const answer = objectOf(await this.host.request('device/ota_update/check', { id: ieeeOf(key) }, CHECK_TIMEOUT_MS));
+    const device = this.#updatable(key);
+    let answer: Record<string, unknown> | null;
+    try {
+      answer = objectOf(await this.host.request('device/ota_update/check', { id: ieeeOf(key) }, CHECK_TIMEOUT_MS));
+    } catch (error) {
+      // One on batteries sleeps, and is only heard when it wakes: Zigbee2MQTT's own check finds it then, daily.
+      if (/battery/i.test(device.power_source ?? '') && /respond|already in progress/i.test((error as Error).message)) {
+        throw new Error('It sleeps, and did not wake to answer: press its button and check again at once — or leave it, as Zigbee2MQTT asks by itself when it wakes');
+      }
+      throw error;
+    }
     if (answer?.update_available !== true) return 'No newer firmware is offered for it';
     const said = updateOf(this.host.values(key).update);
     const name = said ? versionName(said.latest, said.source) : null;
@@ -196,7 +255,8 @@ export class FirmwareUpdates {
     const was = this.#was.get(key) ?? null;
     this.#was.set(key, said.state);
     if (said.installed !== null && !this.#installed.has(key)) this.#installed.set(key, said.installed);
-    if (first) return;
+    // Every device heard from may be the last a line kept from before waited on.
+    if (first) return this.resume();
     if (said.state === 'updating' && was !== 'updating') {
       // Begun — at kraftverk's asking, or a device on batteries that woke and asked.
       if (this.#current === key && this.#startTimer) {
@@ -238,8 +298,10 @@ export class FirmwareUpdates {
       this.#current = null;
       if (this.#startTimer) clearTimeout(this.#startTimer);
       this.#startTimer = null;
-      this.#next();
     }
+    this.#save();
+    // The next in line — after this one, or after one updating that kraftverk did not begin.
+    this.resume();
     this.host.changed();
   }
 
@@ -247,9 +309,14 @@ export class FirmwareUpdates {
     while (this.#waiting.length) {
       const key = this.#waiting.shift()!;
       // Still offered one, and still there.
-      if (this.host.device(key) && updateOf(this.host.values(key).update)?.state === 'available') return this.#start(key);
+      if (this.host.device(key) && updateOf(this.host.values(key).update)?.state === 'available') {
+        this.#save();
+        return this.#start(key);
+      }
+      this.host.log(`${ieeeOf(key)}: no longer waiting to update — ${this.host.device(key) ? 'no newer firmware is offered for it now' : 'it has left the network'}`);
       this.#before.delete(key);
     }
+    this.#save();
   }
 
   /**

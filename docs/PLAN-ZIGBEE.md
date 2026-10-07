@@ -486,7 +486,7 @@ image ([#32843](https://github.com/koenkk/zigbee2mqtt/issues/32843)), and
 users report shutter modules left unusable. A firmware update is a change of
 the device, and is treated as one.
 
-**The design** (it replaces §5.5's *Software updates* line). **Built** 2026-10-08, as below — except that the coordinator's page counts the devices offered an update rather than listing them (each says so on its own page), and the line of devices waiting their turn is kept in memory: a server restarted meanwhile starts none of them, and they are asked again.
+**The design** (it replaces §5.5's *Software updates* line). **Built** 2026-10-08, as below — except that the coordinator's page counts the devices offered an update rather than listing them (each says so on its own page), and the line of devices waiting their turn is kept in the coordinator's own store: a server restarted meanwhile waits until every device has said where its update stands (15 s at most), waits out one still updating, and goes on.
 
 1. **The policy** allows `check`, `update`, `update/abort`, `schedule` and
    `unschedule` — not the downgrades, not yet — and refuses any `ota_update`

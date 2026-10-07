@@ -1,7 +1,7 @@
 import { identityOf, type Bridge, type ChannelMessage, type Joining, type Member, type MessageChannel } from '@kraftverk/device-sdk';
 
 import type { FirmwareCalls, MemberAbout, MemberEvent, ZigbeeLink } from './link.ts';
-import { FirmwareUpdates, type UPDATE_TIMING } from './updates.ts';
+import { FirmwareUpdates, type KeptUpdates, type UPDATE_TIMING } from './updates.ts';
 import {
   actionOf,
   groupExposes,
@@ -73,6 +73,8 @@ export type NetworkContext = {
   now(): number;
   /** How long following a firmware update waits, where a test plays it faster. */
   updateTiming?: Partial<typeof UPDATE_TIMING>;
+  /** Where the line of firmware updates waiting their turn is kept: the coordinator's own store. */
+  keep?: { load(): KeptUpdates | null; save(kept: KeptUpdates): void };
 };
 
 export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
@@ -117,6 +119,9 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
       },
       changed: () => this.ctx.changed(),
       log: (message) => this.ctx.log(message),
+      updating: () => [...this.#devices.keys()].find((key) => updateOf(this.#states.get(key)?.values.update)?.state === 'updating') ?? null,
+      updatable: () => [...this.#devices.entries()].flatMap(([key, device]) => (device.definition?.supports_ota ? [key] : [])),
+      ...(ctx.keep ? { keep: ctx.keep } : {}),
     }, ctx.updateTiming);
   }
 
@@ -401,6 +406,8 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
     for (const key of [...this.#shapes.keys()]) if (groupIdOf(key) === null && !this.#devices.has(key)) this.#shapes.delete(key);
     this.#shapeGroups();
     this.#hearUnnamed();
+    // Known again — after a restart, say: a line of updates kept waiting goes on.
+    this.#updates.resume();
     this.ctx.changed();
     this.#tellAll();
   }

@@ -234,7 +234,8 @@ export class SessionManager {
     if (!record || record.removedAt || !this.deps.lastReadings) return live;
     const said = new Map(live.map((reading) => [reading.key, reading]));
     const keys = new Set(this.description(record).attributes.map((attribute) => attribute.key));
-    const merged = live.map((reading) => (reading.value === null ? (this.#lastOf(deviceId).get(reading.key) ?? reading) : reading));
+    // Only what it has not said: a value it says — none, too ("no newer firmware") — is its word now.
+    const merged = [...live];
     for (const [key, reading] of this.#lastOf(deviceId)) if (!said.has(key) && keys.has(key)) merged.push(reading);
     return merged;
   }
