@@ -378,7 +378,7 @@ a need.
 | Remove a device (`device/remove`, `force`) | A coordinator tool, confirmed; offered when a Zigbee device is removed in kraftverk | Now |
 | Coordinator backup (`backup`) | A coordinator tool: the network's backup, downloaded | Now |
 | Health check, bridge info | The coordinator's readings and health | Now |
-| **Software updates (OTA)** — `device/ota_update/check`, `…/update`, the `update` property (`state: available / updating / idle`, `progress`, `remaining`, `installed_version`, `latest_version`), and its scheduled check | Each device's `update` attribute group: *Firmware* — installed, latest, *Update available*. *Update* is a tool of the device's that writes, confirmed by a person (a battery device may take an hour; a failed update can leave a device to be re-paired), with progress shown live from its state; never run by an automation. The coordinator's page lists every device with an update. Zigbee2MQTT's own periodic check stays its own (`ota.update_check_interval`); *Check now* is a tool | Next |
+| **Software updates (OTA)** — `device/ota_update/check`, `…/update`, the `update` property (`state: available / updating / idle`, `progress`, `remaining`, `installed_version`, `latest_version`), and its scheduled check | Each device's `update` attribute group: *Firmware* — installed, latest, *Update available*. *Update* is a tool of the device's that writes, confirmed by a person (a battery device may take an hour; a failed update can leave a device to be re-paired), with progress shown live from its state; never run by an automation. The coordinator's page lists every device with an update. Zigbee2MQTT's own periodic check stays its own (`ota.update_check_interval`); *Check now* is a tool. Researched, and designed in full: §5.7 | Next |
 | Device options (`device/options`: `retain`, `debounce`, `transition`, `qos`, a device's own — a plug's `power_calibration`, a sensor's `temperature_precision`) | A device's settings, from its definition's `options`, written through the gateway as `device/options` — not `/set` | Next |
 | Structured settings (a composite or list a device can set: an S60ZBTPF's `overload_protection`, `inching_control_set`) | Left out of a description until written (a setting kraftverk cannot write is no setting); then a settings form from the composite's features, written by `/set` through the gateway | Next |
 | Rename (`device/rename`) | Not used: kraftverk keeps the name, Zigbee2MQTT the IEEE address (§2) | — |
@@ -433,7 +433,99 @@ plan must too:
 - **`output: json`** is assumed (`attribute` is refused by Zigbee2MQTT with
   Home Assistant, and by kraftverk).
 
-### 5.7 Tests
+### 5.7 Software updates: what was found, and the design (2026-10-07)
+
+Researched before building: Zigbee2MQTT 2.14.2's own `otaUpdate` extension and
+zigbee-herdsman's OTA code read in the running container, the
+[zigbee-OTA](https://github.com/Koenkk/zigbee-OTA) index, the
+[OTA guide](https://www.zigbee2mqtt.io/guide/usage/ota_updates.html), and the
+issues filed against the S60ZBTPF.
+
+**How Zigbee2MQTT does it.**
+
+- **Requests** (`bridge/request/device/ota_update/…`, payload `{id}`):
+  `check`, `check/downgrade`, `update`, `update/downgrade`, `update/abort`,
+  `schedule`, `schedule/downgrade`, `unschedule`. `check` answers in seconds.
+  `update` answers only when done, with `from`/`to` (`file_version`,
+  `software_build_id`, `date_code`) or an error.
+- **A payload may carry a source of its own**: `url` (another index) or `hex`
+  (a firmware file, written into Zigbee2MQTT's data folder), and per-request
+  `image_block_*` and `default_maximum_data_size`. A firmware nobody vetted is
+  the most dangerous write there is.
+- **State**, in the device's own state (retained, §7): `update: {state: idle |
+  available | scheduled | updating, installed_version, latest_version,
+  latest_source, latest_release_notes, progress, remaining}`. `progress` and
+  `remaining` come about every 30 s while updating. `bridge/devices` says
+  `definition.supports_ota` and `software_build_id` ("1.0.2").
+- **Its own checks**: a device asks for an image on its own schedule;
+  Zigbee2MQTT looks it up at most once a day (`ota.update_check_interval`,
+  1440 min) and publishes `available`. That is how the four S60ZBTPF on the
+  NUC came to say *available* without being asked.
+- **The image**: from the zigbee-OTA index on GitHub, matched by manufacturer
+  code, image type, file-version and hardware-version bounds, and checked
+  against the index's SHA-512 before a block is sent; the device itself checks
+  the image and only switches to it when it is whole. The S60ZBTPF's 2.1.3 is
+  148,864 B — about 3,000 blocks of 50 B.
+- **Time**: 10–100 minutes, one device at a time, the network busier
+  meanwhile; the device keeps working. Battery devices: at least 70 % charged,
+  awake when it starts, or `schedule`d to start at their next check-in.
+- **After**: Zigbee2MQTT re-interviews and re-configures the device —
+  exposes may change, and reporting goes back to its defaults.
+- **Interrupted**: if Zigbee2MQTT restarts mid-update, the update is lost and
+  the state set back to `idle`; the device stays on its old firmware. A broker
+  restart does not stop it, but loses its progress and its final answer.
+
+**What the S60ZBTPF teaches** (SONOFF's own submissions to zigbee-OTA):
+2.0.2 added in March 2026, withdrawn, re-submitted in April; 2.0.3 in July;
+2.1.3 on 15 September — three weeks old. After 2.0.2, plugs came back with
+their under-current protection on and switched themselves off with no load —
+a fridge's plug — until Zigbee2MQTT 2.10 stopped a definition from enabling
+those thresholds ([#31604](https://github.com/Koenkk/zigbee2mqtt/issues/31604)).
+Updates of other SONOFF modules (MINI-ZBRBS) have failed at 97–99 % with a bad
+image ([#32843](https://github.com/koenkk/zigbee2mqtt/issues/32843)), and
+users report shutter modules left unusable. A firmware update is a change of
+the device, and is treated as one.
+
+**The design** (it replaces §5.5's *Software updates* line):
+
+1. **The policy** allows `check`, `update`, `update/abort`, `schedule` and
+   `unschedule` — not the downgrades, not yet — and refuses any `ota_update`
+   payload with `url`, `hex` or a block setting: kraftverk updates only from
+   the index Zigbee2MQTT ships with. Today `device/ota_update/update` is
+   allowed with any payload: that gap closes first.
+2. **Each Zigbee device's description** gains, where `supports_ota`, a
+   *Firmware* group of diagnostics: installed (`software_build_id`), latest,
+   *update available*, and while updating, progress and time left; the
+   release notes beside it. File versions are shown as Zigbee2MQTT's index
+   names them (SONOFF's 0x2103 is 2.1.3).
+3. **Updating is a tool of the device** that writes, through the gateway:
+   confirmed by a person with the release notes and what it costs ("about
+   20–60 minutes; it keeps working; Zigbee2MQTT must not restart"), refused
+   while read-only, on the timeline, never run by an automation. Battery
+   devices are *scheduled*, and the screen says to wake it. *Stop* aborts.
+4. **One at a time in the home**: a second asks to wait its turn — a queue the
+   hub keeps, as Zigbee2MQTT does not.
+5. **Followed by state, not by the answer**: the request is sent without
+   waiting out its hours-long answer; progress, the end and failure are read
+   from `update` and `software_build_id`, so a broker restarted meanwhile loses
+   nothing.
+6. **Checked after**: when it is done the device's settings are read again
+   and compared with before — power-on behaviour, overload and under-current
+   protection — and a change is said on its page and the timeline (the 2.0.2
+   lesson). Its description is taken anew from the re-interview (it already
+   is: `bridge/devices`).
+7. **The deploy waits**: a deploy that would recreate the broker or
+   Zigbee2MQTT while a device is updating says so and leaves them, until
+   it is done.
+8. **The coordinator's page** lists every device with an update, with
+   *Check now* (`check`) per device. Zigbee2MQTT's daily check stays its own.
+
+**Not by OTA**: the coordinator's own firmware. The dongle on the NUC runs
+Z-Stack 3x0 of 2021-07-08; newer builds (2025-03-21) are flashed over USB
+with Zigbee2MQTT stopped and a backup taken first — a deploy step, never a
+tool in the app.
+
+### 5.8 Tests
 
 A Zigbee2MQTT played from fixtures recorded on the owner's (ids made up):
 the coordinator found, its members offered by shelf, a plug switched and
