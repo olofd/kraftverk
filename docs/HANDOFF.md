@@ -156,17 +156,19 @@ and `.set-aside.*` copies on the server's volume are the owner's to delete.
 
 ## Integrations
 
-Built to step 14 of [PLAN-INTEGRATIONS.md](PLAN-INTEGRATIONS.md) on
+Built to step 15 of [PLAN-INTEGRATIONS.md](PLAN-INTEGRATIONS.md) on
 2026-10-07 (Part A: what kraftverk has, on the model; discovery by
-declaration; and the lists opened — quantities as records, position and
+declaration; the lists opened — quantities as records, position and
 `location`, `distance` in rules, categories toward Home Assistant's
-breadth), on the model its §1.1 sets out: an integration is the one
+breadth; and code loaded on demand — each package's generated
+`catalogue.json` is what a home lists and finds by, an integration's code
+imported when first needed), on the model its §1.1 sets out: an integration is the one
 place kraftverk meets a service — its protocol, accounts, gateways and own
 screens — and a device package builds on one integration and nothing else;
 parts talk by typed calls, never publish/subscribe; accounts live on their
 integration's page. Ways say what they are found by; the home network and
 the broker are watched all the time, so what turns up waits on Home. Next
-in Part B (mDNS and SSDP, code loaded on demand, the
+in Part B (mDNS and SSDP, the
 porting guide) are two of the owner's choices: how the server's container
 hears mDNS (host networking or a reflector), and which small integration is
 ported first (D7).
