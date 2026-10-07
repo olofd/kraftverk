@@ -1,26 +1,31 @@
-import { createSocket, type Socket as UdpSocket } from 'node:dgram';
 import { Socket } from 'node:net';
 
-import type { Announcement, ByteChannel, Matcher, OpenOptions, Sighting, Transport, TransportContext, TransportFactory } from '@kraftverk/device-sdk';
+import type { ByteChannel, Matcher, OpenOptions, Sighting, Transport, TransportContext, TransportFactory } from '@kraftverk/device-sdk';
 
 import definition, { hostOf, isLocalAddress } from './index.ts';
+import { hearDirectly, type Hearing } from './listen.ts';
+import { hearThroughRelay, relayToken } from './relay.ts';
 
 /**
- * The home network, on the server: TCP connections to devices, and the UDP
- * broadcasts devices announce themselves with.
+ * The home network, on the server: TCP connections to devices, and hearing
+ * the devices that announce themselves — their broadcasts, their mDNS
+ * services, their SSDP announcements.
  *
- * Knows no protocol. Which UDP ports to listen on comes from the ways that
- * are found by a broadcast (a `broadcast` matcher), and what a broadcast
- * says is for the protocol to read — the transport hands over its bytes.
- * Everything one host says is one sighting. Listening happens while something
- * is watching; listening sends nothing, so a home watches all the time.
+ * Knows no protocol. What to listen for comes from the ways that are found
+ * by it (their `discovery` matchers), and what an announcement says is for
+ * the protocol to read — the transport hands it over, typed. Everything one
+ * host says is one sighting. Listening happens while something is watching;
+ * it sends nothing but the questions mDNS and SSDP are asked with, so a
+ * home watches all the time.
+ *
+ * Heard with this process's own sockets — or, for a server in a container,
+ * which multicast and broadcasts do not reach, through the relay
+ * (relay.ts): the one service on the home network, which hears for it.
+ * `KRAFTVERK_LAN_RELAY_PORT` is the port the relay connects to; the token it
+ * proves itself with is kept in `KRAFTVERK_LAN_RELAY_TOKEN_FILE`.
  */
 
-/** A device not heard from in this long has left the list. */
-const STALE_AFTER_MS = 60_000;
 const CONNECT_TIMEOUT_MS = 5_000;
-
-const toHex = (bytes: Uint8Array) => [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
 
 /** One TCP connection to one device, kept up: reconnected when it drops, with backoff. */
 class TcpChannel implements ByteChannel {
@@ -139,97 +144,50 @@ class TcpChannel implements ByteChannel {
   }
 }
 
-/** The latest a host said on one port. */
-type Heard = { port: number; payload: Uint8Array; at: number };
+/** How the transport hears the home network: through the relay when it is told its port, with its own sockets otherwise. */
+function hearingFor(context: TransportContext): Hearing & { relay?: { connected(): boolean } } {
+  const port = context.env.KRAFTVERK_LAN_RELAY_PORT;
+  if (!port) return hearDirectly(context.log);
+  const token = relayToken(context.env.KRAFTVERK_LAN_RELAY_TOKEN_FILE || '/relay/token', true)!;
+  const relayed = hearThroughRelay({ port: Number(port), token, log: context.log });
+  return { ...relayed, relay: relayed };
+}
 
 const createLanTransport: TransportFactory = (context: TransportContext): Transport => {
   const channels = new Map<string, TcpChannel>();
-  /** One socket per port, shared by every watcher that wants it. */
-  const listeners = new Map<number, { socket: UdpSocket; users: number }>();
-  /** By host, then by port: what each host last said on each. */
-  const heard = new Map<string, Map<number, Heard>>();
-  const watchers = new Set<() => void>();
-
-  const listenOn = (port: number): void => {
-    const existing = listeners.get(port);
-    if (existing) {
-      existing.users += 1;
-      return;
-    }
-    const socket = createSocket({ type: 'udp4', reuseAddr: true });
-    socket.on('message', (datagram, remote) => {
-      const host = heard.get(remote.address) ?? new Map<number, Heard>();
-      host.set(port, { port, payload: new Uint8Array(datagram), at: Date.now() });
-      heard.set(remote.address, host);
-      for (const notify of [...watchers]) notify();
-    });
-    socket.on('error', (error) => context.log('warn', `[lan] Listening on UDP ${port}: ${error.message}`));
-    try {
-      socket.bind(port);
-      listeners.set(port, { socket, users: 1 });
-    } catch (error) {
-      // Another program holds it — another Tuya tool holds 6667 — and one port is usually enough.
-      context.log('warn', `[lan] Could not listen on UDP ${port}: ${(error as Error).message}`);
-    }
-  };
-
-  const stopListening = (port: number): void => {
-    const entry = listeners.get(port);
-    if (!entry) return;
-    entry.users -= 1;
-    if (entry.users > 0) return;
-    listeners.delete(port);
-    try {
-      entry.socket.close();
-    } catch {
-      /* already closed */
-    }
-  };
+  let hearing: ReturnType<typeof hearingFor> | null = null;
+  const heard = () => (hearing ??= hearingFor(context));
 
   return {
     definition,
     available: () => ({ ok: true }),
-    async start() {},
+    async start() {
+      // Ready for the relay from the start, when there is one: what it hears is wanted as soon as anything watches.
+      heard();
+    },
     async stop() {
       for (const channel of [...channels.values()]) await channel.close();
-      for (const port of [...listeners.keys()]) {
-        listeners.get(port)!.users = 1;
-        stopListening(port);
-      }
+      hearing?.stop();
+      hearing = null;
     },
 
     watch(matchers: readonly Matcher[], listener: (sightings: readonly Sighting[]) => void) {
-      const ports = [...new Set(matchers.flatMap((matcher) => (matcher.kind === 'broadcast' ? [matcher.port] : [])))];
-      for (const port of ports) listenOn(port);
+      const hearing = heard();
+      const release = hearing.want(matchers);
       let pending: ReturnType<typeof setTimeout> | null = null;
-      const emit = () => {
-        const cutoff = Date.now() - STALE_AFTER_MS;
-        const sightings: Sighting[] = [];
-        for (const [address, host] of heard) {
-          const recent = [...host.values()].filter((entry) => entry.at >= cutoff && ports.includes(entry.port));
-          if (!recent.length) continue;
-          sightings.push({
-            transport: 'lan',
-            address,
-            seenAt: new Date(Math.max(...recent.map((entry) => entry.at))).toISOString(),
-            heard: recent.map((entry): Announcement => ({ kind: 'broadcast', port: entry.port, payload: toHex(entry.payload) })),
-          });
-        }
-        listener(sightings);
-      };
+      const emit = () => listener(hearing.sightings(matchers));
       // Devices repeat themselves every few seconds; half a second of coalescing is plenty.
-      const notify = () => {
+      const stopHearing = hearing.onHeard(() => {
         pending ??= setTimeout(() => {
           pending = null;
           emit();
         }, 500);
-      };
-      watchers.add(notify);
+      });
       emit();
       return () => {
-        watchers.delete(notify);
+        stopHearing();
         if (pending) clearTimeout(pending);
-        for (const port of ports) stopListening(port);
+        release();
       };
     },
 
@@ -248,6 +206,8 @@ const createLanTransport: TransportFactory = (context: TransportContext): Transp
     diagnostics: {
       /** Every connection, and what it last saw go wrong. */
       channels: async () => [...channels.values()].map((channel) => channel.describe()),
+      /** How the home network is heard: with this process's own sockets, or through the relay — and whether it is connected. */
+      hearing: async () => (hearing?.relay ? { through: 'relay', connected: hearing.relay.connected() } : { through: 'own sockets' }),
     },
   };
 };

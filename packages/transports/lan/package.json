@@ -2,7 +2,7 @@
   "name": "@kraftverk/transport-lan",
   "version": "0.2.0",
   "private": true,
-  "description": "The home network: TCP connections to devices, kept up, and the UDP broadcasts devices announce themselves with. Reaches private addresses only, and knows no protocol.",
+  "description": "The home network: TCP connections to devices, kept up, and hearing the devices that announce themselves — broadcasts, mDNS, SSDP — on its own sockets or through the relay. Reaches private addresses only, and knows no protocol.",
   "type": "module",
   "main": "src/index.ts",
   "kraftverk": {

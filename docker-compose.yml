@@ -74,6 +74,9 @@ services:
       # through `web`; publishing this on the LAN would be a second way in that
       # skips it.
       - "127.0.0.1:${KRAFTVERK_API_PORT:-3333}:3333"
+      # For the relay, on this machine only: the one connection between the
+      # home network and this container.
+      - "127.0.0.1:${KRAFTVERK_RELAY_PORT:-3334}:3334"
 
     environment:
       # 1 refuses every write to hardware; simulated devices take writes
@@ -101,10 +104,36 @@ services:
       # given, and the app says so plainly. A long random string, in `.env`.
       KRAFTVERK_SECRET_KEY: ${KRAFTVERK_SECRET_KEY:-}
 
+      # Where the relay (below) connects, inside this container: the home
+      # network is heard through it. The token it proves itself with is made
+      # here, the first time, in the volume the two share and nothing else.
+      KRAFTVERK_LAN_RELAY_PORT: "3334"
+      KRAFTVERK_LAN_RELAY_TOKEN_FILE: /relay/token
+
     volumes:
       # Devices, history, accounts, plugin config, secrets and the audit
       # timeline. Delete this volume and you are back to a blank canvas.
       - kraftverk-data:/data
+      - kraftverk-relay:/relay
+
+  # The one service on the home network itself (docs/DOCKER.md#the-relay):
+  # devices that announce themselves — a broadcast, mDNS, SSDP — are heard
+  # only there, never in a container. It hears for the server and passes on
+  # what it hears over one connection, to the port above. It opens nothing
+  # to a device, holds nothing but its token, and runs no integration's code.
+  relay:
+    logging: *logging
+    build: { context: ., target: server }
+    image: ${KRAFTVERK_SERVER_IMAGE:-kraftverk-server}
+    restart: unless-stopped
+    network_mode: host
+    command: ["bun", "run", "packages/transports/lan/src/relay-main.ts"]
+    environment:
+      KRAFTVERK_RELAY_SERVER: 127.0.0.1:${KRAFTVERK_RELAY_PORT:-3334}
+      KRAFTVERK_LAN_RELAY_TOKEN_FILE: /relay/token
+    volumes:
+      # Its token, which the server makes: nothing else of the home's.
+      - kraftverk-relay:/relay:ro
 
   web:
     logging: *logging
@@ -131,3 +160,5 @@ services:
 
 volumes:
   kraftverk-data:
+  # The relay's token, shared by the server, which makes it, and the relay, which reads it.
+  kraftverk-relay:

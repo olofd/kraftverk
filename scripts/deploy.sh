@@ -87,7 +87,7 @@ fi
 # created on the very first deploy, never recreated here.
 compose up -d --no-build --no-recreate broker
 # The server and the app, replaced with the images given.
-compose up -d --no-build --no-deps --wait --wait-timeout 180 kraftverk web
+compose up -d --no-build --no-deps --wait --wait-timeout 180 kraftverk relay web
 compose ps
 
 # Proof it answers, through the same door a browser uses.

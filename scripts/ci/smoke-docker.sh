@@ -29,7 +29,7 @@ lan_port=$((18080 + offset)) home_proxy_port=$((18081 + offset)) public_port=$((
 export COMPOSE_PROJECT_NAME=$project
 export READ_ONLY=1
 export KRAFTVERK_ALLOWED_HOSTS=kraftverk.example.test
-export KRAFTVERK_LAN_PORT=$lan_port KRAFTVERK_HOME_PROXY_PORT=$home_proxy_port KRAFTVERK_PUBLIC_PORT=$public_port KRAFTVERK_MQTT_PORT=$mqtt_port KRAFTVERK_API_PORT=$((13333 + offset))
+export KRAFTVERK_LAN_PORT=$lan_port KRAFTVERK_HOME_PROXY_PORT=$home_proxy_port KRAFTVERK_PUBLIC_PORT=$public_port KRAFTVERK_MQTT_PORT=$mqtt_port KRAFTVERK_API_PORT=$((13333 + offset)) KRAFTVERK_RELAY_PORT=$((13334 + offset))
 compose() { docker compose -f docker-compose.yml "$@"; }
 
 finish() {
@@ -65,6 +65,16 @@ for _ in $(seq 1 30); do
 done
 [ "$connected" = 1 ] || fail 'the server connects to the broker'
 ok 'the server connects to the broker'
+
+# The relay, on the host's network, hears the home network for the server:
+# it connects over the one port published for it, with the token the server made.
+related=0
+for _ in $(seq 1 30); do
+  if compose logs kraftverk | grep -q 'The relay is connected'; then related=1; break; fi
+  sleep 1
+done
+[ "$related" = 1 ] || fail 'the relay connects to the server'
+ok 'the relay connects to the server, with its token'
 
 # A client that is not the server, connecting as a station would and then
 # trying to command one. MQTT 3.1.1 CONNECT, client id "smoke-intruder":

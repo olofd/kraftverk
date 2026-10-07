@@ -122,9 +122,39 @@ device is reached the way you added it.
 simulator stands in for it. A simulated device sits beside real ones, reaches
 nothing, and takes writes even when writes to hardware are refused.
 
-A plug on the home network is reached from the container over TCP; its UDP
-announcements may not reach a bridged container, so give its IP address by
-hand when it is not found.
+A plug on the home network is reached from the container over TCP. What
+devices announce — a broadcast, mDNS, SSDP — does not reach a container: it
+is heard by the relay, below, and the device is offered as found.
+
+### The relay
+
+Every service but one runs on Docker's own network, isolated from the home
+network. The `relay` is the one on the host's network itself (`network_mode:
+host`), because that is the only place devices that announce themselves are
+heard: a Tuya plug's UDP broadcast, an Apple TV's or a Chromecast's mDNS
+services, a TV's SSDP. It is the gateway between outside and inside — for
+hearing only:
+
+- **What passes.** One TCP connection, which the relay makes to the server on
+  `127.0.0.1:${KRAFTVERK_RELAY_PORT:-3334}` (published on the host's
+  loopback only). The server tells it what to listen for — the matchers the
+  installed integrations declare — and it answers with what it hears, typed:
+  each host, and what it announced. Nothing else crosses
+  (`packages/transports/lan/src/relay.ts` is the whole of it).
+- **What it may do.** Listen, and ask: an mDNS question, an SSDP search, now
+  and then. It opens nothing to a device — the server makes every
+  connection, from inside — holds no database and no secret but its token,
+  and runs no integration's code.
+- **Its token.** The server makes it the first time it starts, in the
+  `kraftverk-relay` volume the two share and nothing else; the relay mounts
+  it read-only. A relay that does not give it is refused.
+- **When it is not there.** Devices are reached as before; only what they
+  announce is not heard, and the server's log says the relay went away.
+
+Later, other radios plugged into the host — a Zigbee or Thread dongle — are
+services at this edge too, each its own container with one narrow connection
+to the server, as the broker and the relay are (docs/PLAN-INTEGRATIONS.md,
+§12, after step 13).
 
 ### Wi-Fi / MQTT — the one that suits a server
 

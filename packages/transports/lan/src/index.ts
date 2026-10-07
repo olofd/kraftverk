@@ -1,8 +1,9 @@
 import type { TransportDefinition } from '@kraftverk/device-sdk';
 
 /**
- * The home network: TCP to a device, and UDP broadcasts to find one. What the
- * transport is, the same everywhere.
+ * The home network: TCP to a device, and hearing what devices announce —
+ * UDP broadcasts, mDNS, SSDP — to find one. What the transport is, the same
+ * everywhere.
  *
  * On the server, and — later — in the phone app, which can open sockets. Not in
  * a browser: a page may not open a raw socket, which is why a method over this
@@ -17,9 +18,9 @@ const definition: TransportDefinition = {
   nearby: false,
   platforms: ['system', 'native'],
   discovery: { system: 'list', native: 'list' },
-  // What devices broadcast to anyone listening; mDNS and SSDP come with step 13 of docs/PLAN-INTEGRATIONS.md.
-  finds: ['broadcast'],
-  // Listening to broadcasts sends nothing: it can go on all the time.
+  // What devices say to anyone listening: a broadcast on a port, an mDNS service, an SSDP announcement.
+  finds: ['broadcast', 'mdns', 'ssdp'],
+  // Listening sends nothing but the questions mDNS and SSDP are asked with, now and then: it can go on all the time.
   background: true,
 };
 

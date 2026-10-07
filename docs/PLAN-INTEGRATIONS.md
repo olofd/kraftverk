@@ -1432,6 +1432,29 @@ An mDNS browser and an SSDP listener in the `lan` transport, on Bun, checked
 in the container on the server — host networking or a reflector, decided
 then.
 *Done when* a device that announces itself by mDNS is found.
+**Done 2026-10-07.** The `lan` transport hears mDNS (a DNS codec of its
+own, a PTR question per service type wanted, answers joined by SRV, TXT and
+A records) and SSDP (NOTIFY on the group, M-SEARCH per target) beside
+broadcasts, each host one sighting, each announcement kept for its TTL or
+max-age and dropped on a goodbye; joined and asked on every interface. The
+owner chose a **relay** over host networking for the server: the one
+service on the host's network, `relay` in docker-compose.yml, told the
+matchers over one token-guarded connection to a port the server publishes
+on loopback, answering with typed sightings — it never opens anything to a
+device. The server stays on Docker's network. Heard live from a Windows
+machine: Tuya broadcasts and mDNS (Chromecast, HomeKit, AirPlay); Windows'
+own services share 5353 and 1900, so the full check is on the NUC.
+
+**After step 13 · Radios at the edge (not designed yet, held open).**
+Zigbee and Thread dongles plugged into the server's host, Matter over Thread,
+and Zigbee through zigbee2mqtt are to come. The shape that holds: a radio
+is a transport; what must sit at the edge — a USB dongle passed into a
+container, a Matter controller that needs the home network's IPv6 and mDNS
+— is a service of that transport's own, beside the broker and the relay,
+with one narrow connection to the server and its state in its
+`TransportStore` (a Matter fabric, a Zigbee network key). zigbee2mqtt needs
+nothing new: it is a client of the broker, an integration on the `mqtt`
+transport.
 
 **Step 14 · The lists opened.**
 Categories grown toward Home Assistant's breadth; quantities as records, with
