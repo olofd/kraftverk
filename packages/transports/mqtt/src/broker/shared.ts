@@ -74,8 +74,6 @@ export const paths = (dir = brokerDir()) => ({
   state: join(dir, 'broker.json'),
   /** Devices seen by any broker run, so a fresh one knows whom to expect. */
   devices: join(dir, 'devices.json'),
-  /** The same, as brokers before protocols were packages kept it: Sydpower stations only. */
-  stations: join(dir, 'stations.json'),
   logs: join(dir, 'logs'),
   /** The broker's own stdout and stderr, for crashes that happen before the journal opens. */
   stdout: join(dir, 'logs', 'stdout.log'),
@@ -122,6 +120,24 @@ export function brokerToken(dir = brokerDir()): string {
     Bun.sleepSync(20);
   }
   throw new Error(`The broker token at ${token} is empty. Delete it, and it will be created again.`);
+}
+
+/**
+ * The broker's own clients — a bridge such as Zigbee2MQTT — by name, each
+ * with its password: `KRAFTVERK_BROKER_CLIENTS=zigbee2mqtt=<password>,…`,
+ * handed to the broker and to the client by the deploy. A name with an empty
+ * password is no client: an empty secret matches nothing (`sameSecret`).
+ */
+export function brokerClients(text = process.env.KRAFTVERK_BROKER_CLIENTS ?? ''): Map<string, string> {
+  const clients = new Map<string, string>();
+  for (const entry of text.split(',')) {
+    const at = entry.indexOf('=');
+    const name = (at < 0 ? '' : entry.slice(0, at)).trim();
+    const password = (at < 0 ? '' : entry.slice(at + 1)).trim();
+    // The server's name is the server's, whatever the environment says.
+    if (name && password && name !== SERVER_USERNAME) clients.set(name, password);
+  }
+  return clients;
 }
 
 /**

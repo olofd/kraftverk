@@ -39,7 +39,8 @@ type Events = {
   connect: [];
   /** An established connection went; it will be retried. The error says why, when known. */
   close: [Error | null];
-  message: [topic: string, payload: Buffer];
+  /** `retained`: the broker kept it for the topic, and sent it because we subscribed. */
+  message: [topic: string, payload: Buffer, retained: boolean];
   /**
    * An attempt failed, or something went wrong on a live connection, with the
    * reason. Retried regardless. Deliberately not called `error`: an `error`
@@ -195,7 +196,8 @@ export class MqttClient extends EventEmitter<Events> {
           this.emit(
             'message',
             packet.topic,
-            typeof packet.payload === 'string' ? Buffer.from(packet.payload) : Buffer.from(packet.payload)
+            typeof packet.payload === 'string' ? Buffer.from(packet.payload) : Buffer.from(packet.payload),
+            packet.retain === true
           );
           return;
         case 'pingresp':

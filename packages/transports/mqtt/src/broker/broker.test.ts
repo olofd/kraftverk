@@ -11,7 +11,7 @@ import { MqttClient } from '../client.ts';
 import createMqttTransport from '../system.ts';
 import { matches, MessageBroker } from './broker.ts';
 import { Journal } from './journal.ts';
-import { loadPolicies, refusalFor } from './policy.ts';
+import { loadPolicies, refusalFor, type Publisher } from './policy.ts';
 import { sameSecret, SERVER_USERNAME } from './shared.ts';
 
 /**
@@ -50,6 +50,28 @@ const inputResponse = (values: number[]) =>
 /** The eight bytes that destroy the station. */
 const BRICK = writeHolding(68, 0);
 
+const ANYONE: Publisher = { privileged: false, signedIn: null };
+const SERVER: Publisher = { privileged: true, signedIn: null };
+const BRIDGE_CLIENT: Publisher = { privileged: false, signedIn: 'bridge' };
+
+/**
+ * A protocol spoken by a bridge: one client for every device behind it, its
+ * topics under one root, its devices spoken for only by a client that signed
+ * in — the shape of Zigbee2MQTT, named for no product.
+ */
+const BRIDGE: MessageBrokerPolicy = {
+  protocol: 'bridge-test',
+  root: 'bridge-test/',
+  signedIn: true,
+  fromDevice: (topic) => (topic.startsWith('bridge-test/') ? { address: 'bridge-test', channel: topic.slice('bridge-test/'.length) } : null),
+  subscribedBy: (filter) => (filter === 'bridge-test/#' ? 'bridge-test' : null),
+  commandFor: (topic) => (/^bridge-test\/.+\/set$/.test(topic) ? 'bridge-test' : null),
+  refuse: (topic) => (topic.endsWith('/forbidden/set') ? 'that is never sent' : null),
+  describeCommand: (topic) => ({ summary: `set ${topic}`, level: 'info' }),
+  describeMessage: (channel) => ({ summary: channel, level: 'debug' }),
+};
+const BRIDGE_PASSWORD = 'bridge-password-not-a-secret';
+
 let policies: MessageBrokerPolicy[];
 beforeAll(async () => {
   policies = await loadPolicies();
@@ -82,25 +104,68 @@ describe('refusalFor', () => {
 
   test('refuses a command topic to anyone but the server, however it is spelled', () => {
     for (const topic of [COMMANDS, COMMANDS.toLowerCase(), `${STATION}/Client/Request/data`, `${STATION}/client/request`]) {
-      expect(refusalFor(policies, topic, poll(), false)).not.toBeNull();
-      expect(refusalFor(policies, topic, poll(), true)).toBeNull();
+      expect(refusalFor(policies, topic, poll(), ANYONE)).not.toBeNull();
+      expect(refusalFor(policies, topic, poll(), SERVER)).toBeNull();
     }
   });
 
   test('refuses the brick write even to the server', () => {
-    expect(refusalFor(policies, COMMANDS, BRICK, true)).toContain('bricks');
+    expect(refusalFor(policies, COMMANDS, BRICK, SERVER)).toContain('bricks');
   });
 
   test('lets a station say everything it has been seen saying', () => {
     for (const channel of ['state', 'client/04', 'client/data']) {
-      expect(refusalFor(policies, `${STATION}/device/response/${channel}`, poll(), false)).toBeNull();
+      expect(refusalFor(policies, `${STATION}/device/response/${channel}`, poll(), ANYONE)).toBeNull();
     }
   });
 
   test('keeps $SYS and the broker’s own topics reserved', () => {
-    expect(refusalFor(policies, '$SYS/broker/heartbeat', poll(), false)).not.toBeNull();
-    expect(refusalFor(policies, `$kraftverk/device/sydpower/${STATION}`, poll(), false)).not.toBeNull();
-    expect(refusalFor(policies, '$kraftverk/journal', poll(), true)).not.toBeNull();
+    expect(refusalFor(policies, '$SYS/broker/heartbeat', poll(), ANYONE)).not.toBeNull();
+    expect(refusalFor(policies, `$kraftverk/device/sydpower/${STATION}`, poll(), ANYONE)).not.toBeNull();
+    expect(refusalFor(policies, '$kraftverk/journal', poll(), SERVER)).not.toBeNull();
+  });
+});
+
+describe('a protocol spoken by a bridge', () => {
+  test('its root is its own: a device named like a station’s command is not one', () => {
+    const all = [...policies, BRIDGE];
+    expect(refusalFor(all, 'bridge-test/lamp/client/request/data', readHolding(0, 1), BRIDGE_CLIENT)).toBeNull();
+  });
+
+  test('only a client that signed in may speak for its devices; only the server may command them', () => {
+    const all = [...policies, BRIDGE];
+    expect(refusalFor(all, 'bridge-test/lamp', new Uint8Array(), ANYONE)).toContain('signed in');
+    expect(refusalFor(all, 'bridge-test/lamp', new Uint8Array(), BRIDGE_CLIENT)).toBeNull();
+    expect(refusalFor(all, 'bridge-test/lamp/set', new Uint8Array(), BRIDGE_CLIENT)).toContain('Only the kraftverk server');
+    expect(refusalFor(all, 'bridge-test/lamp/set', new Uint8Array(), SERVER)).toBeNull();
+  });
+
+  test('its refusals see the topic: the server is refused what the protocol never sends', () => {
+    expect(refusalFor([...policies, BRIDGE], 'bridge-test/forbidden/set', new Uint8Array(), SERVER)).toBe('that is never sent');
+  });
+
+  test('signs in with its password, holds its device, and a second client cannot speak for it', async () => {
+    const journal = new Journal({ dir: null, consoleLevel: 'off' });
+    const broker = newBroker(journal, { policies: [...policies, BRIDGE], clients: new Map([['bridge', BRIDGE_PASSWORD]]) });
+    await broker.start();
+
+    await expect(mqttClient(broker.port!, 'wrong', undefined, { username: 'bridge', password: 'not-it' })).rejects.toThrow('refused');
+
+    const bridge = await mqttClient(broker.port!, 'bridge-1', undefined, { username: 'bridge', password: BRIDGE_PASSWORD });
+    bridge.publish('bridge-test/bridge/state', new TextEncoder().encode('online'));
+    await until(() => broker.devices.some((device) => device.address === 'bridge-test' && device.online), 'the bridge online');
+
+    const impostor = await mqttClient(broker.port!, 'impostor');
+    impostor.publish('bridge-test/lamp', new TextEncoder().encode('{"state":"ON"}'));
+    await until(() => impostor.isClosed, 'the impostor cut off');
+
+    const second = await mqttClient(broker.port!, 'bridge-2', undefined, { username: 'bridge', password: BRIDGE_PASSWORD });
+    second.publish('bridge-test/lamp', new TextEncoder().encode('{"state":"ON"}'));
+    await until(() => second.isClosed, 'the second bridge cut off');
+    expect(broker.devices.find((device) => device.address === 'bridge-test')?.clientId).toBe('bridge-1');
+
+    bridge.close();
+    await broker.stop();
   });
 });
 
@@ -377,6 +442,14 @@ describe('the transport’s channel to one device', () => {
     await until(() => heard.length > 0, 'the answer');
     expect(heard).toEqual([`${STATION}/device/response/client/04`]);
 
+    // What the broker keeps on a topic reaches a subscription made after it was said, as MQTT promises.
+    station.publish(`${STATION}/device/response/state`, new TextEncoder().encode('1'), { retain: true });
+    await until(() => heard.length > 1, 'the retained state, live');
+    const late: string[] = [];
+    channel.subscribe(`${STATION}/device/response/state`, (message) => late.push(new TextDecoder().decode(message.payload)));
+    await until(() => late.length > 0, 'the retained state, to a late subscription');
+    expect(late).toEqual(['1']);
+
     // What the transport sees is what the add flow lists.
     let seen: readonly Sighting[] = [];
     const stop = transport.watch!([], (sightings) => (seen = sightings));
@@ -478,7 +551,7 @@ describe('hardening', () => {
   test('a command topic is refused however it is dressed up', () => {
     const poll = readHolding(0, 80);
     for (const topic of [`/${COMMANDS}`, `x/${COMMANDS}`, `${STATION}/client/request/data/extra`]) {
-      expect(refusalFor(policies, topic, poll, false)).not.toBeNull();
+      expect(refusalFor(policies, topic, poll, ANYONE)).not.toBeNull();
     }
   });
 
@@ -528,14 +601,30 @@ describe('hardening', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test('stations a broker from before protocols were packages remembered are still expected back', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'kraftverk-stations-'));
-    const legacy = join(dir, 'stations.json');
-    writeFileSync(legacy, JSON.stringify([{ station: STATION, online: false, remote: '192.0.2.12:51000', disconnectedAt: '2026-09-27T10:00:00.000Z' }]));
+  test('a client’s traffic that no protocol knows is said at info once a minute, not on every message', async () => {
     const journal = new Journal({ dir: null, consoleLevel: 'off' });
-    const broker = newBroker(journal, { devicesFile: join(dir, 'devices.json'), legacyStationsFile: legacy });
-    expect(broker.devices).toEqual([expect.objectContaining({ protocol: 'sydpower', address: STATION, remote: '192.0.2.12:51000' })]);
-    rmSync(dir, { recursive: true, force: true });
+    const broker = newBroker(journal);
+    await broker.start();
+    const chatty = await mqttClient(broker.port!, 'chatty');
+    for (let i = 0; i < 5; i++) chatty.publish(`somewhere/else/${i}`, new TextEncoder().encode(String(i)));
+    await until(() => journal.query({ level: 'debug', kinds: ['mqtt.publish'] }).length === 5, 'all five');
+    expect(journal.query({ level: 'info', kinds: ['mqtt.publish'] })).toHaveLength(1);
+    chatty.close();
+    await broker.stop();
+  });
+
+  test('the journal keeps a payload’s first bytes, not all of a large one', async () => {
+    const journal = new Journal({ dir: null, consoleLevel: 'off' });
+    const broker = newBroker(journal);
+    await broker.start();
+    const big = await mqttClient(broker.port!, 'big');
+    big.publish('somewhere/large', new Uint8Array(5000));
+    await until(() => journal.query({ kinds: ['mqtt.publish'] }).length === 1, 'the publish');
+    const hex = String(journal.query({ kinds: ['mqtt.publish'] })[0]?.data?.hex);
+    expect(hex.endsWith('…(+4800 B)')).toBe(true);
+    expect(hex.length).toBeLessThan(500);
+    big.close();
+    await broker.stop();
   });
 });
 
@@ -550,7 +639,7 @@ type TestClient = {
   received: Received[];
   readonly isClosed: boolean;
   subscribe(topic: string): Promise<void>;
-  publish(topic: string, payload: Uint8Array): void;
+  publish(topic: string, payload: Uint8Array, options?: { retain?: boolean }): void;
   /** Destroys the socket without a DISCONNECT, which is what makes a broker send a will. */
   drop(): void;
   close(): void;
@@ -582,12 +671,18 @@ function packet(firstByte: number, body: Buffer): Buffer {
   return Buffer.concat([Buffer.from([firstByte]), remainingLength(body.length), body]);
 }
 
-async function mqttClient(port: number, clientId: string, will?: { topic: string; payload: Uint8Array }): Promise<TestClient> {
+async function mqttClient(
+  port: number,
+  clientId: string,
+  will?: { topic: string; payload: Uint8Array },
+  login?: { username: string; password: string }
+): Promise<TestClient> {
   const socket = connect(port, '127.0.0.1');
   const received: Received[] = [];
   const waiting = new Map<number, () => void>();
   let pending = Buffer.alloc(0);
   let isClosed = false;
+  let refusedWith = 0;
 
   socket.on('close', () => {
     isClosed = true;
@@ -618,6 +713,9 @@ async function mqttClient(port: number, clientId: string, will?: { topic: string
       const body = pending.subarray(index, index + length);
       pending = pending.subarray(index + length);
 
+      // The CONNACK's return code: anything but 0 is the broker turning the connection away.
+      if (type === PACKET.CONNACK) refusedWith = body[1] ?? 0;
+
       if (type === PACKET.PUBLISH) {
         // QoS 0, which is all this broker delivers: topic, then payload, no id.
         const topicLength = body.readUInt16BE(0);
@@ -636,8 +734,8 @@ async function mqttClient(port: number, clientId: string, will?: { topic: string
 
   await new Promise<void>((resolve) => socket.once('connect', () => resolve()));
 
-  // Clean session, plus a will when one is asked for; keepalive 60 s.
-  const flags = 0x02 | (will ? 0x04 : 0);
+  // Clean session, plus a will and a sign-in when asked for; keepalive 60 s.
+  const flags = 0x02 | (will ? 0x04 : 0) | (login ? 0xc0 : 0);
   const connect_ = packet(
     PACKET.CONNECT << 4,
     Buffer.concat([
@@ -645,11 +743,16 @@ async function mqttClient(port: number, clientId: string, will?: { topic: string
       Buffer.from([0x04, flags, 0x00, 0x3c]),
       prefixed(clientId),
       ...(will ? [prefixed(will.topic), prefixed(will.payload)] : []),
+      ...(login ? [prefixed(login.username), prefixed(login.password)] : []),
     ])
   );
   const acknowledged = next(PACKET.CONNACK);
   socket.write(connect_);
-  await acknowledged;
+  await Promise.race([
+    acknowledged,
+    new Promise((_, reject) => socket.once('close', () => reject(new Error('The broker refused the connection')))),
+  ]);
+  if (isClosed || refusedWith !== 0) throw new Error(`The broker refused the connection (code ${refusedWith})`);
 
   return {
     received,
@@ -662,8 +765,8 @@ async function mqttClient(port: number, clientId: string, will?: { topic: string
       socket.write(packet((PACKET.SUBSCRIBE << 4) | 0x02, Buffer.concat([Buffer.from([0, 1]), prefixed(topic), Buffer.from([0])])));
       await acked;
     },
-    publish(topic, payload) {
-      socket.write(packet(PACKET.PUBLISH << 4, Buffer.concat([prefixed(topic), Buffer.from(payload)])));
+    publish(topic, payload, options) {
+      socket.write(packet((PACKET.PUBLISH << 4) | (options?.retain ? 1 : 0), Buffer.concat([prefixed(topic), Buffer.from(payload)])));
     },
     drop() {
       socket.destroy();

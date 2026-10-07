@@ -4,7 +4,7 @@ import { adminApp } from './admin.ts';
 import { MessageBroker } from './broker.ts';
 import { Journal, type JournalOptions } from './journal.ts';
 import { loadPolicies } from './policy.ts';
-import { brokerBuild, brokerDir, brokerToken, DEFAULTS, paths } from './shared.ts';
+import { brokerBuild, brokerClients, brokerDir, brokerToken, DEFAULTS, paths } from './shared.ts';
 
 /**
  * The broker, as a process of its own.
@@ -19,6 +19,7 @@ import { brokerBuild, brokerDir, brokerToken, DEFAULTS, paths } from './shared.t
  *   BROKER_ADMIN_HOST / BROKER_ADMIN_PORT the admin API (127.0.0.1:3883)
  *   KRAFTVERK_BROKER_DIR                  token, state and logs (server/data/broker)
  *   KRAFTVERK_BROKER_TOKEN                the server's secret, instead of the token file
+ *   KRAFTVERK_BROKER_CLIENTS              clients that sign in, name=password, comma-separated: a bridge such as Zigbee2MQTT
  *   BROKER_LOG_LEVEL                      console verbosity: debug, info, warn, error, off (info)
  *   BROKER_LOG_DAYS                       days of journal files to keep (14)
  */
@@ -75,10 +76,10 @@ const broker = new MessageBroker({
   host: mqtt.host,
   port: mqtt.port,
   token,
+  clients: brokerClients(),
   journal,
   policies,
   devicesFile: files.devices,
-  legacyStationsFile: files.stations,
 });
 
 let stopping = false;
@@ -91,6 +92,7 @@ async function shutdown(reason: string, code = 0): Promise<never> {
     server?.stop(true);
     rmSync(files.state, { force: true });
   }
+  journal.flush();
   process.exit(code);
 }
 

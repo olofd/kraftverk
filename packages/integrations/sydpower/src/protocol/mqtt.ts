@@ -73,9 +73,9 @@ export const brokerPolicy: MessageBrokerPolicy = {
     return /^[0-9A-Fa-f]{12}$/.test(first) ? first.toUpperCase() : topic;
   },
 
-  refuse: commandRefusal,
+  refuse: (_topic, payload) => commandRefusal(payload),
 
-  describeCommand(payload) {
+  describeCommand(_topic, payload) {
     const command = parseCommand(payload);
     const summary = describeCommand(payload);
     // Writes are the events that change hardware, so they are always in plain

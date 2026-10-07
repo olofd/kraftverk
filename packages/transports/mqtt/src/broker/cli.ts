@@ -137,7 +137,7 @@ async function stop(): Promise<boolean> {
   }
   for (let i = 0; i < 50; i++) {
     if (!(await probeHealth(adminUrl(), 300))) {
-      console.log(`Stopped the broker (pid ${health.pid}). Stations on it are disconnected until one runs again.`);
+      console.log(`Stopped the broker (pid ${health.pid}). Devices on it are disconnected until one runs again.`);
       if (servers > 0 && command === 'stop') {
         console.log(
           'A kraftverk server is connected to it, and will start a new broker within a few seconds — ' +
@@ -182,7 +182,7 @@ async function logs(): Promise<number> {
     return 2;
   }
   const level: JournalLevel = has('--debug', '-d') ? 'debug' : ((asked as JournalLevel | undefined) ?? 'info');
-  const device = (flag('device') ?? flag('station'))?.toUpperCase();
+  const device = flag('device');
   const count = Number(flag('n') ?? (rest.includes('-n') ? rest[rest.indexOf('-n') + 1] : undefined) ?? 50) || 50;
   const wanted = (entry: JournalEntry) => atLeast(entry.level, level) && (!device || entry.device === device);
   const show = (entry: JournalEntry) => console.log(formatEntry(entry));

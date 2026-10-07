@@ -399,17 +399,36 @@ export function fakeByteChannel(respond: (bytes: Uint8Array) => Uint8Array | rea
   };
 }
 
+/** A message a device on a fake channel publishes: kept on its topic when `retain`, as a broker keeps it. */
+export type FakeMessage = { topic: string; payload: Uint8Array; retain?: boolean };
+
 /**
- * A messages channel with a device on the other end: `respond` is given each
- * publish and returns the messages the device publishes back.
+ * A messages channel with a device on the other end, as a broker carries it:
+ * `respond` is given each publish and returns the messages the device
+ * publishes back; `say` is the device publishing unasked. What it publishes
+ * with `retain` is kept on its topic and sent first to every later
+ * subscription, as MQTT does.
  */
 export function fakeMessageChannel(
-  respond: (topic: string, payload: Uint8Array) => readonly { topic: string; payload: Uint8Array }[]
-): MessageChannel & { published: { topic: string; payload: Uint8Array }[]; setConnected(connected: boolean): void } {
+  respond: (topic: string, payload: Uint8Array) => readonly FakeMessage[]
+): MessageChannel & {
+  published: { topic: string; payload: Uint8Array }[];
+  setConnected(connected: boolean): void;
+  say(message: FakeMessage): void;
+} {
   const subscriptions: { filter: string; listener: (message: ChannelMessage) => void }[] = [];
   const state = listeners<boolean>();
   let connected = true;
   const published: { topic: string; payload: Uint8Array }[] = [];
+  const kept = new Map<string, FakeMessage>();
+  const deliver = (message: FakeMessage) => {
+    if (message.retain) {
+      if (message.payload.length === 0) kept.delete(message.topic);
+      else kept.set(message.topic, message);
+    }
+    const at = new Date().toISOString();
+    for (const { filter, listener } of [...subscriptions]) if (matches(filter, message.topic)) listener({ topic: message.topic, payload: message.payload, at });
+  };
   const matches = (filter: string, topic: string): boolean => {
     const f = filter.split('/');
     const t = topic.split('/');
@@ -429,6 +448,12 @@ export function fakeMessageChannel(
     subscribe(filter, listener) {
       const entry = { filter, listener };
       subscriptions.push(entry);
+      // What is kept on its topics first, a moment later, as a broker sends it.
+      const first = [...kept.values()].filter((message) => matches(filter, message.topic));
+      setTimeout(() => {
+        const at = new Date().toISOString();
+        for (const message of first) if (subscriptions.includes(entry)) listener({ topic: message.topic, payload: message.payload, at });
+      }, 0);
       return () => void subscriptions.splice(subscriptions.indexOf(entry), 1);
     },
     async publish(topic, payload) {
@@ -436,12 +461,10 @@ export function fakeMessageChannel(
       published.push({ topic, payload });
       const replies = respond(topic, payload);
       setTimeout(() => {
-        for (const reply of replies) {
-          const message = { ...reply, at: new Date().toISOString() };
-          for (const { filter, listener } of [...subscriptions]) if (matches(filter, reply.topic)) listener(message);
-        }
+        for (const reply of replies) deliver(reply);
       }, 0);
     },
+    say: deliver,
     setConnected(next) {
       connected = next;
       state.emit(next);

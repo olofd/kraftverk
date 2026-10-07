@@ -38,16 +38,34 @@ export type BrokerMessageNote = {
  */
 export type MessageBrokerPolicy = {
   protocol: string;
+  /**
+   * The topics it speaks for, when they share a beginning: `zigbee2mqtt/`.
+   * Every topic under it is this protocol's and no other's — matched by this
+   * policy alone. Absent for a protocol whose topics begin with the device's
+   * own name (a station's MAC): matched among the others.
+   */
+  root?: string;
+  /**
+   * Only a client signed in to the broker may publish this protocol's device
+   * topics, and the first such client holds a device while it is connected:
+   * what keeps anything on the home network from speaking for one. A station
+   * cannot sign in; a bridge such as Zigbee2MQTT can.
+   */
+  signedIn?: boolean;
   /** The device a published topic comes from, and the channel within it; null when not this protocol's. */
   fromDevice(topic: string): { address: string; channel: string } | null;
   /** The device a subscription reveals: one subscribing to its own command topic. */
   subscribedBy(filter: string): string | null;
   /** The device a command topic is addressed to; null when the topic carries no command of this protocol's. */
   commandFor(topic: string): string | null;
-  /** Why a command must not reach a device, or null. Applied to the server's own commands too. */
-  refuse(payload: Uint8Array): string | null;
+  /**
+   * Why a command must not reach a device, or null. Applied to the server's
+   * own commands too. With its topic: for a bridge, the topic is what tells
+   * switching a lamp from removing a device.
+   */
+  refuse(topic: string, payload: Uint8Array): string | null;
   /** A command, described. */
-  describeCommand(payload: Uint8Array): BrokerMessageNote;
+  describeCommand(topic: string, payload: Uint8Array): BrokerMessageNote;
   /** A message from a device, described. */
   describeMessage(channel: string, payload: Uint8Array): BrokerMessageNote;
   /** Said when a known device has been absent a while: what to try. */

@@ -102,9 +102,9 @@ describe('what the broker is told', () => {
   });
 
   test('the broker refuses the brick write too, and pairs replies with what asked for them', () => {
-    expect(brokerPolicy.refuse(writeRegister(SLEEP_REGISTER, 0))).toContain('bricks');
-    expect(brokerPolicy.describeCommand(readInputRegisters(0, 80))).toMatchObject({ level: 'debug', awaits: 'input' });
-    expect(brokerPolicy.describeCommand(writeRegister(26, 1))).toMatchObject({ level: 'info', awaits: 'write:26' });
+    expect(brokerPolicy.refuse(`${MAC}/client/request/data`, writeRegister(SLEEP_REGISTER, 0))).toContain('bricks');
+    expect(brokerPolicy.describeCommand(`${MAC}/client/request/data`, readInputRegisters(0, 80))).toMatchObject({ level: 'debug', awaits: 'input' });
+    expect(brokerPolicy.describeCommand(`${MAC}/client/request/data`, writeRegister(26, 1))).toMatchObject({ level: 'info', awaits: 'write:26' });
     expect(brokerPolicy.describeMessage('04', telemetry)).toMatchObject({ answers: 'input' });
     expect(brokerPolicy.describeMessage('data', writeRegister(26, 1))).toMatchObject({ answers: 'write:26' });
   });

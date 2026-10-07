@@ -16,6 +16,9 @@ import { MqttClient } from './client.ts';
 
 export type BusMessage = { topic: string; payload: Uint8Array; at: Date };
 
+/** Whether a topic filter matches a topic, MQTT's way (`+` one level, `#` the rest). */
+export type TopicMatch = (filter: string, topic: string) => boolean;
+
 type Events = {
   message: [BusMessage];
   presence: [DevicePresence];
@@ -32,13 +35,20 @@ export type BrokerBusOptions = {
   token: () => string;
 };
 
-const presenceKey = (protocol: string, address: string) => `${protocol}:${address.toUpperCase()}`;
+const presenceKey = (protocol: string, address: string) => `${protocol}:${address}`;
 
 export class BrokerBus extends EventEmitter<Events> {
   #client: MqttClient;
   #presence = new Map<string, DevicePresence>();
   #connectedAt: Date | null = null;
   #lastError: string | null = null;
+  /**
+   * What the broker keeps, by topic: every message it sent as retained, and
+   * each later one on the same topic. The server subscribes once, at its
+   * start, so a channel opened afterwards would otherwise never hear what a
+   * device left there — a bridge's list of its devices, its state.
+   */
+  #retained = new Map<string, BusMessage>();
 
   constructor(options: BrokerBusOptions) {
     super();
@@ -77,6 +87,8 @@ export class BrokerBus extends EventEmitter<Events> {
         reach. The retained messages restore it on reconnect.
       */
       this.#presence.clear();
+      // Likewise: the broker sends them all again when the subscription is made again.
+      this.#retained.clear();
       this.emit('disconnected', error);
     });
     this.#client.on('failed', (error) => {
@@ -85,7 +97,7 @@ export class BrokerBus extends EventEmitter<Events> {
       // Once per distinct reason: the client retries every few seconds.
       if (!repeat) this.emit('failed', error);
     });
-    this.#client.on('message', (topic, payload) => this.#onMessage(topic, payload));
+    this.#client.on('message', (topic, payload, retained) => this.#onMessage(topic, payload, retained));
   }
 
   get connected(): boolean {
@@ -108,9 +120,13 @@ export class BrokerBus extends EventEmitter<Events> {
 
   /** What the broker says about the device at `address`, under any protocol. */
   presence(address: string): DevicePresence | null {
-    const wanted = address.toUpperCase();
-    for (const presence of this.#presence.values()) if (presence.address.toUpperCase() === wanted) return presence;
+    for (const presence of this.#presence.values()) if (presence.address === address) return presence;
     return null;
+  }
+
+  /** What the broker keeps on the topics `filter` matches: what a new subscription to it is sent first. */
+  retained(filter: string, matches: TopicMatch): BusMessage[] {
+    return [...this.#retained.values()].filter((message) => matches(filter, message.topic));
   }
 
   start(): void {
@@ -137,7 +153,7 @@ export class BrokerBus extends EventEmitter<Events> {
     await this.#client.publish(topic, payload);
   }
 
-  #onMessage(topic: string, payload: Buffer): void {
+  #onMessage(topic: string, payload: Buffer, retained: boolean): void {
     if (topic.startsWith('$kraftverk/device/')) {
       try {
         const presence = JSON.parse(payload.toString('utf8')) as DevicePresence;
@@ -158,6 +174,12 @@ export class BrokerBus extends EventEmitter<Events> {
       return;
     }
 
-    this.emit('message', { topic, payload: new Uint8Array(payload), at: new Date() });
+    const message = { topic, payload: new Uint8Array(payload), at: new Date() };
+    // Kept when the broker keeps it, and followed after: a later message on a kept topic replaces it, an empty one clears it.
+    if (retained || this.#retained.has(topic)) {
+      if (payload.length === 0) this.#retained.delete(topic);
+      else this.#retained.set(topic, message);
+    }
+    this.emit('message', message);
   }
 }

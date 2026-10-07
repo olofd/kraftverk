@@ -43,13 +43,17 @@ export type BrokerOptions = {
   port: number;
   /** The secret the server proves itself with. */
   token: string;
+  /**
+   * Clients that sign in, by name, each with its password: a bridge such as
+   * Zigbee2MQTT. Signed in, a client may speak for the devices of a protocol
+   * that asks for it (`MessageBrokerPolicy.signedIn`). None by default.
+   */
+  clients?: ReadonlyMap<string, string>;
   journal: Journal;
   /** The installed protocols' rules. At least one. */
   policies: Policies;
   /** Where known devices are remembered between runs. Null to forget them. */
   devicesFile: string | null;
-  /** The file brokers before this one kept Sydpower stations in, read once if `devicesFile` is absent. */
-  legacyStationsFile?: string | null;
   /** How often to check for devices that have not come back. */
   watchdogMs?: number;
 };
@@ -73,6 +77,8 @@ type Connection = {
   openedAt: number;
   clientId: string | null;
   privileged: boolean;
+  /** The name it signed in with, when it is one of the broker's clients (`BrokerOptions.clients`). */
+  signedIn: string | null;
   /** Set once the broker has sent a successful CONNACK. */
   connectedAt: number | null;
   connect: {
@@ -115,8 +121,14 @@ const ABSENCE_ALERTS = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000, 6 * 3_600_
 /** A reply later than this is treated as an unprompted push rather than an answer. */
 const REPLY_WINDOW_MS = 10_000;
 
-/** One record per device, keyed by protocol and address. */
-const keyOf = (protocol: string, address: string) => `${protocol}:${address.toUpperCase()}`;
+/** One record per device, keyed by protocol and address — the address as its protocol gives it. */
+const keyOf = (protocol: string, address: string) => `${protocol}:${address}`;
+
+/** Kinds that are a device's every word: kept in the file and the journal, not sent on to the server as they happen. */
+const CHATTER = new Set(['device.message', 'mqtt.publish']);
+
+/** How long one client's traffic that no protocol knows is journalled at info, before it is debug until the next window. */
+const UNKNOWN_TRAFFIC_WINDOW_MS = 60_000;
 
 export class MessageBroker {
   #aedes: Aedes | null = null;
@@ -126,6 +138,16 @@ export class MessageBroker {
   #refusals: RefusedPublish[] = [];
   /** Devices already warned about during the current run of undeliverable commands. */
   #undelivered = new Set<string>();
+  /** When each client's traffic that no protocol knows was last journalled at info. */
+  #unknownSaid = new Map<string, number>();
+  /**
+   * The topics on which a message is kept (retained), as published. MQTT
+   * clears the retain flag on what it forwards to a subscription that already
+   * exists; the server subscribed long before most of them were said, and
+   * needs to know which are kept — it replays them to a channel opened later
+   * (`BrokerBus`). So it is told: what it is sent on a kept topic says so.
+   */
+  #retained = new Set<string>();
   #nextConnection = 0;
   #startedAt = Date.now();
   #stopping = false;
@@ -180,6 +202,7 @@ export class MessageBroker {
         clientId: c.clientId,
         remote: c.remote,
         role: c.privileged ? 'server' : c.device ? 'device' : c.clientId ? 'client' : 'handshaking',
+        signedIn: c.signedIn,
         device: c.device ? this.#devices.get(c.device)?.address ?? null : null,
         openForMs: now - c.openedAt,
         connectedAt: c.connectedAt ? new Date(c.connectedAt).toISOString() : null,
@@ -276,6 +299,23 @@ export class MessageBroker {
           return done(Object.assign(new Error('Identifier rejected'), { returnCode: 2 }), null);
         }
 
+        // One of the broker's own clients, by name: its password is checked,
+        // and a wrong one is turned away rather than let in as anyone.
+        const expected = username ? this.options.clients?.get(username) : undefined;
+        if (expected !== undefined) {
+          if (sameSecret(password, expected)) {
+            if (conn) conn.signedIn = username!;
+            return done(null, true);
+          }
+          this.#journal.warn({
+            kind: 'auth.refused',
+            message: `Refused ${who}: it signed in as "${username}" with the wrong password`,
+            clientId: client.id,
+            remote: conn?.remote,
+          });
+          return done(Object.assign(new Error('Bad username or password'), { returnCode: 4 }), null);
+        }
+
         // A station connects with no username and no password — seen, not
         // assumed — so there is nothing to check a device by. Everyone else
         // is let in, and then held to `policy.ts`.
@@ -285,11 +325,19 @@ export class MessageBroker {
       authorizePublish: (client, packet, callback) => {
         const conn = client ? this.#of(client) : null;
         const payload = toBytes(packet.payload);
-        const reason = refusalFor(this.options.policies, packet.topic, payload, conn?.privileged ?? false);
-        if (!reason) return callback(null);
+        const reason =
+          refusalFor(this.options.policies, packet.topic, payload, { privileged: conn?.privileged ?? false, signedIn: conn?.signedIn ?? null }) ??
+          (conn ? this.#heldElsewhere(conn, packet.topic) : null);
+        if (!reason) {
+          if (packet.retain) {
+            if (payload.length === 0) this.#retained.delete(packet.topic);
+            else this.#retained.add(packet.topic);
+          }
+          return callback(null);
+        }
 
         const command = commandOf(this.options.policies, packet.topic);
-        const frame = command ? command.policy.describeCommand(payload).summary : null;
+        const frame = command ? command.policy.describeCommand(packet.topic, payload).summary : null;
         const refused: RefusedPublish = {
           at: new Date().toISOString(),
           clientId: client?.id ?? null,
@@ -309,7 +357,7 @@ export class MessageBroker {
           clientId: client?.id,
           remote: conn?.remote,
           device: command && command.address !== packet.topic ? command.address : undefined,
-          data: { ...refused, hex: toHex(payload).slice(0, 400) },
+          data: { ...refused, bytes: payload.length, hex: toHex(payload) },
         };
         // The server itself being refused means something upstream failed to
         // stop a frame that destroys hardware. That is an error, not a warning.
@@ -319,6 +367,12 @@ export class MessageBroker {
         if (conn) conn.endReason ??= `cut off for publishing to ${packet.topic}`;
         // aedes drops the publish and closes this client's connection.
         callback(new Error(reason));
+      },
+
+      // The server is told which of what it is sent is kept on its topic (`#retained`). The copy is its own: no other client's flag changes.
+      authorizeForward: (client, packet) => {
+        if (this.#retained.has(packet.topic) && this.#of(client)?.privileged) packet.retain = true;
+        return packet;
       },
 
       /*
@@ -379,8 +433,9 @@ export class MessageBroker {
 
     // The journal's notable entries go out to the server as they happen, so its
     // console can say what a device is doing without polling for it.
+    // A device's every word stays in the file: a bridge says many, and the server's console is for what happened to it.
     this.#unsubscribeJournal = this.#journal.onEntry((entry) => {
-      if (entry.level === 'debug' || !this.#aedes || this.#aedes.closed) return;
+      if (entry.level === 'debug' || (CHATTER.has(entry.kind) && entry.level === 'info') || !this.#aedes || this.#aedes.closed) return;
       this.#publish(TOPIC.journal, JSON.stringify(entry), false);
     });
 
@@ -434,6 +489,7 @@ export class MessageBroker {
       openedAt: Date.now(),
       clientId: null,
       privileged: false,
+      signedIn: null,
       connectedAt: null,
       connect: null,
       subscriptions: new Set(),
@@ -666,7 +722,7 @@ export class MessageBroker {
           `its last will to ${topic}: ${printable(payload) !== null ? `"${printable(payload)}"` : `${payload.length} B`}`,
         clientId: client.id,
         device: from?.address,
-        data: { topic, bytes: payload.length, hex: toHex(payload).slice(0, 400) },
+        data: { topic, bytes: payload.length, hex: toHex(payload) },
       });
       return;
     }
@@ -675,6 +731,9 @@ export class MessageBroker {
     if (conn.privileged) {
       const command = commandOf(this.options.policies, topic);
       if (command) return this.#onCommand(command.policy, command.address, topic, payload, conn);
+      // The server's own publishes that command nothing are its business, and below the story.
+      this.#journal.debug({ kind: 'mqtt.publish', message: `The kraftverk server published ${payload.length} B to ${topic}`, data: { topic, retain, bytes: payload.length } });
+      return;
     }
 
     if (from && !conn.privileged) {
@@ -682,18 +741,25 @@ export class MessageBroker {
     }
 
     // Anything else is no installed protocol's — which makes it exactly the
-    // thing worth seeing.
-    this.#journal.info({
+    // thing worth seeing: at info once a minute per client, so a client that
+    // talks a lot (a bridge whose protocol is not installed yet) cannot bury
+    // everything else; the rest at debug.
+    const speaker = conn.clientId ?? `#${conn.n}`;
+    const now = Date.now();
+    const loud = now - (this.#unknownSaid.get(speaker) ?? 0) >= UNKNOWN_TRAFFIC_WINDOW_MS;
+    if (loud) this.#unknownSaid.set(speaker, now);
+    this.#journal.write({
+      level: loud ? 'info' : 'debug',
       kind: 'mqtt.publish',
       message: `${this.#label(conn)} published ${payload.length} B to ${topic}${retain ? ' (retained)' : ''}`,
       clientId: client.id,
       device: this.#addressOf(conn),
-      data: { topic, retain, bytes: payload.length, hex: toHex(payload).slice(0, 400), text: printable(payload) },
+      data: { topic, retain, bytes: payload.length, hex: toHex(payload), text: printable(payload) },
     });
   }
 
   #onCommand(policy: MessageBrokerPolicy, address: string, topic: string, payload: Uint8Array, conn: Connection): void {
-    const note = policy.describeCommand(payload);
+    const note = policy.describeCommand(topic, payload);
     const deliveredTo = [...this.#connections.values()]
       .filter((other) => other !== conn && [...other.subscriptions].some((filter) => matches(filter, topic)))
       .map((other) => other.clientId ?? `#${other.n}`);
@@ -718,7 +784,7 @@ export class MessageBroker {
         level: first ? 'warn' : 'debug',
         kind: 'command.undelivered',
         message:
-          `→ ${address} ${note.summary}: nothing is subscribed to ${topic}, so it went nowhere — the device is not connected` +
+          `→ ${address} ${note.summary}: nothing is subscribed to ${topic}, so it went nowhere — what serves it is not connected` +
           (first ? '. Further commands until it is are journalled at debug level.' : ''),
         device: address,
         data,
@@ -788,7 +854,7 @@ export class MessageBroker {
     const key = keyOf(policy.protocol, address);
     let device = this.#devices.get(key);
     if (!device) {
-      device = blankDevice(policy.protocol, address.toUpperCase());
+      device = blankDevice(policy.protocol, address);
       this.#devices.set(key, device);
     }
     if (conn.device === key && device.connection === conn) return device;
@@ -880,6 +946,21 @@ export class MessageBroker {
     );
   }
 
+  /**
+   * Why `conn` may not publish `topic`, when it is a device topic of a
+   * protocol whose devices are spoken for by a client that signed in, and
+   * another connection holds that device now: the first holds it while it
+   * is connected, so a second cannot take its presence or speak in its place.
+   */
+  #heldElsewhere(conn: Connection, topic: string): string | null {
+    if (conn.privileged) return null;
+    const from = deviceOf(this.options.policies, topic);
+    if (!from?.policy.signedIn) return null;
+    const holder = this.#devices.get(keyOf(from.policy.protocol, from.address))?.connection;
+    if (!holder || holder === conn || holder.socket.destroyed) return null;
+    return `${describe(this.#devices.get(keyOf(from.policy.protocol, from.address))!)} is spoken for by ${holder.clientId ?? `#${holder.n}`} on #${holder.n}`;
+  }
+
   #of(client: Client | null | undefined): Connection | null {
     if (!client?.conn) return null;
     return this.#connections.get(client.conn as Socket) ?? null;
@@ -929,20 +1010,11 @@ export class MessageBroker {
       }
     };
 
-    const devices = read(this.options.devicesFile);
-    if (devices) {
-      return devices
-        .filter((d): d is Partial<DevicePresence> & { protocol: string; address: string } =>
-          typeof (d as DevicePresence).protocol === 'string' && typeof (d as DevicePresence).address === 'string'
-        )
-        .map(restore);
-    }
-    // A broker from before protocols were packages knew only Sydpower
-    // stations, by MAC. They are the same devices, and are expected back.
-    const stations = read(this.options.legacyStationsFile);
-    return (stations ?? [])
-      .filter((s): s is { station: string } & Partial<DevicePresence> => typeof (s as { station?: unknown }).station === 'string')
-      .map(({ station, ...rest }) => restore({ ...rest, protocol: 'sydpower', address: station }));
+    return (read(this.options.devicesFile) ?? [])
+      .filter((d): d is Partial<DevicePresence> & { protocol: string; address: string } =>
+        typeof (d as DevicePresence).protocol === 'string' && typeof (d as DevicePresence).address === 'string'
+      )
+      .map(restore);
   }
 
   #saveKnown(): void {
@@ -1012,8 +1084,12 @@ const describe = (device: DevicePresence) => `Device ${device.address} (${device
 
 const loopback = (remote: string) => /^(127\.|::1|localhost)/.test(remote);
 
-const toHex = (bytes: Uint8Array) => [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+/** How much of a payload the journal keeps, in bytes: a bridge's device list is hundreds of kB, and its first 200 say what it was. */
+const HEX_BYTES = 200;
 
+/** A payload's first bytes in hex, with how many more there were. */
+const toHex = (bytes: Uint8Array) =>
+  [...bytes.subarray(0, HEX_BYTES)].map((b) => b.toString(16).padStart(2, '0')).join('') + (bytes.length > HEX_BYTES ? `…(+${bytes.length - HEX_BYTES} B)` : '');
 function toBytes(payload: unknown): Uint8Array {
   if (payload instanceof Uint8Array) return payload;
   if (typeof payload === 'string') return new TextEncoder().encode(payload);

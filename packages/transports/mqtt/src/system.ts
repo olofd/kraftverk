@@ -28,9 +28,6 @@ import definition from './index.ts';
  * device's messages already arrive on it.
  */
 
-/** Silence this long from a device the broker says nothing about means it has gone. */
-const HEARD_WITHIN_MS = 120_000;
-
 /** A device's presence as a sighting: a client, by the protocol the broker heard it speak. */
 const sightingOf = (presence: DevicePresence): Sighting => ({
   transport: 'mqtt',
@@ -43,7 +40,6 @@ class MqttChannel implements MessageChannel {
   readonly kind = 'messages' as const;
   #listeners = new Set<(connected: boolean) => void>();
   #detach: (() => void)[] = [];
-  #lastSeen: number | null = null;
   #was: boolean;
 
   constructor(
@@ -51,16 +47,11 @@ class MqttChannel implements MessageChannel {
     readonly address: string,
     private release: () => void
   ) {
-    const heard = (message: BusMessage) => {
-      if (message.topic.toUpperCase().startsWith(`${address.toUpperCase()}/`)) this.#lastSeen = message.at.getTime();
-    };
     const recheck = () => this.#recheck();
-    bus.on('message', heard);
     bus.on('presence', recheck);
     bus.on('connected', recheck);
     bus.on('disconnected', recheck);
     this.#detach = [
-      () => bus.off('message', heard),
       () => bus.off('presence', recheck),
       () => bus.off('connected', recheck),
       () => bus.off('disconnected', recheck),
@@ -69,17 +60,12 @@ class MqttChannel implements MessageChannel {
   }
 
   /**
-   * Whether this device is reachable right now.
-   *
-   * The broker knows for certain — it holds the device's socket — and says so
-   * on the presence topic. Only when it has said nothing about this device
-   * does the older rule apply: live if heard in the last two minutes.
+   * Whether this device is reachable right now: what the broker says on its
+   * presence topic, and it knows for certain — it holds the device's socket.
+   * One it has said nothing of has not connected.
    */
   get connected(): boolean {
-    if (!this.bus.connected) return false;
-    const presence = this.bus.presence(this.address);
-    if (presence) return presence.online;
-    return this.#lastSeen !== null && Date.now() - this.#lastSeen < HEARD_WITHIN_MS;
+    return this.bus.connected && (this.bus.presence(this.address)?.online ?? false);
   }
 
   #recheck(): void {
@@ -98,13 +84,25 @@ class MqttChannel implements MessageChannel {
     return this.bus.publish(topic, payload);
   }
 
+  /**
+   * As MQTT subscribes: what the broker keeps on the matching topics first —
+   * a moment later, as a broker sends it — then everything as it comes.
+   */
   subscribe(filter: string, listener: (message: ChannelMessage) => void): () => void {
+    let open = true;
+    const deliver = (message: BusMessage) => listener({ topic: message.topic, payload: message.payload, at: message.at.toISOString() });
     const onMessage = (message: BusMessage) => {
-      if (!matches(filter, message.topic)) return;
-      listener({ topic: message.topic, payload: message.payload, at: message.at.toISOString() });
+      if (matches(filter, message.topic)) deliver(message);
     };
+    const kept = this.bus.retained(filter, matches);
+    queueMicrotask(() => {
+      for (const message of kept) if (open) deliver(message);
+    });
     this.bus.on('message', onMessage);
-    return () => void this.bus.off('message', onMessage);
+    return () => {
+      open = false;
+      this.bus.off('message', onMessage);
+    };
   }
 
   describe() {
@@ -182,7 +180,7 @@ const createMqttTransport: TransportFactory = (context: TransportContext): Trans
     if (now - (lastRefusal.get(key) ?? 0) < 60_000) return;
     lastRefusal.set(key, now);
     // What it tried to reach: a device's address on the broker, which may be no device you have.
-    const address = entry.device ?? String(entry.data?.topic ?? '').split('/')[0];
+    const address = entry.device;
     const about: AuditSubject = address ? { resourceKind: 'transport', resource: address } : {};
     context.audit({ kind: 'mqtt.refused', actor: entry.clientId ?? 'unknown', ...about, summary: entry.message, detail: entry.data });
   });
@@ -263,7 +261,7 @@ const createMqttTransport: TransportFactory = (context: TransportContext): Trans
     },
 
     async open(address) {
-      const key = address.toUpperCase();
+      const key = address;
       // Refused rather than shared: two owners of one device's topics would be
       // two sessions polling one device. The core claims an address before
       // opening it, so this is a guard against a bug, not an expected outcome.

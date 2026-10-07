@@ -115,18 +115,32 @@ evidence rather than a hypothesis:
 | `tcp.open` / `tcp.close` | info (debug from loopback) | Whether the station opened a socket **at all** — before any MQTT. A close without a handshake is reported with the bytes exchanged. Loopback is the server or a port check, never a station |
 | `mqtt.connected` | info (debug for the server) | Client id, keepalive, clean session, username, password *length* (never the password; a P280 sends none), will. The server's own session is journalled at debug: it reports its comings and goings itself |
 | `mqtt.subscribe` | info | What it subscribed to. A station that has not subscribed to `<MAC>/client/request/#` cannot receive commands |
-| `station.online` | info | Which station, from where, and **how long it had been away** |
-| `station.offline` | warn | How long the session lasted and **why it ended**: a clean DISCONNECT, the TCP connection closed without one, a keepalive timeout, a socket error, replaced by a new connection with the same client id, or the broker shutting down |
-| `station.absent` | warn | A known station has not reconnected after 1 min, 5 min, 15 min, 1 h, 6 h — measured from when it left, or from when this broker started |
+| `device.online` | info | Which device, from where, and **how long it had been away** |
+| `device.offline` | warn | How long the session lasted and **why it ended**: a clean DISCONNECT, the TCP connection closed without one, a keepalive timeout, a socket error, replaced by a new connection with the same client id, or the broker shutting down |
+| `device.absent` | warn | A known device has not reconnected after 1 min, 5 min, 15 min, 1 h, 6 h — measured from when it left, or from when this broker started |
 | `command` | info (writes) / debug (reads) | Every frame the server sent, in words — `write holding 26 = 1` — and **which client received it** |
 | `command.undelivered` | warn | A command nothing was subscribed to receive: it went nowhere |
-| `station.message` | debug, info for state/acks | Every frame the station sent, in words, and whether it was a **reply** (with latency) or **unprompted** (with the interval since the last push) |
+| `device.message` | as its protocol says: debug for a bridge's device states, info for a station's state and acks | Every message the device sent, in words, and whether it was a **reply** (with latency) or **unprompted** (with the interval since the last push) |
 | `mqtt.refused` | warn / error | A publish the broker refused — see below |
+| `mqtt.publish` | info once a minute per client, then debug | Traffic no installed protocol knows: worth seeing, but a client that talks a lot — a bridge whose integration is not installed — cannot bury the rest. The server's own publishes that command nothing are debug |
 | `mqtt.keepalive-timeout`, `mqtt.error` | warn | What aedes reported, attached to the session it ended |
 
-The broker also remembers every station it has seen in `stations.json`, so a
+The broker also remembers every device it has seen in `devices.json`, so a
 freshly started broker knows whom to expect and starts the absence clock for
 them.
+
+An entry keeps a payload's first 200 bytes in hex and says how many more there
+were — a bridge's list of its devices runs to hundreds of kB. The file is
+written in batches, every 200 ms and when the broker stops, not once per
+message; a device's every message stays in the file and the journal, and is
+not sent on to the server's console as it happens.
+
+**What is kept on a topic reaches the server.** MQTT clears the retain flag on
+what it forwards to a subscription that already exists, and the server
+subscribed at its start, long before most retained messages were said. The
+broker remembers which topics hold one and marks what it forwards to the
+server from them, so the server keeps them and replays them to a channel
+opened later — as a new MQTT subscription would be sent them.
 
 ## Who may do what
 
@@ -149,6 +163,17 @@ chooses. What a connection may *publish* is another matter.
   token in `server/data/broker/token`, created on first use by whichever side
   needs it first. Client ids starting `kraftverk-` are refused to anyone else,
   so nothing on the LAN can take over the server's session.
+- **A bridge signs in, and holds its devices.** A protocol spoken by one
+  client for many devices — Zigbee2MQTT — says so in its policy: its topics
+  share a beginning (`root`), matched by its policy alone, and only a client
+  signed in with a name and password from `KRAFTVERK_BROKER_CLIENTS` may
+  publish them (`signedIn`). The first signed-in client to speak for a device
+  holds it while it is connected: a second is cut off, so nothing on the LAN
+  can take its presence or speak in its place. A wrong password is turned
+  away; an unknown name is let in as anyone, as a station is.
+- **A policy refuses by topic and frame.** `refuse(topic, payload)`: for a
+  station the frame says what is dangerous; for a bridge the topic does —
+  switching a lamp is not changing the network's key.
 - **`$kraftverk/...` topics are the broker's.** Presence and the journal are
   published there. Nobody may publish to them, and only the server may
   subscribe: the journal names stations, their addresses and their MQTT
@@ -169,8 +194,9 @@ chooses. What a connection may *publish* is another matter.
 | `BROKER_HOST` | `127.0.0.1` | Where the **server** connects to the broker |
 | `BROKER_ADMIN_URL` | `http://127.0.0.1:3883` | Where the **server** reaches the admin API |
 | `BROKER_SPAWN` | on | `0` stops the server starting a broker — for when it is its own service |
-| `KRAFTVERK_BROKER_DIR` | `server/data/broker` | Token, state, known stations and the journal |
+| `KRAFTVERK_BROKER_DIR` | `server/data/broker` | Token, state, known devices and the journal |
 | `KRAFTVERK_BROKER_TOKEN` | — | The server's secret, instead of the token file |
+| `KRAFTVERK_BROKER_CLIENTS` | — | Clients that sign in, `name=password`, comma-separated: a bridge such as Zigbee2MQTT. Handed to the broker and to the client by the deploy |
 | `BROKER_LOG_LEVEL` | `info`; `error` when the server or the CLI starts it | Console verbosity: `debug`, `info`, `warn`, `error`, `off`. A started broker's console goes to `stdout.log`, which only needs to explain a crash. The journal file always gets everything |
 | `BROKER_LOG_DAYS` | `14` | Days of journal files to keep |
 
@@ -180,7 +206,7 @@ chooses. What a connection may *publish* is another matter.
 | --- | --- |
 | `server/data/broker/token` | The server's secret |
 | `server/data/broker/broker.json` | The running broker's pid, build and addresses. Removed on a clean stop |
-| `server/data/broker/stations.json` | Every station seen, and why each last left |
+| `server/data/broker/devices.json` | Every device seen — a station, a bridge — by protocol and address, and why each last left |
 | `server/data/broker/logs/broker-*.jsonl` | The journal |
 | `server/data/broker/logs/stdout.log` | The broker's own console, for a crash that happens before the journal opens |
 

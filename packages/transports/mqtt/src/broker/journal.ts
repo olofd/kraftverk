@@ -56,6 +56,9 @@ export class Journal {
   #day: string | null = null;
   #file: string | null = null;
   #writeFailed = false;
+  /** Lines not yet in their file, by file: written together, a moment later, rather than one write per message. */
+  #unwritten = new Map<string, string[]>();
+  #flushTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private options: JournalOptions) {
     if (options.dir) {
@@ -135,7 +138,7 @@ export class Journal {
       (entry) =>
         entry.seq > since &&
         atLeast(entry.level, threshold) &&
-        (!device || entry.device === device.toUpperCase()) &&
+        (!device || entry.device === device) &&
         (!kinds || kinds.includes(entry.kind))
     );
     return matches.slice(-count);
@@ -152,13 +155,29 @@ export class Journal {
       this.#prune();
     }
 
-    try {
-      appendFileSync(this.#file!, `${JSON.stringify(entry)}\n`);
-      this.#writeFailed = false;
-    } catch (error) {
-      // Said once, not once per entry: a full disk would otherwise fill the console.
-      if (!this.#writeFailed) console.error(`[broker] Could not write the journal: ${(error as Error).message}`);
-      this.#writeFailed = true;
+    const lines = this.#unwritten.get(this.#file!) ?? [];
+    lines.push(`${JSON.stringify(entry)}\n`);
+    this.#unwritten.set(this.#file!, lines);
+    // A bridge's devices speak many times a second: their lines go to the file together.
+    this.#flushTimer ??= setTimeout(() => this.flush(), FLUSH_AFTER_MS);
+    this.#flushTimer.unref?.();
+  }
+
+  /** Writes what is waiting for the file now: on a timer, and before the broker stops. */
+  flush(): void {
+    if (this.#flushTimer) clearTimeout(this.#flushTimer);
+    this.#flushTimer = null;
+    const waiting = [...this.#unwritten];
+    this.#unwritten.clear();
+    for (const [file, lines] of waiting) {
+      try {
+        appendFileSync(file, lines.join(''));
+        this.#writeFailed = false;
+      } catch (error) {
+        // Said once, not once per entry: a full disk would otherwise fill the console.
+        if (!this.#writeFailed) console.error(`[broker] Could not write the journal: ${(error as Error).message}`);
+        this.#writeFailed = true;
+      }
     }
   }
 
@@ -191,6 +210,9 @@ export class Journal {
     }
   }
 }
+
+/** How long a line waits for the ones after it before they go to the file together. */
+const FLUSH_AFTER_MS = 200;
 
 const pad = (n: number) => String(n).padStart(2, '0');
 

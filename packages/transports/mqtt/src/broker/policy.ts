@@ -22,9 +22,19 @@ import type { MessageBrokerPolicy, Protocol } from '@kraftverk/device-sdk';
 
 export type Policies = readonly MessageBrokerPolicy[];
 
+/**
+ * The policies that may speak for a topic: the one whose root it is under,
+ * alone — so a Zigbee device named `client/request` is never taken for a
+ * station's command — or, under no root, those that have none.
+ */
+function candidates(policies: Policies, topic: string): Policies {
+  const rooted = policies.find((policy) => policy.root && topic.startsWith(policy.root));
+  return rooted ? [rooted] : policies.filter((policy) => !policy.root);
+}
+
 /** The policy that claims a topic as a command, and the device it addresses. */
 export function commandOf(policies: Policies, topic: string): { policy: MessageBrokerPolicy; address: string } | null {
-  for (const policy of policies) {
+  for (const policy of candidates(policies, topic)) {
     const address = policy.commandFor(topic);
     if (address !== null) return { policy, address };
   }
@@ -36,12 +46,15 @@ export function deviceOf(
   policies: Policies,
   topic: string
 ): { policy: MessageBrokerPolicy; address: string; channel: string } | null {
-  for (const policy of policies) {
+  for (const policy of candidates(policies, topic)) {
     const found = policy.fromDevice(topic);
     if (found) return { policy, ...found };
   }
   return null;
 }
+
+/** Who is publishing, as far as the rules care: the server, a client that signed in (by its name), or anyone. */
+export type Publisher = { privileged: boolean; signedIn: string | null };
 
 /**
  * Why a client may not publish `payload` to `topic`, or null if it may.
@@ -64,16 +77,23 @@ export function deviceOf(
  * passes, whatever built it — including a raw-frame tool, which exists to send
  * frames a model's whitelist does not describe.
  */
-export function refusalFor(policies: Policies, topic: string, payload: Uint8Array, privileged: boolean): string | null {
+export function refusalFor(policies: Policies, topic: string, payload: Uint8Array, publisher: Publisher): string | null {
   // aedes's default policy, kept: a client publishing into $SYS can DoS it.
   if (topic.startsWith('$SYS/')) return '$SYS topics are reserved for the broker';
   // Presence and the journal are the broker's word; a forged one would lie to the server.
   if (topic.startsWith('$kraftverk/')) return '$kraftverk topics are reserved for the broker';
 
   const command = commandOf(policies, topic);
-  if (!command) return null;
-  if (!privileged) return 'Only the kraftverk server may send commands to a device';
-  return command.policy.refuse(payload);
+  if (command) {
+    if (!publisher.privileged) return 'Only the kraftverk server may send commands to a device';
+    return command.policy.refuse(topic, payload);
+  }
+  // A protocol whose devices are spoken for by a client that signs in: not by anyone else on the network.
+  const from = deviceOf(policies, topic);
+  if (from?.policy.signedIn && !publisher.privileged && !publisher.signedIn) {
+    return `Only a client signed in to the broker may speak for a ${from.policy.protocol} device`;
+  }
+  return null;
 }
 
 /** Where the integrations are, from this file: packages/transports/mqtt/src/broker. */
