@@ -1525,6 +1525,21 @@ known. First generation, covers, lights and inputs are not ported.
 **Step 17 · iCloud's protocol.** SRP sign-in, two-factor by `ask`, the trust
 token kept, Find My with the family's devices; tested against recorded
 exchanges with made-up data.
+**Done 2026-10-07**, `packages/integrations/icloud`, ported from Home
+Assistant's `icloud` and pyicloud (with pysrp, MIT; NOTICE). SRP-6a as pysrp
+computes it with RFC 5054's padding and no username in x, the password
+stretched with PBKDF2 (s2k and s2k_fo; PBKDF2 joined the SDK's hashes); a
+second factor in turns of the setup step through `ask` — a trusted
+device's code, or one texted, by choice or when Apple routes the sign-in
+to its newer verifier, which is not ported — then trust, and accountLogin;
+the session (Apple's headers, its cookies in a jar of the protocol's own,
+the trust token) kept as a `kept: 'session'` secret, carried on with no
+person, `NeedsSignIn` when Apple asks for a code again; Find My's devices
+with the family's, a sound, lost mode. The `https` transport learnt one
+pattern of origin, `https://*.icloud.com`, for hosts iCloud names at
+sign-in. The way is held only on a server trusted with the password.
+Tested against Apple played with made-up data, its SRP server checking the
+proof from a verifier alone; not yet against Apple itself.
 
 **Step 18 · iCloud's account and devices.** `icloud.account` as a bridge,
 `icloud.device` as its members: position, battery, play a sound, lost mode

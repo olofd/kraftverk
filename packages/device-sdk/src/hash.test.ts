@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
 
-import { crc32, hexOf, hmacSha256, md5, sha256 } from './hash.ts';
+import { crc32, hexOf, hmacSha256, md5, pbkdf2Sha256, sha256 } from './hash.ts';
 
 /**
  * The hand-written hashes, checked byte for byte against Node's — allowed
@@ -29,6 +29,14 @@ describe('the hashes', () => {
     // RFC 1321's own answers.
     expect(hexOf(md5('abc'))).toBe('900150983cd24fb0d6963f7d28e17f72');
     expect(hexOf(md5('message digest'))).toBe('f96b697d7cb7938d525a2f31aaf161d0');
+  });
+
+  test('PBKDF2-HMAC-SHA256 agrees with Node, for a key shorter and longer than a block', () => {
+    for (const [iterations, length] of [[1, 32], [2, 32], [1000, 32], [3, 48], [5, 64]] as const) {
+      const secret = randomBytes(32);
+      const salt = randomBytes(16);
+      expect(pbkdf2Sha256(u8(secret), u8(salt), iterations, length)).toEqual(u8(pbkdf2Sync(secret, salt, iterations, length, 'sha256')));
+    }
   });
 
   test('CRC-32 matches the known check value', () => {

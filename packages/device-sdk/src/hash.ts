@@ -104,6 +104,30 @@ export function hmacSha256(key: Uint8Array | string, data: Uint8Array | string):
   return sha256(concat(outer, sha256(concat(inner, bytesOf(data)))));
 }
 
+// --- PBKDF2-HMAC-SHA256 (RFC 8018) ------------------------------------------------
+
+/**
+ * A key stretched from a secret: PBKDF2 with HMAC-SHA256, `length` bytes. What a
+ * sign-in that never sends the password derives its proof from (an SRP
+ * password's key).
+ */
+export function pbkdf2Sha256(secret: Uint8Array | string, salt: Uint8Array, iterations: number, length: number): Uint8Array {
+  const key = bytesOf(secret);
+  const out = new Uint8Array(length);
+  for (let block = 1, at = 0; at < length; block++) {
+    const index = new Uint8Array([(block >>> 24) & 0xff, (block >>> 16) & 0xff, (block >>> 8) & 0xff, block & 0xff]);
+    let u = hmacSha256(key, concat(salt, index));
+    const t = u.slice();
+    for (let round = 1; round < iterations; round++) {
+      u = hmacSha256(key, u);
+      for (let i = 0; i < t.length; i++) t[i]! ^= u[i]!;
+    }
+    out.set(t.subarray(0, Math.min(t.length, length - at)), at);
+    at += t.length;
+  }
+  return out;
+}
+
 // --- MD5 (RFC 1321) ---------------------------------------------------------------
 
 const S = [7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21];

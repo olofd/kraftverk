@@ -34,6 +34,24 @@ test('a protocol may name a host beside its API — a sign-in host — and every
   expect(channel.describe?.()).toMatchObject({ origin: 'https://api.example.test', alsoOrigins: ['https://account.example.test'] });
 });
 
+test('a service whose hosts are numbered is named by its domain: any host under it, over HTTPS, and nothing beside', async () => {
+  const asked: string[] = [];
+  const fake = (async (url: URL | string) => {
+    asked.push(String(url));
+    return new Response('{}');
+  }) as typeof fetch;
+  const channel = httpChannel('https://setup.example.test', fake, ['https://*.example.test']);
+  await channel.fetch('https://p42-find.example.test:443/client/refresh');
+  await channel.fetch('https://p7-find.eu.example.test/client/refresh');
+  expect(asked).toEqual(['https://p42-find.example.test/client/refresh', 'https://p7-find.eu.example.test/client/refresh']);
+  // Not the domain's look-alikes, another port, nor plain HTTP.
+  for (const elsewhere of ['https://example.test.evil.test/', 'https://evilexample.test/', 'https://p42.example.test:8443/', 'http://p42.example.test/']) {
+    await expect(channel.fetch(elsewhere)).rejects.toThrow('is all this connection may reach');
+  }
+  // A pattern is a whole domain after "*.", never a partial name.
+  expect(() => httpChannel('https://setup.example.test', fake, ['https://*example.test'])).toThrow();
+});
+
 test('an address must be HTTPS', () => {
   expect(originOf('https://api.example.test/path')).toBe('https://api.example.test');
   expect(() => originOf('http://api.example.test')).toThrow('not an HTTPS address');

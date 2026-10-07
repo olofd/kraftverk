@@ -1,0 +1,32 @@
+@kraftverk/integration-icloud
+
+Ported to TypeScript from:
+
+- Home Assistant's `icloud` integration
+  (https://github.com/home-assistant/core/tree/dev/homeassistant/components/icloud),
+  Copyright the Home Assistant authors, licensed under the Apache License,
+  Version 2.0.
+- pyicloud (https://github.com/timlaing/pyicloud, and the project it
+  continues, https://github.com/picklepete/pyicloud), licensed under the MIT
+  License: Copyright (c) 2013 Peter Evans, and its contributors.
+- pysrp (https://github.com/cocagne/pysrp), licensed under the MIT License:
+  Copyright (c) 2010 Tom Cocagne.
+
+Changed: rewritten in TypeScript for kraftverk — the SRP client as pysrp
+computes it with RFC 5054's padding and no username in x; the sign-in,
+second factor, trust and account login as pyicloud makes them; Find My's
+calls. No code was copied verbatim.
+
+The MIT License: Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including without
+limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom
+the Software is furnished to do so, subject to the following conditions: The
+above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS
+IS", WITHOUT WARRANTY OF ANY KIND.
+
+Using Apple's iCloud web API is a question of Apple's terms, not of
+copyright: an Apple ID signed into this way is the owner's own, used as
+icloud.com uses it.

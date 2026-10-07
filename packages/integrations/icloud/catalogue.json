@@ -1,0 +1,46 @@
+{
+  "protocols": [
+    {
+      "id": "icloud-web",
+      "label": "iCloud",
+      "bindings": {
+        "https": {}
+      },
+      "credentials": {
+        "schema": {
+          "help": "Your Apple ID and its password stay on this server: they are how it signs in again when Apple ends a session. Apple asks for a code from one of your devices once.",
+          "fields": {
+            "appleId": {
+              "type": "string",
+              "title": "Apple ID",
+              "description": "The email address you sign in to iCloud with.",
+              "required": true
+            },
+            "password": {
+              "type": "string",
+              "presentation": "secret",
+              "title": "Password",
+              "required": true
+            },
+            "session": {
+              "type": "string",
+              "presentation": "secret",
+              "kept": "session",
+              "title": "Signed in"
+            }
+          }
+        },
+        "actions": [
+          {
+            "id": "signIn",
+            "label": "Sign in with Apple",
+            "description": "Signs in to iCloud, as icloud.com does: Apple asks for a code from one of your devices, once."
+          }
+        ],
+        "first": true,
+        "title": "Your Apple ID"
+      }
+    }
+  ],
+  "types": []
+}

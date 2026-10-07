@@ -30,13 +30,34 @@ export function originOf(address: string): string {
 }
 
 /**
+ * Whether a URL is one a channel may reach: its own origin, a declared one,
+ * or under a declared pattern — `https://*.icloud.com`, any host under that
+ * domain, over HTTPS on its own port: a service whose hosts are numbered,
+ * and told at sign-in (`p42-fmipweb.icloud.com`).
+ */
+function allows(declared: readonly string[], url: URL): boolean {
+  return declared.some((each) => {
+    if (!each.startsWith('https://*.')) return each === url.origin;
+    const domain = each.slice('https://*.'.length);
+    return url.protocol === 'https:' && url.port === '' && url.hostname.endsWith(`.${domain}`);
+  });
+}
+
+/** A declared origin, or a pattern of them: an HTTPS origin with `*.` before its domain. */
+const declaredOf = (address: string): string => {
+  if (!address.includes('*')) return originOf(address);
+  if (/^https:\/\/\*\.[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(address)) return address;
+  throw new Error(`${address} is not a domain to reach every host under: https://*.example.com`);
+};
+
+/**
  * A channel to one origin — and to the few its protocol declares beside it —
  * over whatever `fetch` the platform has. The same on every platform, which is
  * why each platform's entry is two lines.
  */
 export function httpChannel(address: string, fetcher: typeof fetch = fetch, alsoOrigins: readonly string[] = []): HttpChannel {
   const origin = originOf(address);
-  const allowed = new Set([origin, ...alsoOrigins.map(originOf)]);
+  const allowed = new Set([origin, ...alsoOrigins.map(declaredOf)]);
   let connected = true;
   const listeners = new Set<(connected: boolean) => void>();
   const set = (next: boolean) => {
@@ -56,7 +77,7 @@ export function httpChannel(address: string, fetcher: typeof fetch = fetch, also
     },
     async fetch(path, init) {
       const url = new URL(path, origin);
-      if (!allowed.has(url.origin)) throw new Error(`${url.origin} is not ${[...allowed].join(' or ')}, which is all this connection may reach`);
+      if (!allows([...allowed], url)) throw new Error(`${url.origin} is not ${[...allowed].join(' or ')}, which is all this connection may reach`);
       const { timeoutMs = 10_000, ...rest } = init ?? {};
       try {
         const response = await fetcher(url, { ...rest, signal: rest.signal ?? AbortSignal.timeout(timeoutMs) });

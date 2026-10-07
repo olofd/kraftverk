@@ -1,0 +1,33 @@
+{
+  "name": "@kraftverk/integration-icloud",
+  "version": "0.1.0",
+  "private": true,
+  "description": "iCloud as a platform: an Apple ID signed into as icloud.com is (SRP, a second factor, trust kept), and Find My with the family's devices. Ported from Home Assistant's icloud integration and pyicloud.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "kraftverk": {
+    "integration": {
+      "id": "icloud",
+      "name": "iCloud",
+      "protocols": [
+        "./src/protocol/index.ts"
+      ],
+      "types": []
+    }
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./protocol": "./src/protocol/index.ts"
+  },
+  "scripts": {
+    "test": "node ../../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kraftverk/device-sdk": "*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

@@ -29,7 +29,9 @@ types.checkConnections({ protocols, transport: (id) => transports.definition(id)
 const loadedAtStart = types.loadedIntegrations();
 /** Each type as its catalogue says, before its code is there to say otherwise. */
 const catalogued = new Map(types.all().map((type) => [type.id, type]));
-const loaded = await Promise.all(types.all().map((type) => types.load(type.id)));
+// Every integration loaded — one with no types yet too, its protocols only.
+await Promise.all(types.integrations().map((integration) => types.loadIntegration(integration.id)));
+const loaded = types.all().map((type) => types.loaded(type.id));
 
 describe('installed packages', () => {
   test('are found without importing any of their code: each loads when first needed', () => {

@@ -77,7 +77,10 @@ export type OpenOptions = {
   /**
    * HTTPS: the other origins of the same service the channel may reach besides
    * its address — a sign-in host beside the API. Declared by the protocol,
-   * never typed by a person; every other origin is still refused.
+   * never typed by a person; every other origin is still refused. One may be
+   * a whole domain — `https://*.example.com` — for a service whose hosts are
+   * numbered and told at sign-in: any host under it, over HTTPS on its own
+   * port, and nothing beside it.
    */
   alsoOrigins?: readonly string[];
 };
