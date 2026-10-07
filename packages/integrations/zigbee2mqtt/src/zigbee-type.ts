@@ -7,13 +7,15 @@ import {
   type DeviceType,
   type Reading,
   type SessionHealth,
+  type ToolRun,
+  type ToolSpec,
   type Value,
 } from '@kraftverk/device-sdk';
 
 import type { ZigbeeLink } from './link.ts';
 import { groupKey, ZigbeeNetwork } from './network.ts';
 import { playedZigbee2Mqtt } from './played.ts';
-import { getPayload, readingsOf, setPayload, shapeOf, type BridgeDevice, type Expose, type Shape } from './protocol/index.ts';
+import { getPayload, readingsOf, setPayload, shapeOf, SOFTWARE_PROPERTY, updateOf, type BridgeDevice, type Expose, type Shape } from './protocol/index.ts';
 
 /*
   A device behind a Zigbee2MQTT coordinator, of any kind (docs/PLAN-ZIGBEE.md
@@ -62,6 +64,11 @@ function healthOf(link: ZigbeeLink, shape: Shape | null): SessionHealth {
   // Reachable, and quiet since this server began listening: a battery device speaks when a value changes, at least hourly.
   if (!at && link.available() === true) return { status: 'connected', detail: 'Reachable; waiting for its next report — it says a value when it changes', lastReadingAt: null };
   if (!at) return { status: 'connecting', detail: 'Waiting for it to say something', lastReadingAt: null };
+  const updating = updateOf(link.state().values.update);
+  if (updating?.state === 'updating') {
+    const left = updating.remaining !== null ? `, about ${Math.max(1, Math.round(updating.remaining / 60))} min left` : '';
+    return { status: 'connected', detail: `Updating its firmware: ${Math.round(updating.progress ?? 0)} %${left}`, lastReadingAt: at };
+  }
   const about = link.about();
   return { status: 'connected', detail: about ? `${about.vendor ?? ''} ${about.model ?? ''}`.trim() || 'Zigbee' : 'A Zigbee group', lastReadingAt: at };
 }
@@ -74,6 +81,46 @@ async function readback(link: ZigbeeLink, shape: Shape, keys: readonly string[],
   const { values, at } = link.state();
   const readings = readingsOf(shape, values, at ?? new Date().toISOString());
   return Object.fromEntries(keys.map((key) => [key, readings.find((reading) => reading.key === key)?.value ?? null]));
+}
+
+/**
+ * Updating its firmware (docs/PLAN-ZIGBEE.md §5.7): tools a person runs —
+ * confirmed, on the timeline, refused while read-only, never an automation's.
+ */
+const FIRMWARE_TOOLS = {
+  updateFirmware: {
+    label: 'Update its firmware',
+    description:
+      'Installs the newer firmware Zigbee2MQTT’s index offers for it — what it changes is under its readings. 10–100 minutes; it keeps working meanwhile. One device at a time: another waits its turn. One on batteries updates the next time it wakes.',
+    answer: { type: 'string' },
+    writes: true,
+    confirm:
+      'Its firmware is replaced. It takes 10–100 minutes and it keeps working meanwhile; if it fails, it keeps the firmware it has. A new firmware can change how it behaves and some of its settings: they are compared afterwards, and a change is said. Leave it plugged in, and Zigbee2MQTT running, until it is done.',
+  },
+  stopFirmwareUpdate: {
+    label: 'Stop updating its firmware',
+    description: 'Stops an update under way, or takes one waiting its turn out of line. It keeps the firmware it has.',
+    answer: { type: 'string' },
+    writes: true,
+  },
+  checkFirmware: {
+    label: 'Check for newer firmware',
+    description: 'Asks Zigbee2MQTT’s index now whether a newer firmware is offered for it. Zigbee2MQTT also asks by itself, at most once a day.',
+    answer: { type: 'string' },
+    writes: false,
+  },
+} as const satisfies Record<string, ToolSpec>;
+
+function firmwareTools(link: ZigbeeLink, ctx: DeviceContext<Config>): Record<keyof typeof FIRMWARE_TOOLS, ToolRun> {
+  const writing = (run: () => Promise<string>) => async () => {
+    if (ctx.readOnly) throw new Error('Every hardware write is refused: this holder is read-only');
+    return run();
+  };
+  return {
+    updateFirmware: writing(() => link.firmware.update()),
+    stopFirmwareUpdate: writing(() => link.firmware.stop()),
+    checkFirmware: () => link.firmware.check(),
+  };
 }
 
 /** A member's session over its link: the same for a real coordinator's and a simulated one's. */
@@ -89,7 +136,7 @@ async function sessionOver(open: Open, ctx: DeviceContext<Config>, typical: Shap
     if (payload) void link.get(payload).catch((error: Error) => ctx.log.warn(`Asking it for its state: ${error.message}`));
   };
   link = await open(() => {
-    for (const press of link?.takePresses() ?? []) ctx.event(press.id, press.data);
+    for (const event of link?.takeEvents() ?? []) ctx.event(event.id, event.data);
     ask();
     ctx.changed();
   });
@@ -129,7 +176,10 @@ async function sessionOver(open: Open, ctx: DeviceContext<Config>, typical: Shap
       const battery = /battery/i.test(it.about()?.powerSource ?? '');
       const holds = it.connected() && it.available() === true && (!battery || now - Date.parse(at) <= BATTERY_CHECK_IN_MS);
       const confirmedAt = holds ? new Date(now).toISOString() : null;
-      return readingsOf(shape, values, at).map((reading) => (confirmedAt && confirmedAt > reading.at ? { ...reading, confirmedAt } : reading));
+      // The build it runs is in Zigbee2MQTT's device list, not in its state: read with the rest, as its firmware.
+      const software = it.about()?.software ?? null;
+      const said = software ? { ...values, [SOFTWARE_PROPERTY]: software } : values;
+      return readingsOf(shape, said, at).map((reading) => (confirmedAt && confirmedAt > reading.at ? { ...reading, confirmedAt } : reading));
     },
     description: () => it.shape()?.description ?? null,
     info: () => {
@@ -154,6 +204,11 @@ async function sessionOver(open: Open, ctx: DeviceContext<Config>, typical: Shap
     },
 
     ...(writes ? { write } : {}),
+
+    // Its firmware's tools, where Zigbee2MQTT can update it: known once it has said what it is.
+    get tools() {
+      return it.about()?.ota ? firmwareTools(it, ctx) : undefined;
+    },
 
     close: async () => {
       it.close();
@@ -210,6 +265,8 @@ export function defineZigbeeType(spec: ZigbeeTypeSpec): DeviceType<Config> {
     },
     config: { fields: {} },
     describe: () => typical,
+    // A group has no firmware of its own; a device does where Zigbee2MQTT can update it (its session says).
+    ...(spec.group ? {} : { tools: FIRMWARE_TOOLS }),
     connections: [
       {
         id: 'zigbee',

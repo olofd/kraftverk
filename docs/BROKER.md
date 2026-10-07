@@ -187,6 +187,16 @@ chooses. What a connection may *publish* is another matter.
   and a station refused at the door looks exactly like one that never tried.
 - **The admin API** listens on `127.0.0.1:3883`. `/health` is open; everything
   else needs the token as a bearer header.
+- **It says when restarting it would cost something.** A protocol's policy may
+  say so from what is kept on a topic (`busy`): Zigbee2MQTT's, while a device's
+  firmware is being written. `/health` lists each reason, naming no device
+  (`busy`), and the deploy then leaves the broker and Zigbee2MQTT running.
+- **Each message reaches a client once — and every message does.** aedes sends
+  a message only if its number is above the last it sent the client, and
+  stores a retained one before sending it on: one published just after, not
+  retained, overtook it, and the retained one was dropped. Zigbee2MQTT's
+  `bridge/info` never reached anyone live. The broker now drops a message as
+  a duplicate only if that very one was sent (`sendEachOnce`).
 
 ## Environment
 

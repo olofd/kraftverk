@@ -116,7 +116,13 @@ known=$(compose exec -T broker bun --eval "console.log((await (await fetch('http
 # not once someone remembers to recreate it. Losing the station for a minute is accepted.
 expected=$(compose exec -T kraftverk bun --eval "console.log((await import('./packages/transports/mqtt/src/broker/shared.ts')).brokerBuild())")
 running=$(compose exec -T broker bun --eval "console.log((await (await fetch('http://127.0.0.1:3883/health')).json()).build)")
-if [ "$installed" != "$applied" ] || [ "$wanted" != "$known" ] || [ "$expected" != "$running" ]; then
+# What restarting it — or Zigbee2MQTT — now would cost: a device's firmware being written,
+# which a restart of Zigbee2MQTT stops, and the broker's loses the following of. Then both
+# are left as they are, and the next deploy brings them up to date.
+busy=$(compose exec -T broker bun --eval "console.log(((await (await fetch('http://127.0.0.1:3883/health')).json()).busy ?? []).join('; '))")
+if [ -n "$busy" ]; then
+  echo "Leaving the broker and Zigbee2MQTT as they are: $busy. Deploy again once it is done."
+elif [ "$installed" != "$applied" ] || [ "$wanted" != "$known" ] || [ "$expected" != "$running" ]; then
   echo "The broker runs build $running, applies [$applied] and knows clients $known; these images' is $expected, installing [$installed], and this installation names $wanted. Recreating it: the station is gone for about a minute."
   compose up -d --no-build --no-deps --force-recreate --wait --wait-timeout 120 broker
 else
@@ -124,9 +130,11 @@ else
 fi
 
 # Zigbee2MQTT, where the dongle is (the zigbee profile): after the broker, which it signs in to.
-case ",${COMPOSE_PROFILES:-}," in
-  *,zigbee,*) compose up -d --no-build --no-deps zigbee2mqtt ;;
-esac
+if [ -z "$busy" ]; then
+  case ",${COMPOSE_PROFILES:-}," in
+    *,zigbee,*) compose up -d --no-build --no-deps zigbee2mqtt ;;
+  esac
+fi
 
 # These images and the ones before stay; kraftverk images unused for a week go.
 docker image prune --all --force --filter label=se.kraftverk.image --filter until=168h > /dev/null

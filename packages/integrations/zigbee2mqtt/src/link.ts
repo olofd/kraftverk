@@ -20,10 +20,26 @@ export type MemberAbout = {
   powerSource: string | null;
   /** Known by converters — not guessed from what it said. */
   known: boolean;
+  /** Zigbee2MQTT can update its firmware (docs/PLAN-ZIGBEE.md §5.7). */
+  ota: boolean;
 };
 
-/** A press the device made, as an event of its description, with when. */
-export type Press = { id: string; data: Record<string, Value>; at: string };
+/** Something that happened to the device, as an event of its description, with when: a press, a firmware updated. */
+export type MemberEvent = { id: string; data: Record<string, Value>; at: string };
+
+/**
+ * Its firmware, updated as Zigbee2MQTT does it (docs/PLAN-ZIGBEE.md §5.7):
+ * each call answers in a sentence what it did. What an update does after is
+ * read from its state, and said as its events.
+ */
+export type FirmwareCalls = {
+  /** Updates it from Zigbee2MQTT's own index — or, while another is updating, puts it in line; one on batteries is scheduled for when it next wakes. */
+  update(): Promise<string>;
+  /** Stops an update under way, takes one out of line, or unschedules one. */
+  stop(): Promise<string>;
+  /** Asks Zigbee2MQTT's index now whether a newer firmware is offered. */
+  check(): Promise<string>;
+};
 
 /** One Zigbee device, or one group, through its coordinator. */
 export interface ZigbeeLink extends MemberLink {
@@ -32,8 +48,8 @@ export interface ZigbeeLink extends MemberLink {
   about(): MemberAbout | null;
   /** All it last said of itself, and when. */
   state(): { values: Readonly<Record<string, unknown>>; at: string | null };
-  /** The presses since this was last asked, oldest first — taken: each read once. */
-  takePresses(): Press[];
+  /** What happened since this was last asked, oldest first — taken: each read once. */
+  takeEvents(): MemberEvent[];
   /** Whether Zigbee2MQTT says it can reach it: null when it does not say (its availability is off). */
   available(): boolean | null;
   /** Whether Zigbee2MQTT is there now: connected to the broker, and saying it is online. */
@@ -44,4 +60,6 @@ export interface ZigbeeLink extends MemberLink {
   set(payload: Readonly<Record<string, unknown>>): Promise<void>;
   /** Asks for values again: a `/get`; what it says comes as its state. */
   get(payload: Readonly<Record<string, unknown>>): Promise<void>;
+  /** Its firmware: a device's, never a group's. */
+  readonly firmware: FirmwareCalls;
 }

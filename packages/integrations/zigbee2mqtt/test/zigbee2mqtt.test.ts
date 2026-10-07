@@ -224,7 +224,7 @@ describe('the network, against a played Zigbee2MQTT', () => {
     await until(() => network.members().some((member) => member.key === '00124b00000000b9'), 'the button');
     const link = await network.link('00124b00000000b9', () => {});
     played.say('00124b00000000b9', { action: 'hold' });
-    await until(() => link.takePresses().some((press) => press.id === 'action.hold'), 'the press');
+    await until(() => link.takeEvents().some((press) => press.id === 'action.hold'), 'the press');
   });
 
   test('a state is as old as the device says it is, not as new as its replay', async () => {
@@ -244,7 +244,7 @@ describe('the network, against a played Zigbee2MQTT', () => {
     const link = await network.link('00124b00000000b9', () => {});
     network.start();
     await until(() => link.state().values.action === 'single', 'the kept state');
-    expect(link.takePresses()).toEqual([]);
+    expect(link.takeEvents()).toEqual([]);
   });
 
   test('a press replayed unmarked is told by the device’s own time: said before, no press; said now, a press', async () => {
@@ -258,12 +258,12 @@ describe('the network, against a played Zigbee2MQTT', () => {
     say('zigbee2mqtt/bridge/devices', [button]);
     const link = await network.link('00124b00000000b9', () => {});
     await until(() => link.state().values.battery === 90, 'the state said before it was named');
-    expect(link.takePresses()).toEqual([]);
+    expect(link.takeEvents()).toEqual([]);
     // The broker replays it to a server that just connected, unmarked: as old as it was, no press.
     say('zigbee2mqtt/Hall button', { action: 'single', battery: 90, last_seen: '2026-01-01T00:00:00.000Z' });
-    expect(link.takePresses()).toEqual([]);
+    expect(link.takeEvents()).toEqual([]);
     say('zigbee2mqtt/Hall button', { action: 'double', battery: 90, last_seen: new Date().toISOString() });
-    expect(link.takePresses().map((press) => press.id)).toEqual(['action.double']);
+    expect(link.takeEvents().map((press) => press.id)).toEqual(['action.double']);
   });
 
   test('devices join while it lets them: joining first, offered on their shelf once interviewed', async () => {

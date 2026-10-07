@@ -53,6 +53,15 @@ export function deviceOf(
   return null;
 }
 
+/** Why restarting now would cost something, as the protocol a kept topic is under says; null when it would not. */
+export const busyOf = (policies: Policies, topic: string, payload: Uint8Array): string | null => {
+  for (const policy of candidates(policies, topic)) {
+    const busy = policy.busy?.(topic, payload) ?? null;
+    if (busy) return busy;
+  }
+  return null;
+};
+
 /** Whether a topic carries a secret, as the protocol it is under says. */
 export const isSecret = (policies: Policies, topic: string): boolean => candidates(policies, topic).some((policy) => policy.secret?.(topic) ?? false);
 

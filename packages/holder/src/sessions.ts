@@ -299,9 +299,12 @@ export class SessionManager {
   }
 
   /** Whether a device is open as its type's simulator: nothing it does reaches hardware. */
-  simulated(deviceId: SavedDeviceId): boolean {
+  simulated(deviceId: SavedDeviceId, depth = 0): boolean {
     const open = this.#open.get(deviceId);
-    return open !== undefined && isSimulated(open.connection);
+    if (!open) return false;
+    if (isSimulated(open.connection)) return true;
+    // Through a bridge that is its simulator: what is behind it is played too, and reaches no hardware.
+    return open.connection.through !== null && depth < BRIDGE_DEPTH && this.simulated(open.connection.through, depth + 1);
   }
 
   /** What an open device reports now for a meaning on one of its parts — a plug's `on` — or null: not open, or saying nothing of it. */
@@ -526,7 +529,8 @@ export class SessionManager {
   }
 
   async #openDevice(record: HolderDevice, connection: HolderConnection): Promise<void> {
-    const simulated = isSimulated(connection);
+    // Its type's simulator — or a member of a bridge that is one: played too, it reaches no hardware.
+    const simulated = isSimulated(connection) || (connection.through !== null && this.simulated(connection.through));
     // Tried again: what it was refused for goes, and how often it has been is kept — a dead one waits longer each time.
     const tried = this.#refusals.get(record.id)?.attempts ?? 0;
     this.#refusals.delete(record.id);

@@ -10,6 +10,6 @@
  * device through the link (`ZigbeeLink`).
  */
 
-export type { MemberAbout, Press, ZigbeeLink } from './link.ts';
+export type { FirmwareCalls, MemberAbout, MemberEvent, ZigbeeLink } from './link.ts';
 export { defineZigbeeType, type ZigbeeTypeSpec } from './zigbee-type.ts';
 export { playedZigbee2Mqtt, type PlayedZigbee2Mqtt } from './played.ts';

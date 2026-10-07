@@ -46,14 +46,33 @@ export const ALLOWED_REQUESTS: readonly string[] = [
   'device/interview',
   'device/configure',
   'device/options',
+  // Software updates (docs/PLAN-ZIGBEE.md §5.7): never a downgrade, never from a source of the request's own (`otaRefusal`).
   'device/ota_update/check',
   'device/ota_update/update',
+  'device/ota_update/update/abort',
+  'device/ota_update/schedule',
+  'device/ota_update/unschedule',
   'group/add',
   'group/remove',
   'group/rename',
   'group/members/add',
   'group/members/remove',
 ];
+
+/**
+ * Why a software-update request must not be sent, or null. It names its
+ * device and nothing else: a request may name a firmware of its own — a `url`
+ * to another index, or the image itself as `hex` — or how it is sent, and a
+ * firmware nobody vetted is the most dangerous write there is. kraftverk
+ * updates only from the index Zigbee2MQTT ships with, its images checked
+ * against their SHA-512.
+ */
+function otaRefusal(payload: Uint8Array): string | null {
+  const body = objectOf(parseJson(payload));
+  if (!body || typeof body.id !== 'string' || !body.id) return 'A software-update request names its device by id';
+  const other = Object.keys(body).filter((key) => key !== 'id' && key !== 'transaction');
+  return other.length ? `A software-update request is sent with nothing of its own (${other.join(', ')}): only the firmware Zigbee2MQTT's own index offers is installed` : null;
+}
 
 /** What a topic under the base is about: the bridge's, or a device's (or group's) by name, and what is asked of it. */
 export function parseTopic(topic: string): { bridge: string } | { name: string; verb: 'state' | 'set' | 'get' | 'availability' | 'other'; rest: string } | null {
@@ -99,13 +118,22 @@ export const brokerPolicy: MessageBrokerPolicy = {
     return parsed.verb === 'set' || parsed.verb === 'get' ? BASE : null;
   },
 
-  refuse(topic) {
+  refuse(topic, payload) {
     const parsed = parseTopic(topic);
     if (parsed && 'bridge' in parsed && parsed.bridge.startsWith('request/')) {
       const what = parsed.bridge.slice('request/'.length);
       if (!ALLOWED_REQUESTS.includes(what)) return `Zigbee2MQTT's "${what}" is never sent: it changes the Zigbee network or Zigbee2MQTT itself, which only its deploy configures`;
+      if (what.startsWith('device/ota_update/')) return otaRefusal(payload);
     }
     return null;
+  },
+
+  busy(topic, payload) {
+    const parsed = parseTopic(topic);
+    if (!parsed || 'bridge' in parsed || parsed.verb !== 'state') return null;
+    const update = objectOf(objectOf(parseJson(payload))?.update);
+    if (update?.state !== 'updating') return null;
+    return `a Zigbee device is updating its firmware${typeof update.progress === 'number' ? ` (${Math.round(update.progress)} %)` : ''}, which restarting Zigbee2MQTT would stop`;
   },
 
   describeCommand(topic, payload): BrokerMessageNote {

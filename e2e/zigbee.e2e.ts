@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { addSimulated, press, unique } from './helpers';
+import { addSimulated, answer, press, unique } from './helpers';
 
 /*
   Zigbee through Zigbee2MQTT (docs/PLAN-ZIGBEE.md), against a simulated
@@ -41,6 +41,17 @@ test('a Zigbee coordinator: its devices offered as what they are, one joining, a
   await expect(page).toHaveURL(/\/devices\//);
   await expect(page.getByText(name, { exact: true }).filter({ visible: true }).first()).toBeVisible();
   await expect(page.getByText('42 W', { exact: true }).filter({ visible: true }).first()).toBeVisible();
+
+  // Its firmware: a newer one offered, installed after a person's yes, followed to its end, and said as an event.
+  const plugPage = new URL(page.url()).pathname;
+  await expect(page.getByText('2.1.3', { exact: true }).filter({ visible: true }).first()).toBeVisible();
+  await page.goto(`${plugPage}/tools`);
+  await expect(page.getByText('Update its firmware', { exact: true }).filter({ visible: true }).first()).toBeVisible();
+  await page.getByRole('button', { name: 'Run' }).filter({ visible: true }).first().click();
+  expect(await answer(page, true)).toContain('Its firmware is replaced');
+  await expect(page.getByText(/Updating: Zigbee2MQTT is asking it/).filter({ visible: true }).first()).toBeVisible();
+  await page.goto(plugPage);
+  await expect(page.getByText('Firmware updated', { exact: true }).filter({ visible: true }).first()).toBeVisible({ timeout: 20_000 });
 
   // Back on the coordinator's page: the plug among what is through it, with what it says now.
   await page.goto(`/integrations/zigbee2mqtt/gateways/${coordinator.id}`);

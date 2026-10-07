@@ -216,6 +216,18 @@
               "max": 26
             },
             "category": "diagnostic"
+          },
+          {
+            "key": "updates",
+            "label": "Firmware updates offered",
+            "description": "Devices Zigbee2MQTT’s index offers a newer firmware for: each is updated from its own page",
+            "value": {
+              "type": "number",
+              "integer": true,
+              "min": 0
+            },
+            "category": "diagnostic",
+            "history": false
           }
         ]
       },
@@ -247,6 +259,33 @@
           "updates": "push"
         }
       ],
+      "tools": {
+        "updateFirmware": {
+          "label": "Update its firmware",
+          "description": "Installs the newer firmware Zigbee2MQTT’s index offers for it — what it changes is under its readings. 10–100 minutes; it keeps working meanwhile. One device at a time: another waits its turn. One on batteries updates the next time it wakes.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": true,
+          "confirm": "Its firmware is replaced. It takes 10–100 minutes and it keeps working meanwhile; if it fails, it keeps the firmware it has. A new firmware can change how it behaves and some of its settings: they are compared afterwards, and a change is said. Leave it plugged in, and Zigbee2MQTT running, until it is done."
+        },
+        "stopFirmwareUpdate": {
+          "label": "Stop updating its firmware",
+          "description": "Stops an update under way, or takes one waiting its turn out of line. It keeps the firmware it has.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": true
+        },
+        "checkFirmware": {
+          "label": "Check for newer firmware",
+          "description": "Asks Zigbee2MQTT’s index now whether a newer firmware is offered for it. Zigbee2MQTT also asks by itself, at most once a day.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": false
+        }
+      },
       "description": {
         "parts": [
           {
@@ -392,6 +431,33 @@
           "updates": "push"
         }
       ],
+      "tools": {
+        "updateFirmware": {
+          "label": "Update its firmware",
+          "description": "Installs the newer firmware Zigbee2MQTT’s index offers for it — what it changes is under its readings. 10–100 minutes; it keeps working meanwhile. One device at a time: another waits its turn. One on batteries updates the next time it wakes.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": true,
+          "confirm": "Its firmware is replaced. It takes 10–100 minutes and it keeps working meanwhile; if it fails, it keeps the firmware it has. A new firmware can change how it behaves and some of its settings: they are compared afterwards, and a change is said. Leave it plugged in, and Zigbee2MQTT running, until it is done."
+        },
+        "stopFirmwareUpdate": {
+          "label": "Stop updating its firmware",
+          "description": "Stops an update under way, or takes one waiting its turn out of line. It keeps the firmware it has.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": true
+        },
+        "checkFirmware": {
+          "label": "Check for newer firmware",
+          "description": "Asks Zigbee2MQTT’s index now whether a newer firmware is offered for it. Zigbee2MQTT also asks by itself, at most once a day.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": false
+        }
+      },
       "description": {
         "parts": [
           {
@@ -482,6 +548,33 @@
           "updates": "push"
         }
       ],
+      "tools": {
+        "updateFirmware": {
+          "label": "Update its firmware",
+          "description": "Installs the newer firmware Zigbee2MQTT’s index offers for it — what it changes is under its readings. 10–100 minutes; it keeps working meanwhile. One device at a time: another waits its turn. One on batteries updates the next time it wakes.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": true,
+          "confirm": "Its firmware is replaced. It takes 10–100 minutes and it keeps working meanwhile; if it fails, it keeps the firmware it has. A new firmware can change how it behaves and some of its settings: they are compared afterwards, and a change is said. Leave it plugged in, and Zigbee2MQTT running, until it is done."
+        },
+        "stopFirmwareUpdate": {
+          "label": "Stop updating its firmware",
+          "description": "Stops an update under way, or takes one waiting its turn out of line. It keeps the firmware it has.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": true
+        },
+        "checkFirmware": {
+          "label": "Check for newer firmware",
+          "description": "Asks Zigbee2MQTT’s index now whether a newer firmware is offered for it. Zigbee2MQTT also asks by itself, at most once a day.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": false
+        }
+      },
       "description": {
         "parts": [
           {
@@ -585,6 +678,33 @@
           "updates": "push"
         }
       ],
+      "tools": {
+        "updateFirmware": {
+          "label": "Update its firmware",
+          "description": "Installs the newer firmware Zigbee2MQTT’s index offers for it — what it changes is under its readings. 10–100 minutes; it keeps working meanwhile. One device at a time: another waits its turn. One on batteries updates the next time it wakes.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": true,
+          "confirm": "Its firmware is replaced. It takes 10–100 minutes and it keeps working meanwhile; if it fails, it keeps the firmware it has. A new firmware can change how it behaves and some of its settings: they are compared afterwards, and a change is said. Leave it plugged in, and Zigbee2MQTT running, until it is done."
+        },
+        "stopFirmwareUpdate": {
+          "label": "Stop updating its firmware",
+          "description": "Stops an update under way, or takes one waiting its turn out of line. It keeps the firmware it has.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": true
+        },
+        "checkFirmware": {
+          "label": "Check for newer firmware",
+          "description": "Asks Zigbee2MQTT’s index now whether a newer firmware is offered for it. Zigbee2MQTT also asks by itself, at most once a day.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": false
+        }
+      },
       "description": {
         "parts": [
           {
@@ -678,6 +798,33 @@
           "updates": "push"
         }
       ],
+      "tools": {
+        "updateFirmware": {
+          "label": "Update its firmware",
+          "description": "Installs the newer firmware Zigbee2MQTT’s index offers for it — what it changes is under its readings. 10–100 minutes; it keeps working meanwhile. One device at a time: another waits its turn. One on batteries updates the next time it wakes.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": true,
+          "confirm": "Its firmware is replaced. It takes 10–100 minutes and it keeps working meanwhile; if it fails, it keeps the firmware it has. A new firmware can change how it behaves and some of its settings: they are compared afterwards, and a change is said. Leave it plugged in, and Zigbee2MQTT running, until it is done."
+        },
+        "stopFirmwareUpdate": {
+          "label": "Stop updating its firmware",
+          "description": "Stops an update under way, or takes one waiting its turn out of line. It keeps the firmware it has.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": true
+        },
+        "checkFirmware": {
+          "label": "Check for newer firmware",
+          "description": "Asks Zigbee2MQTT’s index now whether a newer firmware is offered for it. Zigbee2MQTT also asks by itself, at most once a day.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": false
+        }
+      },
       "description": {
         "parts": [
           {
@@ -793,6 +940,33 @@
           "updates": "push"
         }
       ],
+      "tools": {
+        "updateFirmware": {
+          "label": "Update its firmware",
+          "description": "Installs the newer firmware Zigbee2MQTT’s index offers for it — what it changes is under its readings. 10–100 minutes; it keeps working meanwhile. One device at a time: another waits its turn. One on batteries updates the next time it wakes.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": true,
+          "confirm": "Its firmware is replaced. It takes 10–100 minutes and it keeps working meanwhile; if it fails, it keeps the firmware it has. A new firmware can change how it behaves and some of its settings: they are compared afterwards, and a change is said. Leave it plugged in, and Zigbee2MQTT running, until it is done."
+        },
+        "stopFirmwareUpdate": {
+          "label": "Stop updating its firmware",
+          "description": "Stops an update under way, or takes one waiting its turn out of line. It keeps the firmware it has.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": true
+        },
+        "checkFirmware": {
+          "label": "Check for newer firmware",
+          "description": "Asks Zigbee2MQTT’s index now whether a newer firmware is offered for it. Zigbee2MQTT also asks by itself, at most once a day.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": false
+        }
+      },
       "description": {
         "parts": [
           {
@@ -853,6 +1027,33 @@
           "updates": "push"
         }
       ],
+      "tools": {
+        "updateFirmware": {
+          "label": "Update its firmware",
+          "description": "Installs the newer firmware Zigbee2MQTT’s index offers for it — what it changes is under its readings. 10–100 minutes; it keeps working meanwhile. One device at a time: another waits its turn. One on batteries updates the next time it wakes.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": true,
+          "confirm": "Its firmware is replaced. It takes 10–100 minutes and it keeps working meanwhile; if it fails, it keeps the firmware it has. A new firmware can change how it behaves and some of its settings: they are compared afterwards, and a change is said. Leave it plugged in, and Zigbee2MQTT running, until it is done."
+        },
+        "stopFirmwareUpdate": {
+          "label": "Stop updating its firmware",
+          "description": "Stops an update under way, or takes one waiting its turn out of line. It keeps the firmware it has.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": true
+        },
+        "checkFirmware": {
+          "label": "Check for newer firmware",
+          "description": "Asks Zigbee2MQTT’s index now whether a newer firmware is offered for it. Zigbee2MQTT also asks by itself, at most once a day.",
+          "answer": {
+            "type": "string"
+          },
+          "writes": false
+        }
+      },
       "description": {
         "parts": [
           {

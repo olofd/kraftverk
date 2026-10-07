@@ -40,6 +40,7 @@ export function adminApp(deps: AdminDeps): Hono {
     devicesOnline: deps.broker.devices.filter((d) => d.online).length,
     protocols: deps.broker.protocols,
     clients: deps.broker.clientsFingerprint,
+    busy: deps.broker.busy,
   });
 
   app.get('/health', (c) => c.json(health()));

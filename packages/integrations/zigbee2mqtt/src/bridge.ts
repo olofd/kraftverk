@@ -36,6 +36,7 @@ const DESCRIPTION: DeviceDescription = {
     { key: 'groups', label: 'Groups', value: { type: 'number', integer: true, min: 0 }, category: 'diagnostic' },
     { key: 'version', label: 'Zigbee2MQTT', value: { type: 'string' }, category: 'diagnostic' },
     { key: 'channel', label: 'Zigbee channel', value: { type: 'number', min: 11, max: 26 }, category: 'diagnostic' },
+    { key: 'updates', label: 'Firmware updates offered', description: 'Devices Zigbee2MQTT’s index offers a newer firmware for: each is updated from its own page', value: { type: 'number', integer: true, min: 0 }, category: 'diagnostic', history: false },
   ],
 };
 
@@ -117,6 +118,7 @@ function readingsOf(network: ZigbeeNetwork, at: string): Reading[] {
     { key: 'groups', value: network.groups().length, at },
     { key: 'version', value: info?.version ?? null, at },
     { key: 'channel', value: info?.network?.channel ?? null, at },
+    { key: 'updates', value: network.firmware.offered, at },
   ];
 }
 
@@ -145,6 +147,9 @@ function sessionOver(channel: MessageChannel, ctx: DeviceContext<Config>, simula
       ...(info?.network?.channel ? [`channel ${info.network.channel}`] : []),
       ...(simulated ? [] : missingSettings(info)),
     ];
+    // A firmware being written is said: restarting Zigbee2MQTT now would stop it.
+    const { updating, waiting } = network.firmware;
+    if (updating) parts.push(`updating a device’s firmware${updating.progress !== null ? ` (${Math.round(updating.progress)} %)` : ''}${waiting ? `, ${waiting} waiting` : ''}`);
     return { status: 'connected', detail: parts.join(' · '), lastReadingAt: at() };
   };
 

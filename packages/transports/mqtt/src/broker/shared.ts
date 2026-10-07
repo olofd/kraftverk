@@ -230,6 +230,8 @@ export type BrokerHealth = {
   protocols: string[];
   /** Which clients may sign in, as a fingerprint (`clientsFingerprint`). */
   clients: string;
+  /** Why restarting it now would cost something — a device's firmware being written. A deploy leaves it running while there is any. */
+  busy: string[];
 };
 
 /** A device as the broker sees it. Retained on its presence topic. */

@@ -12,6 +12,7 @@ import { BASE, brokerPolicy } from './topics.ts';
 export * from './wire.ts';
 export * from './exposes.ts';
 export * from './topics.ts';
+export * from './firmware.ts';
 
 const protocol: Protocol = {
   id: 'zigbee2mqtt',

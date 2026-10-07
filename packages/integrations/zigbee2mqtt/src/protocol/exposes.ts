@@ -16,6 +16,7 @@ import {
   type ValueType,
 } from '@kraftverk/device-sdk';
 
+import { firmwareEvents, firmwareFields } from './firmware.ts';
 import { ACCESS, objectOf, type Expose } from './wire.ts';
 
 /*
@@ -56,6 +57,8 @@ export type Shape = {
   /** Its button presses: the property they arrive on, and each value's event. */
   action: { property: string; events: ReadonlyMap<string, string> } | null;
   shelf: Shelf;
+  /** The properties of its own settings, written or not: what a firmware update is checked not to have changed (docs/PLAN-ZIGBEE.md §5.7). */
+  settings: readonly { property: string; gettable: boolean }[];
 };
 
 /** A part id from an endpoint's name: `l1`, `left`, `1`. */
@@ -236,7 +239,7 @@ const partLabel = (base: string, endpoint: string | undefined): string => (endpo
  * other expose an attribute of `main` — or, for a meter on a device with one
  * switching part, of that part, so a plug's power is its outlet's.
  */
-export function shapeOf(exposes: readonly Expose[]): Shape {
+export function shapeOf(exposes: readonly Expose[], options: { /** Zigbee2MQTT can update its firmware (`definition.supports_ota`). */ ota?: boolean } = {}): Shape {
   const parts: Part[] = [{ id: MAIN_PART, label: 'Device', kind: 'device' }];
   const fields: Field[] = [];
   const switches = new Map<string, Field>();
@@ -368,9 +371,11 @@ export function shapeOf(exposes: readonly Expose[]): Shape {
   const meterPart = switching.length === 1 ? parts.find((part) => part.id !== MAIN_PART && part.kind !== 'light')?.id ?? null : null;
   const METER = new Set(['power', 'voltage', 'current', 'energy', 'frequency', 'ac_frequency', 'power_factor']);
 
+  const settings: { property: string; gettable: boolean }[] = [];
   for (const expose of exposes) {
     if (expose.type in SPECIFIC) continue;
     const name = expose.name ?? expose.property ?? '';
+    if (expose.property && can(expose, ACCESS.SET) && can(expose, ACCESS.STATE)) settings.push({ property: expose.property, gettable: can(expose, ACCESS.GET) });
     if (name === 'action' && expose.type === 'enum') {
       const map = new Map<string, string>();
       for (const value of expose.values ?? []) {
@@ -420,12 +425,19 @@ export function shapeOf(exposes: readonly Expose[]): Shape {
               : 'switch'
             : 'sensor';
 
+  // Its firmware, where Zigbee2MQTT can update it: diagnostics, and what an update did as events.
+  if (options.ota) {
+    fields.push(...firmwareFields());
+    events.push(...firmwareEvents());
+  }
+
   return {
     description: { parts, attributes: fields.map((field) => field.spec), ...(events.length ? { events } : {}) },
     fields,
     switches,
     action,
     shelf,
+    settings,
   };
 }
 

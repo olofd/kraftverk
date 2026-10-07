@@ -1,6 +1,7 @@
 import { identityOf, type Bridge, type ChannelMessage, type Joining, type Member, type MessageChannel } from '@kraftverk/device-sdk';
 
-import type { MemberAbout, Press, ZigbeeLink } from './link.ts';
+import type { FirmwareCalls, MemberAbout, MemberEvent, ZigbeeLink } from './link.ts';
+import { FirmwareUpdates, type UPDATE_TIMING } from './updates.ts';
 import {
   actionOf,
   groupExposes,
@@ -9,6 +10,7 @@ import {
   parseJson,
   parseTopic,
   shapeOf,
+  updateOf,
   TOPIC,
   type BridgeDevice,
   type BridgeEvent,
@@ -29,6 +31,13 @@ import {
 
 /** A group's member key: `group:<id>`, beside the devices' IEEE addresses. */
 export const groupKey = (id: number): string => `group:${id}`;
+
+/** A group has no firmware of its own: its devices each have theirs. */
+const NO_FIRMWARE: FirmwareCalls = {
+  update: () => Promise.reject(new Error('A group has no firmware: update each of its devices')),
+  stop: () => Promise.reject(new Error('A group has no firmware: update each of its devices')),
+  check: () => Promise.reject(new Error('A group has no firmware: update each of its devices')),
+};
 
 const groupIdOf = (key: string): number | null => {
   const match = /^group:(\d+)$/.exec(key);
@@ -53,7 +62,7 @@ const MAX_UNNAMED = 200;
 /** How long a request waits for its answer. */
 const REQUEST_TIMEOUT_MS = 10_000;
 
-type Linked = { changed: () => void; presses: Press[] };
+type Linked = { changed: () => void; events: MemberEvent[] };
 
 type Kept = { values: Record<string, unknown>; at: string | null };
 
@@ -62,6 +71,8 @@ export type NetworkContext = {
   changed(): void;
   log(message: string): void;
   now(): number;
+  /** How long following a firmware update waits, where a test plays it faster. */
+  updateTiming?: Partial<typeof UPDATE_TIMING>;
 };
 
 export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
@@ -74,7 +85,7 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
   #states = new Map<string, Kept>();
   #available = new Map<string, boolean>();
   #links = new Map<string, Set<Linked>>();
-  #pending = new Map<string, { resolve: (data: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+  #pending = new Map<string, { resolve: (data: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> | undefined }>();
   #transaction = 0;
   #heardAt: string | null = null;
   /** Told when Zigbee2MQTT says its info again. */
@@ -86,12 +97,27 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
   /** When this network began listening: a state said before then holds no press. */
   readonly #startedAt: number;
   #unsubscribe: (() => void) | null = null;
+  /** Its devices' firmware updates, one at a time (docs/PLAN-ZIGBEE.md §5.7). */
+  readonly #updates: FirmwareUpdates;
 
   constructor(
     private readonly channel: MessageChannel,
     private readonly ctx: NetworkContext
   ) {
     this.#startedAt = ctx.now();
+    this.#updates = new FirmwareUpdates({
+      request: (what, payload, timeoutMs) => this.request(what, payload, timeoutMs),
+      device: (key) => this.#devices.get(key) ?? null,
+      values: (key) => this.#states.get(key)?.values ?? {},
+      settings: (key) => this.#shapes.get(key)?.settings ?? [],
+      get: (key, payload) => this.#publish(TOPIC.get(key), payload),
+      event: (key, id, data) => {
+        for (const linked of this.#links.get(key) ?? []) linked.events.push({ id, data, at: new Date(this.ctx.now()).toISOString() });
+        this.#tell(key);
+      },
+      changed: () => this.ctx.changed(),
+      log: (message) => this.ctx.log(message),
+    }, ctx.updateTiming);
   }
 
   /** Listens to everything Zigbee2MQTT says: what it keeps comes first. */
@@ -102,6 +128,7 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
   close(): void {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
+    this.#updates.close();
     for (const [, pending] of this.#pending) {
       clearTimeout(pending.timer);
       pending.reject(new Error('The coordinator was closed'));
@@ -133,6 +160,18 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
   get identity(): string | null {
     const key = ieeeKey(this.#info?.coordinator?.ieee_address);
     return key ? zigbeeIdentity(key) : null;
+  }
+
+  /** Its devices' firmware: how many are offered a newer one, the one updating now and how far along, and how many wait their turn. */
+  get firmware(): { offered: number; updating: { key: string; progress: number | null } | null; waiting: number } {
+    const said = [...this.#devices.keys()].map((key) => ({ key, update: updateOf(this.#states.get(key)?.values.update) }));
+    const updating = said.find(({ update }) => update?.state === 'updating');
+    return {
+      offered: said.filter(({ update }) => update?.state === 'available').length,
+      // At kraftverk's asking, or a device on batteries that woke and began.
+      updating: this.#updates.current ?? (updating ? { key: updating.key, progress: updating.update!.progress } : null),
+      waiting: this.#updates.waiting,
+    };
   }
 
   devices(): BridgeDevice[] {
@@ -184,7 +223,7 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
   async link(key: string, changed: () => void): Promise<ZigbeeLink> {
     const isGroup = groupIdOf(key) !== null;
     if (!isGroup && !ieeeKey(key)) throw new Error(`"${key}" is not a Zigbee device's address`);
-    const linked: Linked = { changed, presses: [] };
+    const linked: Linked = { changed, events: [] };
     let set = this.#links.get(key);
     if (!set) this.#links.set(key, (set = new Set()));
     set.add(linked);
@@ -192,12 +231,13 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
       shape: () => this.#shapes.get(key) ?? null,
       about: () => this.#about(key),
       state: () => this.#states.get(key) ?? { values: {}, at: null },
-      takePresses: () => linked.presses.splice(0),
+      takeEvents: () => linked.events.splice(0),
       available: () => this.#availableOf(key),
       connected: () => this.connected,
       identity: () => (isGroup ? this.#groupIdentity(groupIdOf(key)!) : zigbeeIdentity(key)),
       set: (payload) => this.#publish(this.#setTopic(key), payload),
       get: (payload) => this.#publish(this.#getTopic(key), payload),
+      firmware: isGroup ? NO_FIRMWARE : this.#updates.calls(key),
       close: () => void set!.delete(linked),
     };
   }
@@ -251,10 +291,13 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
   request(what: string, payload: Record<string, unknown>, timeoutMs = REQUEST_TIMEOUT_MS): Promise<unknown> {
     const transaction = `kv-${(++this.#transaction).toString(36)}-${this.ctx.now().toString(36)}`;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.#pending.delete(transaction);
-        reject(new Error(`Zigbee2MQTT did not answer ${what} within ${Math.round(timeoutMs / 1000)} s`));
-      }, timeoutMs);
+      // Never, for one answered only when it is done — a firmware update: it is followed by state.
+      const timer = Number.isFinite(timeoutMs)
+        ? setTimeout(() => {
+            this.#pending.delete(transaction);
+            reject(new Error(`Zigbee2MQTT did not answer ${what} within ${Math.round(timeoutMs / 1000)} s`));
+          }, timeoutMs)
+        : undefined;
       this.#pending.set(transaction, { resolve, reject, timer });
       this.#publish(TOPIC.request(what), { ...payload, transaction }).catch((error: Error) => {
         clearTimeout(timer);
@@ -311,7 +354,8 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
     if (seenAt !== null) this.#lastSeen.set(key, Math.max(seenAt, this.#lastSeen.get(key) ?? 0));
     const said = !message.retained && (seenAt === null || seenAt > before);
     const press = shape && said ? actionOf(shape, json) : null;
-    if (press) for (const linked of this.#links.get(key) ?? []) linked.presses.push({ ...press, at: message.at });
+    if (press) for (const linked of this.#links.get(key) ?? []) linked.events.push({ ...press, at: message.at });
+    this.#updates.heard(key, this.#states.get(key)!.values);
     this.#tell(key);
   }
 
@@ -352,7 +396,7 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
       if (!key || device.type === 'Coordinator' || device.disabled) continue;
       this.#devices.set(key, device);
       this.#byName.set(device.friendly_name, key);
-      this.#shapes.set(key, device.definition ? shapeOf(device.definition.exposes) : null);
+      this.#shapes.set(key, device.definition ? shapeOf(device.definition.exposes, { ota: device.definition.supports_ota === true }) : null);
     }
     for (const key of [...this.#shapes.keys()]) if (groupIdOf(key) === null && !this.#devices.has(key)) this.#shapes.delete(key);
     this.#shapeGroups();
@@ -440,6 +484,7 @@ export class ZigbeeNetwork implements Bridge<ZigbeeLink> {
       software: device.software_build_id ?? null,
       powerSource: device.power_source ?? null,
       known: device.definition?.source !== 'generated' && device.supported !== false,
+      ota: device.definition?.supports_ota === true,
     };
   }
 

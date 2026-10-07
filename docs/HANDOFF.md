@@ -260,10 +260,11 @@ type changed with its history mapped, the deploy and the NUC's settings — all
 built, tested against a played Zigbee2MQTT. On the NUC: the dongle up, the
 SNZB-02P sensor and four S60ZBTPF plugs paired and added; every device's last
 word kept by the holder (`device_reading`) and shown as it was after a
-restart. Left: the wall switch, the NIU charger moved from its Tuya gateway;
-then §5.5's next — software updates first: the four plugs run 1.0.2 and
-Zigbee2MQTT offers a newer firmware (two of them report 0 V) — and device
-options.
+restart. Software updates built (§5.7, 2026-10-08): the four plugs run 1.0.2
+and are offered 2.1.3 — update one first, watch it a few days (two report
+0 V; a 2.0.2 once turned under-current protection on), then the rest. Left:
+the wall switch, the NIU charger moved from its Tuya gateway; then §5.5's
+next — device options, structured settings.
 
 **Then the rest of [PLAN-RUN-AND-CHAIN.md](PLAN-RUN-AND-CHAIN.md)**: its
 Phases 1 (fixes), 2 (the automation editor) and 3 (shared parts, the

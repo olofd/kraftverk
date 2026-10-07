@@ -19,6 +19,7 @@ const plug = (n: number): BridgeDevice => ({
   power_source: 'Mains (single phase)',
   model_id: 'PLUG-1',
   manufacturer: 'Simulated',
+  software_build_id: '1.0.2',
   interview_state: 'SUCCESSFUL',
   definition: {
     model: 'PLUG-1',
@@ -29,6 +30,15 @@ const plug = (n: number): BridgeDevice => ({
     exposes: PLUG_EXPOSES,
   },
 });
+
+/** The firmware a played device is offered: a made-up image, as Zigbee2MQTT's index would name one. */
+const OFFERED = {
+  installed_version: 4098,
+  latest_version: 8451,
+  latest_source: 'https://ota.example.invalid/Simulated/PLUG-1-v2.1.3.ota',
+  latest_release_notes: 'Measures more precisely.',
+} as const;
+const OFFERED_BUILD = '2.1.3';
 
 /** A plug that switches and meters, as converters describes one. */
 export const PLUG_EXPOSES: readonly Expose[] = [
@@ -108,6 +118,8 @@ export type PlayedOptions = {
   groups?: BridgeGroup[];
   /** How long joining and interviewing take, in ms: short in a test. */
   stepMs?: number;
+  /** What a firmware update changes of a device's own state: a setting a new firmware sets otherwise. */
+  firmwareChanges?: Readonly<Record<string, unknown>>;
   /** Availability on, as the deploy sets it. */
   availability?: boolean;
   now?: () => number;
@@ -247,6 +259,8 @@ export function playedZigbee2Mqtt(options: PlayedOptions = {}): PlayedZigbee2Mqt
     if (has('brightness')) Object.assign(state, { brightness: 200, color_temp: 370, color: { x: 0.46, y: 0.41 } });
     if (has('local_temperature')) Object.assign(state, { local_temperature: 20.5, occupied_heating_setpoint: 21 });
     if (has('battery')) state.battery = 92;
+    // A newer firmware offered, as Zigbee2MQTT's own daily check would have found it.
+    if (d.definition?.supports_ota) state.update = { ...OFFERED, state: 'available' };
     return state;
   };
 
@@ -264,6 +278,36 @@ export function playedZigbee2Mqtt(options: PlayedOptions = {}): PlayedZigbee2Mqt
 
   const respond = (what: string, request: Record<string, unknown>, data: unknown, error?: string) => {
     publish(`${BASE}/bridge/response/${what}`, error ? { data: {}, status: 'error', error, transaction: request.transaction } : { data, status: 'ok', transaction: request.transaction });
+  };
+
+  /** The update under way: whose, as asked, and whether it was stopped. */
+  let ota: { key: string; body: Record<string, unknown>; stopped: boolean } | null = null;
+
+  const setUpdate = (key: string, update: State) => {
+    states.set(key, { ...(states.get(key) ?? {}), update });
+    report(key);
+  };
+
+  /** An update as Zigbee2MQTT runs one: its progress said as it goes, then the device on its new firmware, interviewed and configured anew. */
+  const updateFirmware = (key: string, body: Record<string, unknown>) => {
+    ota = { key, body, stopped: false };
+    const run = ota;
+    const steps = [0, 50, 100];
+    const step = (index: number) => {
+      if (run.stopped) return;
+      if (index < steps.length) {
+        setUpdate(key, { ...OFFERED, state: 'updating', progress: steps[index], remaining: (steps.length - index) * 600 });
+        return later(stepMs, () => step(index + 1));
+      }
+      ota = null;
+      const device = devices.find((d) => ieeeKey(d.ieee_address) === key);
+      if (device) device.software_build_id = OFFERED_BUILD;
+      states.set(key, { ...(states.get(key) ?? {}), ...(options.firmwareChanges ?? {}) });
+      setUpdate(key, { state: 'idle', installed_version: OFFERED.latest_version, latest_version: OFFERED.latest_version, latest_source: null, latest_release_notes: null });
+      publishBridge();
+      respond('device/ota_update/update', body, { id: body.id, from: { file_version: OFFERED.installed_version, software_build_id: '1.0.2' }, to: { file_version: OFFERED.latest_version, software_build_id: OFFERED_BUILD } });
+    };
+    step(0);
   };
 
   const groupOf = (name: unknown) => groups.find((group) => group.friendly_name === name || String(group.id) === String(name));
@@ -343,6 +387,36 @@ export function playedZigbee2Mqtt(options: PlayedOptions = {}): PlayedZigbee2Mqt
         group.members = what.endsWith('add') ? [...others, { ieee_address: ieeeOf(key), endpoint }] : others;
         publishBridge();
         return respond(what, body, { device: body.device, endpoint: body.endpoint ?? 'default', group: body.group });
+      }
+      case 'device/ota_update/check': {
+        const key = keyOf(String(body.id));
+        if (!key) return respond(what, body, {}, `Device '${String(body.id)}' does not exist`);
+        const offered = objectOf(states.get(key)?.update)?.state === 'available';
+        return respond(what, body, { id: body.id, update_available: offered, downgrade: false, ...(offered ? { source: OFFERED.latest_source, release_notes: OFFERED.latest_release_notes } : {}) });
+      }
+      case 'device/ota_update/update': {
+        const key = keyOf(String(body.id));
+        if (!key) return respond(what, body, {}, `Device '${String(body.id)}' does not exist`);
+        if (ota) return respond(what, body, {}, `OTA update or check for update already in progress for '${nameOf(key)}'`);
+        if (objectOf(states.get(key)?.update)?.state !== 'available') return respond(what, body, {}, `Update of '${nameOf(key)}' failed (No image currently available)`);
+        return updateFirmware(key, body);
+      }
+      case 'device/ota_update/update/abort': {
+        const key = keyOf(String(body.id));
+        if (!key || ota?.key !== key) return respond('device/ota_update/update', body, {}, `No OTA in progress to abort for device '${String(body.id)}'`);
+        const run = ota;
+        run.stopped = true;
+        ota = null;
+        setUpdate(key, { ...OFFERED, state: 'available' });
+        respond('device/ota_update/update/abort', body, { id: body.id });
+        return respond('device/ota_update/update', run.body, {}, `OTA update of '${nameOf(key)}' failed (aborted)`);
+      }
+      case 'device/ota_update/schedule':
+      case 'device/ota_update/unschedule': {
+        const key = keyOf(String(body.id));
+        if (!key) return respond(what, body, {}, `Device '${String(body.id)}' does not exist`);
+        setUpdate(key, { ...OFFERED, state: what.endsWith('/schedule') ? 'scheduled' : 'available' });
+        return respond(what, body, { id: body.id });
       }
       default:
         return respond(what, body, {}, `Request '${what}' is not played`);

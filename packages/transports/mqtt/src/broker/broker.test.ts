@@ -70,6 +70,7 @@ const BRIDGE: MessageBrokerPolicy = {
   describeCommand: (topic) => ({ summary: `set ${topic}`, level: 'info' }),
   describeMessage: (channel) => ({ summary: channel, level: 'debug' }),
   secret: (topic) => topic === 'bridge-test/bridge/info',
+  busy: (topic, payload) => (topic.startsWith('bridge-test/lamp') && new TextDecoder().decode(payload).includes('updating') ? 'a lamp is updating its firmware' : null),
 };
 const BRIDGE_PASSWORD = 'bridge-password-not-a-secret';
 
@@ -181,6 +182,19 @@ describe('a protocol spoken by a bridge', () => {
     bridge.close();
     await server.stop();
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('says it is busy while what is kept says a device is updating, and not after', async () => {
+    const broker = newBroker(new Journal({ dir: null, consoleLevel: 'off' }), { policies: [...policies, BRIDGE], clients: new Map([['bridge', BRIDGE_PASSWORD]]) });
+    await broker.start();
+    const bridge = await mqttClient(broker.port!, 'bridge-busy', undefined, { username: 'bridge', password: BRIDGE_PASSWORD });
+    bridge.publish('bridge-test/lamp', new TextEncoder().encode('{"update":{"state":"updating"}}'), { retain: true });
+    await until(() => broker.busy.length === 1, 'busy');
+    expect(broker.busy).toEqual(['a lamp is updating its firmware']);
+    bridge.publish('bridge-test/lamp', new TextEncoder().encode('{"update":{"state":"idle"}}'), { retain: true });
+    await until(() => broker.busy.length === 0, 'not busy');
+    bridge.close();
+    await broker.stop();
   });
 
   test('a message matching two of a client’s subscriptions reaches it once', async () => {

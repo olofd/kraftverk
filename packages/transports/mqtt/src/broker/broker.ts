@@ -8,7 +8,7 @@ import type { Client } from 'aedes';
 import type { MessageBrokerPolicy } from '@kraftverk/device-sdk';
 
 import { duration, type Journal } from './journal.ts';
-import { commandOf, deviceOf, guardOf, isSecret, refusalFor, type Policies } from './policy.ts';
+import { busyOf, commandOf, deviceOf, guardOf, isSecret, refusalFor, type Policies } from './policy.ts';
 import { clientsFingerprint, RESERVED_CLIENT_PREFIX, SERVER_USERNAME, sameSecret, TOPIC, type DevicePresence } from './shared.ts';
 
 /**
@@ -195,6 +195,11 @@ export class MessageBroker {
 
   get devices(): DevicePresence[] {
     return [...this.#devices.values()].map(presenceOf);
+  }
+
+  /** Why restarting it now would cost something — a device's firmware being written — from what is kept on its topics. Empty when nothing would. */
+  get busy(): string[] {
+    return [...this.#retained].flatMap(([topic, payload]) => busyOf(this.options.policies, topic, payload) ?? []);
   }
 
   /** Which clients it lets sign in, as a fingerprint a deploy compares against its own. */

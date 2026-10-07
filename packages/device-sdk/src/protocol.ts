@@ -75,6 +75,13 @@ export type MessageBrokerPolicy = {
    * client that did not sign in.
    */
   secret?(topic: string): boolean;
+  /**
+   * Why restarting the broker — or the bridge behind it — now would cost
+   * something, from what is kept on a topic: a device's firmware being
+   * written. Null when nothing would. A deploy leaves them running while any
+   * says so. Said without naming the device: the broker's health is open.
+   */
+  busy?(topic: string, payload: Uint8Array): string | null;
   /** A message from a device, described. */
   describeMessage(channel: string, payload: Uint8Array): BrokerMessageNote;
   /** Said when a known device has been absent a while: what to try. */
