@@ -94,6 +94,54 @@ Written down, because they are decisions:
 3. **The configuration document needs nothing new.** A gateway and the ways
    through it are entries it already carries (CONFIG.md, version 7); its
    `kraftverk:` number does not move.
+4. **A device can change what it is, and keep its history** (added
+   2026-10-07, the owner: "changing device types, and the mapping"). §2.1.
+
+### 2.1 Changing a device's type: its history mapped
+
+ARCHITECTURE.md §4.5 said `type_id` is immutable, "changing what a device
+*is* means adding a new one; its history would not mean the same thing".
+That protected history from being misread — and lost it whenever the same
+thing came to be reached another way. The case that forces it: the NIU
+charger is `tuya.plug` behind a Tuya gateway; paired with the dongle it is
+the same Zigbee device (`zigbee:<IEEE>`), and its type is
+`zigbee2mqtt.plug`. Its history, its name, the station it feeds and the
+automations that switch it must come with it.
+
+So a type **changes**, never silently, by a **mapping** a person sees:
+
+- **When.** The check finds the device is yours under another type
+  (`outcome: 'yours'` with another `typeId`): the add flow offers *Move it
+  here* — "NIU Charger becomes a Zigbee plug: its history, links and
+  automations come with it" — beside *Cancel*. And from a device's page,
+  *Change what it is*, among the types it could be: those reached through
+  the same bridge, and those its identity's protocol reaches.
+- **The mapping**, worked out by the hub, shown before anything moves:
+  - each **attribute** the device has ever had (`device_attribute`) to one of
+    the new description's — by **meaning** on the part that offers the same
+    capability first (power to power on the switching part), then by the
+    same key, then by the same label and value type; one with no counterpart
+    keeps its history under its old key, recorded as no longer reported;
+  - each **part** to one of the new parts — by the capabilities it offers,
+    then its kind;
+  - **history** re-keyed in one transaction (`sample`, `sample_hour`,
+    `device_attribute`); a value of another unit is converted (a number's
+    unit of the same dimension), one of another type is not carried;
+  - **links** re-pointed by the part mapping; one whose end no longer offers
+    what its kind needs is removed, and said;
+  - **automations' roles** re-pointed by the part mapping; a role whose
+    part has no counterpart leaves its automation needing attention, on the
+    "needs you" list;
+  - its **connections** that the new type has no way for are removed; the
+    new one is added; its **device store** is cleared (it is the old type's);
+    its config is the new type's defaults; an audit entry says what it was.
+- **The same within a family.** When a Zigbee device's exposes change after
+  a Zigbee2MQTT upgrade so that it lands on another shelf — a switch found to
+  meter — its coordinator says so and the device is offered the move: keys
+  are the same, the mapping is the identity.
+
+DATA-MODEL.md and ARCHITECTURE.md §4.5 change to say a type changes only by
+this mapping.
 
 ---
 
@@ -189,7 +237,7 @@ order the work needs them:
 | T10 | Only the server can sign in | Named client credentials, kept as the broker keeps the server's token: `zigbee2mqtt` gets one, generated on first use, handed to Zigbee2MQTT by the deploy |
 | T11 | A protocol that fails to load stops the broker for every protocol | Unchanged on purpose: a broker that forwards commands it cannot judge is the one way round every guard (policy.ts). The deploy recreates the broker when a policy changed (§7), so a new protocol is never half-loaded |
 | T12 | The CLI and BROKER.md still say "station" where they mean any device | Words fixed |
-| T13 | Every message is matched against every channel's every filter | A map from filter to listeners on the bus |
+| T13 | Every message is matched against every channel's every filter | Not needed: a coordinator is one channel, and its devices read it through links |
 
 Not changed: one connection is one broker device (a coordinator is one; its
 members are not broker devices — §3.1), QoS 0, MQTT 3.1.1. aedes 2's MQTT 5
@@ -209,23 +257,28 @@ is still a beta.
 - **Its broker policy:** root `zigbee2mqtt/`, `signedIn`. Every topic is the
   coordinator's (address `zigbee2mqtt`). Commands — `…/set`, `…/get`,
   `bridge/request/…` — only from the server, and of the bridge's requests
-  only `permit_join`, `device/remove`, `device/interview`, `health_check`
-  and `backup`: the rest (`options` — its network key among them —
-  `restart`, `install_code`, `touchlink/*`, …) refused to everyone, the server
-  included, as register 68 is refused for a station.
+  only those §5.5 uses — `permit_join`, `health_check`, `backup`,
+  `device/remove`, `device/interview`, `device/configure`,
+  `device/options`, `device/ota_update/check` and `…/update`, and the
+  `group/…` requests: the rest (`options` — its network key among them —
+  `restart`, `install_code`, `touchlink/*`, `extension/*`, …) refused to
+  everyone, the server included, as register 68 is refused for a station.
 - **Exposes → a description** (`exposes.ts`), the heart of it:
 
   | Expose | Becomes |
   |---|---|
   | `switch`, `light`, `fan` (with an endpoint, one each) | A part — `switch`, `switch.l1`, `light` — of kind `outlet`, `light`, `fan`; its `state` the attribute `<part>.on` (meaning `on`), offering `switch` when it can be set |
-  | `lock`, `cover`, `climate` | A part of that kind, its features its attributes |
+  | a light's `brightness`, `color_temp`, `color` (composite `x`/`y` or `hue`/`saturation`) | Attributes of its part that can be written: brightness as a percentage, colour temperature in mired with its range, colour as an object value of its own shape |
+  | `lock`, `cover`, `climate` | A part of that kind, its features its attributes: a cover's `position` and `state` (open, close, stop), a thermostat's `local_temperature` and setpoints, a lock's `state` — the setpoint and the lock `dangerous` |
+  | `action` (an enum, published only) | Not a value but **events**: a button's `single`, `double`, `hold` — each an event of the device, raised as it comes, so an automation starts on a press |
+  | `composite` | An object value of its fields' types; settable as a whole |
+  | `list` | A list value of its item's type |
   | `numeric` with a unit kraftverk knows | A number in that unit; `power`/W, `voltage`/V, `current`/A, `energy`/kWh, `temperature`/°C, `frequency`/Hz take their standard meaning; `humidity`, `illuminance` their quantity; on the one switching part when the device has one (a plug's meter), else on `main` |
   | `numeric` with a unit it does not know (ppm, hPa) | A number without one, its unit in its label |
   | `binary` | A boolean (`occupancy`, `contact`, `water_leak`), mapped from its `value_on`/`value_off` |
   | `enum`, `text` | An enum of its values; a string |
   | `category: config` / `diagnostic` | The same category; `battery`, `linkquality`, `device_temperature` are diagnostic whatever it says |
   | settable (access bit 2) outside a switching part | An attribute that can be written (`access: 'write'`): written through the gateway, as `{property: value}` to `/set` |
-  | `composite`, `list` | Not yet: said in its README |
 
   Attribute keys are the expose's property, under its part — stable for as
   long as converters keeps a property's name, which is its own contract.
@@ -283,7 +336,61 @@ behind it. A product's own package — a plug someone knows by heart — is a
 device package built on this integration, with a way through the
 coordinator and the models it covers (§12 step 30's refinement, when built).
 
-### 5.4 Tests
+### 5.4 Groups
+
+A Zigbee group is a set of devices that take one command together — one
+radio message, every lamp in the room at once, with no popcorn. Zigbee2MQTT
+keeps them (`bridge/groups`, retained: each group's id, friendly name, its
+members by IEEE address and endpoint, its scenes), publishes a group's state
+(`zigbee2mqtt/<group>`), and takes its commands (`zigbee2mqtt/<group>/set`).
+
+- **A group is a member of the coordinator**, key `group:<id>`, of type
+  `zigbee2mqtt.group` (its shelf the members': lights, switches). Its
+  description is what its members share: a light group's `on`, brightness and
+  colour temperature where every member has them, offering `switch` — so an
+  automation switches "the living room" as one part, through the gateway, and
+  the gateway verifies it from the group's state.
+- **Made and changed in kraftverk**, on the coordinator's page: *New group*,
+  name it, pick its members from the devices behind it (each by its endpoint
+  when it has several); add, remove, rename, delete — each a bridge request
+  (`group/add`, `group/members/add`, …) the broker policy allows, audited.
+- **Its members stay devices of their own**: a lamp is in a group and still
+  switched alone. A group is listed with what it is made of; a device's page
+  says which groups it is in.
+- **Scenes** (`scene_store`, `scene_recall`) come after groups: a scene is a
+  group's saved state, recalled as one command — offered as a capability of
+  the group when built.
+
+### 5.5 Everything Zigbee2MQTT does, planned
+
+What it can do, and where each lands in kraftverk — so nothing is designed
+into a corner. **Now** is this work; **next** follows it; **later** waits on
+a need.
+
+| Zigbee2MQTT | In kraftverk | When |
+|---|---|---|
+| Devices, exposes, state, `/set`, `/get` | Generic types per shelf, descriptions from exposes, the gateway (§5.1–5.3) | Now |
+| Availability | Each device's health; "the coordinator is not running" for all | Now |
+| Permit join, interview | `Bridge.join`; *Joining…* until it is interviewed (§3.2) | Now |
+| `action` | Events of the device (§5.1) | Now |
+| Groups | `zigbee2mqtt.group` members, made on the coordinator's page (§5.4) | Now |
+| Remove a device (`device/remove`, `force`) | A coordinator tool, confirmed; offered when a Zigbee device is removed in kraftverk | Now |
+| Coordinator backup (`backup`) | A coordinator tool: the network's backup, downloaded | Now |
+| Health check, bridge info | The coordinator's readings and health | Now |
+| **Software updates (OTA)** — `device/ota_update/check`, `…/update`, the `update` property (`state: available / updating / idle`, `progress`, `remaining`, `installed_version`, `latest_version`), and its scheduled check | Each device's `update` attribute group: *Firmware* — installed, latest, *Update available*. *Update* is a tool of the device's that writes, confirmed by a person (a battery device may take an hour; a failed update can leave a device to be re-paired), with progress shown live from its state; never run by an automation. The coordinator's page lists every device with an update. Zigbee2MQTT's own periodic check stays its own (`ota.update_check_interval`); *Check now* is a tool | Next |
+| Device options (`device/options`: `retain`, `debounce`, `transition`, `qos`, a device's own — a plug's `power_calibration`, a sensor's `temperature_precision`) | A device's settings, from its definition's `options`, written through the gateway as `device/options` — not `/set` | Next |
+| Rename (`device/rename`) | Not used: kraftverk keeps the name, Zigbee2MQTT the IEEE address (§2) | — |
+| Reconfigure (`device/configure`), re-interview | Coordinator tools, per device: for a device that stopped reporting | Next |
+| Binding (`device/bind`, `unbind`) — a switch that drives a lamp with no hub in between | A link kind of its own (`controls`), made on the switch's page; Zigbee2MQTT binds | Later |
+| Reporting (`device/configure_reporting`) | A device's advanced settings: how often and on how much change it reports | Later |
+| Scenes | A capability of a group (§5.4) | Later |
+| Network map (`networkmap`) | A view on the coordinator's page: routers, links and their quality | Later |
+| Touchlink (scan, identify, factory reset) | Refused at the broker now (§5.1); coordinator tools when a need comes | Later |
+| Install codes | Refused now; a pairing option when a device needs one | Later |
+| Zigbee2MQTT's settings (`options`), restart, extensions, external converters | Refused to everyone at the broker: the deploy configures Zigbee2MQTT, never kraftverk at run time | Never |
+| Zigbee2MQTT's own upgrades | The pinned image, raised in a commit: its release notes read, the recorded fixtures re-checked | Each release |
+
+### 5.6 Tests
 
 A Zigbee2MQTT played from fixtures recorded on the owner's (ids made up):
 the coordinator found, its members offered by shelf, a plug switched and
@@ -393,38 +500,41 @@ transport like the others — on every platform — rather than a server's.
 
 ## 11. The order of work
 
-Each step green (`typecheck`, `test`, `check:architecture`, knip, the
-end-to-end suite) and pushed.
+Built in bulk, then hardened together (the owner, 2026-10-07: "build a lot,
+and then we test it and make sure it's solid"): the pieces below are written
+one after the other with typecheck and their own tests, and the full suite,
+the end-to-end run and the deploy come once, at the end.
 
-1. **MQTT made sound** (T1–T9, T12, T13; §3.1, §3.3): retained replay,
-   addresses as given, presence alone, the policy with its root, topic and
-   `signedIn`, the journal's cost and noise, words. *Done when* a session
-   opened after the server started reads retained state, Sydpower is
-   unchanged, and a client that is not signed in cannot speak for a
-   `signedIn` protocol's device.
-2. **The broker's clients** (T10) and the policy fingerprint in the deploy.
-   *Done when* the broker accepts Zigbee2MQTT's credential and refuses its
-   topics to anyone else.
-3. **The integration's protocol**: wire types, exposes, readings, payloads,
-   the broker policy; fixtures. *Done when* every recorded device's exposes
-   become a valid description.
-4. **The coordinator and the generic types**, the simulator, `Bridge.join`
-   in the SDK and the hub. *Done when* a simulated coordinator's plug is
-   added, switched through the gateway and verified.
-5. **The app**: the gateway page's readings, tools and pairing; pairing in
-   "Add a device". *Done when* the end-to-end suite pairs and adds a
-   simulated plug at 320 px.
-6. **On the NUC**: Zigbee2MQTT running with the dongle; the broker recreated
-   with the policy. *Done when* the four plugs, the switch and the sensor are
-   paired, added, and a plug is switched by an automation, through the
-   gateway.
-7. **Documents**: BROKER.md, DOCKER.md, DEPLOY.md, HANDOFF.md, ARCHITECTURE.md
-   (§3's packages, step 13's radios at the edge done), the integration's
-   README.
+1. **MQTT made sound** (T1–T12; §3.1, §3.3). *Done 2026-10-07*: retained
+   replay to a late subscriber, addresses as given, presence alone, the
+   policy's root, topic and `signedIn`, the broker's signed-in clients, the
+   journal's cost and noise, words. T13 was not needed: a coordinator is one
+   channel, its devices are links.
+2. **The contract and the hub**: `Bridge.join`, a member's `about` and
+   `joining`, `POST /api/devices/:id/join`; changing a device's type with its
+   mapping (§2.1) — the store's re-keying, the hub's mapping and move, the
+   save's *move* mode, the API.
+3. **The integration**: wire types, exposes (§5.1), readings, payloads and
+   events, the broker policy; the coordinator, the generic types per shelf,
+   groups (§5.4), removing and backing up; the simulator; tests from
+   fixtures.
+4. **The app**: the coordinator's page — readings, tools, pairing, groups;
+   pairing in "Add a device"; *Move it here* and *Change what it is*.
+5. **Docker and the deploy**: the `zigbee2mqtt` service, its credential, the
+   broker recreated when its policies change; the NUC's environment.
+6. **Hardened together**: the full suite, the end-to-end suite with a
+   simulated coordinator at 320 px, the deploy; then on the NUC the four
+   plugs, the switch and the sensor paired and added, the NIU charger moved
+   from its Tuya gateway with its history, a group of plugs switched by an
+   automation through the gateway.
+7. **Documents**: BROKER.md, DOCKER.md, DEPLOY.md, HANDOFF.md,
+   DATA-MODEL.md and ARCHITECTURE.md (§3's packages, §4.5's type change, step
+   13's radios at the edge), the integration's README.
 
-Later, not in this work: the app speaking MQTT (§9); groups and binding;
-OTA updates from the coordinator's page; a device package refining a
-Zigbee product; a native edge service, if §1's reasons change.
+Next, after this work: software updates, device options, reconfigure (§5.5).
+Later: binding, reporting, scenes, the network map, the app speaking MQTT
+(§9), a device package refining a Zigbee product, a native edge service if
+§1's reasons change.
 
 ---
 
