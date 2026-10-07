@@ -1,0 +1,39 @@
+{
+  "name": "@kraftverk/integration-shelly",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shelly (Gen2 and later) on the home network: RPC over its WebSocket, found by mDNS, signed into by digest when it has a password, and a switch type that describes itself. Ported from Home Assistant's shelly integration and aioshelly.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "kraftverk": {
+    "integration": {
+      "id": "shelly",
+      "name": "Shelly",
+      "protocols": [
+        "./src/protocol/index.ts"
+      ],
+      "types": [
+        {
+          "id": "shelly.switch",
+          "entry": "./src/switch.ts"
+        }
+      ]
+    }
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./protocol": "./src/protocol/index.ts",
+    "./switch": "./src/switch.ts"
+  },
+  "scripts": {
+    "test": "node ../../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kraftverk/device-sdk": "*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,19 @@
+@kraftverk/integration-shelly
+
+Ported to TypeScript from:
+
+- Home Assistant's `shelly` integration
+  (https://github.com/home-assistant/core/tree/dev/homeassistant/components/shelly),
+  Copyright the Home Assistant authors, licensed under the Apache License,
+  Version 2.0.
+- aioshelly (https://github.com/home-assistant-libs/aioshelly), licensed
+  under the Apache License, Version 2.0.
+
+Changed: rewritten in TypeScript for kraftverk's device model — the RPC and
+its WebSocket over a byte channel, digest sign-in, the switch component as
+an outlet that switches with its meter. No code was copied verbatim; the
+protocol's behaviour follows aioshelly's and Shelly's published API
+documentation (https://shelly-api-docs.shelly.cloud/gen2/).
+
+A copy of the Apache License, Version 2.0, is at
+https://www.apache.org/licenses/LICENSE-2.0.

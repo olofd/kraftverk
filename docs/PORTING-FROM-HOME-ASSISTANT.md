@@ -6,6 +6,9 @@ document: it says what kraftverk has today, and plainly where something is
 not built yet. The design behind it is [PLAN-INTEGRATIONS.md](PLAN-INTEGRATIONS.md)
 §1.1 and §8; the package rules are [ADDING-A-DEVICE.md](ADDING-A-DEVICE.md).
 
+The first port by this guide is Shelly (`packages/integrations/shelly`):
+its README's "Ported from" table shows the map applied to one integration.
+
 It is a port, not a wrapper. Home Assistant's code shows what the device or
 service says and how to ask it; kraftverk's model decides what it becomes.
 Never copy its entities one for one: a device is parts with meanings and

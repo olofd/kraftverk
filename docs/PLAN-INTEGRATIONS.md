@@ -1508,6 +1508,17 @@ by it, to prove it.
 the map checked against the code as it is — and what is not built yet said
 so (OAuth, DHCP, the media, light and climate capabilities, a diagnostics
 bundle, translations). The first port waits on D7.
+**The first port, 2026-10-07: Shelly** (D7, the owner's choice), from Home
+Assistant's `shelly` and aioshelly (Apache-2.0, NOTICE): Gen2 and later,
+RPC over the device's WebSocket at /rpc — a WebSocket client written over
+the home network's TCP channel, pure — with its pushed notifications
+merged, SHA-256 digest sign-in (`NeedsSignIn` when the password is missing
+or wrong), found by `_shelly._tcp`, its MAC its identity; one generic
+type, `shelly.switch`, that describes itself from its `switch:<n>`
+components. Measured 7 of 7. The SDK gained its hashes (moved from Tuya and
+NIU) and the "Switches and relays" category. Experimental until checked
+against the owner's Shelly; a product package for it when its model is
+known. First generation, covers, lights and inputs are not ported.
 
 ### Part C — The first new integrations
 
@@ -1565,8 +1576,8 @@ Later:
 - **D6. Home Assistant beside kraftverk:** run and updated by the
   deployment, as a container kraftverk connects to. Kraftverk does not
   supervise containers itself. Recommended, when that work starts.
-- **D7. The first port** (step 16): which small integration the owner has,
-  to prove the recipe before iCloud.
+- **D7. The first port** (step 16): Shelly, decided 2026-10-07 — the owner
+  has one.
 - **D8. Tuya keeps no account.** The Smart Life sign-in fetches a key at
   setup, and again when a plug is paired anew (step 9), and is not kept.
   Keeping it would let kraftverk fetch a changed key by itself, at the price

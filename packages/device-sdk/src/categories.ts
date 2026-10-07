@@ -34,6 +34,8 @@ export const CATEGORIES = {
   // A device other devices are reached through, on the home network: a Zigbee gateway and the plugs paired with it.
   gateway: { label: 'Gateways', singular: 'gateway', icon: 'share-2' },
   // Grown toward Home Assistant's breadth (docs/PLAN-INTEGRATIONS.md §4.5): a shelf each, ready for its first type.
+  // A relay in a wall box or a DIN rail switching a circuit: not a plug, though it switches as one.
+  relay: { label: 'Switches and relays', singular: 'switch', icon: 'toggle-right' },
   light: { label: 'Lights', singular: 'light', icon: 'sun' },
   sensor: { label: 'Sensors', singular: 'sensor', icon: 'activity' },
   climate: { label: 'Heating and cooling', singular: 'thermostat', icon: 'thermometer' },

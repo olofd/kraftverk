@@ -1,0 +1,153 @@
+{
+  "protocols": [
+    {
+      "id": "shelly-rpc",
+      "label": "Shelly RPC",
+      "bindings": {
+        "lan": {
+          "instructions": {
+            "title": "Get it on your network",
+            "body": "Set the Shelly up on your home Wi-Fi with the Shelly app, or with its own access point and web page, as its maker intends. Once it is on the network it is found here by itself. Keep its firmware current: Gen2 and later are reached this way."
+          },
+          "addressLabel": "IP address"
+        }
+      },
+      "credentials": {
+        "schema": {
+          "fields": {
+            "password": {
+              "type": "string",
+              "presentation": "secret",
+              "title": "Device password",
+              "description": "Only if you set one for it, in the Shelly app or its own web page. Left empty, none is used."
+            }
+          }
+        }
+      }
+    }
+  ],
+  "types": [
+    {
+      "id": "shelly.switch",
+      "kind": "hardware",
+      "meta": {
+        "name": "Shelly switch",
+        "brand": "Shelly",
+        "category": "relay",
+        "icon": "toggle-right",
+        "description": "A Shelly that switches — a plug, a relay, a Pro’s outputs — Gen2 and later, on your home network with no cloud. Each output with the meter it has.",
+        "support": "experimental",
+        "supportNote": "Ported from Home Assistant’s Shelly integration; not yet checked against a real Shelly."
+      },
+      "config": {
+        "fields": {}
+      },
+      "connections": [
+        {
+          "id": "lan",
+          "label": "Home network",
+          "description": "Straight to the Shelly on your home network, with no cloud. It tells of every change as it happens.",
+          "protocol": "shelly-rpc",
+          "transport": "lan",
+          "reach": "local",
+          "updates": "push",
+          "discovery": [
+            {
+              "kind": "mdns",
+              "service": "_shelly._tcp"
+            }
+          ]
+        }
+      ],
+      "description": {
+        "parts": [
+          {
+            "id": "main",
+            "label": "Shelly",
+            "kind": "device"
+          },
+          {
+            "id": "switch.0",
+            "label": "Output",
+            "kind": "outlet",
+            "energy": {
+              "role": "load"
+            },
+            "offers": [
+              "switch"
+            ]
+          }
+        ],
+        "attributes": [
+          {
+            "key": "switch.0.on",
+            "part": "switch.0",
+            "label": "Switch",
+            "value": {
+              "type": "boolean"
+            },
+            "means": "on",
+            "consequence": "Switches off whatever it feeds."
+          },
+          {
+            "key": "switch.0.power",
+            "part": "switch.0",
+            "label": "Power",
+            "value": {
+              "type": "number",
+              "unit": "W",
+              "precision": 1
+            },
+            "means": "power",
+            "category": "primary"
+          },
+          {
+            "key": "switch.0.voltage",
+            "part": "switch.0",
+            "label": "Voltage",
+            "value": {
+              "type": "number",
+              "unit": "V",
+              "precision": 1
+            },
+            "means": "voltage"
+          },
+          {
+            "key": "switch.0.current",
+            "part": "switch.0",
+            "label": "Current",
+            "value": {
+              "type": "number",
+              "unit": "A",
+              "precision": 3
+            },
+            "means": "current"
+          },
+          {
+            "key": "switch.0.energy",
+            "part": "switch.0",
+            "label": "Energy",
+            "value": {
+              "type": "number",
+              "unit": "kWh",
+              "precision": 3
+            },
+            "means": "energy",
+            "stateClass": "total_increasing"
+          },
+          {
+            "key": "signal",
+            "label": "Wi-Fi signal",
+            "value": {
+              "type": "number",
+              "unit": "dBm"
+            },
+            "quantity": "signal",
+            "category": "diagnostic"
+          }
+        ]
+      },
+      "automation": false
+    }
+  ]
+}
