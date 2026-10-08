@@ -66,7 +66,9 @@ export type LiveUpdate =
   | { type: 'event'; deviceId: SavedDeviceId; event: LiveEvent }
   | { type: 'changed'; deviceId: SavedDeviceId | null }
   /** An automation moved: a run started, took a step, or ended. Read it again. */
-  | { type: 'automation'; id: AutomationId };
+  | { type: 'automation'; id: AutomationId }
+  /** Where the family is, who is in which room, or a home's mode, moved: read it again — as far as each shares. Never who. */
+  | { type: 'world'; what: 'presence' | 'occupancy' | 'mode'; homeId: string | null };
 
 /**
  * Something a screen shows: a device, an automation. More kinds as screens

@@ -12,7 +12,7 @@ import type { MapRegionAsk, MapRegionsView } from './map.ts';
 import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DevicePeople, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, FamilyElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
 import type { FoundFamily, InvitationInput, InvitationMade, InvitationView, Joined, MemberChanges, PersonView, SharingChanges, SharingLevel, PresenceView, NotificationView, WebPushSubscription } from './people.ts';
-import type { HomeInput, HomeView, ZoneInput, ZoneView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView } from './homes.ts';
+import type { HomeInput, HomeView, ZoneInput, ZoneView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView, OccupancyView } from './homes.ts';
 import type { MediaData, MediaView, NewMedia } from './media.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, FamilyView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
 import type { CheckOutcome, DraftView, FoundAt, FoundView, HeldSetupInput, KeptView, SaveInput, SightingView } from './setup.ts';
@@ -283,6 +283,13 @@ export interface KraftverkApi {
   /** Where each member is, as far as each shares (docs/PLAN-WORLD-MODEL.md §8.9, §11). */
   presence: {
     list(): Promise<PresenceView[]>;
+  };
+  /** Which spaces of a home have someone in them, whoever they are (§8.9). */
+  occupancy: {
+    /** A home's spaces with someone in them now. */
+    now(homeId: string): Promise<OccupancyView[]>;
+    /** When a space had someone in it, over the hours just gone — at most 30 days, what is kept — newest first. */
+    history(spaceId: string, options?: { hours?: number }): Promise<OccupancyView[]>;
   };
   /** The family's zones (docs/PLAN-WORLD-MODEL.md §8.4): places it knows that are no home — school, work — where presence says someone is. */
   zones: {

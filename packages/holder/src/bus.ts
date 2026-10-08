@@ -32,7 +32,20 @@ export type LiveMessage =
    */
   | { kind: 'changed'; deviceId: SavedDeviceId | null }
   /** An automation moved: a run started, took a step or ended. What its screen follows, as it goes. */
-  | { kind: 'automation'; automationId: AutomationId };
+  | { kind: 'automation'; automationId: AutomationId }
+  /**
+   * Someone came to, or left, a place the family knows — a home, a zone, a
+   * room of a home — as far as they share. Who it was is for automations;
+   * a stream says only that presence moved.
+   */
+  | { kind: 'presence'; personId: string; place: WorldPlace; change: 'arrived' | 'left'; at: string }
+  /** A space of a home has someone in it now, or nobody any more. */
+  | { kind: 'occupancy'; homeId: string; spaceId: string; occupied: boolean; at: string }
+  /** A home's mode on one of its axes changed: from `previous`, to `mode`. */
+  | { kind: 'mode'; homeId: string; axis: string; mode: string; previous: string | null; at: string };
+
+/** A place someone can be at: a home, a zone, or a space of a home (its home's id beside it). */
+export type WorldPlace = { id: string; kind: 'home' | 'zone' } | { id: string; kind: 'space'; homeId: string };
 
 export type LiveListener = (message: LiveMessage) => void;
 

@@ -19,6 +19,7 @@ import {
   ShortcutStore,
   DevicePeopleStore,
   PresenceStore,
+  OccupancyStore,
   NotificationStore,
   FamilyStore,
   NodeStore,
@@ -52,6 +53,7 @@ import { HeldReadings } from '../nodes/held-readings.ts';
 import { ChangeLog } from '../history/changes.ts';
 import { Sampler } from '../history/sampler.ts';
 import { Presence } from '../presence/presence.ts';
+import { Occupancy } from '../occupancy/occupancy.ts';
 import type { PushSender } from '../notifications/notify.ts';
 import { positionHidden } from '../presence/levels.ts';
 import { startTransports, type Installed } from '../installed/from.ts';
@@ -187,6 +189,9 @@ export class Hub {
   /** How this place wakes an app with a notification; none where nothing sends a push. */
   readonly push: PushSender | null;
   readonly presence: Presence;
+  /** Whether each space has someone in it, kept: from what stands there. */
+  readonly occupancies: OccupancyStore;
+  readonly occupancy: Occupancy;
   readonly changeLog: ChangeLog;
   /** What the people using it are looking at, said by their apps. */
   readonly attention = new Attention();
@@ -298,6 +303,8 @@ export class Hub {
     this.stays = new PresenceStore(db);
     this.push = options.push ?? null;
     this.presence = new Presence({ people: this.people, devicePeople: this.devicePeople, places: this.places, stays: this.stays, views: this.views, bus: this.bus, clock: options.clock });
+    this.occupancies = new OccupancyStore(db);
+    this.occupancy = new Occupancy({ places: this.places, spaces: this.spaces, store: this.occupancies, views: this.views, history: this.history, bus: this.bus, clock: options.clock });
     this.changeLog = new ChangeLog(this.history, this.bus, (id) => {
       const device = catalog.active(id);
       return device ? sessions.description(device) : null;
@@ -351,6 +358,7 @@ export class Hub {
     await this.sessions.sync(this.catalog.list());
     this.sampler.start();
     this.presence.start();
+    this.occupancy.start();
     this.changeLog.start();
     this.engine.start();
     this.#stopFreshness = keepWatchedFresh(this.attention, (device, until, close) => this.sessions.get(device)?.wantFresh?.(until, close));
@@ -367,6 +375,7 @@ export class Hub {
   async reset(by: Actor): Promise<{ tables: string[]; rows: number }> {
     this.sampler.stop();
     this.presence.stop();
+    this.occupancy.stop();
     // Runs end and holds are let go before their automations' rows are: nothing steps, or fires, into an emptied home.
     this.engine.clear();
     await this.sessions.closeAll();
@@ -376,7 +385,7 @@ export class Hub {
     this.audit.record({ at: new Date().toISOString(), kind: 'database.reset', actor: by, summary: `The database was reset: ${rows} rows across ${tables.length} tables`, detail: { tables } });
     // Back to the state a fresh home starts in: no devices, so no sessions.
     await this.sessions.sync(this.catalog.list());
-    if (this.#started) (this.sampler.start(), this.presence.start());
+    if (this.#started) (this.sampler.start(), this.presence.start(), this.occupancy.start());
     this.bus.publish({ kind: 'changed', deviceId: null });
     return { tables, rows };
   }
@@ -398,6 +407,7 @@ export class Hub {
     this.engine.stop();
     this.sampler.stop();
     this.presence.stop();
+    this.occupancy.stop();
     this.changeLog.stop();
     this.setup.stop();
     this.nearby.stop();

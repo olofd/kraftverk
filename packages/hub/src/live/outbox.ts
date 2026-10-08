@@ -18,6 +18,8 @@ export class Outbox {
   changed = false;
   /** Automations that moved: each is said once, however often it moved since. */
   automations = new Set<AutomationId>();
+  /** What of the world moved, by what and which home: said once each. */
+  world = new Map<string, Extract<LiveUpdate, { type: 'world' }>>();
 
   add(message: LiveMessage): void {
     switch (message.kind) {
@@ -44,7 +46,19 @@ export class Outbox {
         return;
       case 'automation':
         this.automations.add(message.automationId);
+        return;
+      case 'presence':
+        // Not who, nor where: only that presence moved, and the home it was at if it was one.
+        return this.#world('presence', message.place.kind === 'home' ? message.place.id : message.place.kind === 'space' ? message.place.homeId : null);
+      case 'occupancy':
+        return this.#world('occupancy', message.homeId);
+      case 'mode':
+        return this.#world('mode', message.homeId);
     }
+  }
+
+  #world(what: 'presence' | 'occupancy' | 'mode', homeId: string | null): void {
+    this.world.set(`${what} ${homeId ?? ''}`, { type: 'world', what, homeId });
   }
 
   /** Everything waiting, in the order it is best applied, and empties. */
@@ -56,6 +70,8 @@ export class Outbox {
     for (const [deviceId, health] of this.health) updates.push({ type: 'health', deviceId, health });
     updates.push(...this.events);
     for (const id of this.automations) updates.push({ type: 'automation', id });
+    updates.push(...this.world.values());
+    this.world.clear();
     this.readings.clear();
     this.health.clear();
     this.events = [];

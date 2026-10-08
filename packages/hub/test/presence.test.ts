@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 
 import type { DeviceView } from '@kraftverk/api-contract';
 import { savedDeviceId } from '@kraftverk/device-sdk';
-import type { LiveListener } from '@kraftverk/holder';
+import type { LiveListener, LiveMessage } from '@kraftverk/holder';
 import { DevicePeopleStore, PeopleStore, PlaceStore, PresenceStore, type SqlDatabase } from '@kraftverk/store';
 
 import { presenceApi } from '../src/api/presence.ts';
@@ -29,6 +29,8 @@ let devicePeople: DevicePeopleStore;
 let stays: PresenceStore;
 let presence: Presence;
 let heard: LiveListener | null;
+/** What presence said on the bus. */
+let said: LiveMessage[];
 /** Where the phone says it is, and when. */
 let position: { latitude: number; at: number } | null;
 let now = T;
@@ -47,6 +49,7 @@ beforeEach(() => {
   devicePeople.set(PHONE, 'carries', [ANNA], new Date(T).toISOString());
   position = null;
   heard = null;
+  said = [];
   now = T;
   const phone = () => ({ readings: position ? [{ key: 'position', value: { latitude: position.latitude, longitude: 0, accuracy: 10 }, at: new Date(position.at).toISOString() }] : [] }) as unknown as DeviceView;
   presence = new Presence({
@@ -55,7 +58,7 @@ beforeEach(() => {
     places,
     stays,
     views: { find: (id) => (id === PHONE ? phone() : null) },
-    bus: { subscribe: (listener) => ((heard = listener), () => (heard = null)) },
+    bus: { subscribe: (listener) => ((heard = listener), () => (heard = null)), publish: (message) => void said.push(message) },
     clock: { now: () => now, setTimeout: () => ({ clock: 'timer' }), setInterval: () => ({ clock: 'timer' }), clear: () => {}, rate: 1 },
   });
 });
@@ -80,6 +83,12 @@ describe('presence kept', () => {
     at(51.49, T + 60_000 + LEAVE_AFTER_MS);
     expect((await answered())[0]).toMatchObject({ home: false, places: [] });
     expect(stays.since(ANNA, new Date(0).toISOString())[0]).toMatchObject({ kind: 'home', until: new Date(T + 60_000).toISOString(), deviceId: PHONE });
+    // Said on the bus as it was decided: for automations — who, where, which way.
+    const home = places.homeByKey('home')!.id;
+    expect(said.map((message) => message.kind === 'presence' && [message.change, message.place.id, message.personId])).toEqual([
+      ['arrived', home, ANNA],
+      ['left', home, ANNA],
+    ]);
 
     // At work: "at work", never coordinates.
     at(51.5, T + 3_600_000);

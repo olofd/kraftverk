@@ -195,6 +195,14 @@ export type PlacementView = {
   until: string | null;
 };
 
+/**
+ * A space with someone in it, whoever they are (docs/PLAN-WORLD-MODEL.md
+ * §8.9): since when — and until, once nobody is — what said so, and the
+ * most there at once when a sensor counts. A floor, a building or the site
+ * is, while a space within it is.
+ */
+export type OccupancyView = { spaceId: string; since: string; until: string | null; peak: number | null; devices: string[] };
+
 /** A label (docs/PLAN-WORLD-MODEL.md §8.13): any grouping the family wants — "upstairs", "heating" — on devices, spaces and automations. */
 export type LabelView = { id: string; key: string; name: string; color: string | null; icon: string | null };
 

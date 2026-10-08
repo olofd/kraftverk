@@ -397,6 +397,10 @@ export function followerApi(h: Follower): KraftverkApi {
     presence: {
       list: () => home.presence.list(),
     },
+    occupancy: {
+      now: (homeId) => home.occupancy.now(homeId),
+      history: (spaceId, options) => home.occupancy.history(spaceId, options),
+    },
     notifications: {
       list: () => home.notifications.list(),
       read: (id) => home.notifications.read(id),

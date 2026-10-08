@@ -68,6 +68,12 @@ export function familyRoutes(deps: AppDeps): Hono {
   api.post('/notifications/test', async (c) => c.json(await familyFor(deps, c).notifications.test()));
   // Where each member is, as far as each shares: never more.
   api.get('/presence', async (c) => c.json({ presence: await familyFor(deps, c).presence.list() }));
+  // Which spaces have someone in them: whoever they are.
+  api.get('/homes/:id/occupancy', async (c) => c.json({ occupancy: await familyFor(deps, c).occupancy.now(c.req.param('id')) }));
+  api.get('/spaces/:id/occupancy', async (c) => {
+    const asked = query(c, z.object({ hours: z.coerce.number().min(0.25).max(24 * 30).optional() }).strict());
+    return c.json({ occupancy: await familyFor(deps, c).occupancy.history(c.req.param('id'), asked) });
+  });
   api.get('/zones', async (c) => c.json({ zones: await familyFor(deps, c).zones.list({ removed: c.req.query('removed') === 'true' }) }));
   api.post('/zones', async (c) => c.json(await familyFor(deps, c).zones.add(await body(c, ZONE.partial({ key: true, icon: true })))));
   api.patch('/zones/:id', async (c) => c.json(await familyFor(deps, c).zones.update(c.req.param('id'), await body(c, ZONE.partial()))));

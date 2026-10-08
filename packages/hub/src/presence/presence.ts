@@ -24,7 +24,7 @@ export type PresenceDeps = {
   places: PlaceStore;
   stays: PresenceStore;
   views: Pick<DeviceViews, 'find'>;
-  bus: Pick<LiveBus, 'subscribe'>;
+  bus: Pick<LiveBus, 'subscribe' | 'publish'>;
   clock?: Clock;
 };
 
@@ -82,8 +82,16 @@ export class Presence {
     }
     const open = stays.open(personId).map((stay) => ({ id: stay.id, placeId: stay.placeId, kind: stay.kind, since: Date.parse(stay.since) }));
     const decision = decide({ open, fix: freshest(fixes, now), places, outsideSince: this.#outside.get(personId) ?? new Map(), level, now });
-    for (const { stayId, until } of decision.end) stays.end(stayId, new Date(until).toISOString());
-    for (const { place, since, deviceId } of decision.begin) stays.begin(personId, place, new Date(since).toISOString(), deviceId);
+    const kinds = new Map(open.map((stay) => [stay.id, stay]));
+    for (const { stayId, until } of decision.end) {
+      stays.end(stayId, new Date(until).toISOString());
+      const stay = kinds.get(stayId);
+      if (stay) this.#deps.bus.publish({ kind: 'presence', personId, place: { id: stay.placeId, kind: stay.kind }, change: 'left', at: new Date(now).toISOString() });
+    }
+    for (const { place, since, deviceId } of decision.begin) {
+      stays.begin(personId, place, new Date(since).toISOString(), deviceId);
+      this.#deps.bus.publish({ kind: 'presence', personId, place: { id: place.id, kind: place.kind }, change: 'arrived', at: new Date(now).toISOString() });
+    }
     this.#outside.set(personId, decision.outsideSince);
   }
 

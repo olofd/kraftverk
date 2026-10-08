@@ -724,6 +724,32 @@ export const SCHEMA = `
   CREATE INDEX presence_stay_place ON presence_stay (place_id, since);
 
   /*
+    Whether a space has someone in it, whoever they are (docs/PLAN-WORLD-MODEL.md
+    §8.9): intervals, the open one now. Worked out from what stands there —
+    motion, a radar, a count, a closed room with motion in it — and a
+    floor, a building, the site, when a space within them is. Kept 30 days;
+    never on the timeline, never in the file.
+  */
+  CREATE TABLE occupancy (
+    id       TEXT PRIMARY KEY,
+    space_id TEXT NOT NULL REFERENCES space (id),
+    since    TEXT NOT NULL,
+    until    TEXT,
+    /* The most there at once, when a sensor counts: a new count is not a new interval. */
+    peak     INTEGER CHECK (peak > 0),
+    CHECK (until IS NULL OR until > since)
+  );
+  CREATE UNIQUE INDEX occupancy_now ON occupancy (space_id) WHERE until IS NULL;
+  CREATE INDEX occupancy_space ON occupancy (space_id, since);
+
+  /* What said someone was there: each device, once. */
+  CREATE TABLE occupancy_evidence (
+    occupancy_id TEXT NOT NULL REFERENCES occupancy (id) ON DELETE CASCADE,
+    device_id    TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+    PRIMARY KEY (occupancy_id, device_id)
+  );
+
+  /*
     What a person is told (docs/PLAN-WORLD-MODEL.md §8.14): their inbox, by
     whom, delivered and read or not. Kept 90 days.
   */
