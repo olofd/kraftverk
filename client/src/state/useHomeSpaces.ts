@@ -22,7 +22,7 @@ export function useHomeSpaces(): { homes: HomeSpaces[] | null; reload: () => Pro
   useEffect(() => {
     let entry = kept.get(api);
     if (!entry) {
-      entry = { answer: read(api).catch(() => []), listeners: new Set() };
+      entry = { answer: read(api).catch(() => (kept.delete(api), [])), listeners: new Set() };
       kept.set(api, entry);
     }
     let current = true;

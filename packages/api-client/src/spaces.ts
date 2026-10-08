@@ -98,6 +98,19 @@ export function placeLine(placement: PlacementView, homes: readonly HomeSpaces[]
   return `${placement.role === 'based' ? 'Based: ' : ''}${parts.join(', ')}`;
 }
 
+/**
+ * The devices a label is on: labelled themselves, or standing in a space that
+ * is — or inside one that is: "upstairs" on a floor is on its rooms' lamps.
+ */
+export function withLabel(devices: readonly DeviceView[], labelId: string, homes: readonly HomeSpaces[], spaceLabels: Readonly<Record<string, readonly string[]>>): DeviceView[] {
+  const spaces = homes.flatMap((each) => each.spaces);
+  const labelled = (spaceId: string): boolean => {
+    for (let at = spaces.find((space) => space.id === spaceId); at; at = spaces.find((space) => space.id === at!.parentId)) if (spaceLabels[at.id]?.includes(labelId)) return true;
+    return false;
+  };
+  return devices.filter((device) => device.labels.includes(labelId) || (device.placement !== null && labelled(device.placement.spaceId)));
+}
+
 /** A group of devices on the home screen: those standing in one space, or nowhere said. */
 export type RoomGroup = { id: string; title: string | null; subtitle: string | null; devices: DeviceView[] };
 

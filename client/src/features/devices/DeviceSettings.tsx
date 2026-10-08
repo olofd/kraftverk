@@ -7,6 +7,7 @@ import { useDevices } from '../../state/DevicesProvider';
 import { DeviceConfig } from '../config/DeviceConfig';
 import { ChangeType } from './ChangeType';
 import { Connections } from './Connections';
+import { DeviceLabels } from './DeviceLabels';
 import { DeviceShell } from './DeviceShell';
 import { GenericSettings } from './GenericSettings';
 import { Links } from './Links';
@@ -34,6 +35,7 @@ function SettingsOf({ device }: { device: DeviceView }) {
       <WhereWritesGo device={device} />
       {Panel ? <Panel {...screenProps(device)} /> : <GenericSettings device={device} />}
       <WhereItIs device={device} />
+      <DeviceLabels device={device} />
       <Connections device={device} />
       <Links device={device} />
       <InfoCard info={device.info} />

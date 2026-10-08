@@ -8,6 +8,7 @@ import { devicesApi } from './devices.ts';
 import { familyWideApi } from './family.ts';
 import { homesApi } from './homes.ts';
 import { mediaApi } from './media.ts';
+import { labelsApi } from './labels.ts';
 import { spacesApi } from './spaces.ts';
 import { integrationsApi } from './integrations.ts';
 import { liveApi } from './live.ts';
@@ -33,6 +34,7 @@ export function familyApi(hub: Hub, caller: Caller): KraftverkApi {
     ...homesApi(hub, caller),
     ...mediaApi(hub, caller),
     ...spacesApi(hub, caller),
+    ...labelsApi(hub, caller),
     ...configurationApi(hub, caller),
     ...nodesApi(hub, caller),
     ...liveApi(hub, caller),

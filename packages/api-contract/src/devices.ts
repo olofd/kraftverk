@@ -75,6 +75,8 @@ export type DeviceView = {
   trackDays: number | null;
   /** Where it stands now — its main part — in which space of which home; null: nowhere said. */
   placement: PlacementView | null;
+  /** Its labels' ids. */
+  labels: string[];
   kind: DeviceKind;
   /** The integration its type is on: where its accounts are managed, and its own screens. Null for a type not installed. */
   integration: IntegrationInfo | null;

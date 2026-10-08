@@ -22,7 +22,7 @@
     /integrations/<id>/accounts/<account>   an integration's own: an account,
     /integrations/<id>/gateways/<gateway>   or a gateway
     /problems
-    /settings[/accounts|/connectivity|/configuration|/server-log|/maps|/homes[/<id>]]
+    /settings[/accounts|/connectivity|/configuration|/server-log|/maps|/homes[/<id>]|/labels]
 
   Built here and nowhere else: a screen asks for an address, it never
   spells one.
@@ -100,6 +100,7 @@ export const PATHS = {
     serverLog: '/settings/server-log',
     maps: '/settings/maps',
     homes: '/settings/homes',
+    labels: '/settings/labels',
     home: (id: string) => `/settings/homes/${at(id)}`,
   },
 } as const;

@@ -128,6 +128,18 @@ export type PlacementView = {
   until: string | null;
 };
 
+/** A label (docs/PLAN-WORLD-MODEL.md §8.13): any grouping the family wants — "upstairs", "heating" — on devices, spaces and automations. */
+export type LabelView = { id: string; key: string; name: string; color: string | null; icon: string | null };
+
+/** A label made, or changed: a colour as "#rrggbb". */
+export type LabelInput = { key?: string; name: string; color?: string | null; icon?: string | null };
+
+/** What a label is on: one device, space or automation. */
+export type LabelTarget = { device: string } | { space: string } | { automation: string };
+
+/** Which labels are on what: each device, space and automation by id, with its labels' ids. */
+export type Labelled = { devices: Record<string, string[]>; spaces: Record<string, string[]>; automations: Record<string, string[]> };
+
 /** `GET /spaces/:id/history?means&hours|from&to&points`: a reading of what it means — `temperature` — in a space and the spaces inside it. */
 export type SpaceHistoryQuery = { means: string; hours?: number; from?: string; to?: string; points?: number };
 

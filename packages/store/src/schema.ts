@@ -241,6 +241,30 @@ export const SCHEMA = `
   CREATE INDEX placement_space ON placement (space_id, since);
 
   /*
+    Any grouping the family wants (docs/PLAN-WORLD-MODEL.md §8.13): "upstairs",
+    "heating", across devices, spaces and automations. A label on a space is
+    on what stands in it too, as the app filters. People join in W3.
+  */
+  CREATE TABLE label (
+    id    TEXT PRIMARY KEY,
+    key   TEXT NOT NULL UNIQUE,
+    name  TEXT NOT NULL UNIQUE CHECK (length(name) BETWEEN 1 AND 30),
+    color TEXT CHECK (color IS NULL OR color GLOB '#[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'),
+    icon  TEXT
+  );
+
+  CREATE TABLE labelled (
+    label_id      TEXT NOT NULL REFERENCES label (id) ON DELETE CASCADE,
+    device_id     TEXT REFERENCES device (id) ON DELETE CASCADE,
+    space_id      TEXT REFERENCES space (id) ON DELETE CASCADE,
+    automation_id TEXT REFERENCES automation (id) ON DELETE CASCADE,
+    CHECK ((device_id IS NOT NULL) + (space_id IS NOT NULL) + (automation_id IS NOT NULL) = 1)
+  );
+  CREATE UNIQUE INDEX labelled_device ON labelled (label_id, device_id) WHERE device_id IS NOT NULL;
+  CREATE UNIQUE INDEX labelled_space ON labelled (label_id, space_id) WHERE space_id IS NOT NULL;
+  CREATE UNIQUE INDEX labelled_automation ON labelled (label_id, automation_id) WHERE automation_id IS NOT NULL;
+
+  /*
     The devices you added, and they stay added: removing one keeps its history
     until that is deleted too. A device keeps what it is — its description:
     parts, attributes, events — and what it has said about itself, so a device

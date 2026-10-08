@@ -107,6 +107,25 @@ describe('a device you have', () => {
     expect((await t.home.devices.placements(lamp.id)).length).toBeGreaterThan(2);
   });
 
+  test('given labels — the family’s, by a name no other has — shown on it, and taken off when one goes', async () => {
+    const lamp = await aLamp();
+    const heating = await t.home.labels.add({ name: ' Heating ', color: '#ff8800' });
+    const night = await t.home.labels.add({ name: 'Night' });
+    expect(heating).toMatchObject({ name: 'Heating', key: 'heating' });
+    expect((await refusal(t.home.labels.add({ name: 'heating' }))).kind).toBe('invalid');
+    expect((await refusal(t.home.labels.add({ name: 'Red', color: 'red' }))).kind).toBe('invalid');
+
+    expect((await t.home.labels.set({ device: lamp.id }, [night.id, heating.id])).map((label) => label.name)).toEqual(['Heating', 'Night']);
+    expect((await t.home.devices.get(lamp.id)).labels.sort()).toEqual([heating.id, night.id].sort());
+    expect((await refusal(t.home.labels.set({ device: 'd-none' }, [night.id]))).kind).toBe('not-found');
+    expect((await refusal(t.home.labels.set({ device: lamp.id }, ['l-none']))).kind).toBe('not-found');
+
+    await t.home.labels.remove(night.id);
+    expect((await t.home.devices.get(lamp.id)).labels).toEqual([heating.id]);
+    expect((await t.home.labels.labelled()).devices).toEqual({ [lamp.id]: [heating.id] });
+    expect((await t.home.timeline()).some((entry) => entry.kind === 'label.removed')).toBe(true);
+  });
+
   test('moved from the bedroom to the kitchen at noon: its readings before are the bedroom’s, after the kitchen’s — and both the floor’s', async () => {
     const lamp = await aLamp();
     const [home] = await t.home.homes.list();

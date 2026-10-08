@@ -11,6 +11,7 @@ import {
   type NodeView,
   type DeviceEventView,
   type HomeView,
+  type LabelView,
   type OpeningView,
   type PlacementView,
   type SpaceView,
@@ -262,6 +263,14 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
       add: (input) => call('POST', '/openings', input),
       update: (id, changes) => call('PATCH', `/openings/${enc(id)}`, changes),
       remove: (id) => call('DELETE', `/openings/${enc(id)}`),
+    },
+    labels: {
+      list: async () => (await get<{ labels: LabelView[] }>('/labels')).labels,
+      labelled: () => get('/labels/labelled'),
+      add: (input) => call('POST', '/labels', input),
+      update: (id, changes) => call('PATCH', `/labels/${enc(id)}`, changes),
+      remove: async (id) => void (await call('DELETE', `/labels/${enc(id)}`)),
+      set: async (target, labelIds) => (await call<{ labels: LabelView[] }>('PUT', '/labels/on', { target, labelIds })).labels,
     },
     media: {
       add: (picture) => call('POST', '/media', undefined, { query: { width: picture.width, height: picture.height }, raw: { type: picture.type, data: picture.data } }),

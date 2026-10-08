@@ -61,6 +61,8 @@ export type DeviceEntry = {
   track: number | null;
   /** Where it stands, or is based; null: nowhere said. */
   place: PlaceEntry | null;
+  /** Its labels, by key. */
+  labels: string[];
   /** Its type's settings. */
   settings: Record<string, Scalar>;
   /** The ways it is reached, preferred first. */
@@ -84,6 +86,8 @@ export type AutomationEntry = {
   homePlace: number | null;
   /** The recipe it was copied from; null when built from nothing. */
   madeFrom: string | null;
+  /** Its labels, by key. */
+  labels: string[];
   uses: Record<string, Use>;
   rule: Rule;
 };
@@ -132,8 +136,13 @@ export type SpaceEntry = {
   level: number | null;
   elevation: number | null;
   height: number | null;
+  /** Its labels, by key: on what stands in it too. */
+  labels: string[];
   spaces: SpaceEntry[];
 };
+
+/** A label: any grouping the family wants, by its key. */
+export type LabelEntry = { name: string; color: string | null; icon: string | null };
 
 /** Where two spaces meet — by their keys — or a space meets the outside (`to` null). */
 export type OpeningEntry = { kind: (typeof OPENING_KINDS)[number]; from: string; to: string | null; name: string | null };
@@ -144,6 +153,8 @@ export type PlaceEntry = { home: string; space: string | null; opening: string |
 export type ConfigDocument = {
   version: number;
   family: FamilyEntry;
+  /** Its labels, by key. */
+  labels: Record<string, LabelEntry>;
   /** Its homes, by key, in their order. */
   homes: Record<string, HomeEntry>;
   devices: Record<string, DeviceEntry>;
@@ -171,7 +182,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
   const issues: Issue[] = [];
   const problem = (message: string, path: Path) => void issues.push({ message, path });
   if (!isRecord(data)) return { document: null, issues: [{ message: 'A configuration is a map: kraftverk, family, homes, devices, links, automations', path: [] }] };
-  for (const key of Object.keys(data)) if (!['kraftverk', 'family', 'homes', 'devices', 'links', 'automations', 'secrets'].includes(key)) problem(`"${key}" is not part of a configuration: it has kraftverk, family, homes, devices, links, automations and secrets`, [key]);
+  for (const key of Object.keys(data)) if (!['kraftverk', 'family', 'labels', 'homes', 'devices', 'links', 'automations', 'secrets'].includes(key)) problem(`"${key}" is not part of a configuration: it has kraftverk, family, labels, homes, devices, links, automations and secrets`, [key]);
 
   const text = (value: unknown, path: Path, what: string): string | null => {
     if (typeof value === 'string' && value.trim()) return value.trim();
@@ -200,6 +211,33 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
       if (data.family.locale !== undefined) family.locale = text(data.family.locale, ['family', 'locale'], 'its language: "en-GB", "sv-SE"');
     }
   }
+
+  // Its labels, by key.
+  const labels: Record<string, LabelEntry> = {};
+  if (data.labels !== undefined && data.labels !== null) {
+    if (!isRecord(data.labels)) problem('"labels" is a map: each label by its key', ['labels']);
+    else
+      for (const [key, entry] of Object.entries(data.labels)) {
+        const path = ['labels', key];
+        if (!KEY.test(key)) problem(`"${key}" is not a key: lowercase letters, digits and dashes`, path);
+        if (!isRecord(entry)) {
+          problem('Expected a label: its name, and perhaps a colour', path);
+          continue;
+        }
+        for (const field of Object.keys(entry)) if (!['name', 'color', 'icon'].includes(field)) problem(`"${field}" is not part of a label: it has name, color and icon`, [...path, field]);
+        const name = entry.name === undefined ? key : text(entry.name, [...path, 'name'], 'its name');
+        if (name && name.length > 30) problem('A label’s name is at most 30 characters', [...path, 'name']);
+        const color = entry.color === undefined || entry.color === null ? null : typeof entry.color === 'string' && /^#[0-9a-f]{6}$/.test(entry.color) ? entry.color : (problem('"color" is "#rrggbb", in lowercase', [...path, 'color']), null);
+        const icon = entry.icon === undefined || entry.icon === null ? null : text(entry.icon, [...path, 'icon'], 'an icon\'s name');
+        if (name) labels[key] = { name, color, icon };
+      }
+  }
+  /** A list of labels, by key: each a key — whether the label is in the file or already here is the import's to say. */
+  const labelKeys = (value: unknown, path: Path): string[] => {
+    if (value === undefined || value === null) return [];
+    if (!Array.isArray(value)) return (problem('"labels" is a list of label keys: [heating, upstairs]', path), []);
+    return value.flatMap((each, index) => (typeof each === 'string' && KEY.test(each) ? [each] : (problem('A label is its key', [...path, index]), [])));
+  };
 
   // The homes, in the order the file has them.
   const homes: Record<string, HomeEntry> = {};
@@ -258,7 +296,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
           if (seen.has(spaceKey)) problem(`"${spaceKey}" is another space's key in this home already`, here);
           seen.add(spaceKey);
           if (!isRecord(space)) return (problem('Expected a space: its kind and name', here), []);
-          for (const field of Object.keys(space)) if (!['kind', 'name', 'purpose', 'level', 'elevation', 'height', 'spaces'].includes(field)) problem(`"${field}" is not part of a space: it has kind, name, purpose, level, elevation, height and spaces`, [...here, field]);
+          for (const field of Object.keys(space)) if (!['kind', 'name', 'purpose', 'level', 'elevation', 'height', 'labels', 'spaces'].includes(field)) problem(`"${field}" is not part of a space: it has kind, name, purpose, level, elevation, height, labels and spaces`, [...here, field]);
           const kind = SPACE_KINDS.includes(space.kind as SpaceEntry['kind']) ? (space.kind as SpaceEntry['kind']) : (problem(`"kind" is one of ${SPACE_KINDS.join(', ')}`, [...here, 'kind']), null);
           const spaceName = space.name === undefined ? spaceKey : text(space.name, [...here, 'name'], 'its name');
           const purpose = space.purpose === undefined || space.purpose === null ? null : SPACE_PURPOSES.includes(space.purpose as never) ? (space.purpose as SpaceEntry['purpose']) : (problem(`"purpose" is one of ${SPACE_PURPOSES.join(', ')}`, [...here, 'purpose']), null);
@@ -269,7 +307,8 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
           const height = number('height', false);
           if (kind !== 'floor' && (level !== null || elevation !== null)) problem('Only a floor has a level and an elevation', here);
           const inner = spacesOf(space.spaces, [...here, 'spaces']);
-          return kind && spaceName ? [{ key: spaceKey, kind, name: spaceName, purpose, level: kind === 'floor' ? (level ?? 0) : null, elevation, height, spaces: inner }] : [];
+          const spaceLabels = labelKeys(space.labels, [...here, 'labels']);
+          return kind && spaceName ? [{ key: spaceKey, kind, name: spaceName, purpose, level: kind === 'floor' ? (level ?? 0) : null, elevation, height, labels: spaceLabels, spaces: inner }] : [];
         });
       };
       const spaces = spacesOf(entry.spaces, [...path, 'spaces']);
@@ -307,7 +346,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         problem('Expected a device: its type, name and how it is reached', path);
         continue;
       }
-      for (const field of Object.keys(entry)) if (!['type', 'name', 'identity', 'picture', 'paused', 'track', 'place', 'based', 'settings', 'connect'].includes(field)) problem(`"${field}" is not part of a device: it has type, name, identity, picture, paused, track, place, based, settings and connect`, [...path, field]);
+      for (const field of Object.keys(entry)) if (!['type', 'name', 'identity', 'picture', 'paused', 'track', 'place', 'based', 'labels', 'settings', 'connect'].includes(field)) problem(`"${field}" is not part of a device: it has type, name, identity, picture, paused, track, place, based, labels, settings and connect`, [...path, field]);
       const type = text(entry.type, [...path, 'type'], 'its type ("type: acme.plug")');
       const name = text(entry.name, [...path, 'name'], 'its name');
       const connect: ConnectEntry[] = [];
@@ -357,7 +396,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
           if (homeKey) place = { home: homeKey, space: spaceKey, opening: openingKey, role };
         }
       }
-      if (type && name) devices[key] = { type, name, identity: optional('identity'), picture: optional('picture'), paused: entry.paused === true, track: track ?? null, place, settings: scalars(entry.settings, [...path, 'settings']), connect };
+      if (type && name) devices[key] = { type, name, identity: optional('identity'), picture: optional('picture'), paused: entry.paused === true, track: track ?? null, place, labels: labelKeys(entry.labels, [...path, 'labels']), settings: scalars(entry.settings, [...path, 'settings']), connect };
     }
 
   // The links.
@@ -393,7 +432,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         problem('Expected an automation: its name, what it uses and what it does', path);
         continue;
       }
-      const own = ['name', 'mode', 'home', 'clock', 'recheck', 'home page', 'made from'];
+      const own = ['name', 'mode', 'home', 'clock', 'recheck', 'home page', 'made from', 'labels'];
       const rules = ['uses', 'settings', 'memory', 'inputs', 'result', 'when', 'while running', 'only if', 'do', 'if a step fails'];
       for (const field of Object.keys(entry)) if (![...own, ...rules].includes(field)) problem(`"${field}" is not part of an automation: it has ${[...own, ...rules].join(', ')}`, [...path, field]);
       const name = text(entry.name, [...path, 'name'], 'its name');
@@ -407,7 +446,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
       const madeFrom = typeof entry['made from'] === 'string' ? entry['made from'] : null;
       const read = ruleFromConfig(entry, path);
       issues.push(...read.issues);
-      if (name && read.rule) automations[key] = { name, mode, home, clock, recheckMinutes: recheck === null ? null : recheck / 60, homePlace, madeFrom, uses: read.uses, rule: read.rule };
+      if (name && read.rule) automations[key] = { name, mode, home, clock, recheckMinutes: recheck === null ? null : recheck / 60, homePlace, madeFrom, labels: labelKeys(entry.labels, [...path, 'labels']), uses: read.uses, rule: read.rule };
     }
 
   // Secrets by name.
@@ -419,7 +458,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
 
   // Partial: what could be read, beside every problem — whose entries the reader leaves out (`readConfig`).
   if (issues.length && !options.partial) return { document: null, issues };
-  return { document: { version: CURRENT_VERSION, family, homes, devices, links, automations, secrets }, issues };
+  return { document: { version: CURRENT_VERSION, family, labels, homes, devices, links, automations, secrets }, issues };
 }
 
 
@@ -442,6 +481,7 @@ function spacesData(spaces: readonly SpaceEntry[]): Record<string, unknown> {
         ...(space.level !== null ? { level: space.level } : {}),
         ...(space.elevation !== null ? { elevation: space.elevation } : {}),
         ...(space.height !== null ? { height: space.height } : {}),
+        ...(space.labels.length ? { labels: space.labels } : {}),
         ...(space.spaces.length ? { spaces: spacesData(space.spaces) } : {}),
       },
     ])
@@ -469,6 +509,7 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
               },
             }
           : {}),
+        ...(device.labels.length ? { labels: device.labels } : {}),
         ...(Object.keys(device.settings).length ? { settings: device.settings } : {}),
         ...(device.connect.length
           ? {
@@ -498,6 +539,7 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
         ...(automation.recheckMinutes !== null ? { recheck: durationText(automation.recheckMinutes * 60) } : {}),
         ...(automation.homePlace !== null ? { 'home page': automation.homePlace } : {}),
         ...(automation.madeFrom !== null ? { 'made from': automation.madeFrom } : {}),
+        ...(automation.labels.length ? { labels: automation.labels } : {}),
         ...ruleToConfig(automation.rule, automation.uses),
       },
     ])
@@ -512,6 +554,9 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
             ...(document.family.locale !== null ? { locale: document.family.locale } : {}),
           },
         }
+      : {}),
+    ...(Object.keys(document.labels).length
+      ? { labels: Object.fromEntries(Object.entries(document.labels).map(([key, label]) => [key, { name: label.name, ...(label.color !== null ? { color: label.color } : {}), ...(label.icon !== null ? { icon: label.icon } : {}) }])) }
       : {}),
     ...(Object.keys(document.homes).length
       ? {
@@ -551,4 +596,4 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
 }
 
 /** An empty document of this version. */
-export const emptyDocument = (): ConfigDocument => ({ version: CURRENT_VERSION, family: { name: null, kind: null, locale: null }, homes: {}, devices: {}, links: [], automations: {}, secrets: {} });
+export const emptyDocument = (): ConfigDocument => ({ version: CURRENT_VERSION, family: { name: null, kind: null, locale: null }, labels: {}, homes: {}, devices: {}, links: [], automations: {}, secrets: {} });

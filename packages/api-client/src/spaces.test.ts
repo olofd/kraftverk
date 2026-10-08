@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { DeviceView, HomeView, OpeningView, PlacementView, SpaceView } from '@kraftverk/api-contract';
 
-import { byRoom, depthOf, isWithin, openingLine, placeLine, spaceLine, trailOf, type HomeSpaces } from './spaces.ts';
+import { byRoom, depthOf, isWithin, openingLine, placeLine, spaceLine, trailOf, withLabel, type HomeSpaces } from './spaces.ts';
 
 const space = (id: string, parentId: string | null, kind: SpaceView['kind'], name: string, purpose: SpaceView['purpose'] = null): SpaceView => ({
   id,
@@ -52,6 +52,11 @@ describe('a home’s spaces, as the app says them', () => {
   test('devices grouped by the room each stands in, in the home’s order; the rest after', () => {
     expect(byRoom([device('a', null), device('b', null)], HOMES)).toEqual([{ id: 'all', title: null, subtitle: null, devices: [device('a', null), device('b', null)] }]);
     const groups = byRoom([device('lamp', at('hall')), device('plug', at('kitchen')), device('car', at('site')), device('loose', null)], HOMES);
+    // A label on the floor is on what stands in its rooms; one on a device is on that device.
+    const labelled = (id: string, placement: PlacementView | null, labels: string[]) => ({ ...device(id, placement), labels }) as DeviceView;
+    const all = [labelled('lamp', at('hall'), []), labelled('heater', null, ['l-heat']), labelled('car', at('site'), [])];
+    expect(withLabel(all, 'l-up', HOMES, { ground: ['l-up'] }).map((each): string => each.id)).toEqual(['lamp']);
+    expect(withLabel(all, 'l-heat', HOMES, {}).map((each): string => each.id)).toEqual(['heater']);
     expect(groups.map((group) => [group.title, group.subtitle, group.devices.map((each): string => each.id)])).toEqual([
       ['Home', null, ['car']],
       ['Kitchen', 'Ground floor', ['plug']],

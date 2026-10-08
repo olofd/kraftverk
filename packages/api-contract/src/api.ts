@@ -10,7 +10,7 @@ import type { ConfigExported, ConfigExportRequest, ConfigSnapshotView, ImportAns
 import type { MapRegionAsk, MapRegionsView } from './map.ts';
 import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, FamilyElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
-import type { HomeInput, HomeView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView } from './homes.ts';
+import type { HomeInput, HomeView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView } from './homes.ts';
 import type { MediaData, MediaView, NewMedia } from './media.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, FamilyView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
 import type { CheckOutcome, DraftView, FoundAt, FoundView, HeldSetupInput, KeptView, SaveInput, SightingView } from './setup.ts';
@@ -271,6 +271,18 @@ export interface KraftverkApi {
     add(input: OpeningInput): Promise<OpeningView>;
     update(id: string, changes: Partial<OpeningInput>): Promise<OpeningView>;
     remove(id: string): Promise<OpeningView>;
+  };
+  /** A family's labels (docs/PLAN-WORLD-MODEL.md §8.13): any grouping it wants, on devices, spaces and automations. */
+  labels: {
+    list(): Promise<LabelView[]>;
+    /** Which labels are on what. */
+    labelled(): Promise<Labelled>;
+    add(input: LabelInput): Promise<LabelView>;
+    update(id: string, changes: Partial<LabelInput>): Promise<LabelView>;
+    /** Gone, and off everything it was on. */
+    remove(id: string): Promise<void>;
+    /** One thing's labels, these and no others: the ones it has now, answered. */
+    set(target: LabelTarget, labelIds: string[]): Promise<LabelView[]>;
   };
   /** Pictures, by their content (docs/PLAN-WORLD-MODEL.md §8.12): kept, then named by a home or a device. */
   media: {

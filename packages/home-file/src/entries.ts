@@ -23,6 +23,8 @@ export type AutomationSource = {
   recheckMinutes: number | null;
   homePlace: number | null;
   madeFrom: string | null;
+  /** Its labels' keys, when whoever writes it knows them: the server's export does; one automation's YAML in the app leaves them out. */
+  labels?: string[];
   rule: Rule;
   /** What fills each part role: a device by its id, and which of its parts. */
   roles: Readonly<Record<string, { device: string; part: string }>>;
@@ -71,6 +73,7 @@ export function automationEntryFrom(
       recheckMinutes: source.recheckMinutes,
       homePlace: source.homePlace,
       madeFrom: source.madeFrom,
+      labels: source.labels ?? [],
       uses,
       rule: source.rule,
     },
@@ -125,6 +128,8 @@ export type DeviceSource = {
   config: Readonly<Record<string, unknown>>;
   /** Where it stands, by keys, when whoever writes it knows the home's: the server's export does; one device's YAML in the app leaves it out. */
   place?: PlaceEntry | null;
+  /** Its labels' keys, likewise. */
+  labels?: string[];
 };
 
 /** One way a device is reached, as an entry is written from it: its secrets as asked for — by name, sealed, or plain — and whether its method fixes the address. */
@@ -159,6 +164,7 @@ export function deviceEntryFrom(device: DeviceSource, ways: readonly WaySource[]
     paused: device.pausedAt !== null,
     track: device.trackDays,
     place: device.place ?? null,
+    labels: device.labels ?? [],
     settings: scalars(device.config),
     connect: ways.map((way) => ({ via: way.method, through: way.through, address: way.fixedAddress ? null : way.address, settings: scalars(way.config), secrets: way.secrets, exportable: way.exportable })),
   };

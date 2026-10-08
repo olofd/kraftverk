@@ -193,7 +193,7 @@ automations:
       ['house', 'building', ['ground']],
       ['garden', 'outdoor', []],
     ]);
-    expect(home.spaces[0]!.spaces[0]!.spaces[0]).toEqual({ key: 'kitchen', kind: 'room', name: 'Kitchen', purpose: 'kitchen', level: null, elevation: null, height: 2.4, spaces: [] });
+    expect(home.spaces[0]!.spaces[0]!.spaces[0]).toEqual({ key: 'kitchen', kind: 'room', name: 'Kitchen', purpose: 'kitchen', level: null, elevation: null, height: 2.4, labels: [], spaces: [] });
     expect(home.openings).toEqual({ 'front-door': { kind: 'door', from: 'hall', to: null, name: 'Front door' }, 'kitchen-door': { kind: 'opening', from: 'hall', to: 'kitchen', name: null } });
     expect(read.document!.devices.lamp!.place).toEqual({ home: 'home', space: 'kitchen', opening: null, role: 'stands' });
     expect(read.document!.devices.car!.place).toEqual({ home: 'home', space: 'garden', opening: null, role: 'based' });

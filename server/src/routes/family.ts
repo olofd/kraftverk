@@ -76,6 +76,29 @@ export function familyRoutes(deps: AppDeps): Hono {
   api.patch('/openings/:id', async (c) => c.json(await familyFor(deps, c).openings.update(c.req.param('id'), await body(c, OPENING.partial()))));
   api.delete('/openings/:id', async (c) => c.json(await familyFor(deps, c).openings.remove(c.req.param('id'))));
 
+  /** Its labels, and what each is on. */
+  const LABEL = z
+    .object({
+      key: z.string().regex(KEY),
+      name: z.string().trim().min(1).max(30),
+      color: z.string().regex(/^#[0-9a-f]{6}$/).nullable(),
+      icon: z.string().max(40).nullable(),
+    })
+    .strict();
+  const TARGET = z.union([z.object({ device: z.string().min(1).max(40) }).strict(), z.object({ space: z.string().min(1).max(40) }).strict(), z.object({ automation: z.string().min(1).max(40) }).strict()]);
+  api.get('/labels', async (c) => c.json({ labels: await familyFor(deps, c).labels.list() }));
+  api.get('/labels/labelled', async (c) => c.json(await familyFor(deps, c).labels.labelled()));
+  api.post('/labels', async (c) => c.json(await familyFor(deps, c).labels.add(await body(c, LABEL.partial({ key: true, color: true, icon: true })))));
+  api.put('/labels/on', async (c) => {
+    const { target, labelIds } = await body(c, z.object({ target: TARGET, labelIds: z.array(z.string().min(1).max(40)).max(50) }).strict());
+    return c.json({ labels: await familyFor(deps, c).labels.set(target, labelIds) });
+  });
+  api.patch('/labels/:id', async (c) => c.json(await familyFor(deps, c).labels.update(c.req.param('id'), await body(c, LABEL.partial()))));
+  api.delete('/labels/:id', async (c) => {
+    await familyFor(deps, c).labels.remove(c.req.param('id'));
+    return c.json({ ok: true });
+  });
+
   /**
    * A node joins the home, saying who it is — by its own id — and what it can
    * reach devices over. It does so at every start, so "held by Olof's iPhone"

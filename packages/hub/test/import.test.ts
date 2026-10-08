@@ -7,7 +7,7 @@ import type { Rule } from '@kraftverk/automation';
 import { ApiError } from '@kraftverk/api-contract';
 import { AutomationLibrary } from '@kraftverk/automation-engine';
 import type { AuditRecord } from '@kraftverk/device-sdk';
-import { FamilyStore, MediaStore, PlaceStore, SpaceStore, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
+import { FamilyStore, LabelStore, MediaStore, PlaceStore, SpaceStore, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
 import { policyOf } from '../src/homes/homes.ts';
 
 import { drafts } from '../src/automations/drafts.ts';
@@ -89,6 +89,7 @@ beforeEach(() => {
     family: new FamilyStore(db),
     places,
     spaces: new SpaceStore(db),
+    labels: new LabelStore(db),
     media: new MediaStore(db),
     policyOf: policyOf(db),
     sealing: testSealing,
@@ -200,6 +201,40 @@ describe('a server’s own export, into a database wiped', () => {
     // Nowhere: a problem at its line.
     const nowhere = await planImport(deps, text.replace('space: kitchen', 'space: cellar'), { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') });
     expect(nowhere.problems.map((problem) => [problem.message, problem.path])).toEqual([['Home has no space "cellar"', ['devices', 'hall-lamp', 'place']]]);
+  });
+
+  test('its labels, by key, and what each is on: a device, a room, an automation', async () => {
+    const { hall, morning } = aHome();
+    const home = deps.places.homeByKey('home')!;
+    const kitchen = deps.spaces.addSpace({ parentId: deps.spaces.site(home.id).id, key: 'kitchen', kind: 'room', name: 'Kitchen' });
+    const heating = deps.labels.add({ name: 'Heating', color: '#ff8800' });
+    const night = deps.labels.add({ name: 'Night' });
+    deps.labels.set({ device: hall.id }, [heating.id, night.id]);
+    deps.labels.set({ space: kitchen.id }, [night.id]);
+    deps.labels.set({ automation: morning.id }, [heating.id]);
+    const text = await exported();
+    expect(text).toContain('color: "#ff8800"');
+
+    db.exec("DELETE FROM labelled; DELETE FROM label; DELETE FROM space WHERE kind != 'site'; DELETE FROM automation; DELETE FROM device;");
+    const plan = await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') });
+    expect(plan.problems).toEqual([]);
+    expect(plan.labels.map((item) => [item.key, item.action])).toEqual([
+      ['heating', 'add'],
+      ['night', 'add'],
+    ]);
+    const applied = await applyImport(deps, plan.id!, actor('person', 'olof'), {});
+    expect(applied.labels.added).toEqual(['heating', 'night']);
+    const keysOn = (target: Parameters<typeof deps.labels.on>[0]) => deps.labels.on(target).map((label) => label.key);
+    expect(keysOn({ device: deps.catalog.byKey('hall-lamp')!.id })).toEqual(['heating', 'night']);
+    expect(keysOn({ space: deps.spaces.spaceByKey(home.id, 'kitchen')!.id })).toEqual(['night']);
+    expect(keysOn({ automation: deps.automations.byKey('morning')!.id })).toEqual(['heating']);
+    expect(deps.labels.byKey('heating')).toMatchObject({ name: 'Heating', color: '#ff8800' });
+
+    // Read again: the same. A label nowhere is a problem at its line.
+    const again = await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') });
+    expect([...again.labels, ...again.homes, ...again.devices, ...again.automations].every((item) => item.action === 'same')).toBe(true);
+    const unknown = await planImport(deps, text.replace('- night', '- garden'), { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') });
+    expect(unknown.problems.map((problem) => problem.message)).toContain('There is no label "garden", in the file or here');
   });
 
   test('a plan is used once, and only by whoever read it', async () => {

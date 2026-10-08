@@ -91,6 +91,9 @@ const PLACE: Schema = {
   properties: { home: { type: 'string' }, space: { type: 'string' }, opening: { type: 'string' } },
 };
 
+/** Labels, by key. */
+const LABELS: Schema = { type: 'array', items: { type: 'string' }, uniqueItems: true, description: 'Its labels, by key: [heating, upstairs].' };
+
 /** A space of a home, and the spaces inside it. */
 const SPACE: Schema = {
   type: 'object',
@@ -104,6 +107,7 @@ const SPACE: Schema = {
     level: { type: 'integer', description: 'A floor’s: 0 the ground floor, -1 the cellar.' },
     elevation: { type: 'number', description: 'A floor’s: metres above the ground.' },
     height: { type: 'number', exclusiveMinimum: 0, description: 'Metres from floor to ceiling.' },
+    labels: { ...LABELS, description: 'Its labels, by key: on what stands in it too.' },
     spaces: { type: 'object', propertyNames: { pattern: KEY.source }, additionalProperties: { $ref: '#/$defs/space' }, description: 'The spaces inside it, by key.' },
   },
 };
@@ -123,6 +127,7 @@ function deviceSchema(types: readonly VocabularyType[]): Schema {
       track: { type: 'string', pattern: '^[0-9]+ ?days?$', description: 'How long where it has been is kept: "30 days", from 1 day to 366. Where it was is never in the file.' },
       place: { ...PLACE, description: 'Where it stands: a home by its key, a space of it — the home itself when none — perhaps an opening it is at.' },
       based: { ...PLACE, description: 'Where one that moves is based — a car, a scooter: a home by its key, perhaps a space of it.' },
+      labels: LABELS,
       settings: { type: 'object', description: 'Its type’s settings.' },
       connect: {
         type: 'array',
@@ -250,6 +255,7 @@ function automationSchema(vocabulary: Vocabulary): Schema {
       recheck: { $ref: '#/$defs/duration' },
       'home page': { type: 'integer', minimum: 0, description: 'Its place among the home page’s shortcuts.' },
       'made from': { type: 'string', description: 'The recipe it was copied from.' },
+      labels: LABELS,
       settings: {
         type: 'object',
         description: 'Its settings, each by its name, read in its rule as setting.name: a value alone ("low: 20 %"), or with its title, range and how it is set.',
@@ -336,6 +342,16 @@ export function configJsonSchema(vocabulary: Vocabulary): Schema {
           name: { type: 'string', minLength: 1, maxLength: 60 },
           kind: { enum: ['family', 'household', 'friends', 'other'], description: 'Only the words on screen: "your family", "your household", "your friends", "your group".' },
           locale: { type: 'string', description: 'The language what is said to all of it is said in: "en-GB", "sv-SE".' },
+        },
+      },
+      labels: {
+        type: 'object',
+        ...keys,
+        description: 'Its labels, by key: any grouping it wants — "upstairs", "heating" — on devices, spaces and automations.',
+        additionalProperties: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { name: { type: 'string', minLength: 1, maxLength: 30 }, color: { type: 'string', pattern: '^#[0-9a-f]{6}$' }, icon: { type: 'string' } },
         },
       },
       homes: {

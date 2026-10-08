@@ -357,6 +357,15 @@ export function followerApi(h: Follower): KraftverkApi {
       update: (id, changes) => home.openings.update(id, changes),
       remove: (id) => home.openings.remove(id),
     },
+    /** Labels are the family's: the master's. */
+    labels: {
+      list: () => home.labels.list(),
+      labelled: () => home.labels.labelled(),
+      add: (input) => home.labels.add(input),
+      update: (id, changes) => home.labels.update(id, changes),
+      remove: (id) => home.labels.remove(id),
+      set: (target, labelIds) => home.labels.set(target, labelIds),
+    },
     /** Pictures are the master's: kept there, and fetched from there. */
     media: {
       add: (picture) => home.media.add(picture),

@@ -12,7 +12,7 @@ import {
   type WaySource,
 } from '@kraftverk/home-file';
 import { methodsOf, partsOf, type NodeId, type PolicyValueName, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
-import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, FamilyStore, LinkStore, MediaStore, PlaceStore, SecretsAtRest, SpaceStore } from '@kraftverk/store';
+import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, FamilyStore, LinkStore, MediaStore, LabelStore, PlaceStore, SecretsAtRest, SpaceStore } from '@kraftverk/store';
 import type { SpaceView } from '@kraftverk/api-contract';
 
 import type { ProtocolRegistry } from '../installed/protocols.ts';
@@ -42,6 +42,8 @@ export type ConfigDeps = {
   places: PlaceStore;
   /** Their spaces and openings, and where each device stands. */
   spaces: SpaceStore;
+  /** Its labels, and what each is on. */
+  labels: LabelStore;
   /** Pictures, by their content: what a home or a device in a file names. */
   media: MediaStore;
   /** A home's own values: how much is a load, the reserve. */
@@ -92,7 +94,7 @@ export function homeVocabulary(deps: Pick<ConfigDeps, 'catalog' | 'automations' 
 }
 
 /** A home's spaces as a file has them: the tree under its site, each by its key. */
-function spaceTree(spaces: readonly SpaceView[]): SpaceEntry[] {
+function spaceTree(spaces: readonly SpaceView[], labelsOf: (spaceId: string) => string[]): SpaceEntry[] {
   const under = (parent: string): SpaceEntry[] =>
     spaces
       .filter((space) => space.parentId === parent)
@@ -104,6 +106,7 @@ function spaceTree(spaces: readonly SpaceView[]): SpaceEntry[] {
         level: space.level,
         elevation: space.elevation,
         height: space.height,
+        labels: labelsOf(space.id),
         spaces: under(space.id),
       }));
   const site = spaces.find((space) => space.kind === 'site');
@@ -143,6 +146,12 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
   const document = emptyDocument();
   const notes: string[] = [];
   const everything = !options.devices && !options.automations;
+  // Labels by key: what a file names them by. Each one something it carries is labelled with goes in it, and every one when it is the whole home.
+  const allLabels = deps.labels.list();
+  const keyOfLabel = new Map(allLabels.map((label) => [label.id, label.key]));
+  const labelled = deps.labels.labelled();
+  const used = new Set<string>();
+  const labelKeys = (ids: readonly string[] | undefined) => (ids ?? []).flatMap((id) => (keyOfLabel.has(id) ? (used.add(id), [keyOfLabel.get(id)!]) : []));
 
   const devices = deps.catalog.list().filter((device) => !options.devices || options.devices.includes(device.key));
   const automations = deps.automations.list().filter((automation) => !options.automations || options.automations.includes(automation.key));
@@ -162,7 +171,7 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
         address: home.address,
         country: home.country,
         policy: { ...deps.policyOf(home.id).values() },
-        spaces: spaceTree(deps.spaces.spaces(home.id)),
+        spaces: spaceTree(deps.spaces.spaces(home.id), (id) => labelKeys(labelled.spaces[id])),
         openings: openingsOf(deps.spaces, home.id),
       };
     }
@@ -217,7 +226,7 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
       }
       ways.push({ method: connection.method, through: bridge?.key ?? null, address: connection.address, config: connection.config, secrets, exportable: connection.secretsExportable, fixedAddress: Boolean(method?.address) });
     }
-    document.devices[device.key] = deviceEntryFrom({ ...device, place: placeOf(deps, device.id) }, ways);
+    document.devices[device.key] = deviceEntryFrom({ ...device, place: placeOf(deps, device.id), labels: labelKeys(labelled.devices[device.id]) }, ways);
   }
 
   // Links between the devices it carries.
@@ -241,7 +250,7 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
   };
   const elsewhere = new Set<string>();
   for (const automation of automations) {
-    const { entry, gone } = automationEntryFrom(automation, keyOf);
+    const { entry, gone } = automationEntryFrom({ ...automation, labels: labelKeys(labelled.automations[automation.id]) }, keyOf);
     for (const role of gone) notes.push(`"${automation.name}": ${automation.rule.roles[role]?.label ?? role} was filled by ${role in automation.starts ? 'an automation' : 'a device'} that is gone: written empty`);
     for (const binding of Object.values(automation.roles)) {
       const key = keyOf.device(binding.device);
@@ -251,5 +260,6 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
   }
   if (elsewhere.size && !everything) notes.push(`It names devices this file does not carry, which the home it goes to must have: ${[...elsewhere].sort().join(', ')}`);
 
+  for (const label of allLabels) if (everything || used.has(label.id)) document.labels[label.key] = { name: label.name, color: label.color, icon: label.icon };
   return { document, notes };
 }

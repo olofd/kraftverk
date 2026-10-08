@@ -1,9 +1,10 @@
+import { useState } from 'react';
 import { router } from 'expo-router';
 import { Button, Spinner, Text, useTheme, YStack } from 'tamagui';
 
-import { byRoom, PATHS, type DeviceTypeListing, type DeviceView } from '@kraftverk/api-client';
+import { byRoom, PATHS, withLabel, type DeviceTypeListing, type DeviceView } from '@kraftverk/api-client';
 import { attributesOf, CATEGORIES, MAIN_PART } from '@kraftverk/device-sdk';
-import { Card, DeviceCard, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
+import { Card, Chips, DeviceCard, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { Pressable } from '../../components/Pressable';
@@ -13,6 +14,7 @@ import { useDevices } from '../../state/DevicesProvider';
 import { useFamily } from '../../state/FamilyProvider';
 import { useHomePlace } from '../../state/useHomePlace';
 import { useHomeSpaces } from '../../state/useHomeSpaces';
+import { useLabels } from '../../state/useLabels';
 import { useShowing } from '../../state/useShowing';
 import { Shortcuts } from '../automations/Shortcuts';
 import { DeviceIcon } from '../devices/DeviceIcon';
@@ -195,12 +197,28 @@ export function HomeScreen() {
   );
 }
 
-/** Devices by the room each stands in, in the order of the homes and their rooms; those in none after. With none placed, one list. */
+/**
+ * Devices by the room each stands in, in the order of the homes and their
+ * rooms; those in none after. With none placed, one list. With labels, a
+ * filter above: a device with it, or standing where it is.
+ */
 function ByRoom({ devices }: { devices: DeviceView[] }) {
   const { homes } = useHomeSpaces();
+  const { labels } = useLabels();
+  const [label, setLabel] = useState('all');
+  const chosen = labels?.labels.some((each) => each.id === label) ? label : 'all';
+  const shown = chosen === 'all' || !labels ? devices : withLabel(devices, chosen, homes ?? [], labels.labelled.spaces);
   return (
     <>
-      {byRoom(devices, homes ?? []).map((group) =>
+      {labels?.labels.length && devices.length ? (
+        <Chips label="Show" options={[{ value: 'all', label: 'All' }, ...labels.labels.map((each) => ({ value: each.id, label: each.name }))]} value={chosen} onChange={setLabel} />
+      ) : null}
+      {chosen !== 'all' && !shown.length ? (
+        <Text fontSize={13} color="$muted" paddingHorizontal="$1">
+          Nothing has that label, nor stands where it is.
+        </Text>
+      ) : null}
+      {byRoom(shown, homes ?? []).map((group) =>
         group.title === null ? (
           <DeviceList key={group.id} devices={group.devices} />
         ) : (

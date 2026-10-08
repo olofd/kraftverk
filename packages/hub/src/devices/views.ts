@@ -57,6 +57,8 @@ export class DeviceViews {
       readOnly: () => boolean;
       /** Where a device stands now, its main part: in which space of which home. */
       placement: (id: SavedDeviceId) => PlacementView | null;
+      /** Its labels' ids. */
+      labels: (id: SavedDeviceId) => string[];
     }
   ) {}
 
@@ -195,6 +197,7 @@ export class DeviceViews {
       pausedAt: record.pausedAt,
       trackDays: record.trackDays,
       placement: record.removedAt ? null : this.deps.placement(record.id),
+      labels: this.deps.labels(record.id),
       kind: type?.kind ?? 'hardware',
       integration: this.deps.types.sourceOf(record.typeId)?.integration ?? null,
       meta: type

@@ -30,6 +30,7 @@ export { MapView } from './map/MapView';
 export { MapApiProvider, useMapApi, type MapViewProps } from './map/props.ts';
 export { CodeInput } from './CodeInput.tsx';
 export { Chips } from './Chips.tsx';
+export { ToggleChips } from './ToggleChips.tsx';
 export { useRadioGroup, useToggleGroup } from './radio-group.ts';
 export { SegmentedControl } from './SegmentedControl.tsx';
 export { daysText, TrackSetting } from './TrackSetting.tsx';

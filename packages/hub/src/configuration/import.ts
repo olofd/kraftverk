@@ -1,4 +1,4 @@
-import { ApiError, type ImportApplied, type ImportItem, type ImportPlan, type PlacementInput } from '@kraftverk/api-contract';
+import { ApiError, type ImportApplied, type ImportItem, type ImportPlan, type LabelTarget, type PlacementInput } from '@kraftverk/api-contract';
 import { checkBinding, checkRule, isAutomationRole, isGroupRole, keepsSo, useOf, useText, type AutomationDraft, type BoundPart, type GroupRole, type PartRole, type PartUse } from '@kraftverk/automation';
 import type { AutomationEngine, AutomationLibrary, AutomationRecord } from '@kraftverk/automation-engine';
 import {
@@ -157,7 +157,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
   // A restore reads what it can: an entry it cannot read is left out and said, never the whole home lost for it.
   // A file kept before an installed integration's entries changed comes back as they are now.
   const read = readConfig(text, (document) => checkDocument(document, vocabulary, { hasSecret: () => true, uses: 'leave' }), { partial: options.lenient, migrations: deps.types.fileMigrations() });
-  const empty: ImportPlan = { id: null, from: read.from, problems: read.problems.map((each) => ({ ...each, path: [...each.path] })), devices: [], links: [], automations: [], family: [], homes: [], policy: [], needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
+  const empty: ImportPlan = { id: null, from: read.from, problems: read.problems.map((each) => ({ ...each, path: [...each.path] })), devices: [], links: [], automations: [], family: [], homes: [], labels: [], policy: [], needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
   if (!read.document) return empty;
   const document = read.document;
   // What a device it brings is, with its settings, is its type's code to say: each type it names is loaded now.
@@ -191,6 +191,14 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
   const secrets = new Map<string, string>();
   /** Devices whose place, restoring, is left as it is. */
   const placesLeft = new Set<string>();
+  /** Labels a thing names that are nowhere: a problem — restoring, left off and said. */
+  const labelsKnown = (keys: readonly string[], path: (string | number)[], what: string) => {
+    for (const key of keys)
+      if (!document.labels[key] && !deps.labels.byKey(key)) {
+        if (options.lenient) notes.push(`${what}: the label "${key}" is left off: there is no such label`);
+        else problems.push({ message: `There is no label "${key}", in the file or here`, path, line: null, column: null });
+      }
+  };
 
   // Secrets: opened now — those sealed with a passphrase first, as sealing takes its time — or said to be needed.
   const unsealed = new Map<string, string | null>();
@@ -247,6 +255,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
       }
     });
     // Where it stands: a home, a space and an opening the file brings or you have. Restoring, one that is not is left as it is, and said.
+    labelsKnown(entry.labels, ['devices', key, 'labels'], key);
     const misplaced = entry.place ? placeProblem(deps, document, entry.place) : null;
     if (misplaced && options.lenient) (notes.push(`${key}: where it stands is left as it is: ${misplaced}`), placesLeft.add(key));
     else if (misplaced) problem(misplaced, ['devices', key, entry.place!.role === 'based' ? 'based' : 'place']);
@@ -295,6 +304,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     }
     // What fills each part, checked as the apply will: a part that cannot do what its role needs is said now, not after a yes.
     for (const said of bindingProblems(deps, entry, document, leftOut)) problem(said.message, [...path, ...said.path]);
+    labelsKnown(entry.labels, [...path, 'labels'], key);
     const existing = deps.automations.byKey(key);
     const acts = entry.mode === 'act' && (!existing || existing.mode !== 'act' || !same(existing.rule, entry.rule) || existing.recheckMinutes !== entry.recheckMinutes);
     if (acts) needs.confirm.push(`"${entry.name}" will act on its own${existing?.mode === 'act' ? ', doing what the file says' : ''}`);
@@ -307,6 +317,19 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
   if (familyNow && document.family.name !== null && document.family.name !== familyNow.name) family.push(`name: ${familyNow.name} → ${document.family.name}`);
   if (familyNow && document.family.kind !== null && document.family.kind !== familyNow.kind) family.push(`kind: ${familyNow.kind} → ${document.family.kind}`);
   if (familyNow && document.family.locale !== null && document.family.locale !== familyNow.locale) family.push(`language: ${familyNow.locale} → ${document.family.locale}`);
+
+  // Its labels, by key: added, or renamed and coloured as the file says.
+  const labels: ImportItem[] = Object.entries(document.labels).map(([key, entry]) => {
+    const existing = deps.labels.byKey(key);
+    if (deps.labels.nameTaken(entry.name, existing?.id)) problems.push({ message: `Another label here is called "${entry.name}"`, path: ['labels', key, 'name'], line: null, column: null });
+    if (!existing) return { key, name: entry.name, action: 'add', changes: [] };
+    const changes: string[] = [];
+    if (existing.name !== entry.name) changes.push(`name: ${existing.name} → ${entry.name}`);
+    if (entry.color !== null && entry.color !== existing.color) changes.push('its colour');
+    if (entry.icon !== null && entry.icon !== existing.icon) changes.push('its icon');
+    return { key, name: entry.name, action: changes.length ? 'change' : 'same', changes };
+  });
+  for (const [key, entry] of Object.entries(document.homes)) for (const { space } of flatSpaces(entry.spaces)) labelsKnown(space.labels, ['homes', key, 'spaces', space.key, 'labels'], space.name);
 
   // Its homes, by key: added, or changed where the file says otherwise. What a file does not say — where one is, its address — is left as it is.
   const homes: ImportItem[] = Object.entries(document.homes).map(([key, entry]) => {
@@ -381,7 +404,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     return { ...each, line: at?.line ?? null, column: at?.column ?? null };
   });
   const id = placed.length ? null : newId('plan');
-  const view: ImportPlan = { id, from: read.from, problems: placed, devices, links, automations, family, homes, policy, needs, notes };
+  const view: ImportPlan = { id, from: read.from, problems: placed, devices, links, automations, family, homes, labels, policy, needs, notes };
   if (id) deps.pending.set(id, { view, document, mode: options.mode, secrets, by: options.by, expiresAt: Date.now() + PLAN_TTL_MS, turnedOff, lenient: Boolean(options.lenient) });
   return view;
 }
@@ -476,6 +499,7 @@ function deviceChanges(deps: ImportDeps, existing: DeviceRecord, entry: DeviceEn
   if (entry.picture !== existing.picture && entry.picture !== null) changes.push('its picture');
   if (entry.paused !== (existing.pausedAt !== null)) changes.push(entry.paused ? 'paused' : 'resumed');
   if (entry.track !== existing.trackDays) changes.push(entry.track === null ? 'where it has been: no longer kept, and forgotten' : `where it has been: kept ${entry.track === 1 ? '1 day' : `${entry.track} days`}`);
+  if (labelsDiffer(deps, { device: existing.id }, entry.labels)) changes.push(`its labels: ${entry.labels.join(', ')}`);
   if (entry.place && !samePlace(placeOf(deps, existing.id), entry.place)) changes.push(`where it ${entry.place.role === 'based' ? 'is based' : 'stands'}: ${[entry.place.opening, entry.place.space, entry.place.home].filter(Boolean).join(', ')}`);
   const settings = [...new Set([...Object.keys(existing.config), ...Object.keys(entry.settings)])].filter((name) => existing.config[name] !== entry.settings[name] && entry.settings[name] !== undefined);
   if (settings.length) changes.push(`settings: ${settings.join(', ')}`);
@@ -516,6 +540,7 @@ function automationChanges(deps: ImportDeps, existing: AutomationRecord, entry: 
   const homeKey = existing.homeId ? (deps.places.home(existing.homeId)?.key ?? null) : null;
   if (homeKey !== entry.home) changes.push(entry.home === null ? "for the family's homes, not one" : `for ${entry.home}`);
   if (existing.recheckMinutes !== entry.recheckMinutes) changes.push('how often it keeps things so');
+  if (labelsDiffer(deps, { automation: existing.id }, entry.labels)) changes.push(`its labels: ${entry.labels.join(', ')}`);
   if (existing.homePlace !== entry.homePlace) changes.push(entry.homePlace === null ? 'off the home page' : 'its place on the home page');
   return changes.length ? { action: 'change', changes } : { action: 'same', changes };
 }
@@ -563,7 +588,7 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
   if (!options.lenient) for (const need of view.needs.rebind) if (automationsIn(need.automation) && !choices.rebind?.[`${need.automation}.${need.role}`]) missing.push(`"${document.automations[need.automation]?.name}": a device for ${need.label}`);
   if (missing.length) throw new ApiError('invalid', `It still needs ${missing.join('; ')}`, { problems: missing });
 
-  const applied: ImportApplied = { devices: { added: [], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, family: false, homes: { added: [], changed: [] }, policy: [], notes: [] };
+  const applied: ImportApplied = { devices: { added: [], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, family: false, homes: { added: [], changed: [] }, labels: { added: [], changed: [] }, policy: [], notes: [] };
   const touched: AutomationId[] = [];
   /** Where each automation goes on the home page: placed after all are written, by place, so each lands where the file says. */
   const placing: { id: AutomationId; place: number | null }[] = [];
@@ -580,6 +605,15 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
 
   try {
     deps.db.transaction(() => {
+      // Labels: before what is labelled with them.
+      for (const item of view.labels) {
+        if (item.action === 'same') continue;
+        const entry = document.labels[item.key]!;
+        const existing = deps.labels.byKey(item.key);
+        const given = { name: entry.name, ...(entry.color !== null ? { color: entry.color } : {}), ...(entry.icon !== null ? { icon: entry.icon } : {}) };
+        if (existing) (deps.labels.update(existing.id, given), applied.labels.changed.push(item.key));
+        else (deps.labels.add({ ...given, key: item.key }), applied.labels.added.push(item.key));
+      }
       // The family, and its homes: first, since automations are for them.
       if (view.family.length) {
         deps.family.update({ ...(document.family.name !== null ? { name: document.family.name } : {}), ...(document.family.kind !== null ? { kind: document.family.kind } : {}), ...(document.family.locale !== null ? { locale: document.family.locale } : {}) });
@@ -676,6 +710,7 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
           const homeId = entry.home ? (deps.places.homeByKey(entry.home)?.id ?? null) : null;
           deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, groups: result.groups, starts: result.starts, homeId, timeZone: entry.clock, mode: why.length ? 'off' : entry.mode, recheckMinutes: entry.recheckMinutes });
           if (entry.homePlace !== (existing?.homePlace ?? null)) placing.push({ id, place: entry.homePlace });
+          writeLabels(deps, { automation: id }, entry.labels);
           (existing ? applied.automations.changed : applied.automations.added).push(key);
           if (why.length) applied.notes.push(`"${entry.name}" is restored turned off: ${why.join('; ')}`);
           touched.push(id);
@@ -729,7 +764,7 @@ function spaceChanges(deps: ImportDeps, homeId: string | null, entry: HomeEntry)
   for (const { space, parent, position } of flatSpaces(entry.spaces)) {
     const had = homeId ? deps.spaces.spaceByKey(homeId, space.key) : null;
     if (!had) added!.push(space.name);
-    else if (had.name !== space.name || had.kind !== space.kind || had.purpose !== space.purpose || had.level !== space.level || had.elevation !== space.elevation || had.height !== space.height || had.position !== position || keyOf(had.parentId) !== (parent ?? 'site'))
+    else if (had.name !== space.name || had.kind !== space.kind || had.purpose !== space.purpose || had.level !== space.level || had.elevation !== space.elevation || had.height !== space.height || had.position !== position || keyOf(had.parentId) !== (parent ?? 'site') || labelsDiffer(deps, { space: had.id }, space.labels))
       changed!.push(space.name);
   }
   for (const [key, opening] of Object.entries(entry.openings)) {
@@ -748,8 +783,8 @@ function writeSpaces(deps: ImportDeps, homeId: string, entry: HomeEntry): void {
     const parentId = parent === null ? site.id : deps.spaces.spaceByKey(homeId, parent)!.id;
     const given = { parentId, kind: space.kind, name: space.name, purpose: space.purpose, level: space.level, elevation: space.elevation, height: space.height, position };
     const had = deps.spaces.spaceByKey(homeId, space.key);
-    if (had) deps.spaces.updateSpace(had.id, given);
-    else deps.spaces.addSpace({ ...given, key: space.key });
+    const written = had ? deps.spaces.updateSpace(had.id, given)! : deps.spaces.addSpace({ ...given, key: space.key });
+    writeLabels(deps, { space: written.id }, space.labels);
   }
   for (const [key, opening] of Object.entries(entry.openings)) {
     const from = deps.spaces.spaceByKey(homeId, opening.from);
@@ -760,6 +795,18 @@ function writeSpaces(deps: ImportDeps, homeId: string, entry: HomeEntry): void {
     if (had) deps.spaces.updateOpening(had.id, given);
     else deps.spaces.addOpening({ ...given, key });
   }
+}
+
+/** Whether a file says other labels than a thing has: by key. None said leaves them as they are. */
+function labelsDiffer(deps: ImportDeps, target: LabelTarget, said: readonly string[]): boolean {
+  if (!said.length) return false;
+  return deps.labels.on(target).map((label) => label.key).sort().join() !== [...new Set(said)].sort().join();
+}
+
+/** A thing's labels as a file says them, those that are here: none said leaves them as they are. */
+function writeLabels(deps: ImportDeps, target: LabelTarget, said: readonly string[]): void {
+  if (!labelsDiffer(deps, target, said)) return;
+  deps.labels.set(target, said.flatMap((key) => deps.labels.byKey(key)?.id ?? []));
 }
 
 /** Whether a device stands where a file says: by keys. */
@@ -809,6 +856,7 @@ function writeDevice(deps: ImportDeps, key: string, entry: DeviceEntry, opened: 
   // Where it stands, where the file says so and it is somewhere here: what it does not say leaves it where it is.
   const spot = entry.place && !samePlace(placeOf(deps, device.id), entry.place) ? spotOf(deps, entry.place) : null;
   if (spot) deps.spaces.place(device.id, spot, by);
+  writeLabels(deps, { device: device.id }, entry.labels);
 
   const ways = governed(deps, device.id);
   entry.connect.forEach((way, index) => {
