@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { memoryKept, needsSignIn, validateProtocol, type SetupContext } from '@kraftverk/device-sdk';
+import { memoryHeld, memoryKept, needsSignIn, validateProtocol, type SetupContext } from '@kraftverk/device-sdk';
 
 import protocol, { authOptionsOf, cookieHeader, cookiesSet, FindMy, IcloudAuth, keep, newState, passwordKey, srpProofs, srpServer, srpStart, stateOf, usesBridge, type IcloudFetch } from '../src/protocol/index.ts';
 import { APPLE_ID, DEVICE_CODE, DSID, PASSWORD, playedApple, TEXT_CODE } from './apple.ts';
@@ -26,6 +26,7 @@ const contextFor = (fetch: IcloudFetch, password = PASSWORD): SetupContext => ({
   http: (url, init) => fetch(url, init),
   sightings: [],
   log: { info: () => {}, warn: () => {}, error: () => {} },
+  held: memoryHeld(),
   signal: AbortSignal.timeout(10_000),
   platform: 'system',
 });

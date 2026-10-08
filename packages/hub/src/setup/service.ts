@@ -9,6 +9,7 @@ import {
   isSimulated,
   openChannel,
   type DirectMethod,
+  memoryHeld,
   methodOf,
   randomHex,
   setupPlan,
@@ -24,6 +25,7 @@ import {
   type ScopedHttp,
   type SetupActionResult,
   type SetupChoice,
+  type SetupHeld,
 } from '@kraftverk/device-sdk';
 import { judgeCheck, withTimeout, type SessionManager } from '@kraftverk/holder';
 import type { AutomationStore, ConnectionStore, DeviceCatalog, DeviceRecord, HistoryStore, LinkStore, SqlDatabase } from '@kraftverk/store';
@@ -229,6 +231,8 @@ export class SetupService {
   discard(id: string): void {
     const draft = this.#drafts.get(id);
     draft?.stopWatching?.();
+    // What its actions held live, waiting on a person who is gone: closed.
+    for (const held of draft?.held.values() ?? []) void held.closeAll();
     this.#drafts.delete(id);
     this.#sweepWhileNeeded();
   }
@@ -361,18 +365,36 @@ export class SetupService {
     if (!step || step.kind !== 'form') throw new ApiError('not-found', 'No such step');
     const action = step.actions?.find((candidate) => candidate.id === actionId);
     if (!action) throw new ApiError('not-found', 'No such action');
-    // What its last turn asked to carry comes back with what the person gave, and only once.
-    const carried = draft.carried.get(actionId) ?? {};
+    /*
+      What its last turn asked to carry comes back with what the person gave,
+      and only once — and only to a turn that answers what it asked. A turn
+      that answers nothing of it starts afresh: what was carried is dropped,
+      and what the action held live for it closed.
+    */
+    const last = draft.carried.get(actionId);
     draft.carried.delete(actionId);
-    const result = await withTimeout(action.run(this.#setupContext(draft, signal), { ...input, ...carried }), action.label, ACTION_TIMEOUT_MS).catch(
+    const answering = last !== undefined && Object.keys(input).some((field) => last.asked.includes(field));
+    const held = this.#heldFor(draft, actionId);
+    if (!answering) await held.closeAll();
+    this.#touch(draft);
+    const result = await withTimeout(action.run(this.#setupContext(draft, signal, held), { ...input, ...(answering ? last.carry : {}) }), action.label, ACTION_TIMEOUT_MS).catch(
       (error: unknown) => ({ ok: false, detail: (error as Error).message }) as SetupActionResult
     );
+    // Which way it went, in the setup's trail: what it said, never what it was given.
+    console.info(`[setup] ${draft.type.id} ${actionId}${answering ? ' (answered)' : ''}: ${result.ok ? 'ok' : 'refused'}${result.ask ? ', asks again' : ''}${result.waiting ? ', waits' : ''} — ${result.detail}`);
     // Kept here for its next turn, never sent: the app sees what to ask, not what was carried.
-    if (result.ask?.carry) {
-      draft.carried.set(actionId, result.ask.carry);
+    if (result.ask) {
+      draft.carried.set(actionId, { carry: result.ask.carry ?? {}, asked: Object.keys(result.ask.schema.fields) });
       return this.#hold(draft, step.target, { ...result, ask: { schema: result.ask.schema } });
     }
     return this.#hold(draft, step.target, result);
+  }
+
+  /** What an action holds live between its turns, in this draft. */
+  #heldFor(draft: Draft, actionId: string): ReturnType<typeof memoryHeld> {
+    let held = draft.held.get(actionId);
+    if (!held) draft.held.set(actionId, (held = memoryHeld()));
+    return held;
   }
 
   /** A step of the type's own that finds candidates. */
@@ -514,6 +536,9 @@ export class SetupService {
     const draft = this.#newDraft({ by: input.by, heldBy: this.deps.self, type, method, reach, plan, address: connection.address, through: null, again: { deviceId: device.id, connectionId: connection.id, name: device.name, identity: device.identity } });
     draft.device = { ...device.config };
     draft.connection = { ...connection.config };
+    // What it has, sealed, starts it: a password kept is not asked again, a sign-in kept (a trust token) carries on.
+    draft.secrets = new Map(Object.entries(this.deps.connections.secrets(connection.id)));
+    draft.given = new Map(draft.secrets);
     return viewOf(draft);
   }
 
@@ -527,14 +552,15 @@ export class SetupService {
       this.deps.connections.update(again.connectionId, { config: settings });
       if (draft.secrets.size) keepSecrets(this.deps, draft, again.connectionId);
     })();
-    // Which fields, never their values.
+    // Which fields, never their values: those that changed from what it had.
+    const changed = [...draft.secrets].filter(([field, value]) => draft.given.get(field) !== value).map(([field]) => field);
     this.deps.record({
       at: new Date().toISOString(),
       kind: 'device.secrets-changed',
       actor: draft.by,
       resourceKind: 'device',
       resource: again.deviceId,
-      summary: `Set up ${draft.method!.label} again for "${again.name}"${draft.secrets.size ? `: ${[...draft.secrets.keys()].join(', ')} given anew` : ''}`,
+      summary: `Set up ${draft.method!.label} again for "${again.name}"${changed.length ? `: ${changed.join(', ')} given anew` : ''}`,
     });
     this.discard(draft.id);
     // Closed on purpose, so what it waited on is forgotten, and opened with what was given.
@@ -555,6 +581,8 @@ export class SetupService {
       id: `s-${randomHex(8)}`,
       again: null,
       carried: new Map(),
+      held: new Map(),
+      given: new Map(),
       ...start,
       identityHint: null,
       device: {},
@@ -631,7 +659,7 @@ export class SetupService {
     return outcome;
   }
 
-  #setupContext(draft: Draft, signal?: AbortSignal) {
+  #setupContext(draft: Draft, signal?: AbortSignal, held: SetupHeld = memoryHeld()) {
     return {
       adding: { typeId: draft.type.id, kind: draft.type.kind },
       kept: this.deps.kept(this.deps.types.sourceOf(draft.type.id)?.integration.id ?? draft.type.id.split('.')[0]!),
@@ -643,6 +671,7 @@ export class SetupService {
       sightings: draft.sightings,
       // Setup is where the trail matters most: what it notes is kept, not dropped.
       log: { info: (m: string) => console.info(`[setup] ${m}`), warn: (m: string) => console.warn(`[setup] ${m}`), error: (m: string) => console.error(`[setup] ${m}`) },
+      held,
       signal: signal ?? AbortSignal.timeout(ACTION_TIMEOUT_MS),
       platform: this.deps.transports.platform,
       // A channel to the device chosen, for an action that pairs with it.

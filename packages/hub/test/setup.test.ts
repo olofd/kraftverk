@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { CATEGORIES, savedDeviceId } from '@kraftverk/device-sdk';
 import { plainSecrets } from '@kraftverk/store';
 
-import { lampType, MACHINE_NODE } from '../src/testing.ts';
+import { HELD_LINES, lampType, MACHINE_NODE } from '../src/testing.ts';
 import { aHome, GUEST, refusal, type TestHome } from './a-home.ts';
 
 /*
@@ -89,6 +89,45 @@ describe('a way set up again', () => {
     expect(second).toMatchObject({ ok: true, detail: 'Signed in' });
     // Carried once: asked again, the first turn has to begin again.
     expect(await t.home.setup.action(started.id, credentials.id, 'twoStep', { code: '123456' })).toMatchObject({ ok: false, detail: 'What the first turn began was not carried' });
+  });
+
+  test('a wrong answer keeps the question and what was carried; a fresh turn drops both, closing what was held; so does leaving', async () => {
+    t.lampAt('lamp-1');
+    const started = await t.home.setup.start({ typeId: 'test.lamp', methodId: 'bus' });
+    const closed = HELD_LINES.closed;
+    await t.home.setup.action(started.id, 'credentials', 'twoStep', {});
+    const wrong = await t.home.setup.action(started.id, 'credentials', 'twoStep', { code: '000000' });
+    expect(wrong).toMatchObject({ ok: false, detail: 'That code is not it', ask: { schema: { fields: { code: {} } } } });
+    expect(await t.home.setup.action(started.id, 'credentials', 'twoStep', { code: '123456' })).toMatchObject({ ok: true, detail: 'Signed in' });
+    // The line was taken back by the turn that answered: nothing closed it.
+    expect(HELD_LINES.closed).toBe(closed);
+
+    // Begun, then begun afresh — the person went back to their password: what the first held is closed, and nothing of it carried.
+    await t.home.setup.action(started.id, 'credentials', 'twoStep', {});
+    const afresh = await t.home.setup.action(started.id, 'credentials', 'twoStep', {});
+    expect(afresh).toMatchObject({ ok: true, ask: {} });
+    expect(HELD_LINES.closed).toBe(closed + 1);
+    // Left: the line the second held is closed too.
+    await t.home.setup.discard(started.id);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(HELD_LINES.closed).toBe(closed + 2);
+  });
+
+  test('set up again, it starts from what it has: a secret kept is not asked again, and only what changed is said given anew', async () => {
+    t.lampAt('lamp-1');
+    const lamp = await t.added('Hall lamp');
+    const [way] = (await t.home.devices.get(lamp.id)).connections;
+    const first = await t.home.setup.again({ deviceId: lamp.id, connectionId: way!.id });
+    await t.home.setup.update(first.id, { connection: { pin: 'a-pin' } });
+    await t.home.setup.check(first.id);
+    await t.home.setup.save(first.id, { name: 'x' });
+
+    const again = await t.home.setup.again({ deviceId: lamp.id, connectionId: way!.id });
+    expect(again.secrets).toEqual(['pin']);
+    expect(await t.home.setup.check(again.id)).toMatchObject({ outcome: 'yours' });
+    await t.home.setup.save(again.id, { name: 'x' });
+    expect(t.hub.connections.secret(way!.id, 'pin')).toBe('a-pin');
+    expect((await t.home.timeline()).filter((entry) => entry.kind === 'device.secrets-changed').map((entry) => entry.summary)).toContain('Set up Test bus again for "Hall lamp"');
   });
 });
 

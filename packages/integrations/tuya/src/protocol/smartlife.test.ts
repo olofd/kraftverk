@@ -13,7 +13,7 @@ import {
   SmartLifeError,
   type SmartLifeSession,
 } from './smartlife.ts';
-import { memoryKept } from '@kraftverk/device-sdk';
+import { memoryHeld, memoryKept } from '@kraftverk/device-sdk';
 
 import { toHex } from './bytes.ts';
 import { DISCOVERY_KEY } from './discovery.ts';
@@ -196,6 +196,7 @@ describe('the Smart Life login and listing', () => {
       http,
       sightings: [{ transport: 'lan', address: '192.0.2.196', seenAt: new Date().toISOString(), heard: [{ kind: 'broadcast' as const, port: 6667, payload: toHex(announcement) }] }],
       log: { info: () => {}, warn: () => {}, error: () => {} },
+      held: memoryHeld(),
       signal: AbortSignal.timeout(10_000),
       platform: 'system' as const,
     };
@@ -248,6 +249,7 @@ describe('the Smart Life login and listing', () => {
       http,
       sightings: [{ transport: 'lan', address: '192.0.2.74', seenAt: new Date().toISOString(), heard: [{ kind: 'broadcast' as const, port: 6667, payload: toHex(announcement) }] }],
       log: { info: () => {}, warn: () => {}, error: () => {} },
+      held: memoryHeld(),
       signal: AbortSignal.timeout(10_000),
       platform: 'system' as const,
     };
@@ -293,6 +295,7 @@ describe('the Smart Life login and listing', () => {
       http,
       sightings: [],
       log: { info: () => {}, warn: () => {}, error: () => {} },
+      held: memoryHeld(),
       signal: AbortSignal.timeout(10_000),
       platform: 'system' as const,
     };
@@ -338,6 +341,7 @@ describe('the Smart Life login and listing', () => {
       http: async () => Response.json({ success: false }),
       sightings: [],
       log: { info: () => {}, warn: () => {}, error: () => {} },
+      held: memoryHeld(),
       signal: AbortSignal.timeout(10_000),
       platform: 'system' as const,
     };

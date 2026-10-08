@@ -2,6 +2,7 @@ import type { Channel } from './channel.ts';
 import { BRIDGE_TRANSPORT } from './bridge.ts';
 import { isBridgedMethod, type ConnectionMethod } from './connection.ts';
 import type { DeviceKind, DeviceLogger, DeviceType, ScopedHttp } from './device-type.ts';
+import { randomHex } from './ids.ts';
 import type { Platform } from './node.ts';
 import type { Protocol } from './protocol.ts';
 import { personFields, type ConfigSchema, type ConfigValues } from './schema.ts';
@@ -120,6 +121,50 @@ export function memoryKept(): IntegrationKept {
   return { get: (key) => kept.get(key) ?? null, set: (key, value) => void (value === null ? kept.delete(key) : kept.set(key, value)) };
 }
 
+/**
+ * What an action holds live between its turns — the connection a TV shows
+ * its PIN on, a sign-in waiting on its code. Kept by whoever runs the setup
+ * and never sent anywhere; closed when the action starts afresh, when the
+ * setup ends, or when its time runs out.
+ */
+export type SetupHeld = {
+  /** Keeps it, and closes it with `close` after `ttlMs` unless taken first. Returns the token its next turn carries. */
+  keep(value: unknown, options: { ttlMs: number; close?: () => void | Promise<void> }): string;
+  /** Takes it back, no longer held: null when it was closed, or never was. Whoever takes it closes it, or keeps it again. */
+  take<T>(token: string): T | null;
+};
+
+/** Held in memory: a setup's, a test's. `closeAll` closes what is still held. */
+export function memoryHeld(): SetupHeld & { closeAll(): Promise<void> } {
+  const held = new Map<string, { value: unknown; timer: ReturnType<typeof setTimeout>; close?: () => void | Promise<void> }>();
+  const closing = async (token: string) => {
+    const entry = held.get(token);
+    if (!entry) return;
+    held.delete(token);
+    clearTimeout(entry.timer);
+    await Promise.resolve(entry.close?.()).catch(() => undefined);
+  };
+  return {
+    keep(value, { ttlMs, close }) {
+      const token = randomHex(16);
+      const timer = setTimeout(() => void closing(token), ttlMs);
+      (timer as { unref?: () => void }).unref?.();
+      held.set(token, { value, timer, ...(close ? { close } : {}) });
+      return token;
+    },
+    take<T>(token: string): T | null {
+      const entry = held.get(token);
+      if (!entry) return null;
+      held.delete(token);
+      clearTimeout(entry.timer);
+      return entry.value as T;
+    },
+    closeAll: async () => {
+      await Promise.all([...held.keys()].map(closing));
+    },
+  };
+}
+
 /** What a step's function can reach. */
 export type SetupContext<Config extends ConfigValues = ConfigValues> = {
   /**
@@ -146,6 +191,8 @@ export type SetupContext<Config extends ConfigValues = ConfigValues> = {
    */
   sightings: readonly Sighting[];
   log: DeviceLogger;
+  /** What this action holds live between its turns: see `SetupHeld`. */
+  held: SetupHeld;
   /** Aborted when the user leaves the flow, or the step runs too long. */
   signal: AbortSignal;
   platform: Platform;
@@ -165,6 +212,12 @@ export type SetupAction<Config extends ConfigValues = ConfigValues> = {
   description?: string;
   /** What the action asks for, in the same form language as config. */
   input?: ConfigSchema;
+  /**
+   * The step's own Continue: a sign-in that needs the step's fields. Drawn as
+   * the step's one button, below its fields, it keeps what is typed and then
+   * runs; the step moves on once it is done. One to a step, at most.
+   */
+  primary?: boolean;
   run(ctx: SetupContext<Config>, input: ConfigValues): Promise<SetupActionResult>;
 };
 

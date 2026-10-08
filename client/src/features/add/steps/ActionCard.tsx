@@ -80,22 +80,37 @@ function Waiting({ result, onAgain, onCancel }: { result: SetupActionResult; onA
  * shows — drawn inside the step, and the same action run again with it.
  * What the helper carries to that turn stays with the home, never here.
  */
-function Asked({ result, busy, onAnswer }: { result: SetupActionResult; busy: boolean; onAnswer: (answers: ConfigValues) => void }) {
+export function Asked({ result, busy, onAnswer, onRestart }: { result: SetupActionResult; busy: boolean; onAnswer: (answers: ConfigValues) => void; onRestart?: () => void }) {
   const schema = result.ask!.schema;
-  // What it already knows — a code remembered — filled in, to be kept or changed.
+  // What it already knows — a code remembered — filled in, to be kept or changed. Kept when it is asked again: a code mistyped by one digit is corrected, not typed anew.
   const [answers, setAnswers] = useState<ConfigValues>(() => configDefaults(schema));
   const ready = isComplete(schema, answers);
   return (
     <YStack gap="$3">
-      <Text fontSize={13} color="$color" lineHeight={19} paddingHorizontal="$1">
+      {/* Refused, it says why in place of what it asked: the question stays, to be answered again. */}
+      <Text fontSize={13} color={result.ok ? '$color' : '$danger'} lineHeight={19} paddingHorizontal="$1" aria-live="polite">
         {result.detail}
       </Text>
       <Card inset backgroundColor="$background">
-        <SchemaForm schema={schema} values={answers} disabled={busy} onChange={(name, value) => setAnswers((before) => ({ ...before, [name]: value }))} onSubmit={() => (!busy && ready ? onAnswer(answers) : undefined)} />
+        <SchemaForm
+          schema={schema}
+          values={answers}
+          disabled={busy}
+          onChange={(name, value) => setAnswers((before) => ({ ...before, [name]: value }))}
+          // A code sent whole a moment after its last digit, as of then (SchemaForm keeps this current).
+          onSubmit={() => (!busy && ready ? onAnswer(answers) : undefined)}
+        />
       </Card>
-      <Button alignSelf="flex-start" size="$3" {...PRIMARY} disabled={busy || !ready} opacity={busy || !ready ? 0.5 : 1} onPress={() => onAnswer(answers)}>
-        {busy ? 'Working…' : 'Continue'}
-      </Button>
+      <XStack gap="$3" alignItems="center">
+        <Button alignSelf="flex-start" size="$3" {...PRIMARY} disabled={busy || !ready} opacity={busy || !ready ? 0.5 : 1} onPress={() => onAnswer(answers)}>
+          {busy ? 'Working…' : 'Continue'}
+        </Button>
+        {onRestart ? (
+          <Button size="$2" chromeless color="$muted" disabled={busy} onPress={onRestart}>
+            Start again
+          </Button>
+        ) : null}
+      </XStack>
     </YStack>
   );
 }
@@ -134,7 +149,7 @@ export function ActionCard({
       setError(null);
       try {
         const next = await flow.action(stepId, action.id, values);
-        if (!next.ok && !next.choices?.length && !next.again) {
+        if (!next.ok && !next.choices?.length && !next.again && !next.ask) {
           // Refused: said beside the questions, which stay, to be corrected and asked again.
           setResult(null);
           setOpen(true);
@@ -173,7 +188,7 @@ export function ActionCard({
       {result?.waiting ? (
         <Waiting result={result} onAgain={(next) => void run(next)} onCancel={() => setResult(null)} />
       ) : result?.ask ? (
-        <Asked result={result} busy={busy} onAnswer={(answers) => void run({ ...input, ...answers })} />
+        <Asked result={result} busy={busy} onAnswer={(answers) => void run({ ...input, ...answers })} onRestart={() => setResult(null)} />
       ) : result?.choices?.length || result?.again ? (
         <Choices
           result={result}

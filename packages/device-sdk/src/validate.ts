@@ -194,6 +194,9 @@ export function validateProtocol(protocol: Protocol): string[] {
     if (typeof binding.open !== 'function') problems.push(`protocol "${protocol.id}": its ${transport} binding cannot open`);
     if (typeof binding.recognise !== 'function') problems.push(`protocol "${protocol.id}": its ${transport} binding cannot recognise`);
   }
+  // A step has one button of its own: a sign-in that is it, at most.
+  if ((protocol.credentials?.actions ?? []).filter((action) => action.primary).length > 1) problems.push(`protocol "${protocol.id}" has more than one primary sign-in`);
+  problems.push(...schemaProblems(`protocol "${protocol.id}" credentials`, protocol.credentials?.schema));
   return problems;
 }
 

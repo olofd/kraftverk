@@ -163,19 +163,32 @@ export const lampProtocol: Protocol = {
         label: 'Fetch the PIN',
         run: async () => ({ ok: true, detail: 'Found one', choices: [{ id: 'a', label: 'The lamp', config: { pin: 'the-real-secret-value' } }] }),
       },
-      // Signs in in two turns, as a vendor sending a code to a phone does: the first carries what the second needs.
+      /*
+        Signs in in two turns, as a vendor sending a code to a phone does: the
+        first carries what the second needs, and holds a line open for it
+        (`ctx.held`) — taken back by the turn that answers, kept again when the
+        code is wrong.
+      */
       {
         id: 'twoStep',
         label: 'Sign in with a code',
-        run: async (_ctx, input) => {
-          if (input.code === undefined) return { ok: true, detail: 'A code was sent to your phone', ask: { schema: { fields: { code: { type: 'string', title: 'The code', required: true } } }, carry: { half: 'half-a-sign-in' } } };
+        run: async (ctx, input) => {
+          const schema = { fields: { code: { type: 'string' as const, title: 'The code', required: true } } };
+          const hold = (line: object) => ctx.held.keep(line, { ttlMs: 60_000, close: () => void HELD_LINES.closed++ });
+          if (input.code === undefined) return { ok: true, detail: 'A code was sent to your phone', ask: { schema, carry: { half: 'half-a-sign-in', line: hold({ open: true }) } } };
           if (input.half !== 'half-a-sign-in') return { ok: false, detail: 'What the first turn began was not carried' };
-          return input.code === '123456' ? { ok: true, detail: 'Signed in', suggestedConfig: { pin: 'pin-from-a-code' } } : { ok: false, detail: 'That code is not it' };
+          const line = ctx.held.take<object>(String(input.line));
+          if (!line) return { ok: false, detail: 'The line it held was closed' };
+          if (input.code !== '123456') return { ok: false, detail: 'That code is not it', ask: { schema, carry: { half: 'half-a-sign-in', line: hold(line) } } };
+          return { ok: true, detail: 'Signed in', suggestedConfig: { pin: 'pin-from-a-code' } };
         },
       },
     ],
   },
 };
+
+/** How many lines the lamp's two-step sign-in held open were closed for it: by a fresh turn, or by its setup ending. */
+export const HELD_LINES = { closed: 0 };
 
 /** Asks a lamp who it is, over any bytes channel. */
 async function ask(channel: ByteChannel, what: string, timeoutMs = 500): Promise<{ serial: string; model: string; on: boolean }> {

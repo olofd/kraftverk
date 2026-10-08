@@ -1,7 +1,6 @@
 import { heardAs, identityOf, type ConfigSchema, type ConfigValues, type Protocol, type SetupAction, type SetupActionResult, type Sighting } from '@kraftverk/device-sdk';
 
 import { CompanionLink } from './companion.ts';
-import { randomBytes } from './crypto.ts';
 import { idText, PairingRefused, PairSetup, readCredentials, writeCredentials, type Credentials } from './pairing.ts';
 
 /**
@@ -61,13 +60,11 @@ export const CREDENTIALS: ConfigSchema = {
 /** The PIN, as it is asked for. */
 const ASK_PIN: ConfigSchema = {
   help: 'The TV shows four digits now.',
-  fields: { pin: { type: 'string', title: 'PIN', description: 'The four digits on the TV.', required: true } },
+  fields: { pin: { type: 'string', presentation: 'code', length: 4, title: 'PIN', description: 'The four digits on the TV.', required: true } },
 };
 
-/** Pairings started, each waiting for its PIN on a connection kept open: by the token its next turn carries. */
-const started = new Map<string, { link: CompanionLink; setup: PairSetup; reply: Uint8Array; timer: ReturnType<typeof setTimeout> }>();
-
-const tokenOf = (): string => [...randomBytes(16)].map((each) => each.toString(16).padStart(2, '0')).join('');
+/** A pairing started, waiting for its PIN on a connection kept open: held by the setup between its turns. */
+type Started = { link: CompanionLink; setup: PairSetup; reply: Uint8Array };
 
 /** Pairing, as a setup action: the TV shows a PIN, it is asked for in a turn of its own, and what pairing leaves is kept. */
 const pair: SetupAction = {
@@ -77,12 +74,13 @@ const pair: SetupAction = {
   async run(ctx, input: ConfigValues): Promise<SetupActionResult> {
     // A later turn: the PIN, on the connection the first turn left open.
     if (typeof input.pairing === 'string') {
-      const held = started.get(input.pairing);
+      const held = ctx.held.take<Started>(input.pairing);
       if (!held) return { ok: false, detail: 'The pairing ended before the PIN came: pair again' };
       const pin = typeof input.pin === 'string' ? input.pin.replace(/\s/g, '') : '';
-      if (!/^\d{4}$/.test(pin)) return { ok: false, detail: 'Type the four digits the TV shows', ask: { schema: ASK_PIN, carry: { pairing: input.pairing } } };
-      started.delete(input.pairing);
-      clearTimeout(held.timer);
+      if (!/^\d{4}$/.test(pin)) {
+        const again = ctx.held.keep(held, { ttlMs: PAIRING_HELD_MS, close: () => held.link.close() });
+        return { ok: false, detail: 'Type the four digits the TV shows', ask: { schema: ASK_PIN, carry: { pairing: again } } };
+      }
       try {
         const credentials = await held.link.finishPairing(held.setup, held.reply, pin, PAIRED_AS);
         return { ok: true, detail: `Paired: the TV lists it as “${PAIRED_AS}”.`, suggestedConfig: { credentials: writeCredentials(credentials) } };
@@ -103,12 +101,8 @@ const pair: SetupAction = {
     const setup = new PairSetup();
     try {
       const reply = await link.startPairing(setup);
-      const token = tokenOf();
-      const timer = setTimeout(() => {
-        started.delete(token);
-        void link.close();
-      }, PAIRING_HELD_MS);
-      started.set(token, { link, setup, reply, timer });
+      const started: Started = { link, setup, reply };
+      const token = ctx.held.keep(started, { ttlMs: PAIRING_HELD_MS, close: () => link.close() });
       return { ok: true, detail: 'The TV shows a PIN', ask: { schema: ASK_PIN, carry: { pairing: token } } };
     } catch (error) {
       await link.close();

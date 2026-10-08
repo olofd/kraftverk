@@ -25,6 +25,7 @@ export { PendingMark } from './PendingMark.tsx';
 export { Row, RowSeparator, toggled, ToggleRow } from './Row.tsx';
 export { Toggle, type ToggleProps } from './Toggle.tsx';
 export { SchemaForm, isComplete } from './SchemaForm.tsx';
+export { CodeInput } from './CodeInput.tsx';
 export { Chips } from './Chips.tsx';
 export { useRadioGroup, useToggleGroup } from './radio-group.ts';
 export { SegmentedControl } from './SegmentedControl.tsx';

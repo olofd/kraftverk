@@ -1,4 +1,4 @@
-import { personFields, type ConfigSchema, type ConfigValues, type Protocol, type SetupAction, type SetupActionResult } from '@kraftverk/device-sdk';
+import type { ConfigSchema, ConfigValues, Protocol, SetupAction, SetupActionResult } from '@kraftverk/device-sdk';
 
 import { AppleRefused, IcloudAuth, newState, type IcloudFetch, type IcloudState } from './auth.ts';
 import { FindMy } from './findmy.ts';
@@ -34,8 +34,8 @@ export const ICLOUD_SETUP = 'https://setup.icloud.com';
 export const CREDENTIALS: ConfigSchema = {
   help: 'Your Apple ID and its password stay on this server: they are how it signs in again when Apple ends a session. Apple asks for a code from one of your devices once.',
   fields: {
-    appleId: { type: 'string', title: 'Apple ID', description: 'The email address you sign in to iCloud with.', required: true },
-    password: { type: 'string', presentation: 'secret', title: 'Password', required: true },
+    appleId: { type: 'string', title: 'Apple ID', description: 'The email address you sign in to iCloud with.', required: true, autocomplete: 'username' },
+    password: { type: 'string', presentation: 'secret', title: 'Password', required: true, autocomplete: 'current-password' },
     session: { type: 'string', presentation: 'secret', kept: 'session', title: 'Signed in' },
   },
 };
@@ -57,7 +57,7 @@ const askFor = (length: number, sentTo: TrustedPhone | null, textTo: TrustedPhon
     ? sentTo.mode === 'voice' ? `Apple is calling ${sentTo.number} with a code.` : `Apple sent a code by text to ${sentTo.number}.`
     : 'Apple shows a code on your iPhone, iPad or Mac: tap Allow there, and type it here.',
   fields: {
-    code: { type: 'string', title: 'Code', description: `The ${length} digits Apple shows.`, required: !textTo },
+    code: { type: 'string', presentation: 'code', length, title: 'Code', description: `The ${length} digits Apple shows.`, required: !textTo },
     ...(textTo ? { byText: { type: 'boolean', title: `Text it to ${textTo.number} instead`, default: false } } : {}),
   },
 });
@@ -82,7 +82,8 @@ const signIn: SetupAction = {
   id: 'signIn',
   label: 'Sign in',
   description: 'Signs in to iCloud, as icloud.com does: Apple asks for a code from one of your devices, once.',
-  input: personFields(CREDENTIALS),
+  // The step's own button: the Apple ID and password typed above it are what it signs in with.
+  primary: true,
   async run(ctx, input: ConfigValues): Promise<SetupActionResult> {
     // What is typed now, or what was kept before: signing in again needs only what is missing.
     const typed = (field: string) => (typeof input[field] === 'string' && (input[field] as string).trim() ? (input[field] as string).trim() : null);

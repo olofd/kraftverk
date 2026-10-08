@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from 'react';
 import { Input, Text, XStack, YStack } from 'tamagui';
 
+import { CodeInput } from './CodeInput.tsx';
 import { RowSeparator, ToggleRow } from './Row.tsx';
 import { SliderRow } from './SliderRow.tsx';
 import { haptic } from './haptics.ts';
@@ -94,6 +96,33 @@ function Field({
 }) {
   // A number kept as typed while it is typed: "12." on its way to "12.5", "-0" to "-0.5".
   const typed = useNumberText(typeof value === 'number' ? value : null);
+  const [shown, setShown] = useState(false);
+  // What Enter does, as of the latest render: a code complete is sent a moment after its last digit, with what it holds then.
+  const submit = useRef(onSubmit);
+  submit.current = onSubmit;
+  const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => void (pending.current && clearTimeout(pending.current)), []);
+
+  if (field.type === 'string' && presentationOf(field) === 'code') {
+    const length = field.length ?? 6;
+    return (
+      <YStack gap="$3" paddingHorizontal="$4" paddingVertical="$3">
+        <Label title={field.title} description={field.description} />
+        <CodeInput
+          length={length}
+          value={typeof value === 'string' ? value : ''}
+          disabled={disabled}
+          label={field.title}
+          onChange={(digits) => {
+            onChange(name, digits);
+            if (pending.current) clearTimeout(pending.current);
+            // Seen whole for a breath, then sent: a mistyped last digit can still be caught.
+            if (digits.length === length) pending.current = setTimeout(() => submit.current?.(), 300);
+          }}
+        />
+      </YStack>
+    );
+  }
 
   if (field.type === 'boolean') {
     return (
@@ -186,14 +215,23 @@ function Field({
 
   return (
     <YStack gap="$2" paddingHorizontal="$4" paddingVertical="$3" opacity={disabled ? 0.45 : 1}>
-      <Label
-        title={field.title}
-        description={
-          secret && hasSecret
-            ? `${field.description ? `${field.description} ` : ''}Stored — leave blank to keep it.`
-            : field.description
-        }
-      />
+      <XStack alignItems="flex-end" justifyContent="space-between" gap="$3">
+        <YStack flex={1}>
+          <Label
+            title={field.title}
+            description={
+              secret && hasSecret
+                ? `${field.description ? `${field.description} ` : ''}Stored — leave blank to keep it.`
+                : field.description
+            }
+          />
+        </YStack>
+        {secret ? (
+          <Text fontSize={12} color="$accent" cursor="pointer" paddingVertical="$1" role="button" aria-pressed={shown} onPress={() => setShown((before) => !before)}>
+            {shown ? 'Hide' : 'Show'}
+          </Text>
+        ) : null}
+      </XStack>
       <Input
         size="$3"
         backgroundColor="$backgroundPress"
@@ -203,11 +241,13 @@ function Field({
         disabled={disabled}
         // `type`, not `secureTextEntry`: Tamagui's web Input discards the latter,
         // which left every secret field — a device's local key — readable on screen.
-        type={secret ? 'password' : 'text'}
+        type={secret && !shown ? 'password' : 'text'}
         multiline={multiline}
         numberOfLines={multiline ? 4 : undefined}
         onSubmitEditing={multiline ? undefined : onSubmit}
-        autoComplete={secret ? 'off' : undefined}
+        // What a password manager may fill, when the field says; otherwise a device's key is nobody's password.
+        name={field.type === 'string' && field.autocomplete ? name : undefined}
+        autoComplete={field.type === 'string' && field.autocomplete ? field.autocomplete : secret ? 'off' : undefined}
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType={numeric ? 'numeric' : 'default'}

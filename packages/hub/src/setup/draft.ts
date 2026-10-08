@@ -1,5 +1,5 @@
 import type { CheckOutcome, DraftView, SaveInput } from '@kraftverk/api-contract';
-import type { NodeId, ConfigValues, ConnectionMethod, DeviceType, Identified, SavedDeviceId, SetupStepView, Sighting } from '@kraftverk/device-sdk';
+import type { NodeId, ConfigValues, ConnectionMethod, DeviceType, Identified, memoryHeld, SavedDeviceId, SetupStepView, Sighting } from '@kraftverk/device-sdk';
 
 import type { Reach } from './reach.ts';
 
@@ -27,8 +27,12 @@ export type Draft = {
   through: SavedDeviceId | null;
   /** A way you have, set up again: its device and connection. Null while adding. */
   again: { deviceId: SavedDeviceId; connectionId: string; name: string; identity: string | null } | null;
-  /** What an action's next turn needs that the app never sees (`ask.carry`), by action. */
-  carried: Map<string, ConfigValues>;
+  /** What an action's next turn needs that the app never sees (`ask.carry`), by action — with the fields it asked, which a turn answering it gives. */
+  carried: Map<string, { carry: ConfigValues; asked: string[] }>;
+  /** What each action holds live between its turns (`SetupHeld`), closed with the draft. */
+  held: Map<string, ReturnType<typeof memoryHeld>>;
+  /** The secrets a way set up again already had: what was given anew is what differs. */
+  given: Map<string, string>;
   identityHint: string | null;
   device: Record<string, unknown>;
   connection: Record<string, unknown>;

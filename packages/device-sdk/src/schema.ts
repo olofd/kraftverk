@@ -23,8 +23,10 @@ import { checkValue, type BooleanValue, type EnumValue, type NumberValue, type S
  * - `host` — text that is an IP address or a host name on the local network.
  * - `multiline` — text that runs to several lines.
  * - `slider` — a number with a range, dragged rather than typed.
+ * - `code` — a one-time code sent to a person: a box for each digit, filled
+ *   by pasting, or by the phone's own suggestion.
  */
-export type Presentation = 'secret' | 'host' | 'multiline' | 'slider';
+export type Presentation = 'secret' | 'host' | 'multiline' | 'slider' | 'code';
 
 type Presented = { title: string; description?: string; required?: boolean };
 
@@ -33,7 +35,11 @@ export type ConfigField =
       Presented & {
         default?: string;
         placeholder?: string;
-        presentation?: 'secret' | 'host' | 'multiline';
+        presentation?: 'secret' | 'host' | 'multiline' | 'code';
+        /** For a code: how many digits it has. */
+        length?: number;
+        /** What a password manager, or the browser, may fill it with: the account's name, its password. */
+        autocomplete?: 'username' | 'email' | 'current-password';
         /**
          * A secret its session keeps, not one a person gives — a sign-in
          * token, renewed as it runs: never asked for, written by the session
@@ -111,7 +117,7 @@ export function schemaProblems(where: string, schema: ConfigSchema | undefined):
   const problems: string[] = [];
   for (const [name, field] of Object.entries(schema?.fields ?? {})) {
     const presentation = presentationOf(field);
-    const fits = presentation === null || (field.type === 'string' ? ['secret', 'host', 'multiline'].includes(presentation) : field.type === 'number' && presentation === 'slider');
+    const fits = presentation === null || (field.type === 'string' ? ['secret', 'host', 'multiline', 'code'].includes(presentation) : field.type === 'number' && presentation === 'slider');
     if (!fits) problems.push(`${where} field "${name}" is ${field.type}, which cannot be presented as ${presentation}`);
     if (presentation === 'slider' && field.type === 'number' && (field.min === undefined || field.max === undefined)) problems.push(`${where} field "${name}" is a slider with no range`);
     if (!field.title?.trim()) problems.push(`${where} field "${name}" has no title`);

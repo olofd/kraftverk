@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { memoryKept, validateProtocol, type Channel, type SetupContext, type Sighting } from '@kraftverk/device-sdk';
+import { memoryHeld, memoryKept, validateProtocol, type Channel, type SetupContext, type Sighting } from '@kraftverk/device-sdk';
 
 import { COMPANION_LAN } from '../src/index.ts';
 import protocol, {
@@ -202,6 +202,8 @@ describe('the remote’s session', () => {
 
 describe('the protocol, as setup meets it', () => {
   const pairAction = protocol.credentials!.actions!.find((action) => action.id === 'pair')!;
+  // One setup's: what its first turn holds open, its next takes back.
+  const held = memoryHeld();
   const contextFor = (open?: () => Promise<Channel>): SetupContext => ({
     adding: { typeId: 'apple-media.tv', kind: 'hardware' },
     kept: memoryKept(),
@@ -212,6 +214,7 @@ describe('the protocol, as setup meets it', () => {
     http: () => Promise.reject(new Error('No HTTP here')),
     sightings: [],
     log: { info: () => {}, warn: () => {}, error: () => {} },
+    held,
     signal: AbortSignal.timeout(10_000),
     platform: 'system',
     ...(open ? { open } : {}),
@@ -253,11 +256,14 @@ describe('the protocol, as setup meets it', () => {
     expect(first).toMatchObject({ ok: true, detail: 'The TV shows a PIN', ask: { schema: { fields: { pin: { type: 'string' } } } } });
     const carry = first.ask!.carry!;
 
-    // Not four digits: asked again, on the same connection.
+    // Not four digits: asked again, on the same connection, held anew.
     const again = await pairAction.run(contextFor(), { ...carry, pin: '12' });
-    expect(again).toMatchObject({ ok: false, detail: 'Type the four digits the TV shows', ask: { carry } });
+    // Taken before it is matched: Bun's toMatchObject writes an asymmetric matcher over what it matched.
+    const heldAgain = { ...again.ask!.carry! };
+    expect(again).toMatchObject({ ok: false, detail: 'Type the four digits the TV shows', ask: { carry: { pairing: expect.any(String) } } });
+    expect(tv.connections[0]!.connected).toBe(true);
 
-    const done = await pairAction.run(contextFor(), { ...carry, pin: ` ${PIN} ` });
+    const done = await pairAction.run(contextFor(), { ...heldAgain, pin: ` ${PIN} ` });
     expect(done).toMatchObject({ ok: true, detail: 'Paired: the TV lists it as “kraftverk”.' });
     expect(readCredentials(done.suggestedConfig!.credentials as string)).not.toBeNull();
     expect(tv.pairings.size).toBe(1);
