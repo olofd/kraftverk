@@ -44,6 +44,7 @@ export {
   formatValue,
   isOld,
   observedAt,
+  placeOf,
   shownAttributes,
   startsAtZero,
 } from './measurement.ts';

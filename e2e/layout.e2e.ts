@@ -124,9 +124,12 @@ for (const width of [320, 375]) {
     const meter = await addSimulated(request, 'atorch.s1w', unique('ATORCH'));
     // A price that is wide as it reads ("0.59 SEK/kWh"), beside where the hour ranks.
     const prices = await addSimulated(request, 'elprisetjustnu.prices', unique('Prices'), { area: 'SE3', currency: 'SEK' });
+    // A phone, whose place once ran out of its card as coordinates: said as a place now, and never wider than its card.
+    const phone = await addSimulated(request, 'icloud.device', unique('A phone with a long name'));
 
     await page.goto('/');
     await expect(page.getByRole('button', { name: new RegExp(`^${prices.name}, `) })).toBeVisible();
+    await expect(page.getByRole('button', { name: new RegExp(`^${phone.name}, `) })).toBeVisible();
     expect(await problems(page)).toEqual([]);
 
     // Its history: which reading, and how far back — a title never squeezed beside the ranges.

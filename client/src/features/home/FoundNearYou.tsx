@@ -14,6 +14,8 @@ import { pictureFor } from '../devices/registry';
 
 /** How often what is near is looked at again, while the home page is seen. */
 const LOOK_AGAIN_MS = 10_000;
+/** From this many found behind one bridge, they are one row: the home page is not where a family's devices are listed one by one. */
+const GROUP_FROM = 4;
 
 /** Where something was found, as the home names it: its transport and address, and the bridge it is behind. */
 const foundAt = (entry: FoundView) => ({ transport: entry.transport, through: entry.through?.id ?? null, address: entry.address });
@@ -83,11 +85,35 @@ export function FoundNearYou() {
     );
   };
 
+  // Many behind one account or gateway — a family's Find My — are one row, opening its page, where they are chosen from.
+  const behind = new Map<string, { through: NonNullable<FoundView['through']>; count: number }>();
+  for (const entry of found) if (entry.through) behind.set(entry.through.id, { through: entry.through, count: (behind.get(entry.through.id)?.count ?? 0) + 1 });
+  const grouped = [...behind.values()].filter((group) => group.count >= GROUP_FROM);
+  const single = found.filter((entry) => !entry.through || (behind.get(entry.through.id)?.count ?? 0) < GROUP_FROM);
+  const group = ({ through, count }: { through: NonNullable<FoundView['through']>; count: number }, index: number) => (
+    <YStack key={`group-${through.id}`}>
+      {index > 0 ? <RowSeparator /> : null}
+      <Pressable onPress={() => router.push(PATHS.devices.one(through.id))}>
+        <Row
+          leading={
+            <YStack width={36} height={36} alignItems="center" justifyContent="center">
+              <Icon name="layers" size={20} color={theme.muted?.val} />
+            </YStack>
+          }
+          title={`${count} devices through ${through.name}`}
+          subtitle="Not added yet · choose which to add"
+          accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />}
+        />
+      </Pressable>
+    </YStack>
+  );
+
   return (
     <YStack gap="$2">
       <SectionLabel>Found near you</SectionLabel>
       <Card inset>
-        {found.map((entry, index) => row(entry, index, false))}
+        {single.map((entry, index) => row(entry, index, false))}
+        {grouped.map((each, index) => group(each, single.length + index))}
         {ignored.length ? (
           <YStack>
             {found.length ? <RowSeparator /> : null}

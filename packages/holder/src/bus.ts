@@ -36,26 +36,33 @@ export type LiveMessage =
 
 export type LiveListener = (message: LiveMessage) => void;
 
+/** How far a reading's time must move, its value the same, to be passed on again: what keeps "as of" true without a stream of polls. */
+export const FRESH_AGAIN_MS = 60_000;
+
 /**
  * What a device has said since it was last asked, reading by reading.
  *
  * A session's readings come from its cache and are asked for often; most of
  * them have not moved. This keeps what was last passed on, per device, and
- * gives back only the readings whose value changed — a new time alone is not
- * a change — so a stream carries what moved and nothing else.
+ * gives back only the readings whose value changed — or whose time moved by
+ * `FRESH_AGAIN_MS` or more: a phone located afresh at the same place is news
+ * ("located a minute ago"), a plug polled every two seconds is not — so a
+ * stream carries what moved and nothing else.
  */
 export class ReadingChanges {
-  #last = new Map<string, Map<string, string>>();
+  #last = new Map<string, Map<string, { value: string; at: number }>>();
 
-  /** The readings of `deviceId` whose value differs from the last time; remembers these. */
+  /** The readings of `deviceId` whose value differs from the last time, or whose time moved enough; remembers these. */
   since(deviceId: string, readings: readonly Reading[]): Reading[] {
-    const last = this.#last.get(deviceId) ?? new Map<string, string>();
+    const last = this.#last.get(deviceId) ?? new Map<string, { value: string; at: number }>();
     this.#last.set(deviceId, last);
     const changed: Reading[] = [];
     for (const reading of readings) {
       const value = JSON.stringify(reading.value);
-      if (last.get(reading.key) === value) continue;
-      last.set(reading.key, value);
+      const at = Date.parse(reading.at);
+      const before = last.get(reading.key);
+      if (before && before.value === value && !(at - before.at >= FRESH_AGAIN_MS)) continue;
+      last.set(reading.key, { value, at });
       changed.push(reading);
     }
     return changed;

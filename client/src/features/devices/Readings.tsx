@@ -7,14 +7,17 @@ import { DeviceCard, EnergyFlow, Icon, PartCard, Row } from '@kraftverk/ui';
 
 import { Pressable } from '../../components/Pressable';
 import { useDevices } from '../../state/DevicesProvider';
+import { useHomePlace } from '../../state/useHomePlace';
 import { DeviceIcon } from './DeviceIcon';
 import { partSlotFor } from './registry';
 
 export function Overview({ device }: { device: DeviceView }) {
+  const home = useHomePlace();
   return (
     <DeviceCard
       device={{ name: device.name, subtitle: device.meta.name, health: device.health, attributes: attributesOf(device.description, MAIN_PART), readings: device.readings }}
       icon={<DeviceIcon device={device} />}
+      home={home}
     />
   );
 }

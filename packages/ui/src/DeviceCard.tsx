@@ -3,11 +3,11 @@ import { Image, type ImageSourcePropType } from 'react-native';
 import { Text, XStack, YStack } from 'tamagui';
 
 import type { AttributeSpec, ConnectionHealth, Reading } from '@kraftverk/device-sdk';
-import { isOnline, readingOf } from '@kraftverk/device-sdk';
+import { isOnline, isPosition, quantityOf, readingOf } from '@kraftverk/device-sdk';
 
 import { Card } from './Card.tsx';
 import { haptic } from './haptics.ts';
-import { formatValue, isOld, observedAt, shownAttributes } from './measurement.ts';
+import { formatValue, isOld, observedAt, placeOf, shownAttributes } from './measurement.ts';
 
 /**
  * One device, as a card.
@@ -59,14 +59,20 @@ type Props = {
   image?: ImageSourcePropType | null;
   /** Up to two more attributes under the headline. */
   secondary?: readonly AttributeSpec[];
+  /** Where the home is, when known: a position is then said as a place — "At home", "2.3 km away". */
+  home?: { latitude: number; longitude: number } | null;
   onPress?: () => void;
 };
 
-export function DeviceCard({ device, icon, image, secondary, onPress }: Props) {
+/** The headline's size, by how long it is: a long one is smaller, so it stays one line in its card. */
+const headlineSize = (text: string) => (text.length <= 9 ? 30 : text.length <= 14 ? 24 : 20);
+
+export function DeviceCard({ device, icon, image, secondary, home, onPress }: Props) {
   const online = isOnline(device.health);
   const [primary, ...rest] = shownAttributes(device.attributes);
   const primaryReading = primary ? readingOf(device.readings, primary.key) : null;
-  const primaryValue = primary ? formatValue(primary, primaryReading?.value ?? null) : '—';
+  // A position leads as a place, never as coordinates: those are for the map on its page.
+  const primaryValue = primary ? (primaryReading && quantityOf(primary) === 'position' && isPosition(primaryReading.value) ? placeOf(primaryReading.value, home) : formatValue(primary, primaryReading?.value ?? null)) : '—';
   // Its attribute says how long a value stays current: past that it is shown as it was, and when.
   const primaryOld = primary ? isOld(primary, primaryReading) : false;
 
@@ -138,12 +144,13 @@ export function DeviceCard({ device, icon, image, secondary, onPress }: Props) {
 
       {/* A wide reading ("0.59 SEK/kWh") leaves no room beside it on a phone: what is read beside it moves below, never past the card's edge. */}
       <XStack alignItems="flex-end" justifyContent="space-between" columnGap="$3" rowGap="$2" flexWrap="wrap">
-        <YStack gap={2}>
-          <Text fontSize={30} fontWeight="800" letterSpacing={-1} color={primaryOld ? '$muted' : '$color'}>
+        {/* Never wider than the card: one line, as small as its length needs, cut short with an ellipsis before it could leave. */}
+        <YStack gap={2} flexShrink={1} minWidth={0} maxWidth="100%">
+          <Text fontSize={headlineSize(primaryValue)} fontWeight="800" letterSpacing={-1} color={primaryOld ? '$muted' : '$color'} numberOfLines={1} ellipsizeMode="tail">
             {primaryValue}
           </Text>
           {primary ? (
-            <Text fontSize={11} color="$muted" textTransform="uppercase" letterSpacing={0.6}>
+            <Text fontSize={11} color="$muted" textTransform="uppercase" letterSpacing={0.6} numberOfLines={1}>
               {primaryOld && primaryReading ? `${primary.label}, as of ${observedAt(primaryReading.at)}` : primary.label}
             </Text>
           ) : null}

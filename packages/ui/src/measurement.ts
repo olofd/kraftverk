@@ -1,4 +1,4 @@
-import { enumLabel, isCurrent, isPosition, quantityOf, quantitySpec, unitOf, type AttributeSpec, type Position, type Quantity, type Reading, type Value } from '@kraftverk/device-sdk';
+import { distanceBetween, enumLabel, isCurrent, isPosition, quantityOf, quantitySpec, unitOf, type AttributeSpec, type Position, type Quantity, type Reading, type Value } from '@kraftverk/device-sdk';
 
 import { formatDuration, formatWatts, formatWh } from './format.ts';
 
@@ -95,6 +95,27 @@ function formatPosition(position: Position): string {
   const east = `${Math.abs(position.longitude).toFixed(precision)}° ${position.longitude < 0 ? 'W' : 'E'}`;
   const sure = typeof position.accuracy === 'number' ? ` ± ${Math.round(position.accuracy)} m` : '';
   return `${north}, ${east}${sure}`;
+}
+
+/** How near the home a place must be — beyond how sure it is — to be "at home". */
+const AT_HOME_METRES = 150;
+
+/**
+ * Where something is, said as a person says it, relative to the home when
+ * the home's place is known: "At home", "450 m away", "2.3 km away". Without
+ * it, the place in short: "59.628° N, 17.705° E". What a card leads with — a
+ * page draws the map.
+ */
+export function placeOf(position: Position, home: { latitude: number; longitude: number } | null | undefined): string {
+  if (!home) {
+    const north = `${Math.abs(position.latitude).toFixed(3)}° ${position.latitude < 0 ? 'S' : 'N'}`;
+    const east = `${Math.abs(position.longitude).toFixed(3)}° ${position.longitude < 0 ? 'W' : 'E'}`;
+    return `${north}, ${east}`;
+  }
+  const metres = distanceBetween(home, position);
+  if (metres <= AT_HOME_METRES + (position.accuracy ?? 0)) return 'At home';
+  if (metres < 1000) return `${Math.round(metres / 10) * 10} m away`;
+  return `${metres < 10_000 ? (metres / 1000).toFixed(1) : Math.round(metres / 1000)} km away`;
 }
 
 /** How many minutes one of each duration unit is. */

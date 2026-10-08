@@ -52,4 +52,5 @@ here is in one list or the other.
 | [AUTOMATIONS-UX.md](AUTOMATIONS-UX.md) | The plan for the automation screens at phone size, 2026-10-01 |
 | [PLAN-INTEGRATIONS.md](PLAN-INTEGRATIONS.md) | The design for integrations: integration and service as words, accounts and bridges, the manifest and catalogue, setup that asks again, porting Home Assistant's integrations and running them beside kraftverk, 2026-10-06 |
 | [ICLOUD.md](ICLOUD.md) | Signing in to iCloud as Apple asks in 2026: what went wrong, what exists elsewhere, the screens, staying signed in, the bridge, and the order of work, 2026-10-08 |
+| [PLAN-MAPS.md](PLAN-MAPS.md) | Maps and where things are: MapLibre over self-hosted Protomaps tiles, regions the server downloads, tracking turned on per device, and a phone's own screen, 2026-10-08 |
 | [PLAN-ZIGBEE.md](PLAN-ZIGBEE.md) | Zigbee through a USB dongle, and MQTT made first-class: Zigbee2MQTT at the edge or native, the broker for a bridge, the integration, pairing, and the order of work, 2026-10-07 |

@@ -11,6 +11,7 @@ import { Screen } from '../../components/Screen';
 import { useAnswer } from '../../components/useAnswer';
 import { useDevices } from '../../state/DevicesProvider';
 import { useHome } from '../../state/HomeProvider';
+import { useHomePlace } from '../../state/useHomePlace';
 import { useShowing } from '../../state/useShowing';
 import { Shortcuts } from '../automations/Shortcuts';
 import { DeviceIcon } from '../devices/DeviceIcon';
@@ -194,6 +195,7 @@ export function HomeScreen() {
 }
 
 function DeviceList({ devices }: { devices: DeviceView[] }) {
+  const home = useHomePlace();
   return (
     <>
       {devices.map((device) => (
@@ -202,6 +204,7 @@ function DeviceList({ devices }: { devices: DeviceView[] }) {
           device={{ name: device.name, subtitle: device.meta.name, health: device.health, attributes: attributesOf(device.description, MAIN_PART), readings: device.readings }}
           icon={<DeviceIcon device={device} />}
           image={pictureFor(device.typeId, device.picture)}
+          home={home}
           onPress={() => router.push(PATHS.devices.one(device.id))}
         />
       ))}
