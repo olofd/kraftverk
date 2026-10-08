@@ -1,22 +1,24 @@
-import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import * as SystemUI from 'expo-system-ui';
-import { TamaguiProvider, Theme } from 'tamagui';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useEffect } from "react";
+import { useColorScheme } from "react-native";
+import { Stack } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import * as SystemUI from "expo-system-ui";
+import { TamaguiProvider, Theme } from "tamagui";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
-import { ConfirmHost } from '../src/components/ConfirmHost';
-import { AuthGate } from '../src/features/auth/AuthGate';
-import { AuthProvider } from '../src/state/AuthProvider';
-import { DevicesProvider } from '../src/state/DevicesProvider';
-import { HomeProvider } from '../src/state/HomeProvider';
-import { ServersProvider } from '../src/state/ServersProvider';
-import config, { BACKGROUNDS } from '../tamagui.config';
+import { ConfirmHost } from "../src/components/ConfirmHost";
+import { AuthGate } from "../src/features/auth/AuthGate";
+import { AuthProvider } from "../src/state/AuthProvider";
+import { DevicesProvider } from "../src/state/DevicesProvider";
+import { HomeProvider } from "../src/state/HomeProvider";
+import { ServerMap } from "../src/state/ServerMap";
+import { ServersProvider } from "../src/state/ServersProvider";
+import config, { BACKGROUNDS } from "../tamagui.config";
 
 export default function RootLayout() {
   // useColorScheme can report values outside light/dark; anything else gets dark.
-  const scheme: 'light' | 'dark' = useColorScheme() === 'light' ? 'light' : 'dark';
+  const scheme: "light" | "dark" =
+    useColorScheme() === "light" ? "light" : "dark";
 
   // Keeps the native root view behind the JS from flashing white in dark mode.
   useEffect(() => {
@@ -29,7 +31,7 @@ export default function RootLayout() {
         <SafeAreaProvider>
           {/* Which server, if any, comes first: everything else depends on it. */}
           <ServersProvider>
-            <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+            <StatusBar style={scheme === "dark" ? "light" : "dark"} />
             {/*
               Who you are to the chosen server comes before anything that asks
               it for data. Behind the gate, the device list never starts polling
@@ -39,16 +41,18 @@ export default function RootLayout() {
               <AuthGate>
                 {/* The home the app shows: a server's, or its own — one interface either way. */}
                 <HomeProvider>
-                  <DevicesProvider>
-                    {/*
+                  <ServerMap>
+                    <DevicesProvider>
+                      {/*
                       No tab bar. Root is the device canvas, and everything else is
                       pushed on top of it — a device's own screens, the add flow, and
                       the app-level infrastructure pages.
                     */}
-                    <Stack screenOptions={{ headerShown: false }}>
-                      <Stack.Screen name="index" />
-                    </Stack>
-                  </DevicesProvider>
+                      <Stack screenOptions={{ headerShown: false }}>
+                        <Stack.Screen name="index" />
+                      </Stack>
+                    </DevicesProvider>
+                  </ServerMap>
                 </HomeProvider>
               </AuthGate>
             </AuthProvider>

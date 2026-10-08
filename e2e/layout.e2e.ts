@@ -132,6 +132,11 @@ for (const width of [320, 375]) {
     await expect(page.getByRole('button', { name: new RegExp(`^${phone.name}, `) })).toBeVisible();
     expect(await problems(page)).toEqual([]);
 
+    // A phone's own page: its map, its buttons on the map big enough to touch, nothing past the screen.
+    await page.goto(`/devices/${phone.id}`);
+    await expect(page.getByRole('button', { name: 'Back to it' })).toBeVisible();
+    expect(await problems(page)).toEqual([]);
+
     // Its history: which reading, and how far back — a title never squeezed beside the ranges.
     await page.goto(`/devices/${prices.id}`);
     await expect(page.getByRole('radiogroup', { name: /: how far back$/ })).toBeVisible();

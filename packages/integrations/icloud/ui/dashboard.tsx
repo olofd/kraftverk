@@ -3,7 +3,7 @@ import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import type { DeviceScreenProps } from '@kraftverk/api-client';
 import { isPosition, MAIN_PART, type Position, type Reading } from '@kraftverk/device-sdk';
-import { Card, Icon, isOld, observedAt, placeOf } from '@kraftverk/ui';
+import { Card, Icon, isOld, MapView, observedAt, placeOf } from '@kraftverk/ui';
 
 import { Battery, DeviceDrawing, type Kind } from './drawing.tsx';
 import { ago, cadence } from './words.ts';
@@ -55,8 +55,19 @@ export function FindMyDashboard({ device, actions, reach, home }: DeviceScreenPr
         </Card>
       ) : null}
 
-      {/* Where — the map comes here (docs/PLAN-MAPS.md) — and when. */}
+      {/* Where — on the map, followed as it moves — and when. */}
       <Card gap="$2">
+        {position ? (
+          <YStack marginBottom="$2">
+            <MapView
+              label={`Where ${device.name} is`}
+              markers={[{ id: device.id, latitude: position.latitude, longitude: position.longitude, accuracy: position.accuracy ?? null, stale }]}
+              zones={home ? [{ id: 'home', latitude: home.latitude, longitude: home.longitude, radius: 150, label: 'Home' }] : []}
+              follow={device.id}
+              height={260}
+            />
+          </YStack>
+        ) : null}
         <Text fontSize={28} fontWeight="800" letterSpacing={-0.5} color={stale ? '$muted' : '$color'} numberOfLines={1}>
           {position ? placeOf(position, home) : 'Not located'}
         </Text>

@@ -62,6 +62,12 @@
 	@page not path /_expo/static/* /assets/*
 	header @page Cache-Control "no-cache"
 
+	# The map's renderer is JavaScript modules (/map/*.mjs, docs/PLAN-MAPS.md):
+	# said so, whatever Caddy's own table says of .mjs — a browser runs no
+	# module served as anything else.
+	@modules path *.mjs
+	header @modules Content-Type "text/javascript; charset=utf-8"
+
 	# One page, and the app routes inside it: /device/abc is index.html too.
 	try_files {path} /index.html
 	file_server

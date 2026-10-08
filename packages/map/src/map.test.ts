@@ -6,7 +6,7 @@ import { accuracyGeoJSON, boundsOf, circleRing, countryAt, mapStyle, markersGeoJ
 
 describe('the style', () => {
   test('every URL the home’s own, absolute; OpenStreetMap credited', () => {
-    const style = mapStyle({ origin: 'https://home.example.test' }) as { glyphs: string; sprite: string; sources: { protomaps: { tiles: string[]; attribution: string } }; layers: unknown[] };
+    const style = mapStyle({ api: 'https://home.example.test/api' }) as { glyphs: string; sprite: string; sources: { protomaps: { tiles: string[]; attribution: string } }; layers: unknown[] };
     expect(style.glyphs).toBe('https://home.example.test/api/map/fonts/{fontstack}/{range}.pbf');
     expect(style.sprite).toBe('https://home.example.test/api/map/sprites/v4/dark');
     expect(style.sources.protomaps.tiles).toEqual(['https://home.example.test/api/map/tiles/{z}/{x}/{y}.mvt']);

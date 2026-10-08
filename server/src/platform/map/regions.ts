@@ -275,7 +275,8 @@ export class MapRegions {
     const answer = await fetch(ASSETS.url, { signal: AbortSignal.timeout(120_000) });
     if (!answer.ok) throw new Error(`GitHub answered ${answer.status}`);
     writeFileSync(archive, new Uint8Array(await answer.arrayBuffer()));
-    const unpacked = Bun.spawn(['tar', 'xzf', archive, '-C', dir], { stdout: 'ignore', stderr: 'pipe' });
+    // From inside the folder, by a name with no drive in it: a Windows path's "C:" reads to tar as a host.
+    const unpacked = Bun.spawn(['tar', 'xzf', 'assets.tar.gz'], { cwd: dir, stdout: 'ignore', stderr: 'pipe' });
     if ((await unpacked.exited) !== 0) throw new Error('its archive could not be unpacked');
     rmSync(archive, { force: true });
     console.log('[map] fonts and icons held');

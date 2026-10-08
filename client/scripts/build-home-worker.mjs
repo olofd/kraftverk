@@ -12,9 +12,9 @@
  *   node scripts/build-home-worker.mjs --watch    and again on every change
  */
 
-import { copyFileSync, mkdirSync } from 'node:fs';
+import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 import { build, context } from 'esbuild';
 
@@ -25,6 +25,28 @@ const watch = process.argv.includes('--watch');
 
 mkdirSync(OUT, { recursive: true });
 copyFileSync(require.resolve('@sqlite.org/sqlite-wasm/sqlite3.wasm'), join(OUT, 'sqlite3.wasm'));
+
+/*
+  The map's renderer (MapLibre GL, docs/PLAN-MAPS.md), beside the app too:
+  loaded by the page only when a map is shown — a megabyte nobody needs
+  until then — from this app's own origin, never bundled (it finds its
+  worker by `import.meta.url`, which Metro does not give it). A module of
+  ours loads it, tells it where its worker is, and hands it to the page.
+*/
+const MAP = join(CLIENT, 'public', 'map');
+mkdirSync(MAP, { recursive: true });
+const maplibre = join(dirname(require.resolve('maplibre-gl/package.json')), 'dist');
+for (const file of ['maplibre-gl.mjs', 'maplibre-gl-worker.mjs', 'maplibre-gl.css']) copyFileSync(join(maplibre, file), join(MAP, file));
+writeFileSync(
+  join(MAP, 'load.mjs'),
+  [
+    "import * as maplibregl from './maplibre-gl.mjs';",
+    "maplibregl.setWorkerUrl(new URL('./maplibre-gl-worker.mjs', import.meta.url).href);",
+    'window.__kraftverkMapLibre = maplibregl;',
+    "window.dispatchEvent(new Event('kraftverk-maplibre'));",
+    '',
+  ].join('\n')
+);
 
 const options = {
   entryPoints: [join(CLIENT, 'src/platform/home/worker.ts')],

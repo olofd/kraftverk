@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@kraftverk/device-sdk": "*"
+    "@kraftverk/device-sdk": "*",
+    "@kraftverk/map": "*",
+    "maplibre-gl": "^6.13.0"
   },
   "peerDependencies": {
     "@expo/vector-icons": "*",

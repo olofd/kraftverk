@@ -14,21 +14,21 @@ export const DETAIL_ZOOM = 14;
 
 export type MapTheme = 'dark' | 'light';
 
-/** Where a home serves its map, under its own origin: tiles, fonts, sprites. */
-export const mapPaths = (origin: string) => ({
-  tiles: `${origin}/api/map/tiles/{z}/{x}/{y}.mvt`,
-  glyphs: `${origin}/api/map/fonts/{fontstack}/{range}.pbf`,
-  sprite: (theme: MapTheme) => `${origin}/api/map/sprites/v4/${theme}`,
+/** Where a home serves its map, under its API (`https://home.example/api`): tiles, fonts, sprites. */
+export const mapPaths = (api: string) => ({
+  tiles: `${api}/map/tiles/{z}/{x}/{y}.mvt`,
+  glyphs: `${api}/map/fonts/{fontstack}/{range}.pbf`,
+  sprite: (theme: MapTheme) => `${api}/map/sprites/v4/${theme}`,
 });
 
 /**
  * The style a renderer draws: MapLibre's, on the web and on a phone alike.
- * `origin` is the home's, absolute — a renderer's worker cannot resolve a
+ * `api` is the home's API, absolute — a renderer's worker cannot resolve a
  * relative URL — and `lang` the language places are named in.
  */
-export function mapStyle(options: { origin: string; theme?: MapTheme; lang?: string }): Record<string, unknown> {
+export function mapStyle(options: { api: string; theme?: MapTheme; lang?: string }): Record<string, unknown> {
   const theme = options.theme ?? 'dark';
-  const paths = mapPaths(options.origin);
+  const paths = mapPaths(options.api.replace(/\/$/, ''));
   return {
     version: 8,
     glyphs: paths.glyphs,
