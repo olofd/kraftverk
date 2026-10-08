@@ -377,6 +377,7 @@ test('this app holds its way only while nothing above it reaches the device, and
       addedAt: '2026-10-01T00:00:00.000Z',
       removedAt: null,
       pausedAt: null,
+      trackDays: null,
       kind: 'hardware' as const,
       meta: { name: 'Lamp', icon: 'lightbulb', support: 'experimental' as const, category: 'light' },
       description: lampType.describe({}),

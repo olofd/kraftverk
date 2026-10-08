@@ -38,11 +38,14 @@ from Home Assistant's `icloud` integration and pyicloud
   in an automation measures from the home: "when Sam's phone gets home"),
   its charge and whether it is charging, whose it is, a sound played
   (`identify`), and lost mode, a tool a person confirms, never an
-  automation's. Where someone is, is not kept in history. A device in Find
-  My has a screen of its own (`ui/`): where it is as a place, when it was
-  located and when it is looked for next, what it is (drawn: a phone, a
-  tablet, a Mac, a watch, earbuds), whose, how charged, and "Locate now"
-  and "Play sound". While its own page is open its account asks Find My
+  automation's. Where someone is, is not kept in history. Where they have
+  been is kept only when its owner turns on **Keep where it has been** for
+  that device, the home's own setting for any device with a position. A
+  device in Find My has a screen of its own (`ui/`): where it is on a map
+  and as a place, its trail when kept, when it was located and when it is
+  looked for next, what it is (drawn: a phone, a tablet, a Mac, a watch,
+  earbuds), whose, how charged, "Locate now" and "Play sound", and keeping
+  where it has been, turned on or off. While its own page is open its account asks Find My
   every minute — never for a list it is in, since every ask locates every
   device on the account.
 - **Does not:** Apple's trusted-device "bridge" over its push service —

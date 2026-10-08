@@ -436,6 +436,7 @@ function deviceChanges(deps: ImportDeps, existing: DeviceRecord, entry: DeviceEn
   if (entry.identity !== null && existing.identity !== entry.identity) changes.push('who it is: its identity');
   if (entry.picture !== existing.picture && entry.picture !== null) changes.push('its picture');
   if (entry.paused !== (existing.pausedAt !== null)) changes.push(entry.paused ? 'paused' : 'resumed');
+  if (entry.track !== existing.trackDays) changes.push(entry.track === null ? 'where it has been: no longer kept, and forgotten' : `where it has been: kept ${entry.track === 1 ? '1 day' : `${entry.track} days`}`);
   const settings = [...new Set([...Object.keys(existing.config), ...Object.keys(entry.settings)])].filter((name) => existing.config[name] !== entry.settings[name] && entry.settings[name] !== undefined);
   if (settings.length) changes.push(`settings: ${settings.join(', ')}`);
   const ways = governed(deps, existing.id);
@@ -670,6 +671,7 @@ function writeDevice(deps: ImportDeps, key: string, entry: DeviceEntry, opened: 
   else device = deps.catalog.update(device.id, { name: entry.name, config, ...(entry.identity !== null ? { identity: entry.identity } : {}) })!;
   if (entry.picture !== null && entry.picture !== device.picture) deps.catalog.setPicture(device.id, entry.picture);
   if (entry.paused !== (device.pausedAt !== null)) deps.catalog.setPaused(device.id, entry.paused);
+  if (entry.track !== device.trackDays) deps.catalog.setTrack(device.id, entry.track);
 
   const ways = governed(deps, device.id);
   entry.connect.forEach((way, index) => {

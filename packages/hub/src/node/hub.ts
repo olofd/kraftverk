@@ -7,6 +7,7 @@ import {
   AuditLog,
   AutomationStore,
   HistoryStore,
+  TrackStore,
   HomeSettings,
   HomeStore,
   NodeStore,
@@ -123,6 +124,8 @@ export class Hub {
   readonly events: EventStore;
   /** What the home recorded: samples, their roll-ups, and every change of an on/off. */
   readonly history: HistoryStore;
+  /** Where devices have been, while their owners keep it. */
+  readonly tracks: TrackStore;
   readonly automations: AutomationStore;
   readonly policy: { values(): PolicyValues; set(name: PolicyValueName, value: number | null): PolicyValues };
 
@@ -178,6 +181,7 @@ export class Hub {
     this.home = new HomeStore(db);
     this.events = new EventStore(db);
     this.history = new HistoryStore(db);
+    this.tracks = new TrackStore(db);
     this.automations = new AutomationStore(db);
     const { events, automations } = this;
 
@@ -233,7 +237,7 @@ export class Hub {
     this.views = new DeviceViews({ catalog, types, sessions, connections, links, nodes, transports, heldReadings: this.heldReadings, self: self.id, master: () => this.home.get()!.masterId, readOnly: options.readOnly });
     this.ignored = new IgnoredSightings(this.db);
     this.nearby = new Nearby({ types, protocols, transports, connections, catalog, sessions, ignored: this.ignored });
-    this.sampler = new Sampler({ history: this.history, audit: this.audit, events }, this.views);
+    this.sampler = new Sampler({ history: this.history, audit: this.audit, events, tracks: this.tracks }, this.views);
     this.changeLog = new ChangeLog(this.history, this.bus, (id) => {
       const device = catalog.active(id);
       return device ? sessions.description(device) : null;

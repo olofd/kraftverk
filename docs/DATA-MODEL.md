@@ -333,6 +333,7 @@ erDiagram
   device ||--o{ sample : "recorded"
   device ||--o{ sample_hour : "rolled up"
   device ||--o{ sample_change : "changed"
+  device ||--o{ track : "has been"
   device ||--o{ device_attribute : "has had"
   device ||--o{ device_event : "raised"
   device ||--o{ device_link : "is the source of"
@@ -367,6 +368,7 @@ erDiagram
     text picture "type:1 · own:<id> one day · null: its type's first"
     text added_at "2026-09-27T19:40:00Z"
     text paused_at "null · set by Pause · kept, not reached"
+    int track_days "null · 30 · how long where it has been is kept · its owner's choice"
     text removed_at "null · set by Remove · history kept"
   }
   device_connection {
@@ -454,6 +456,13 @@ erDiagram
     text at PK "2026-09-27T14:02:13Z · when the device observed it"
     real value "0 · on/off as 1/0"
     text text "eco · an enum instead"
+  }
+  track {
+    text device_id PK "d-5b0e7c2a91f45b0e"
+    text at PK "2026-10-08T07:12:40Z · when it was located there"
+    real latitude "59.3293"
+    real longitude "18.0686"
+    real accuracy "12 · within how many metres · null when it did not say"
   }
   device_attribute {
     text device_id PK "d-3f9a2c61b0e43f9a"
@@ -647,6 +656,7 @@ joined; elsewhere it is plain text, null.
 | `device.identity` | So the same physical device is recognised however it was found, and so re-adding a removed one can bring its history back. | step 7, or at the first connection after *Save anyway* |
 | `device.paused_at` | So a device away, or being mended, is kept as it is and not reached — nor anything through it — without removing it. | Pause, Resume |
 | `device.removed_at` | So Remove doesn't destroy years of history. | Remove |
+| `device.track_days`, `track` | Where a device that says where it is has been — a phone, a scooter — kept only when its owner turns it on, for a day to a year (docs/PLAN-MAPS.md). A point when it has moved, or each hour it stays; let go after its days. Turning it off, or removing the device, forgets it at once; it is never in an export, only that it is kept and for how long. | its settings, or its own screen; then by the sampler, as it is located |
 | `device_connection` | A device can be reached more than one way, from more than one place. Your station over Wi-Fi from the server *and* over Bluetooth from your phone is one device with two connections. A way is held by a node, or goes **through** a bridge — another device, such as an account its scooters are reached through — and is then held wherever that device is, its address the member's key within it (PLAN-INTEGRATIONS.md §4.3). Never both. | step 10, or *Add another way to reach it* |
 | `connection_secret` | Credentials belong to a way of reaching the device (the Tuya local key is part of *tuya-local over lan*), not to the device. | step 6 |
 | `home` | The home this database keeps — one: what every node and device here is part of, and what its people call it. | when the database is made |

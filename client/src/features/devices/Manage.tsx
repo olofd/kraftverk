@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { Button, Input, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { describeError, type DeviceView, PATHS } from '@kraftverk/api-client';
-import { Card, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
+import { Card, haptic, Icon, Row, RowSeparator, SectionLabel, TrackSetting } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { confirmAction } from '../../platform/confirm';
@@ -18,7 +18,9 @@ import { useDevices } from '../../state/DevicesProvider';
  * back.
  */
 export function Manage({ device }: { device: DeviceView }) {
-  const { rename, remove, devices, setPaused } = useDevices();
+  const { rename, remove, devices, setPaused, screenProps } = useDevices();
+  // A device that says where it is may keep where it has been.
+  const located = device.description.attributes.some((attribute) => attribute.means === 'position');
   // What is reached through it — an account's scooters, a gateway's plugs — said before it goes.
   const members = devices.filter((other) => other.connections.some((connection) => connection.through?.id === device.id));
   const [name, setName] = useState(device.name);
@@ -55,6 +57,15 @@ export function Manage({ device }: { device: DeviceView }) {
       .finally(() => setBusy(false));
   };
 
+  const keepTrack = (days: number | null) => {
+    setBusy(true);
+    setError(null);
+    screenProps(device)
+      .track.keep(days)
+      .catch((err: unknown) => setError(describeError(err) || 'That could not be changed'))
+      .finally(() => setBusy(false));
+  };
+
   const saveName = () => {
     haptic();
     setBusy(true);
@@ -85,6 +96,12 @@ export function Manage({ device }: { device: DeviceView }) {
             {device.identity ? ` · ${device.identity}` : ''}
           </Text>
         </YStack>
+        {located && !device.removedAt ? (
+          <>
+            <RowSeparator />
+            <TrackSetting days={device.trackDays} disabled={busy} onChange={keepTrack} />
+          </>
+        ) : null}
         <RowSeparator />
         <Row
           title={device.pausedAt ? 'Paused' : `Pause this ${device.kind === 'hardware' ? 'device' : device.kind}`}

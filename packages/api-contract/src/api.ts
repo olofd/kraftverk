@@ -8,7 +8,7 @@ import type { Rehearsal, VocabularyView, WorldView } from './assistant.ts';
 import type { AutomationChanges, AutomationDraftView, AutomationKit, AutomationRun, AutomationView, NewAutomation, RunLog } from './automations.ts';
 import type { ConfigExported, ConfigExportRequest, ConfigSnapshotView, ImportAnswers, ImportApplied, ImportPlan } from './configuration.ts';
 import type { MapRegionAsk, MapRegionsView } from './map.ts';
-import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, HomeElsewhere, LinkRecord, NewLink, PictureRef, ToolBody } from './devices.ts';
+import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, HomeElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, HomeView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
 import type { CheckOutcome, DraftView, FoundAt, FoundView, HeldSetupInput, KeptView, SaveInput, SightingView } from './setup.ts';
@@ -67,6 +67,10 @@ export interface KraftverkApi {
     setPicture(id: SavedDeviceId, picture: PictureRef): Promise<DeviceView>;
     /** Pauses it — kept, with its history, and not reached until resumed — or resumes it. */
     setPaused(id: SavedDeviceId, paused: boolean): Promise<DeviceView>;
+    /** Keeps where it has been for so many days, 1 to 366, or none of it: null forgets what was kept. */
+    setTrack(id: SavedDeviceId, days: number | null): Promise<DeviceView>;
+    /** Where it has been since a time, oldest first, while that is kept. */
+    track(id: SavedDeviceId, since: string): Promise<TrackPointView[]>;
     /** Removes it, keeping its history: adding it again brings it back. */
     remove(id: SavedDeviceId): Promise<void>;
     /** A removed device and everything it recorded, gone: its name, typed back, confirms it. */

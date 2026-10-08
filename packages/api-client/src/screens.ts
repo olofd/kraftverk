@@ -3,7 +3,7 @@ import type { ComponentType } from 'react';
 import type { IntegrationInfo, Part, Value } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
-import type { DeviceView, LinkView, VersionInfo } from '@kraftverk/api-contract';
+import type { DeviceView, LinkView, TrackPointView, VersionInfo } from '@kraftverk/api-contract';
 
 /**
  * What the app hands a device type's own screens (docs/ARCHITECTURE.md §3, a
@@ -67,6 +67,18 @@ export type DeviceReach = {
   via: string | null;
 };
 
+/**
+ * Where a device has been, while its owner keeps it (`DeviceView.trackDays`):
+ * read from the home, never from whoever holds the device, and kept or let
+ * go there.
+ */
+export type DeviceTrack = {
+  /** Where it was since a time, oldest first: nothing while it is not kept. */
+  since(at: string): Promise<TrackPointView[]>;
+  /** Kept so many days, 1 to 366, or none — null, which forgets what was kept once the person says so. */
+  keep(days: number | null): Promise<void>;
+};
+
 export type DeviceScreenProps = {
   device: DeviceView;
   actions: DeviceActions;
@@ -77,6 +89,8 @@ export type DeviceScreenProps = {
   version: VersionInfo | null;
   /** Where the home is, when it has been said: what a position is told against — "At home", "2.3 km away". */
   home: { latitude: number; longitude: number } | null;
+  /** Where it has been, and keeping it. */
+  track: DeviceTrack;
 };
 
 /** What a package's card for one part is handed: the device, as every screen gets it, and the part. */

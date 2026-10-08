@@ -53,6 +53,12 @@ export type DeviceEntry = {
   picture: string | null;
   /** Paused by its owner: kept, and not reached, until resumed. Written only when it is. */
   paused: boolean;
+  /**
+   * How many days where it has been is kept ("track: 30 days"), 1 to 366;
+   * null when none of it is. What was kept is never in the file: only that
+   * it is kept, and for how long.
+   */
+  track: number | null;
   /** Its type's settings. */
   settings: Record<string, Scalar>;
   /** The ways it is reached, preferred first. */
@@ -162,7 +168,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         problem('Expected a device: its type, name and how it is reached', path);
         continue;
       }
-      for (const field of Object.keys(entry)) if (!['type', 'name', 'identity', 'picture', 'paused', 'settings', 'connect'].includes(field)) problem(`"${field}" is not part of a device: it has type, name, identity, picture, paused, settings and connect`, [...path, field]);
+      for (const field of Object.keys(entry)) if (!['type', 'name', 'identity', 'picture', 'paused', 'track', 'settings', 'connect'].includes(field)) problem(`"${field}" is not part of a device: it has type, name, identity, picture, paused, track, settings and connect`, [...path, field]);
       const type = text(entry.type, [...path, 'type'], 'its type ("type: acme.plug")');
       const name = text(entry.name, [...path, 'name'], 'its name');
       const connect: ConnectEntry[] = [];
@@ -194,7 +200,9 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
       }
       const optional = (field: 'identity' | 'picture') => (entry[field] === undefined || entry[field] === null ? null : typeof entry[field] === 'string' ? entry[field] : (problem(`"${field}" is text`, [...path, field]), null));
       if (entry.paused !== undefined && typeof entry.paused !== 'boolean') problem('"paused" is true or false', [...path, 'paused']);
-      if (type && name) devices[key] = { type, name, identity: optional('identity'), picture: optional('picture'), paused: entry.paused === true, settings: scalars(entry.settings, [...path, 'settings']), connect };
+      const track = entry.track === undefined || entry.track === null ? null : trackDays(entry.track);
+      if (track === undefined) problem('"track" is how long where it has been is kept: "30 days", from 1 day to 366', [...path, 'track']);
+      if (type && name) devices[key] = { type, name, identity: optional('identity'), picture: optional('picture'), paused: entry.paused === true, track: track ?? null, settings: scalars(entry.settings, [...path, 'settings']), connect };
     }
 
   // The links.
@@ -259,6 +267,13 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
 }
 
 
+/** Days from "30 days" or "1 day", 1 to 366; undefined for anything else. */
+function trackDays(data: unknown): number | undefined {
+  const match = typeof data === 'string' ? /^(\d+)\s*days?$/.exec(data.trim()) : null;
+  const days = match ? Number(match[1]) : NaN;
+  return days >= 1 && days <= 366 ? days : undefined;
+}
+
 /** A document as data, in the order a person reads it: what a YAML file is written from. */
 export function documentToData(document: ConfigDocument): Record<string, unknown> {
   const devices = Object.fromEntries(
@@ -270,6 +285,7 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
         ...(device.identity !== null ? { identity: device.identity } : {}),
         ...(device.picture !== null ? { picture: device.picture } : {}),
         ...(device.paused ? { paused: true } : {}),
+        ...(device.track !== null ? { track: device.track === 1 ? '1 day' : `${device.track} days` } : {}),
         ...(Object.keys(device.settings).length ? { settings: device.settings } : {}),
         ...(device.connect.length
           ? {

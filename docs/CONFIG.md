@@ -19,7 +19,7 @@ and check a file with the same code.
 
 ```yaml
 # yaml-language-server: $schema=http://<your server>/api/config/schema.json
-kraftverk: 6                      # the document's version: required
+kraftverk: 9                      # the document's version: required
 
 home:
   clock: Europe/Stockholm          # what an automation that says no clock keeps time in
@@ -55,6 +55,14 @@ devices:
       - via: account
         through: family-account   # the device it is reached through, by its key
         address: lamp-0001        # its key there
+  pocket-phone:
+    type: acme.phone
+    name: Pocket phone
+    track: 30 days                # where it has been is kept a month: never where it was, in a file
+    connect:
+      - via: account
+        through: family-account
+        address: phone-0001
 
 links:
   - feeds: { from: ac-in-meter, to: garage-station.input.ac }
@@ -380,6 +388,7 @@ nothing wrong — and write back the same.
 | 6 | The document's shape is as in 5; an integration's own entries changed, as its migrations say: a NIU scooter is reached through its NIU account, a device of its own |
 | 7 | As 6; a Zigbee socket is reached through its Tuya gateway, a device of its own (Tuya's migration): one gateway entry per gateway address, its key the one the sockets had, and each socket `via: gateway` by its Zigbee address |
 | 8 | A device may say it is `paused: true`: kept, and not reached, until resumed. Nothing older says so, so nothing changes |
+| 9 | A device may say how long where it has been is kept: `track: 30 days`, 1 to 366. Where it was is never in the file. Nothing older says so, so nothing changes |
 
 **An integration's own entries.** A change to what a type is reached by —
 a way it no longer has — is not the document's shape, but a home kept

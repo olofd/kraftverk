@@ -91,6 +91,8 @@ export const SCHEMA = `
     added_at    TEXT NOT NULL,
     /* When its owner paused it: kept, and not reached, until resumed. NULL: it is not paused. */
     paused_at   TEXT,
+    /* How many days where it has been is kept (the track table), its owner's choice. NULL: none of it is kept. */
+    track_days  INTEGER CHECK (track_days IS NULL OR track_days BETWEEN 1 AND 366),
     removed_at  TEXT
   );
   CREATE UNIQUE INDEX device_identity ON device (identity) WHERE identity IS NOT NULL AND removed_at IS NULL;
@@ -266,6 +268,22 @@ export const SCHEMA = `
     max       REAL NOT NULL,
     n         INTEGER NOT NULL,
     PRIMARY KEY (device_id, key, hour)
+  );
+
+  /*
+    Where a device has been, while its owner keeps it (device.track_days):
+    one point per place it was located, at the time it was located there.
+    Never in an export; let go after its days, and all of it when keeping
+    it is turned off or the device is removed.
+  */
+  CREATE TABLE track (
+    device_id TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+    at        TEXT NOT NULL,
+    latitude  REAL NOT NULL CHECK (latitude BETWEEN -90 AND 90),
+    longitude REAL NOT NULL CHECK (longitude BETWEEN -180 AND 180),
+    /* Within how many metres. NULL: the device did not say. */
+    accuracy  REAL,
+    PRIMARY KEY (device_id, at)
   );
 
   /* What happened, rather than what a value was: an overload trip, a button. */

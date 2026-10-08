@@ -191,6 +191,7 @@ export class DeviceViews {
       addedAt: record.addedAt,
       removedAt: record.removedAt,
       pausedAt: record.pausedAt,
+      trackDays: record.trackDays,
       kind: type?.kind ?? 'hardware',
       integration: this.deps.types.sourceOf(record.typeId)?.integration ?? null,
       meta: type

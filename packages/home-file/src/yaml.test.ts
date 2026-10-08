@@ -151,8 +151,8 @@ automations:
 
   test('YAML that is not YAML, a missing version, and one written by a newer kraftverk', () => {
     expect(readConfig('devices: [').problems[0]).toMatchObject({ line: 1 });
-    expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 8" at its top');
-    expect(readConfig('kraftverk: 9').problems[0]).toMatchObject({ message: 'It was written by a newer kraftverk (version 9); this one reads up to version 8', line: 1, column: 12 });
+    expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 9" at its top');
+    expect(readConfig('kraftverk: 10').problems[0]).toMatchObject({ message: 'It was written by a newer kraftverk (version 10); this one reads up to version 9', line: 1, column: 12 });
   });
 });
 

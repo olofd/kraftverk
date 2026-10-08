@@ -22,6 +22,7 @@ const plug = {
   identity: null,
   removedAt: null,
   pausedAt: null,
+  trackDays: null,
   picture: 'type:0',
   config: { profile: 'b' },
   description: {

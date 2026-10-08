@@ -157,6 +157,9 @@ packages/
   gateway/               @kraftverk/gateway              the action gateway's rules: pure, run by whichever holder has the connection
   api-contract/          @kraftverk/api-contract         the HTTP API's shapes, types only: declared once, imported by the server and the app
   holder/                @kraftverk/holder               what every holder does with a device: open, watch, fail over, judge a check; pure
+  map/                   @kraftverk/map                  a map, without its renderer: the style over the home's own tiles, markers,
+                                                         trails and zones as GeoJSON, the countries and their regions; pure
+                                                         (docs/PLAN-MAPS.md) — packages/ui draws it with MapLibre
   api-client/  ui/       shared by the app; know no device type
 server/  client/         the core; know no transport, integration or device package by name
 ```

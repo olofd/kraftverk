@@ -32,6 +32,7 @@ export { CodeInput } from './CodeInput.tsx';
 export { Chips } from './Chips.tsx';
 export { useRadioGroup, useToggleGroup } from './radio-group.ts';
 export { SegmentedControl } from './SegmentedControl.tsx';
+export { daysText, TrackSetting } from './TrackSetting.tsx';
 export { SliderRow } from './SliderRow.tsx';
 export { RangeSliderRow } from './RangeSliderRow.tsx';
 export { type Marker } from './SliderMarker.tsx';

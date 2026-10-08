@@ -1,7 +1,7 @@
 import type { SeriesPoint } from '@kraftverk/api-contract';
-import { isCurrent, keepsHistory, partOf, type AttributeSpec, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
+import { isCurrent, isPosition, keepsHistory, partOf, type AttributeSpec, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
 
-import type { AuditLog, EventStore, HistoryStore, Sample } from '@kraftverk/store';
+import type { AuditLog, EventStore, HistoryStore, Sample, TrackStore } from '@kraftverk/store';
 
 import type { DeviceViews } from '../devices/views.ts';
 import { unref } from '../timers.ts';
@@ -26,6 +26,10 @@ import { daysBefore, HOURLY_DAYS, SAMPLE_DAYS, TIMELINE_DAYS } from './retention
  * reading, and sampling that every minute drew a flat line through the outage
  * — as confident as the real data either side of it. How long is the
  * attribute's to say: a power reading two minutes, a forecast an hour.
+ *
+ * Where a device is is never a sample: it goes to its track, and only for a
+ * device whose owner keeps where it has been (`DeviceView.trackDays`), at
+ * the time it was located — never the minute it was sampled.
  */
 
 /** Where a value is kept in a sample, or null when it is not a value to keep. */
@@ -66,13 +70,13 @@ export class Sampler {
   #rollupTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
-    private readonly kept: { history: HistoryStore; audit: AuditLog; events: EventStore },
+    private readonly kept: { history: HistoryStore; audit: AuditLog; events: EventStore; tracks: TrackStore },
     private readonly views: DeviceViews
   ) {}
 
   start(): void {
     this.#timer ??= every(INTERVAL_MS, 'sampling', () => this.sample());
-    this.#pruneTimer ??= every(6 * 60 * 60_000, 'pruning', () => this.prune());
+    this.#pruneTimer ??= every(60 * 60_000, 'pruning', () => this.prune());
     this.#rollupTimer ??= every(10 * 60_000, 'rolling up', () => this.rollUp());
     this.sample();
     this.rollUp();
@@ -92,6 +96,13 @@ export class Sampler {
     const at = new Date(now).toISOString();
     const samples: Sample[] = [];
     for (const device of this.views.all()) {
+      if (device.trackDays) {
+        const position = device.readings.find((reading) => isPosition(reading.value));
+        if (position?.at && isPosition(position.value)) {
+          const { latitude, longitude, accuracy } = position.value;
+          this.kept.tracks.add(device.id, { at: position.at, latitude, longitude, accuracy: accuracy ?? null });
+        }
+      }
       const kept = keptAttributes(device.description);
       for (const reading of device.readings) {
         const attribute = kept.get(reading.key);
@@ -108,8 +119,9 @@ export class Sampler {
     this.kept.history.rollUp(new Date(now - ROLLUP_WINDOW_MS).toISOString(), new Date(now).toISOString());
   }
 
-  /** Minute samples go after two weeks — rolled up first — hourly ones and changes after two years, the timeline and device events after one. */
+  /** Minute samples go after two weeks — rolled up first — hourly ones and changes after two years, the timeline and device events after one; where a device has been, after its owner's days. */
   prune(now = Date.now()): void {
+    this.kept.tracks.prune(now);
     this.kept.history.rollUp(daysBefore(now, SAMPLE_DAYS + 2), daysBefore(now, SAMPLE_DAYS - 1));
     this.kept.history.prune({ samples: daysBefore(now, SAMPLE_DAYS), hours: daysBefore(now, HOURLY_DAYS), changes: daysBefore(now, HOURLY_DAYS) });
     this.kept.audit.prune(daysBefore(now, TIMELINE_DAYS));

@@ -136,6 +136,13 @@ for (const width of [320, 375]) {
     await page.goto(`/devices/${phone.id}`);
     await expect(page.getByRole('button', { name: 'Back to it' })).toBeVisible();
     expect(await problems(page)).toEqual([]);
+    // Keeping where it has been, turned on from its own page: how long, offered — and still nothing past the screen.
+    await page.getByRole('switch', { name: 'Keep where it has been' }).click();
+    await expect(page.getByRole('radiogroup', { name: 'For how long' })).toBeVisible();
+    await expect(page.getByText(/^Nothing kept yet|^The trail:/)).toBeVisible();
+    expect(await problems(page)).toEqual([]);
+    const track = await request.get(`/api/devices/${phone.id}/track?since=${encodeURIComponent(new Date(0).toISOString())}`);
+    expect(track.ok()).toBe(true);
 
     // Its history: which reading, and how far back — a title never squeezed beside the ranges.
     await page.goto(`/devices/${prices.id}`);

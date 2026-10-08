@@ -28,7 +28,7 @@ export type ConfigurationDeps = Omit<ImportDeps, 'pending'> & {
 const CHANGES = new RegExp(
   '^(' +
     [
-      'device\\.(added|restored|removed|renamed|identified|picture|paused|resumed|linked|unlinked|connection-added|connection-removed|connection-preferred|secrets-changed|saved-unchecked|keyed|exportable)',
+      'device\\.(added|restored|removed|renamed|identified|picture|paused|resumed|tracked|untracked|linked|unlinked|connection-added|connection-removed|connection-preferred|secrets-changed|saved-unchecked|keyed|exportable)',
       'automation\\.(created|proposed|changed|let-act|deleted|placed)',
       'policy\\.changed',
       'home\\.located',

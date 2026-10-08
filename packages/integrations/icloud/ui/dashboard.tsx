@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import type { DeviceScreenProps } from '@kraftverk/api-client';
+import type { DeviceScreenProps, DeviceTrack, TrackPointView } from '@kraftverk/api-client';
 import { isPosition, MAIN_PART, type Position, type Reading } from '@kraftverk/device-sdk';
-import { Card, Icon, isOld, MapView, observedAt, placeOf } from '@kraftverk/ui';
+import { Card, Chips, daysText, Icon, isOld, MapView, observedAt, placeOf, TrackSetting } from '@kraftverk/ui';
 
 import { Battery, DeviceDrawing, type Kind } from './drawing.tsx';
 import { ago, cadence } from './words.ts';
@@ -13,15 +13,19 @@ import { ago, cadence } from './words.ts';
  * when it was located — when its account looks for it next and how often;
  * what it is, whose, and how charged; and what can be done with it: located
  * now, a sound played. While this page is open its account asks Find My every
- * minute (the app says so to the home), and says so here.
+ * minute (the app says so to the home), and says so here. Where it has been
+ * is drawn as a trail while its owner keeps it, and keeping it is turned on
+ * and off here as well as in its settings.
  *
  * Content only: the page frame, the name and the history below are the app's.
  */
-export function FindMyDashboard({ device, actions, reach, home }: DeviceScreenProps) {
+export function FindMyDashboard({ device, actions, reach, home, track }: DeviceScreenProps) {
   const now = useNow(15_000);
   const theme = useTheme();
   const reading = (key: string): Reading | undefined => device.readings.find((each) => each.key === key);
   const value = <T,>(key: string) => (reading(key)?.value ?? null) as T | null;
+  const [span, setSpan] = useState(1);
+  const trail = useTrail(track, device.trackDays, span, reading('position')?.at);
 
   if (!device.readings.length) {
     const failed = device.health.status === 'error';
@@ -44,6 +48,9 @@ export function FindMyDashboard({ device, actions, reach, home }: DeviceScreenPr
   const owner = value<string>('owner');
   const said = cadence(value<string>('nextLook'), value<number>('lookEvery'), now);
   const model = device.info?.model?.replace(/\s*\(.*\)$/, '') ?? device.meta.name;
+  // The trail, to where it is now.
+  const line = position && located && (!trail.length || trail[trail.length - 1]!.at < located.at) ? [...trail, { latitude: position.latitude, longitude: position.longitude }] : trail;
+  const spans = device.trackDays ? spansFor(device.trackDays) : [];
 
   return (
     <YStack gap="$4">
@@ -62,6 +69,7 @@ export function FindMyDashboard({ device, actions, reach, home }: DeviceScreenPr
             <MapView
               label={`Where ${device.name} is`}
               markers={[{ id: device.id, latitude: position.latitude, longitude: position.longitude, accuracy: position.accuracy ?? null, stale }]}
+              trails={line.length > 1 ? [{ id: 'trail', points: line }] : []}
               zones={home ? [{ id: 'home', latitude: home.latitude, longitude: home.longitude, radius: 150, label: 'Home' }] : []}
               follow={device.id}
               height={260}
@@ -87,6 +95,14 @@ export function FindMyDashboard({ device, actions, reach, home }: DeviceScreenPr
           <Text fontSize={12} color="$muted" lineHeight={17}>
             {said}
           </Text>
+        ) : null}
+        {device.trackDays ? (
+          <YStack gap="$2" marginTop="$2">
+            {spans.length > 1 ? <Chips label="How far back the trail goes" options={spans} value={Math.min(span, device.trackDays)} onChange={setSpan} /> : null}
+            <Text fontSize={12} color="$muted" lineHeight={17}>
+              {trail.length ? `The trail: ${trail.length === 1 ? '1 place' : `${trail.length} places`} since ${observedAt(trail[0]!.at)}` : 'Nothing kept yet: its trail starts as it is located.'}
+            </Text>
+          </YStack>
         ) : null}
       </Card>
 
@@ -119,6 +135,63 @@ export function FindMyDashboard({ device, actions, reach, home }: DeviceScreenPr
       </Card>
 
       <Actions device={device} actions={actions} reachable={reach.now} />
+
+      <Keeping days={device.trackDays} track={track} />
+    </YStack>
+  );
+}
+
+/** How far back a trail is drawn, as offered: never further than it is kept. */
+function spansFor(days: number): { value: number; label: string }[] {
+  const shorter = [1, 7, 30].filter((each) => each < days).map((each) => ({ value: each, label: each === 1 ? 'Today' : daysText(each) }));
+  return [...shorter, { value: days, label: shorter.length ? 'All kept' : 'Today' }];
+}
+
+/** Where it has been since `days` ago, read again as it is located again; nothing while it is not kept. */
+function useTrail(track: DeviceTrack, days: number | null, span: number, latest: string | undefined): TrackPointView[] {
+  const [points, setPoints] = useState<TrackPointView[]>([]);
+  useEffect(() => {
+    if (days === null) {
+      setPoints([]);
+      return;
+    }
+    let current = true;
+    const since = new Date(Date.now() - Math.min(span, days) * 86_400_000).toISOString();
+    track
+      .since(since)
+      .then((got) => current && setPoints(got))
+      .catch(() => current && setPoints([]));
+    return () => {
+      current = false;
+    };
+    // `track` is made afresh with every list the app reads; what it reads is the device's, which these say.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days, span, latest]);
+  return points;
+}
+
+/** Keeping where it has been: on, off — which forgets it, once its owner says so — and for how long. */
+function Keeping({ days, track }: { days: number | null; track: DeviceTrack }) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+  const keep = (next: number | null) => {
+    setBusy(true);
+    setFailed(null);
+    track
+      .keep(next)
+      .catch((error: unknown) => setFailed((error as Error).message || 'That could not be changed'))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <YStack gap="$2">
+      <Card inset>
+        <TrackSetting days={days} disabled={busy} onChange={keep} />
+      </Card>
+      {failed ? (
+        <Text fontSize={12} color="$danger" paddingHorizontal="$1">
+          {failed}
+        </Text>
+      ) : null}
     </YStack>
   );
 }

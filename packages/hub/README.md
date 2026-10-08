@@ -90,7 +90,8 @@ the master runs: what is installed (`DeviceTypeRegistry`,
 makes all three from lists, as the app installs them), devices' views
 (`DeviceViews`), `Nearby`, `HeldReadings`, history — what is sampled
 and when (`Sampler`, `ChangeLog`, `series`, `changesOf`; how long each is
-kept in `history/retention.ts`), kept by the store's `HistoryStore` —
+kept in `history/retention.ts`), kept by the store's `HistoryStore`, and
+where a device has been, by its `TrackStore` —
 `Attention` and `keepWatchedFresh`, the assistant's world, `homeDevices`
 for the engine, the planner (`plans`), and the home's configuration
 (`Configuration`: vocabulary, schema, export, an import's plan and apply,

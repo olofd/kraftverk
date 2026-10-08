@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { connectionId, MAIN_PART, nodeId, savedDeviceId, type DeviceDescription } from '@kraftverk/device-sdk';
 
-import { ConnectionStore, DeviceCatalog, LastHeard, LinkStore, NodeStore, SendQueue, type SecretsAtRest, type SqlDatabase } from '../src/index.ts';
+import { ConnectionStore, DeviceCatalog, LastHeard, LinkStore, NodeStore, SendQueue, TrackStore, type SecretsAtRest, type SqlDatabase } from '../src/index.ts';
 import { DRIVERS } from './drivers.ts';
 
 /** The node this database belongs to: what holds every connection here. */
@@ -176,6 +176,52 @@ for (const driver of DRIVERS) {
       });
     });
 
+    describe('where a device has been', () => {
+      const at = (minutes: number) => new Date(Date.UTC(2026, 0, 1) + minutes * 60_000).toISOString();
+      const point = (minutes: number, latitude = 59.3, accuracy: number | null = 10) => ({ at: at(minutes), latitude, longitude: 18.0, accuracy });
+
+      test('is kept only while its owner keeps it, and forgotten when that is turned off', () => {
+        const tracks = new TrackStore(database);
+        const phone = add('Phone');
+        expect(tracks.add(phone.id, point(0))).toBe(false);
+        expect(catalog.setTrack(phone.id, 30)?.trackDays).toBe(30);
+        expect(tracks.add(phone.id, point(0))).toBe(true);
+        expect(tracks.add(phone.id, point(1, 59.31))).toBe(true);
+        expect(tracks.points(phone.id, at(0)).map((each) => each.latitude)).toEqual([59.3, 59.31]);
+
+        expect(catalog.setTrack(phone.id, null)?.trackDays).toBeNull();
+        expect(tracks.points(phone.id, at(0))).toEqual([]);
+        expect(() => catalog.setTrack(phone.id, 0)).toThrow();
+        expect(() => catalog.setTrack(phone.id, 400)).toThrow();
+      });
+
+      test('keeps a place once an hour while the device stays there, and every move', () => {
+        const tracks = new TrackStore(database);
+        const phone = add('Desk phone');
+        catalog.setTrack(phone.id, 7);
+        expect(tracks.add(phone.id, point(0))).toBe(true);
+        // A metre away, within how sure it is: the same place.
+        expect(tracks.add(phone.id, point(1, 59.30001))).toBe(false);
+        expect(tracks.add(phone.id, point(61, 59.30001))).toBe(true);
+        // Older than the last kept: already past.
+        expect(tracks.add(phone.id, point(30, 59.4))).toBe(false);
+      });
+
+      test('is let go after its days, and goes with the device', () => {
+        const tracks = new TrackStore(database);
+        const phone = add('Travelling phone');
+        catalog.setTrack(phone.id, 1);
+        tracks.add(phone.id, point(0));
+        tracks.add(phone.id, point(2 * 24 * 60, 59.5));
+        expect(tracks.prune(Date.parse(at(2 * 24 * 60)))).toBe(1);
+        expect(tracks.points(phone.id, at(0)).map((each) => each.latitude)).toEqual([59.5]);
+
+        catalog.remove(phone.id);
+        expect(tracks.points(phone.id, at(0))).toEqual([]);
+        expect(catalog.get(phone.id)?.trackDays).toBeNull();
+      });
+    });
+
     describe('connections', () => {
       test('a new one comes after the ones a device already has, and can be preferred', () => {
         const record = add('Two ways');
@@ -252,6 +298,7 @@ for (const driver of DRIVERS) {
         addedAt: '2026-10-01T00:00:00.000Z',
         removedAt: null,
         pausedAt: null,
+        trackDays: null,
         description: LAMP,
         descriptionSource: 'type' as const,
         info: null,

@@ -165,6 +165,35 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
         return viewOf(device.id);
       },
 
+      /**
+       * Keeps where a device has been, for 1 day to a year, or none of it —
+       * what was kept forgotten at once. Only a device that says where it is.
+       */
+      async setTrack(id, days) {
+        const device = deviceOf(id);
+        if (days !== null && !(Number.isInteger(days) && days >= 1 && days <= 366)) throw new ApiError('invalid', 'Where it has been is kept for 1 day to a year');
+        if (days !== null && !device.description.attributes.some((attribute) => attribute.means === 'position')) throw new ApiError('invalid', `"${device.name}" does not say where it is`);
+        if (device.trackDays !== days) {
+          catalog.setTrack(device.id, days);
+          record(
+            days === null ? 'device.untracked' : 'device.tracked',
+            'device',
+            device.id,
+            days === null ? `Stopped keeping where "${device.name}" has been, and forgot it` : `Keeping where "${device.name}" has been for ${days === 1 ? '1 day' : `${days} days`}`,
+            { days }
+          );
+          changed();
+        }
+        return viewOf(device.id);
+      },
+
+      /** Where a device has been since a time, while that is kept; nothing, when it is not. */
+      async track(id, since) {
+        const device = deviceOf(id);
+        if (!Number.isFinite(Date.parse(since))) throw new ApiError('invalid', 'Since when: a time, as ISO 8601');
+        return device.trackDays ? hub.tracks.points(device.id, new Date(since).toISOString()) : [];
+      },
+
       /** Removes a device, keeping its history. Its connections and links go; adding the same device again offers to bring it all back. */
       async remove(id) {
         const device = deviceOf(id);

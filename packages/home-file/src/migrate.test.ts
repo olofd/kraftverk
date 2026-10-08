@@ -106,6 +106,19 @@ automations:
       right: { value: 'yes' },
     });
   });
+
+  test('version 9 says how long where a device has been is kept — never where it was — and nothing older says it', () => {
+    const read = readConfig(readFileSync(fixture(9), 'utf8'));
+    expect(read.document!.devices['pocket-phone']!.track).toBe(30);
+    expect(writeConfig(read.document!)).toContain('track: 30 days');
+    expect(readConfig(readFileSync(fixture(8), 'utf8')).document!.devices['garage-station']!.track).toBeNull();
+    const day = readConfig('kraftverk: 9\ndevices:\n  phone:\n    type: acme.phone\n    name: Phone\n    track: 1 day\n');
+    expect(day.document!.devices.phone!.track).toBe(1);
+    expect(writeConfig(day.document!)).toContain('track: 1 day\n');
+    expect(readConfig('kraftverk: 9\ndevices:\n  phone:\n    type: acme.phone\n    name: Phone\n    track: forever\n').problems.map((problem) => problem.message)).toEqual([
+      '"track" is how long where it has been is kept: "30 days", from 1 day to 366',
+    ]);
+  });
 });
 
 describe("an integration's own migrations", () => {

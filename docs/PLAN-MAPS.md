@@ -133,7 +133,14 @@ coordinates: "At home · 13 %", or "2.3 km away · 18 % charging", with when.
 
 ## 6. Not in this round
 
-AirTags and other Find My items.
+- AirTags and other Find My items.
+- The map on a phone. The app built for a phone draws where things are in
+  words until `@maplibre/maplibre-react-native` is in a development build.
+
+## Where it stands
+
+2026-10-08: all seven steps are built and pushed. The world is served from
+the NUC, and Sweden is held in full detail.
 
 ## 7. Order of work
 

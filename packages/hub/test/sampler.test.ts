@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { AttributeSpec, DeviceDescription, Reading } from '@kraftverk/device-sdk';
 
 import type { DeviceViews } from '../src/devices/views.ts';
-import { AuditLog, EventStore, HistoryStore } from '@kraftverk/store';
+import { AuditLog, EventStore, HistoryStore, TrackStore } from '@kraftverk/store';
 
 import { resolutionOf, Sampler, series } from '../src/history/sampler.ts';
 import { testDatabase } from './home.ts';
@@ -19,7 +19,7 @@ import { testDatabase } from './home.ts';
 const db = testDatabase();
 const history = new HistoryStore(db);
 /** What a sampler keeps to: this test's database. */
-const kept = { history, audit: new AuditLog(db), events: new EventStore(db) };
+const kept = { history, audit: new AuditLog(db), events: new EventStore(db), tracks: new TrackStore(db) };
 
 
 /** What a device reporting these readings is: an attribute each, typed by what it reports. */
@@ -37,11 +37,11 @@ const describedBy = (readings: Reading[], extra: AttributeSpec[] = []): DeviceDe
 });
 
 /** A registry holding one device with the given readings, saved as history needs it to be. */
-const registry = (id: string, readings: Reading[], description = describedBy(readings)) => {
+const registry = (id: string, readings: Reading[], description = describedBy(readings), trackDays: number | null = null) => {
   db
-    .query("INSERT OR IGNORE INTO device (id, key, name, config, description, added_at, type_id) VALUES (?1, ?1, ?2, '{}', ?3, ?4, 'test.device')")
-    .run(id, id, JSON.stringify(description), new Date().toISOString());
-  return { all: () => [{ id, readings, description }] } as unknown as DeviceViews;
+    .query("INSERT OR IGNORE INTO device (id, key, name, config, description, added_at, type_id, track_days) VALUES (?1, ?1, ?2, '{}', ?3, ?4, 'test.device', ?5)")
+    .run(id, id, JSON.stringify(description), new Date().toISOString(), trackDays);
+  return { all: () => [{ id, readings, description, trackDays }] } as unknown as DeviceViews;
 };
 
 const stored = (id: string) =>
@@ -50,6 +50,17 @@ const storedText = (id: string) =>
   db.query('SELECT key, text FROM sample WHERE device_id = ? AND text IS NOT NULL ORDER BY key').all(id) as { key: string; text: string }[];
 
 describe('sampling', () => {
+  test('where a device is goes to its track, when it was located — and only while its owner keeps it', async () => {
+    const located = new Date(Date.now() - 5 * 60_000).toISOString();
+    const position = { key: 'position', value: { latitude: 59.3, longitude: 18.0, accuracy: 12 }, at: located };
+    const where: AttributeSpec[] = [{ key: 'position', label: 'Where it is', value: { type: 'object', fields: {} }, means: 'position' } as AttributeSpec];
+    await new Sampler(kept, registry('untracked', [position], { attributes: where })).sample();
+    await new Sampler(kept, registry('tracked', [position], { attributes: where }, 30)).sample();
+    expect(kept.tracks.points('untracked' as never, located)).toEqual([]);
+    expect(kept.tracks.points('tracked' as never, located)).toEqual([{ at: located, latitude: 59.3, longitude: 18.0, accuracy: 12 }]);
+    expect(stored('tracked')).toEqual([]);
+  });
+
   test('a current reading is stored; booleans as 0 and 1', async () => {
     const at = new Date().toISOString();
     await new Sampler(kept, registry('fresh', [

@@ -50,6 +50,9 @@ export type LinkView = {
   other: { id: SavedDeviceId; name: string; part: string; partLabel: string };
 };
 
+/** One place a device was located, and when; within how many metres, when it said. */
+export type TrackPointView = { at: string; latitude: number; longitude: number; accuracy: number | null };
+
 /** A tool of the device's type that its session can run now, as data. */
 export type ToolView = ToolSpec & { name: string };
 
@@ -67,6 +70,8 @@ export type DeviceView = {
   removedAt: string | null;
   /** When its owner paused it: kept, and not reached, until resumed. Null when it is not paused. */
   pausedAt: string | null;
+  /** How many days where it has been is kept, its owner's choice: 1 to 366. Null: none of it is. */
+  trackDays: number | null;
   kind: DeviceKind;
   /** The integration its type is on: where its accounts are managed, and its own screens. Null for a type not installed. */
   integration: IntegrationInfo | null;

@@ -13,6 +13,7 @@ export * from './database.ts';
 export * from './schema.ts';
 export * from './secrets.ts';
 export * from './history.ts';
+export * from './track.ts';
 export * from './home-settings.ts';
 export * from './audit.ts';
 export * from './policy.ts';

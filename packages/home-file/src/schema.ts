@@ -94,6 +94,7 @@ function deviceSchema(types: readonly VocabularyType[]): Schema {
       identity: { type: 'string', description: 'Who the hardware says it is, as it said when added.' },
       picture: { type: 'string', pattern: '^(type:[0-9]+|own:.+)$', description: 'Which of its pictures it shows: "type:2".' },
       paused: { type: 'boolean', description: 'Paused by its owner: kept, and not reached, until resumed.' },
+      track: { type: 'string', pattern: '^[0-9]+ ?days?$', description: 'How long where it has been is kept: "30 days", from 1 day to 366. Where it was is never in the file.' },
       settings: { type: 'object', description: 'Its type’s settings.' },
       connect: {
         type: 'array',

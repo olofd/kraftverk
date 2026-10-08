@@ -48,6 +48,23 @@ describe('a device you have', () => {
     expect((await t.home.devices.setPicture(lamp.id, 'type:0')).picture).toBe('type:0');
   });
 
+  test('keeps where it has been only when it says where it is, says so in its file, and forgets it when turned off', async () => {
+    const lamp = await aLamp();
+    const refused = await refusal(t.home.devices.setTrack(lamp.id, 30));
+    expect([refused.kind, refused.message]).toEqual(['invalid', '"Hall lamp" does not say where it is']);
+    expect((await refusal(t.home.devices.track(lamp.id, 'yesterday'))).kind).toBe('invalid');
+
+    // As a file would have it: kept a month.
+    t.hub.catalog.setTrack(lamp.id, 30);
+    expect((await t.home.devices.get(lamp.id)).trackDays).toBe(30);
+    expect((await t.home.configuration.export({ secrets: 'none' })).text).toContain('    track: 30 days\n');
+    expect(await t.home.devices.track(lamp.id, new Date(0).toISOString())).toEqual([]);
+
+    expect((await t.home.devices.setTrack(lamp.id, null)).trackDays).toBeNull();
+    expect((await t.home.timeline()).find((entry) => entry.kind === 'device.untracked')?.summary).toBe('Stopped keeping where "Hall lamp" has been, and forgot it');
+    expect((await t.home.configuration.export({ secrets: 'none' })).text).not.toContain('track:');
+  });
+
   test('one that is not there is not found', async () => {
     expect((await refusal(t.home.devices.get(savedDeviceId('abc%def')))).kind).toBe('not-found');
     expect((await refusal(t.home.devices.history(savedDeviceId('abc%def'), { key: 'soc' }))).kind).toBe('not-found');

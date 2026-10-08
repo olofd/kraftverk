@@ -35,6 +35,8 @@ export type DeviceRecord = {
   removedAt: string | null;
   /** When its owner paused it: kept, and not reached, until resumed. Null while it is not paused. */
   pausedAt: string | null;
+  /** How many days where it has been is kept (`TrackStore`), its owner's choice. Null: none of it is kept. */
+  trackDays: number | null;
   /** What it is — parts, attributes, events — as it was last described: by its type, or by itself. */
   description: DeviceDescription;
   /** Which of the two that was. */
@@ -58,6 +60,7 @@ type Row = {
   picture: string | null;
   added_at: string;
   paused_at: string | null;
+  track_days: number | null;
   removed_at: string | null;
 };
 
@@ -72,6 +75,7 @@ const toRecord = (row: Row): DeviceRecord => ({
   addedAt: row.added_at,
   removedAt: row.removed_at,
   pausedAt: row.paused_at,
+  trackDays: row.track_days,
   description: JSON.parse(row.description) as DeviceDescription,
   descriptionSource: row.description_source,
   info: row.info === null ? null : (JSON.parse(row.info) as DeviceInfo),
@@ -138,6 +142,7 @@ export class DeviceCatalog {
       typeId: input.typeId,
       identity: input.identity ?? null,
       pausedAt: null,
+      trackDays: null,
       name: input.name,
       config: input.config ?? {},
       addedAt: new Date().toISOString(),
@@ -194,11 +199,11 @@ export class DeviceCatalog {
     this.#db.transaction(() => {
       this.#db
         .query(
-          `INSERT INTO device (id, key, type_id, identity, name, config, description, description_source, info, picture, added_at, paused_at, removed_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO device (id, key, type_id, identity, name, config, description, description_source, info, picture, added_at, paused_at, track_days, removed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (id) DO UPDATE SET key = excluded.key, identity = excluded.identity, name = excluded.name, config = excluded.config,
              description = excluded.description, description_source = excluded.description_source, info = excluded.info,
-             picture = excluded.picture, paused_at = excluded.paused_at, removed_at = excluded.removed_at`
+             picture = excluded.picture, paused_at = excluded.paused_at, track_days = excluded.track_days, removed_at = excluded.removed_at`
         )
         .run(
           record.id,
@@ -213,6 +218,7 @@ export class DeviceCatalog {
           record.picture,
           record.addedAt,
           record.pausedAt,
+          record.trackDays,
           record.removedAt
         );
       this.#recordAttributes(record.id, record.description, at);
@@ -291,6 +297,19 @@ export class DeviceCatalog {
   }
 
   /**
+   * Keeps where it has been for so many days (1 to 366), or none of it: off,
+   * and what was kept of it is forgotten at once.
+   */
+  setTrack(id: SavedDeviceId, days: number | null): DeviceRecord | null {
+    if (days !== null && !(Number.isInteger(days) && days >= 1 && days <= 366)) throw new Error('Where it has been is kept for 1 day to a year');
+    this.#db.transaction(() => {
+      this.#db.query('UPDATE device SET track_days = ? WHERE id = ?').run(days, id);
+      if (days === null) this.#db.query('DELETE FROM track WHERE device_id = ?').run(id);
+    })();
+    return this.get(id);
+  }
+
+  /**
    * Removes a device, keeping its history.
    *
    * Its connections go — with their secrets, which frees the addresses for
@@ -305,9 +324,11 @@ export class DeviceCatalog {
     this.#db.transaction(() => {
       this.#db.query('DELETE FROM device_connection WHERE device_id = ?').run(id);
       this.#db.query('DELETE FROM device_link WHERE source_device = ? OR target_device = ?').run(id, id);
-      this.#db.query('UPDATE device SET removed_at = ? WHERE id = ?').run(removedAt, id);
+      this.#db.query('UPDATE device SET removed_at = ?, track_days = NULL WHERE id = ?').run(removedAt, id);
+      // Where it has been is not history it keeps: that goes with it.
+      this.#db.query('DELETE FROM track WHERE device_id = ?').run(id);
     })();
-    return { ...record, removedAt };
+    return { ...record, removedAt, trackDays: null };
   }
 
   /** Brings a removed device back, with its history. It needs a connection again. */

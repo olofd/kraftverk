@@ -162,6 +162,20 @@ sealed by a key the browser generated as non-extractable and keeps in
 IndexedDB: the files hold only what is sealed. A phone keeps the same key in
 its secure storage (`client/src/platform/`).
 
+**The map.** The map's renderer (MapLibre) is served from the app's own
+origin, worker and all, and every tile, font and icon it draws comes from
+this server's `/api/map/` routes. The policy above needs no addition, and no
+map provider sees who looks at what. Where the server fetches the detail
+someone looks at, Protomaps sees which map areas the server asks for. It
+never sees who asked, and that can be switched off (**App settings → Maps**).
+
+**Where someone has been.** A device that says where it is — a phone —
+shows only where it is now, unless its owner turns on **Keep where it has
+been** for that device, for a day to a year. Then its trail is kept in the
+home's database (`track`, DATA-MODEL.md). It is never in a configuration
+export or a snapshot, and only "kept, for so long" is. Turning it off, or
+removing the device, deletes it at once, and the timeline records both.
+
 ## The station itself
 
 Unchanged by any of this, and applied to every caller:

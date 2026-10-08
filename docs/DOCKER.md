@@ -295,6 +295,10 @@ Everything that outlives a restart is in the `kraftverk-data` volume, mounted at
 | `logs/server-YYYY-MM-DD.log` | The server's log, one file a day, two weeks kept |
 | `broker/logs/broker-YYYY-MM-DD.jsonl` | The broker's journal: every connection, frame and disconnect |
 | `broker/` | The broker's token and the stations it has seen |
+| `map/world-YYYYMMDD.pmtiles` | The world's map, roughly (45 MB): downloaded when the server first starts |
+| `map/regions/` | The countries downloaded in full detail — the home's, or one before a journey — from **App settings → Maps** |
+| `map/cache.db` | The detail fetched as someone looks where no region is held: 2 GB at most, the least used let go |
+| `map/assets/` | The map's fonts and icons, fetched with the world |
 | `baseline.json` | A register baseline, if one was taken |
 | `kraftverk.db.before-migration-N.<time>` | The database as it was before an upgrade changed its schema: the way back from a bad one |
 
@@ -312,6 +316,21 @@ old ones once the new version has been running for a while.
 
 (The volume is named after the compose project: `kraftverk_kraftverk-data` when
 the project is `kraftverk`. `docker volume ls` shows it.)
+
+### The map
+
+Nothing to set up ([PLAN-MAPS.md](PLAN-MAPS.md)). The image carries the
+`pmtiles` tool, pinned by its checksum. On its first start the server
+downloads the world's map from Protomaps' daily build of OpenStreetMap, with
+its fonts and icons. **App settings → Maps** offers the home's country in full
+detail once the home's place is said, and any other country before a journey.
+Each one's size is said before it is downloaded. Where no region is held, the
+server fetches the detail someone looks at and keeps it. That can be switched
+off there. The server needs `build.protomaps.com` and `github.com` on
+the internet for this. Without them the map is the world, roughly, or none at
+all, and everything else works as before. The browser itself only ever asks
+this server. Outside Docker, put `pmtiles` on the `PATH` or point
+`KRAFTVERK_PMTILES` at it.
 
 ### Resetting without touching the volume
 

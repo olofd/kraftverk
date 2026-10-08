@@ -24,7 +24,7 @@ import {
 import { ApiError } from '@kraftverk/api-contract';
 import { savedDeviceId, type ConnectionId, type LinkId } from '@kraftverk/device-sdk';
 
-import { ask } from '../platform/confirm';
+import { ask, confirmAction } from '../platform/confirm';
 import { useAuth } from './AuthProvider';
 import { useHome } from './HomeProvider';
 import { useServers } from './ServersProvider';
@@ -320,9 +320,17 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         readOnly: device.readOnly,
         version: holder === 'master' && role === 'follower' ? version : null,
         home,
+        track: {
+          since: (at) => api.devices.track(device.id, at),
+          keep: async (days) => {
+            if (days === null && device.trackDays !== null && !(await confirmAction('Forget where it has been?', `What was kept of where ${device.name} has been is deleted, and nothing more is kept.`, 'Forget', 'dangerous'))) return;
+            await api.devices.setTrack(device.id, days);
+            await load();
+          },
+        },
       };
     },
-    [actionsFor, reach, role, version, home]
+    [actionsFor, reach, role, version, home, api, load]
   );
 
   // --- changing the list ----------------------------------------------------------
