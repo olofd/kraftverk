@@ -141,6 +141,16 @@ export type SpaceEntry = {
   spaces: SpaceEntry[];
 };
 
+/**
+ * A person in the family, by a key for the file: their id verbatim, and
+ * their chain — who they are, as they prove it, base64url of its JSON — with
+ * what this family calls them, their colour and their role. A restore checks
+ * the chain again; nothing private is in it.
+ */
+export type PersonEntry = { id: string; name: string; role: 'admin' | 'member' | 'child'; nickname: string | null; color: string | null; chain: string };
+
+export const PERSON_ID = /^p-[0-9A-HJKMNP-TV-Z]{26}$/;
+
 /** A label: any grouping the family wants, by its key. */
 export type LabelEntry = { name: string; color: string | null; icon: string | null };
 
@@ -153,6 +163,8 @@ export type PlaceEntry = { home: string; space: string | null; opening: string |
 export type ConfigDocument = {
   version: number;
   family: FamilyEntry;
+  /** Its people, each by a key for the file. */
+  people: Record<string, PersonEntry>;
   /** Its labels, by key. */
   labels: Record<string, LabelEntry>;
   /** Its homes, by key, in their order. */
@@ -182,7 +194,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
   const issues: Issue[] = [];
   const problem = (message: string, path: Path) => void issues.push({ message, path });
   if (!isRecord(data)) return { document: null, issues: [{ message: 'A configuration is a map: kraftverk, family, homes, devices, links, automations', path: [] }] };
-  for (const key of Object.keys(data)) if (!['kraftverk', 'family', 'labels', 'homes', 'devices', 'links', 'automations', 'secrets'].includes(key)) problem(`"${key}" is not part of a configuration: it has kraftverk, family, labels, homes, devices, links, automations and secrets`, [key]);
+  for (const key of Object.keys(data)) if (!['kraftverk', 'family', 'people', 'labels', 'homes', 'devices', 'links', 'automations', 'secrets'].includes(key)) problem(`"${key}" is not part of a configuration: it has kraftverk, family, people, labels, homes, devices, links, automations and secrets`, [key]);
 
   const text = (value: unknown, path: Path, what: string): string | null => {
     if (typeof value === 'string' && value.trim()) return value.trim();
@@ -209,6 +221,33 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
       if (data.family.name !== undefined) family.name = text(data.family.name, ['family', 'name'], 'its name');
       if (data.family.kind !== undefined) family.kind = FAMILY_KINDS.includes(data.family.kind as FamilyKindEntry) ? (data.family.kind as FamilyKindEntry) : (problem(`"kind" is one of ${FAMILY_KINDS.join(', ')}`, ['family', 'kind']), null);
       if (data.family.locale !== undefined) family.locale = text(data.family.locale, ['family', 'locale'], 'its language: "en-GB", "sv-SE"');
+    }
+  }
+
+  // Its people, by a key for the file: each their id verbatim, and their chain.
+  const people: Record<string, PersonEntry> = {};
+  if (data.people !== undefined && data.people !== null) {
+    if (!isRecord(data.people)) problem('"people" is a map: each person by a key', ['people']);
+    else {
+      const ids = new Set<string>();
+      for (const [key, entry] of Object.entries(data.people)) {
+        const path = ['people', key];
+        if (!KEY.test(key)) problem(`"${key}" is not a key: lowercase letters, digits and dashes`, path);
+        if (!isRecord(entry)) {
+          problem('Expected a person: their id, name, role and chain', path);
+          continue;
+        }
+        for (const field of Object.keys(entry)) if (!['id', 'name', 'role', 'nickname', 'color', 'chain'].includes(field)) problem(`"${field}" is not part of a person: they have id, name, role, nickname, color and chain`, [...path, field]);
+        const id = typeof entry.id === 'string' && PERSON_ID.test(entry.id) ? entry.id : (problem('"id" is a person’s id: p- and 26 letters and digits', [...path, 'id']), null);
+        if (id && ids.has(id)) problem('Another person in this file has that id', [...path, 'id']);
+        if (id) ids.add(id);
+        const name = text(entry.name, [...path, 'name'], 'their name');
+        const role = entry.role === undefined ? 'member' : ['admin', 'member', 'child'].includes(entry.role as string) ? (entry.role as PersonEntry['role']) : (problem('"role" is admin, member or child', [...path, 'role']), null);
+        const nickname = entry.nickname === undefined || entry.nickname === null ? null : text(entry.nickname, [...path, 'nickname'], 'what the family calls them');
+        const color = entry.color === undefined || entry.color === null ? null : typeof entry.color === 'string' && /^#[0-9a-f]{6}$/.test(entry.color) ? entry.color : (problem('"color" is "#rrggbb", in lowercase', [...path, 'color']), null);
+        const chain = typeof entry.chain === 'string' && /^[A-Za-z0-9_-]+$/.test(entry.chain) ? entry.chain : (problem('"chain" is who they are, as they prove it: as the file was written', [...path, 'chain']), null);
+        if (id && name && role && chain) people[key] = { id, name, role, nickname, color, chain };
+      }
     }
   }
 
@@ -458,7 +497,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
 
   // Partial: what could be read, beside every problem — whose entries the reader leaves out (`readConfig`).
   if (issues.length && !options.partial) return { document: null, issues };
-  return { document: { version: CURRENT_VERSION, family, labels, homes, devices, links, automations, secrets }, issues };
+  return { document: { version: CURRENT_VERSION, family, people, labels, homes, devices, links, automations, secrets }, issues };
 }
 
 
@@ -555,6 +594,16 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
           },
         }
       : {}),
+    ...(Object.keys(document.people).length
+      ? {
+          people: Object.fromEntries(
+            Object.entries(document.people).map(([key, person]) => [
+              key,
+              { id: person.id, name: person.name, role: person.role, ...(person.nickname !== null ? { nickname: person.nickname } : {}), ...(person.color !== null ? { color: person.color } : {}), chain: person.chain },
+            ])
+          ),
+        }
+      : {}),
     ...(Object.keys(document.labels).length
       ? { labels: Object.fromEntries(Object.entries(document.labels).map(([key, label]) => [key, { name: label.name, ...(label.color !== null ? { color: label.color } : {}), ...(label.icon !== null ? { icon: label.icon } : {}) }])) }
       : {}),
@@ -596,4 +645,4 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
 }
 
 /** An empty document of this version. */
-export const emptyDocument = (): ConfigDocument => ({ version: CURRENT_VERSION, family: { name: null, kind: null, locale: null }, labels: {}, homes: {}, devices: {}, links: [], automations: {}, secrets: {} });
+export const emptyDocument = (): ConfigDocument => ({ version: CURRENT_VERSION, family: { name: null, kind: null, locale: null }, people: {}, labels: {}, homes: {}, devices: {}, links: [], automations: {}, secrets: {} });

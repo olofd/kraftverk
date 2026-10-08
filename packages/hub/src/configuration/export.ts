@@ -11,8 +11,9 @@ import {
   type Vocabulary,
   type WaySource,
 } from '@kraftverk/home-file';
-import { methodsOf, partsOf, type NodeId, type PolicyValueName, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
-import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, FamilyStore, LinkStore, MediaStore, LabelStore, PlaceStore, SecretsAtRest, SpaceStore } from '@kraftverk/store';
+import { keyFrom, methodsOf, partsOf, type NodeId, type PolicyValueName, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
+import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, FamilyStore, LinkStore, MediaStore, LabelStore, PeopleStore, PlaceStore, SecretsAtRest, SpaceStore } from '@kraftverk/store';
+import { base64url } from '@kraftverk/identity';
 import type { SpaceView } from '@kraftverk/api-contract';
 
 import type { ProtocolRegistry } from '../installed/protocols.ts';
@@ -44,6 +45,8 @@ export type ConfigDeps = {
   spaces: SpaceStore;
   /** Its labels, and what each is on. */
   labels: LabelStore;
+  /** Its people: who each is, as they prove it, and what the family calls them. */
+  people: PeopleStore;
   /** Pictures, by their content: what a home or a device in a file names. */
   media: MediaStore;
   /** A home's own values: how much is a load, the reserve. */
@@ -161,6 +164,15 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
   if (everything) {
     const family = deps.family.get();
     if (family) document.family = { name: family.name, kind: family.kind, locale: family.locale };
+    // Its people, each by a key made from their name; one with no chain — no key of their own yet — has nothing to prove, and waits for W3's managed people.
+    const taken = new Set<string>();
+    for (const person of deps.people.members()) {
+      const chain = deps.people.chainOf(person.id);
+      if (!chain.length || !person.member) continue;
+      const key = keyFrom(person.name, (candidate) => taken.has(candidate), 'person');
+      taken.add(key);
+      document.people[key] = { id: person.id, name: person.name, role: person.member.role, nickname: person.member.nickname, color: person.member.color, chain: base64url(new TextEncoder().encode(JSON.stringify(chain))) };
+    }
     for (const home of deps.places.homes()) {
       document.homes[home.key] = {
         name: home.name,

@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
 import { writeConfig } from '@kraftverk/home-file';
+import { createPerson, newSecret, softwareKey } from '@kraftverk/identity';
 import { defineDeviceType, MAIN_PART } from '@kraftverk/device-sdk';
 import type { Rule } from '@kraftverk/automation';
 
 import { ApiError } from '@kraftverk/api-contract';
 import { AutomationLibrary } from '@kraftverk/automation-engine';
 import type { AuditRecord } from '@kraftverk/device-sdk';
-import { FamilyStore, LabelStore, MediaStore, PlaceStore, SpaceStore, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
+import { FamilyStore, LabelStore, MediaStore, PeopleStore, PlaceStore, SpaceStore, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
 import { policyOf } from '../src/homes/homes.ts';
 
 import { drafts } from '../src/automations/drafts.ts';
@@ -90,6 +91,7 @@ beforeEach(() => {
     places,
     spaces: new SpaceStore(db),
     labels: new LabelStore(db),
+    people: new PeopleStore(db),
     media: new MediaStore(db),
     policyOf: policyOf(db),
     sealing: testSealing,
@@ -201,6 +203,31 @@ describe('a server’s own export, into a database wiped', () => {
     // Nowhere: a problem at its line.
     const nowhere = await planImport(deps, text.replace('space: kitchen', 'space: cellar'), { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') });
     expect(nowhere.problems.map((problem) => [problem.message, problem.path])).toEqual([['Home has no space "cellar"', ['devices', 'hall-lamp', 'place']]]);
+  });
+
+  test('its people, by their ids: each chain checked again, their role, nickname and colour back', async () => {
+    const key = softwareKey(newSecret());
+    const id = 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0AB';
+    const chain = await createPerson({ id, key, deviceName: 'Phone', profile: { name: 'Anna Example', shortName: null, locale: null, pictureId: null }, at: '2026-10-08T12:00:00.000Z' });
+    deps.people.present(chain);
+    deps.people.addMember(id, { role: 'admin', invitedBy: null, at: '2026-10-08T12:00:00.000Z' });
+    deps.people.updateMember(id, { nickname: 'Mum', color: '#10b981' });
+    const text = await exported();
+    expect(text).toContain('anna-example:');
+
+    db.exec('DELETE FROM member; DELETE FROM person_identity; DELETE FROM person_key; DELETE FROM person;');
+    const plan = await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') });
+    expect(plan.problems).toEqual([]);
+    expect(plan.people).toEqual([{ key: 'anna-example', name: 'Anna Example', action: 'add', changes: [] }]);
+    const applied = await applyImport(deps, plan.id!, actor('person', 'olof'), {});
+    expect(applied.people.added).toEqual(['anna-example']);
+    expect(deps.people.get(id)).toMatchObject({ name: 'Anna Example', shownAs: 'Mum', member: { role: 'admin', color: '#10b981' } });
+    expect(deps.people.chainOf(id)).toEqual(chain);
+    expect((await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') })).people[0]!.action).toBe('same');
+
+    // A chain changed by hand is no one: a problem, at its line.
+    const tampered = text.replace(/chain: (\S+)/, (_, value: string) => `chain: ${value.slice(0, -4)}AAAA`);
+    expect((await planImport(deps, tampered, { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') })).problems.map((problem) => problem.message)).toEqual(['Anna Example is not who the file says: their chain does not check']);
   });
 
   test('its labels, by key, and what each is on: a device, a room, an automation', async () => {

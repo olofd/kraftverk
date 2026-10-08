@@ -286,6 +286,7 @@ export class Hub {
       places: this.places,
       spaces: this.spaces,
       labels: this.labels,
+      people: this.people,
       media: this.media,
       policyOf: policyOf(db),
       sealing: options.sealing,

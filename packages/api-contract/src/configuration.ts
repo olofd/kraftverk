@@ -31,6 +31,8 @@ export type ImportPlan = {
   homes: ImportItem[];
   /** Its labels, by key: added, renamed, or the same. One the file does not name is left. */
   labels: ImportItem[];
+  /** Its people, by their ids: added to the family, a newer copy of who they are, their role and what it calls them. One the file does not name stays. */
+  people: ImportItem[];
   /** Each home's values the file changes, by the home's key. */
   policy: { home: string; name: string; label: string; before: number | null; after: number }[];
   needs: {
@@ -55,6 +57,7 @@ export type ImportApplied = {
   family: boolean;
   homes: { added: string[]; changed: string[] };
   labels: { added: string[]; changed: string[] };
+  people: { added: string[]; changed: string[] };
   /** Each value set, as "home-key.name". */
   policy: string[];
   /** What was done otherwise than the file says — restoring, an automation kept turned off, a device left out — each in words. */

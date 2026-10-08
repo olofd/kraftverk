@@ -344,6 +344,24 @@ export function configJsonSchema(vocabulary: Vocabulary): Schema {
           locale: { type: 'string', description: 'The language what is said to all of it is said in: "en-GB", "sv-SE".' },
         },
       },
+      people: {
+        type: 'object',
+        ...keys,
+        description: 'Its people, each by a key for this file: their id, and who they are as they prove it.',
+        additionalProperties: {
+          type: 'object',
+          required: ['id', 'name', 'chain'],
+          additionalProperties: false,
+          properties: {
+            id: { type: 'string', pattern: '^p-[0-9A-HJKMNP-TV-Z]{26}$' },
+            name: { type: 'string', minLength: 1, maxLength: 100, description: 'Their name, for whoever reads the file: their chain says it.' },
+            role: { enum: ['admin', 'member', 'child'], default: 'member' },
+            nickname: { type: 'string', minLength: 1, maxLength: 30, description: 'What this family calls them.' },
+            color: { type: 'string', pattern: '^#[0-9a-f]{6}$' },
+            chain: { type: 'string', description: 'Who they are, as they prove it: their signed statements, as the file was written. Not to be edited.' },
+          },
+        },
+      },
       labels: {
         type: 'object',
         ...keys,

@@ -37,6 +37,7 @@ import {
   type SpaceEntry,
   isSealed,
 } from '@kraftverk/home-file';
+import { checkChain, fromBase64url, type Statement } from '@kraftverk/identity';
 import { HOME_RADIUS, isConstraintError, type ConnectionRecord, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
 
 import type { Checked } from '../automations/drafts.ts';
@@ -157,7 +158,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
   // A restore reads what it can: an entry it cannot read is left out and said, never the whole home lost for it.
   // A file kept before an installed integration's entries changed comes back as they are now.
   const read = readConfig(text, (document) => checkDocument(document, vocabulary, { hasSecret: () => true, uses: 'leave' }), { partial: options.lenient, migrations: deps.types.fileMigrations() });
-  const empty: ImportPlan = { id: null, from: read.from, problems: read.problems.map((each) => ({ ...each, path: [...each.path] })), devices: [], links: [], automations: [], family: [], homes: [], labels: [], policy: [], needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
+  const empty: ImportPlan = { id: null, from: read.from, problems: read.problems.map((each) => ({ ...each, path: [...each.path] })), devices: [], links: [], automations: [], family: [], people: [], homes: [], labels: [], policy: [], needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
   if (!read.document) return empty;
   const document = read.document;
   // What a device it brings is, with its settings, is its type's code to say: each type it names is loaded now.
@@ -318,6 +319,28 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
   if (familyNow && document.family.kind !== null && document.family.kind !== familyNow.kind) family.push(`kind: ${familyNow.kind} → ${document.family.kind}`);
   if (familyNow && document.family.locale !== null && document.family.locale !== familyNow.locale) family.push(`language: ${familyNow.locale} → ${document.family.locale}`);
 
+  // Its people, by id: each chain checked again, and a newer one than this family has taken; what the family calls each, their colour and role.
+  const people: ImportItem[] = Object.entries(document.people).flatMap(([key, entry]): ImportItem[] => {
+    const chain = chainOf(entry.chain);
+    const checked = chain ? checkChain(chain) : null;
+    const said = !chain || !checked?.ok ? 'is not who the file says: their chain does not check' : checked.person.id !== entry.id ? 'is someone else: their chain names another id' : null;
+    const kept = deps.people.chainOf(entry.id);
+    const older = said === null && chain !== null && kept.length > chain.length;
+    if (said) {
+      if (options.lenient) notes.push(`${entry.name} is left out: they ${said}`);
+      else problems.push({ message: `${entry.name} ${said}`, path: ['people', key, 'chain'], line: null, column: null });
+      return [];
+    }
+    const existing = deps.people.get(entry.id);
+    if (!existing?.member) return [{ key, name: entry.name, action: 'add', changes: [] }];
+    const changes: string[] = [];
+    if (!older && chain!.length > kept.length) changes.push('who they are: a newer copy');
+    if (entry.role !== existing.member.role) changes.push(`${existing.member.role} → ${entry.role}`);
+    if (entry.nickname !== null && entry.nickname !== existing.member.nickname) changes.push(`called ${entry.nickname}`);
+    if (entry.color !== null && entry.color !== existing.member.color) changes.push('their colour');
+    return [{ key, name: entry.name, action: changes.length ? 'change' : 'same', changes }];
+  });
+
   // Its labels, by key: added, or renamed and coloured as the file says.
   const labels: ImportItem[] = Object.entries(document.labels).map(([key, entry]) => {
     const existing = deps.labels.byKey(key);
@@ -404,7 +427,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     return { ...each, line: at?.line ?? null, column: at?.column ?? null };
   });
   const id = placed.length ? null : newId('plan');
-  const view: ImportPlan = { id, from: read.from, problems: placed, devices, links, automations, family, homes, labels, policy, needs, notes };
+  const view: ImportPlan = { id, from: read.from, problems: placed, devices, links, automations, family, people, homes, labels, policy, needs, notes };
   if (id) deps.pending.set(id, { view, document, mode: options.mode, secrets, by: options.by, expiresAt: Date.now() + PLAN_TTL_MS, turnedOff, lenient: Boolean(options.lenient) });
   return view;
 }
@@ -588,7 +611,7 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
   if (!options.lenient) for (const need of view.needs.rebind) if (automationsIn(need.automation) && !choices.rebind?.[`${need.automation}.${need.role}`]) missing.push(`"${document.automations[need.automation]?.name}": a device for ${need.label}`);
   if (missing.length) throw new ApiError('invalid', `It still needs ${missing.join('; ')}`, { problems: missing });
 
-  const applied: ImportApplied = { devices: { added: [], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, family: false, homes: { added: [], changed: [] }, labels: { added: [], changed: [] }, policy: [], notes: [] };
+  const applied: ImportApplied = { devices: { added: [], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, family: false, people: { added: [], changed: [] }, homes: { added: [], changed: [] }, labels: { added: [], changed: [] }, policy: [], notes: [] };
   const touched: AutomationId[] = [];
   /** Where each automation goes on the home page: placed after all are written, by place, so each lands where the file says. */
   const placing: { id: AutomationId; place: number | null }[] = [];
@@ -605,6 +628,19 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
 
   try {
     deps.db.transaction(() => {
+      // People: who is in the family, before anything names them — admins first, so the family always has one.
+      const order = { admin: 0, member: 1, child: 2 } as const;
+      for (const item of [...view.people].sort((a, b) => order[document.people[a.key]!.role] - order[document.people[b.key]!.role])) {
+        if (item.action === 'same') continue;
+        const entry = document.people[item.key]!;
+        const chain = chainOf(entry.chain)!;
+        if (chain.length > deps.people.chainOf(entry.id).length) deps.people.present(chain);
+        const member = deps.people.get(entry.id)?.member;
+        if (!member) deps.people.addMember(entry.id, { role: entry.role, invitedBy: null, at: new Date().toISOString() });
+        const colourFree = entry.color !== null && !deps.people.members().some((each) => each.id !== entry.id && each.member?.color === entry.color);
+        deps.people.updateMember(entry.id, { role: entry.role, ...(entry.nickname !== null ? { nickname: entry.nickname } : {}), ...(colourFree ? { color: entry.color! } : {}) });
+        (member ? applied.people.changed : applied.people.added).push(item.key);
+      }
       // Labels: before what is labelled with them.
       for (const item of view.labels) {
         if (item.action === 'same') continue;
@@ -794,6 +830,18 @@ function writeSpaces(deps: ImportDeps, homeId: string, entry: HomeEntry): void {
     const had = deps.spaces.openingByKey(homeId, key);
     if (had) deps.spaces.updateOpening(had.id, given);
     else deps.spaces.addOpening({ ...given, key });
+  }
+}
+
+/** A person's chain as a file carries it — base64url of its JSON — or null for anything that is not one. */
+function chainOf(text: string): Statement[] | null {
+  const bytes = fromBase64url(text);
+  if (!bytes) return null;
+  try {
+    const chain = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+    return Array.isArray(chain) ? (chain as Statement[]) : null;
+  } catch {
+    return null;
   }
 }
 
