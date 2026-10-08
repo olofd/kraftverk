@@ -68,7 +68,9 @@ on it.
 opens on an account of the device, kept in the browser's own storage, which
 no cookie or storage state carries. So each person a test acts as is a
 browser profile of its own — `OWNER`, signed in at the server with its first
-login, or `ALONE`, with no server — signed up the first time a test asks, the
+login, `ALONE`, with no server, or `PLAIN`, the owner on a plain-HTTP page by a
+name (`kraftverk-e2e.test`, mapped to this computer in Chromium), where a
+browser keeps no account, as on `http://kraftverk.local` — signed up the first time a test asks, the
 way a person does it, and reused by every test after. Tests import `test`
 from `./fixtures`, and choose with `test.use({ as: ALONE })`. Getting a
 profile ready is a list of the screens the app may stand on, each with what a

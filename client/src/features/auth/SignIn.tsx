@@ -8,6 +8,7 @@ import { Card, haptic, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 import { ErrorText } from '../../components/ErrorText';
 import { Pressable } from '../../components/Pressable';
 import { useAttempt } from '../../components/useAttempt';
+import { keepsAccounts } from '../../state/AccountProvider';
 import { useAuth } from '../../state/AuthProvider';
 import { useServers } from '../../state/ServersProvider';
 import { JoinFamily } from '../account/JoinFamily';
@@ -36,7 +37,7 @@ export function SignIn() {
           {mode === 'login' ? <LoginForm /> : mode === 'setup' ? <SetupForm /> : <SetupElsewhere />}
 
           {/* Invited, with no password here: the invitation lets this device's account in, and its key signs in from then. */}
-          {mode === 'login' ? (
+          {mode === 'login' && keepsAccounts() ? (
             <YStack gap="$2">
               <SectionLabel>Or, invited</SectionLabel>
               <JoinFamily />
@@ -194,9 +195,14 @@ function WayOut() {
             <RowSeparator />
           </YStack>
         ))}
-        <Pressable onPress={() => servers.use(null)}>
-          <Row title="Use without a server" subtitle="This app keeps its own devices, their history and their automations, while it is open" />
-        </Pressable>
+        {/* A page that keeps no account keeps no family of its own either: there is no "without". */}
+        {keepsAccounts() ? (
+          <Pressable onPress={() => servers.use(null)}>
+            <Row title="Use without a server" subtitle="This app keeps its own devices, their history and their automations, while it is open" />
+          </Pressable>
+        ) : (
+          <Row title="Without a server, on a secure page" subtitle="Plain HTTP keeps nothing in this browser: open kraftverk over HTTPS to keep an account, and devices of your own, here" />
+        )}
       </Card>
     </YStack>
   );

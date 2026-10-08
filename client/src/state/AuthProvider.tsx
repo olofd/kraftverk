@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { ApiError } from '@kraftverk/api-contract';
 import type { AuthState } from '@kraftverk/api-client';
 
-import { useAccount } from './AccountProvider';
+import { useAccountIfAny } from './AccountProvider';
 import { useServers } from './ServersProvider';
 
 /**
@@ -16,7 +16,8 @@ import { useServers } from './ServersProvider';
  * An account this device keeps that is in the server's family signs in by
  * its own key, with nothing to type (docs/PLAN-WORLD-MODEL.md §10.5). One
  * signed in with a password claims the person that login is, so its key is
- * enough from then on.
+ * enough from then on. On a page that keeps no account, a password alone
+ * signs in, as the person that login is.
  */
 type AuthContextValue = {
   /** A server is chosen, so accounts apply. */
@@ -54,9 +55,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const applies = Boolean(servers.active);
   const serverUrl = servers.active?.url ?? null;
   const { server, onLoginRequired } = servers;
-  const { account, personal } = useAccount();
+  const kept = useAccountIfAny();
+  const personId = kept?.account.personId ?? null;
+  const personal = kept?.personal ?? null;
   // This account is in the server's family: its key signs it in.
-  const member = Boolean(serverUrl && account.families.some((family) => family.master === 'server' && family.serverUrl === serverUrl));
+  const member = Boolean(serverUrl && kept?.account.families.some((family) => family.master === 'server' && family.serverUrl === serverUrl));
 
   const [state, setState] = useState<AuthState | null>(null);
   const [loading, setLoading] = useState(applies);
@@ -86,16 +89,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       let next = await server.auth.state();
       if (asked.current !== serverUrl) return null;
       // Signed in there as someone else — another account on this device, by this browser's cookie: not this account's session.
-      if (next.user && next.user.id !== account.personId) {
+      if (personId && next.user && next.user.id !== personId) {
         await server.auth.logOut().catch(() => undefined);
         next = await server.auth.state();
         if (asked.current !== serverUrl) return null;
       }
-      if (!next.user && member) {
+      if (!next.user && member && personal && personId) {
         // Signed in by this device's key: no password, nothing typed. Refused — the key unknown there now — the form is shown.
         const signedInByKey = await server.auth
           .challenge()
-          .then(async (challenge) => server.auth.signInWithKey(await personal.answer(account.personId, challenge)))
+          .then(async (challenge) => server.auth.signInWithKey(await personal.answer(personId, challenge)))
           .then(
             () => true,
             () => false
@@ -116,7 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       if (asked.current === serverUrl) setLoading(false);
     }
-  }, [account.personId, applies, member, personal, server, serverUrl]);
+  }, [personId, applies, member, personal, server, serverUrl]);
 
   useEffect(() => {
     setLoading(applies);
@@ -162,8 +165,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * One who is someone already is left as they are.
    */
   const claim = useCallback(async () => {
-    await server?.auth.claim(await personal.chain(account.personId)).catch(() => undefined);
-  }, [account.personId, personal, server]);
+    if (!personal || !personId) return;
+    await server?.auth.claim(await personal.chain(personId)).catch(() => undefined);
+  }, [personId, personal, server]);
 
   const logIn = useCallback(
     async (username: string, password: string) => {
@@ -171,13 +175,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await claim();
       // A login that is someone else's — their own account claimed it — is not this account's way in.
       const now = await server?.auth.state();
-      if (user && now?.user && now.user.id !== account.personId) {
+      if (personId && user && now?.user && now.user.id !== personId) {
         await server?.auth.logOut().catch(() => undefined);
         throw new Error(`That login is ${now.user.username}'s here. Sign in as yourself, or open their account on this device.`);
       }
       await signedIn();
     },
-    [account.personId, claim, server, signedIn]
+    [personId, claim, server, signedIn]
   );
 
   const setup = useCallback(

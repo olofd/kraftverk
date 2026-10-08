@@ -8,6 +8,7 @@ import { Pressable } from '../../components/Pressable';
 import { AddDevice } from '../account/AddDevice';
 import { YourAccount } from '../account/YourAccount';
 import { Screen } from '../../components/Screen';
+import { keepsAccounts } from '../../state/AccountProvider';
 import { useAuth } from '../../state/AuthProvider';
 import { useDevices } from '../../state/DevicesProvider';
 import { useFamily } from '../../state/FamilyProvider';
@@ -32,8 +33,24 @@ export function AppSettings() {
 
   return (
     <Screen back="Your devices" title="App settings" subtitle="You, servers, connectivity and this app">
-      <YourAccount />
-      <AddDevice />
+      {keepsAccounts() ? (
+        <>
+          <YourAccount />
+          <AddDevice />
+        </>
+      ) : (
+        <YStack gap="$2">
+          <SectionLabel>You</SectionLabel>
+          <Card gap="$2">
+            <Text fontSize={14} fontWeight="600" color="$color">
+              {auth.state?.user ? `Signed in as ${auth.state.user.username}` : 'Signed in at your server'}
+            </Text>
+            <Text fontSize={13} color="$muted" lineHeight={19}>
+              This page is plain HTTP, so this browser keeps no account here: you sign in with your server password, and nothing is kept in it. Open kraftverk over HTTPS to keep your account in this browser, sign in by its key, and reach devices from it.
+            </Text>
+          </Card>
+        </YStack>
+      )}
       <YStack gap="$2">
         <SectionLabel>Infrastructure</SectionLabel>
         <Card inset>
@@ -57,10 +74,14 @@ export function AppSettings() {
             <Row title="People" subtitle="Who is in your family, and inviting someone" accessory={chevron} />
           </Pressable>
           <RowSeparator />
-          <Pressable onPress={() => router.push(PATHS.settings.join)}>
-            <Row title="Join a family" subtitle="With an invitation someone sent you" accessory={chevron} />
-          </Pressable>
-          <RowSeparator />
+          {keepsAccounts() ? (
+            <>
+              <Pressable onPress={() => router.push(PATHS.settings.join)}>
+                <Row title="Join a family" subtitle="With an invitation someone sent you" accessory={chevron} />
+              </Pressable>
+              <RowSeparator />
+            </>
+          ) : null}
           <Pressable onPress={() => router.push(PATHS.settings.labels)}>
             <Row title="Labels" subtitle="Your own groupings — heating, upstairs — to filter your devices by" accessory={chevron} />
           </Pressable>

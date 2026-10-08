@@ -49,6 +49,8 @@ const serverDir = (name: string) => {
   return dir;
 };
 process.env.E2E_WEB_URL = `http://127.0.0.1:${WEB_PORT}`;
+/** The same app by a name a browser does not trust — plain HTTP, as http://kraftverk.local is (fixtures.ts, PLAIN). */
+process.env.E2E_PLAIN_URL = `http://kraftverk-e2e.test:${WEB_PORT}`;
 
 export default defineConfig({
   testDir: '.',
@@ -93,7 +95,7 @@ export default defineConfig({
         // One clock everywhere: a home made here keeps UTC on every machine, as on the pipeline's.
         TZ: 'UTC',
         BROKER_SPAWN: '0',
-        ALLOWED_ORIGINS: `http://127.0.0.1:${WEB_PORT}`,
+        ALLOWED_ORIGINS: `http://127.0.0.1:${WEB_PORT},http://kraftverk-e2e.test:${WEB_PORT}`,
       },
     },
     {

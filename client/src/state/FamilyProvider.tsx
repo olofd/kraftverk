@@ -10,7 +10,7 @@ import { FamilyFailed } from '../features/account/FamilyFailed';
 import type { OpenHome, OpenOptions } from '../platform/home/home';
 import { keepNodeId, thisNode } from '../platform/node';
 import { readLastServerId } from '../platform/servers';
-import { useAccount } from './AccountProvider';
+import { useAccount, useAccountIfAny } from './AccountProvider';
 import { useAuth } from './AuthProvider';
 import { useServers } from './ServersProvider';
 
@@ -97,8 +97,18 @@ function useWritesFor(home: OpenHome | null): [boolean, (allowed: boolean) => vo
 export function FamilyProvider({ children }: { children: ReactNode }) {
   const servers = useServers();
   const { generation } = useAuth();
+  const kept = useAccountIfAny();
   // Not yet known whether a server stands beside this app: nothing is opened until it is.
   if (servers.deciding) return <Waiting what="Looking for your server" />;
+  // A page that keeps no account (plain HTTP): the server's family alone, and nothing held here.
+  if (!kept)
+    return servers.active ? (
+      <ServerOnlyHome key={`${servers.active.id} ${generation}`} url={servers.active.url}>
+        {children}
+      </ServerOnlyHome>
+    ) : (
+      <Waiting what="Waiting for a server: this page keeps no family of its own" />
+    );
   // What this app holds is held for one server, as one person: switching either lets go of it.
   return servers.active ? (
     <ServerHome key={`${servers.active.id} ${generation}`} serverKey={servers.active.id} url={servers.active.url}>
@@ -107,6 +117,22 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
   ) : (
     <OwnHome>{children}</OwnHome>
   );
+}
+
+/**
+ * A server's home on a page that keeps no account: over HTTP, signed in
+ * with a password, and nothing held here — no ways of this app's own, no
+ * copy of what the server last said beyond what it shows now.
+ */
+function ServerOnlyHome({ url, children }: { url: string; children: ReactNode }) {
+  const { refresh } = useAuth();
+  const [away, setAway] = useState(false);
+  const api = useMemo(() => httpApi({ baseUrl: url, onLoginRequired: () => void refresh(), onReach: (reached) => setAway(!reached) }), [refresh, url]);
+  const value = useMemo<FamilyValue>(
+    () => ({ api, role: 'follower', asksYourPassword: true, writesAllowed: false, allowWrites: async () => undefined, nodeId: thisNode().id, holding: null, away }),
+    [api, away]
+  );
+  return <HomeContext.Provider value={value}>{children}</HomeContext.Provider>;
 }
 
 /** A server's home, over HTTP — with what this app holds for it wrapped in, once that is open here. */

@@ -23,12 +23,16 @@ export type Person = {
   name: string;
   /** The family on the run's server, signed in to with its first login; or one kept on this device alone. */
   family: 'server' | 'this device';
+  /** The page they open: secure — this computer, as HTTPS is — or plain HTTP by a name, as on a home network, where a browser keeps no account. */
+  page?: 'secure' | 'plain http';
 };
 
 /** The run's owner: the server's first login, claimed by their account. Every test is them unless it says otherwise. */
 export const OWNER: Person = { key: 'owner', name: 'Olive Owner', family: 'server' };
 /** Someone with no server at all: the app keeps their family itself. */
 export const ALONE: Person = { key: 'alone', name: 'Alex Alone', family: 'this device' };
+/** The owner again, on a plain-HTTP page by a name — as http://kraftverk.local is: the server's, signed in with a password, nothing kept in the browser. */
+export const PLAIN: Person = { key: 'plain', name: 'Olive Owner', family: 'server', page: 'plain http' };
 
 /** The server's first login, made by the global setup with a password of this run's own. */
 const serverLogin = (): { username: string; password: string } => JSON.parse(readFileSync(join(process.env.E2E_STATE_DIR!, 'account.json'), 'utf8'));
@@ -135,7 +139,7 @@ async function onboard(page: Page, person: Person): Promise<void> {
 /** Each person's browser profile, opened once a worker and set up the first time a test asks. */
 class Profiles {
   readonly #open = new Map<string, Promise<BrowserContext>>();
-  constructor(private readonly launch: (dir: string) => Promise<BrowserContext>) {}
+  constructor(private readonly launch: (dir: string, person: Person) => Promise<BrowserContext>) {}
 
   as(person: Person): Promise<BrowserContext> {
     let context = this.#open.get(person.key);
@@ -143,7 +147,7 @@ class Profiles {
       context = (async () => {
         const dir = join(process.env.E2E_STATE_DIR!, 'profiles', person.key);
         mkdirSync(dir, { recursive: true });
-        const opened = await this.launch(dir);
+        const opened = await this.launch(dir, person);
         const page = await opened.newPage();
         await onboard(page, person);
         await page.close();
@@ -170,7 +174,12 @@ export const test = base.extend<{ as: Person }, { profiles: Profiles }>({
   as: [OWNER, { option: true }],
   profiles: [
     async ({ playwright, headless }, use) => {
-      const profiles = new Profiles((dir) => playwright.chromium.launchPersistentContext(dir, { ...desktop, headless, baseURL: process.env.E2E_WEB_URL }));
+      const profiles = new Profiles((dir, person) =>
+        person.page === 'plain http'
+          ? // A name for this computer that is not "localhost": the browser treats its plain HTTP as it does any home network's.
+            playwright.chromium.launchPersistentContext(dir, { ...desktop, headless, baseURL: process.env.E2E_PLAIN_URL, args: ['--host-resolver-rules=MAP kraftverk-e2e.test 127.0.0.1'] })
+          : playwright.chromium.launchPersistentContext(dir, { ...desktop, headless, baseURL: process.env.E2E_WEB_URL })
+      );
       await use(profiles);
       await profiles.close();
     },

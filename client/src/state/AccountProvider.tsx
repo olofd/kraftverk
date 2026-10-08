@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Platform } from 'react-native';
 
 import type { AccountView, PersonalApi } from '@kraftverk/api-contract';
 
@@ -14,6 +15,11 @@ import { useServers } from './ServersProvider';
  * a browser's files are one tab's at a time, and a family opens inside
  * them — and with no account opened as, the app is sign-up, or the
  * accounts on this device to choose from. An account works with no server.
+ *
+ * A page a browser does not trust — plain HTTP on the home network,
+ * http://kraftverk.local — is given neither the key store nor the files an
+ * account needs. There the app keeps no account: it is its server's, signed
+ * in with a password, as before people were (`keepsAccounts`).
  */
 
 type AccountValue = {
@@ -62,7 +68,19 @@ function useDevice(): { state: Opening; open: (takeOver: boolean) => void } {
   return { state, open };
 }
 
+/**
+ * Whether this page can keep an account: a browser keeps keys and files only
+ * on a secure page — HTTPS, or this computer itself. A phone always can.
+ */
+export const keepsAccounts = (): boolean => Platform.OS !== 'web' || (globalThis as { isSecureContext?: boolean }).isSecureContext !== false;
+
 export function AccountProvider({ children }: { children: ReactNode }) {
+  // Known when the page loads, and never changes while it is open.
+  if (!keepsAccounts()) return <>{children}</>;
+  return <DeviceAccounts>{children}</DeviceAccounts>;
+}
+
+function DeviceAccounts({ children }: { children: ReactNode }) {
   const { state, open } = useDevice();
   const device = state.status === 'open' ? state.device : null;
   const [accounts, setAccounts] = useState<AccountView[] | null>(null);
@@ -121,6 +139,11 @@ function ItsServer() {
     else if (!onServer && servers.active) servers.use(null);
   }, [account.families, servers]);
   return null;
+}
+
+/** The account this device opens as — or none, on a page that keeps none (`keepsAccounts`): the app is its server's alone there. */
+export function useAccountIfAny(): AccountValue | null {
+  return useContext(AccountContext);
 }
 
 /** This device, and the account it opens as. */

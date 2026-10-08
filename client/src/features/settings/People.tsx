@@ -9,7 +9,8 @@ import { ErrorText } from '../../components/ErrorText';
 import { QrCode } from '../../components/QrCode';
 import { Screen } from '../../components/Screen';
 import { confirmAction } from '../../platform/confirm';
-import { useAccount } from '../../state/AccountProvider';
+import { useAccountIfAny } from '../../state/AccountProvider';
+import { useAuth } from '../../state/AuthProvider';
 import { useFamily } from '../../state/FamilyProvider';
 import { useServers } from '../../state/ServersProvider';
 
@@ -32,23 +33,26 @@ const STATUS_WORDS: Record<InvitationView['status'], string> = { open: 'Not take
 
 export function People() {
   const { api, role } = useFamily();
-  const { account, personal, reload } = useAccount();
+  const kept = useAccountIfAny();
+  const auth = useAuth();
+  // Who you are here: this browser's account, or — on a page that keeps none — the person the server signed in.
+  const myId = kept?.account.personId ?? auth.state?.user?.id ?? null;
   const { active } = useServers();
   const [people, setPeople] = useState<PersonView[] | null>(null);
   const [invitations, setInvitations] = useState<InvitationView[]>([]);
   const [problem, setProblem] = useState<string | null>(null);
-  const me = people?.find((person) => person.id === account.personId) ?? null;
+  const me = people?.find((person) => person.id === myId) ?? null;
   const admin = me?.member?.role === 'admin';
 
   const load = useCallback(async () => {
     try {
       const members = await api.people.list();
       setPeople(members);
-      if (members.find((person) => person.id === account.personId)?.member?.role === 'admin') setInvitations(await api.people.invitations());
+      if (members.find((person) => person.id === myId)?.member?.role === 'admin') setInvitations(await api.people.invitations());
     } catch (err) {
       setProblem(describeError(err) || 'The family’s people could not be read');
     }
-  }, [account.personId, api]);
+  }, [myId, api]);
   useEffect(() => void load(), [load]);
 
   const doing = async (work: () => Promise<unknown>, failed: string) => {
@@ -74,9 +78,13 @@ export function People() {
     setProblem(null);
     try {
       const family = await api.family();
-      await api.people.erase(account.personId);
-      await personal.leaveFamily(account.personId, family.id);
-      await reload();
+      if (!myId) return;
+      await api.people.erase(myId);
+      // This browser's account lets go of the family; on a page that keeps none, the session goes with the person.
+      if (kept) {
+        await kept.personal.leaveFamily(kept.account.personId, family.id);
+        await kept.reload();
+      } else await auth.logOut();
     } catch (err) {
       setProblem(describeError(err) || 'You could not leave');
     }
@@ -95,10 +103,10 @@ export function People() {
                 {index ? <RowSeparator /> : null}
                 <Row
                   leading={<YStack width={14} height={14} borderRadius={7} backgroundColor={(person.member?.color ?? '$borderColor') as never} />}
-                  title={`${person.shownAs}${person.id === account.personId ? ' (you)' : ''}`}
+                  title={`${person.shownAs}${person.id === myId ? ' (you)' : ''}`}
                   subtitle={[person.member ? ROLE_WORDS[person.member.role] : null, person.shownAs !== person.name ? person.name : null, person.keys.length ? null : 'No device of their own yet'].filter(Boolean).join(' · ')}
                 />
-                {admin && person.member && person.id !== account.personId ? (
+                {admin && person.member && person.id !== myId ? (
                   <XStack paddingHorizontal="$4" paddingBottom="$3" gap="$2" flexWrap="wrap" alignItems="center">
                     <Chips label={`${person.shownAs}'s role`} options={ROLES} value={person.member.role} onChange={(next) => void doing(() => api.people.update(person.id, { role: next }), 'Their role could not be changed')} />
                     <Button size="$3" minHeight={44} chromeless color="$danger" onPress={() => void forget(person)}>
