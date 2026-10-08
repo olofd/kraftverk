@@ -30,16 +30,17 @@ the owner's Forgejo checks it and deploys it onto the server it runs on
 empty: the core names no product, and every device is found, not listed.
 
 - **The world model** ([PLAN-WORLD-MODEL.md](PLAN-WORLD-MODEL.md), the work
-  in [PLAN-WORLD-MODEL-WORK.md](PLAN-WORLD-MODEL-WORK.md)): **W1, W2 and W3
+  in [PLAN-WORLD-MODEL-WORK.md](PLAN-WORLD-MODEL-WORK.md)): **W1 to W4
   are built**.
   - Every id is a prefix and a ULID.
   - Who did something is one actor shape everywhere.
   - A server's sign-ins live in `node.db`, apart from the family's database.
   - The root is the **family**, with **homes** inside it, each a place with
     its own clock, and an automation for one of them.
-  - Configuration version 11 holds the family and its homes, their
-    spaces, openings, where each device stands, labels, and its people
-    with their own shortcuts.
+  - Configuration version 12 holds the family and its homes, their
+    spaces, openings, where each device stands, labels, zones, and its
+    people with their own shortcuts and what each shares; who each device
+    is with.
   - Pictures are kept by their content.
   - Each home is a tree of **spaces** (buildings, floors, rooms) with
     **openings** between them; a device's **placement** is kept as
@@ -58,8 +59,15 @@ empty: the core names no product, and every device is found, not listed.
     back. Shortcuts are each person's own; a person says their own name and
     picture, and can be forgotten (`people.erase`). What was left for later
     is listed under W3 in the work plan.
+  - **Where everyone is** (W4): zones beside homes; who carries, drives,
+    owns and uses each device; what each person shares (precise, places,
+    home-away, off) and how long their stays are kept. Presence opens and
+    closes stays from the freshest position of what each carries, and the
+    master answers every route — views, trails, the live stream, the
+    assistant, automations — only as far as each shares. The family's map
+    and a person's page; an inbox per person, and web push from the server.
 
-  Next is W4: who carries what, and where everyone is.
+  Next is W5: things that move.
 
 - **The shared core** ([PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md)): the
   home is one hub (`@kraftverk/hub`) behind one interface (`KraftverkApi`),

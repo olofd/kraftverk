@@ -19,7 +19,7 @@ and check a file with the same code.
 
 ```yaml
 # yaml-language-server: $schema=http://<your server>/api/config/schema.json
-kraftverk: 11                     # the document's version: required
+kraftverk: 12                     # the document's version: required
 
 family: { name: The Examples, kind: family, locale: en-GB }
 
@@ -460,6 +460,7 @@ nothing wrong — and write back the same.
 | 9 | A device may say how long where it has been is kept: `track: 30 days`, 1 to 366. Where it was is never in the file. Nothing older says so, so nothing changes |
 | 10 | A family and its homes (docs/PLAN-WORLD-MODEL.md): `family:` (name, kind, locale) and `homes:`, each by key with its name, type, location and geofence, time zone, address, country and policy. An automation may say the `home:` it is for, and `clock:` only for a clock of its own. Version 9's `home:` becomes the first home, `home`; an automation that said no clock keeps the home's. Added since, with nothing to migrate — every version-10 file reads as it did: a home's `spaces:` and `openings:`, a device's `place:` or `based:`, and `labels:`; `people:` |
 | 11 | Shortcuts are each person's own: `shortcuts:` under a person, automations by key in order. An automation has no `home page:`; version 10's become every person's shortcuts, in their places — a file with no people keeps none |
+| 12 | The family's zones (`zones:`, each by key with its name and location), who a device is with (a device's `people:` — carries, drives, owns, uses — by the people's keys) and what a person shares (`sharing: { level, keep }`). Nothing older says them, so nothing changes |
 
 **An integration's own entries.** A change to what a type is reached by —
 a way it no longer has — is not the document's shape, but a home kept

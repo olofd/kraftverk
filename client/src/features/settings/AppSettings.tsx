@@ -9,6 +9,7 @@ import { AddDevice } from '../account/AddDevice';
 import { YourAccount } from '../account/YourAccount';
 import { Screen } from '../../components/Screen';
 import { keepsAccounts } from '../../state/AccountProvider';
+import { NotificationSettings } from '../notifications/Notifications';
 import { useAuth } from '../../state/AuthProvider';
 import { useDevices } from '../../state/DevicesProvider';
 import { useFamily } from '../../state/FamilyProvider';
@@ -51,6 +52,7 @@ export function AppSettings() {
           </Card>
         </YStack>
       )}
+      <NotificationSettings />
       <YStack gap="$2">
         <SectionLabel>Infrastructure</SectionLabel>
         <Card inset>

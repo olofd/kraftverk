@@ -19,6 +19,7 @@ import {
   ShortcutStore,
   DevicePeopleStore,
   PresenceStore,
+  NotificationStore,
   FamilyStore,
   NodeStore,
   ConnectionStore,
@@ -51,6 +52,7 @@ import { HeldReadings } from '../nodes/held-readings.ts';
 import { ChangeLog } from '../history/changes.ts';
 import { Sampler } from '../history/sampler.ts';
 import { Presence } from '../presence/presence.ts';
+import type { PushSender } from '../notifications/notify.ts';
 import { positionHidden } from '../presence/levels.ts';
 import { startTransports, type Installed } from '../installed/from.ts';
 import { KeepingCopy } from '../handover/keep.ts';
@@ -76,6 +78,8 @@ export type HubOptions = {
    * refused — every pause that protects a relay is that much shorter too.
    */
   clock?: Clock;
+  /** How this place wakes an app with a notification: the server's web push. None on a phone. */
+  push?: PushSender;
   /** Frames nobody has described may be sent, by a type's raw-frame tool. Never in an app. */
   allowRawFrames?: boolean;
   /** For a setup helper that calls a vendor's API once — fetching a key. */
@@ -178,6 +182,10 @@ export class Hub {
   readonly sampler: Sampler;
   /** Where each member is: their stays at the family's homes and zones, from what they carry. */
   readonly stays: PresenceStore;
+  /** What each person is told: their inbox, and where their apps are woken. */
+  readonly notifications: NotificationStore;
+  /** How this place wakes an app with a notification; none where nothing sends a push. */
+  readonly push: PushSender | null;
   readonly presence: Presence;
   readonly changeLog: ChangeLog;
   /** What the people using it are looking at, said by their apps. */
@@ -285,8 +293,10 @@ export class Hub {
     this.views = new DeviceViews({ catalog, types, sessions, connections, links, nodes, transports, heldReadings: this.heldReadings, self: self.id, master: () => this.family.get()!.masterId, readOnly: options.readOnly, placement: (id) => this.spaces.placement(id), labels: (id) => this.labels.on({ device: id }).map((label) => label.id), people: (id) => this.devicePeople.of(id) });
     this.ignored = new IgnoredSightings(this.db);
     this.nearby = new Nearby({ types, protocols, transports, connections, catalog, sessions, ignored: this.ignored });
-    this.sampler = new Sampler({ history: this.history, audit: this.audit, events, tracks: this.tracks }, this.views, (deviceId) => positionHidden(this, deviceId, null));
+    this.notifications = new NotificationStore(db);
+    this.sampler = new Sampler({ history: this.history, audit: this.audit, events, tracks: this.tracks, notifications: this.notifications }, this.views, (deviceId) => positionHidden(this, deviceId, null));
     this.stays = new PresenceStore(db);
+    this.push = options.push ?? null;
     this.presence = new Presence({ people: this.people, devicePeople: this.devicePeople, places: this.places, stays: this.stays, views: this.views, bus: this.bus, clock: options.clock });
     this.changeLog = new ChangeLog(this.history, this.bus, (id) => {
       const device = catalog.active(id);

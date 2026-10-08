@@ -13,7 +13,8 @@
     },
     "client": {
       // The worker is bundled by scripts/build-home-worker.mjs; the shim is resolved in metro.config.js.
-      "entry": ["app/**/*.tsx", "src/platform/home/worker.ts", "shims/*.ts", "scripts/*.mjs"],
+      // The service worker is loaded by the browser from /sw.js (platform/push.web.ts), never imported.
+      "entry": ["app/**/*.tsx", "src/platform/home/worker.ts", "shims/*.ts", "scripts/*.mjs", "public/sw.js"],
       // @babel/core: what Expo's Babel preset runs on. expo-updates: assumed by knip's Expo plugin; not used.
       "ignoreDependencies": ["@babel/core", "expo-updates"]
     },

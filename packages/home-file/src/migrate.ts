@@ -13,7 +13,7 @@
 import type { FileMigration, FileTypes } from '@kraftverk/device-sdk';
 
 /** The version this kraftverk writes. */
-export const CURRENT_VERSION = 11;
+export const CURRENT_VERSION = 12;
 
 /** Each version's document, as data, made into the next version's. */
 export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unknown>) => Record<string, unknown>>> = {
@@ -34,6 +34,8 @@ export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unkno
   9: (document) => homesFromHome(document),
   // Version 11 keeps shortcuts per person: an automation's `home page:` becomes everyone's shortcut to it.
   10: (document) => shortcutsPerPerson(document),
+  // Version 12 may say the family's zones (`zones:`), who a device is with (`people:`) and what a person shares (`sharing:`): nothing older does, so nothing changes.
+  11: (document) => document,
 };
 
 /**

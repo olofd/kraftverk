@@ -419,6 +419,35 @@ see the same devices.
 
 ## W4. Who carries what, and where everyone is
 
+**Built, 2026-10-09** (commits W4.1 to W4.7). What building it changed:
+
+- **Zones are places** as homes are (`z-`), always somewhere, archived when
+  let go; in the file as `zones:`, and on their own page in the app.
+- **Who a device is with** — carries, drives, owns, uses — are intervals;
+  one who leaves the family is with none of its devices. The app asks who
+  carries one that says where it is, and whose any device is.
+- **Sharing is by the person, not the membership**, so one waiting to be
+  let in has chosen already. Never set: places, 90 days. A child is shown
+  what an admin chose.
+- **Presence** (`packages/hub/src/presence`) looks every 15 s on the home's
+  clock and at once when a carried device reports; leaving takes five
+  minutes out, beyond what the position is unsure of. Stays below
+  `places` keep homes only; at `off`, nothing.
+- **The levels are enforced on the master** in every view, the list, a
+  trail, the live stream, the assistant's world and what an automation
+  reads (`presence/levels.ts`); `levels.test.ts` asks each route as each
+  kind of reader at each level. Below `precise` nothing of a carried
+  device's position is kept: no trail, no kept last reading.
+- **A node that holds a carried device itself** — an app reaching a tag
+  over Bluetooth — shows what it reads to whoever uses that app: the
+  master's guarantee is for what it answers.
+- **Notifications** are an inbox per person and web push from the server
+  (RFC 8291 and 8292, no library), a service worker in the web app. APNs
+  and FCM wait for a native build. Nothing sends one on its own yet: W7's
+  automations do.
+- **The configuration file is version 12** (zones, a device's people, a
+  person's sharing).
+
 - **`device_person`, and zones.** In the app: "who carries it" on a
   device, and a family's zones on a map.
 - **Presence,** in `packages/hub` (`presence/`), as pure rules over

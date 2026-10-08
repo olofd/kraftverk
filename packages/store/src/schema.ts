@@ -709,6 +709,42 @@ export const SCHEMA = `
   CREATE INDEX presence_stay_place ON presence_stay (place_id, since);
 
   /*
+    What a person is told (docs/PLAN-WORLD-MODEL.md §8.14): their inbox, by
+    whom, delivered and read or not. Kept 90 days.
+  */
+  CREATE TABLE notification (
+    id           TEXT PRIMARY KEY,
+    person_id    TEXT NOT NULL REFERENCES person (id),
+    /* The home it is about, if one. */
+    home_id      TEXT REFERENCES home (id),
+    level        TEXT NOT NULL CHECK (level IN ('info', 'warning', 'alarm')),
+    title        TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 120),
+    body         TEXT CHECK (length(body) <= 1000),
+    /* Who said it: an automation, a device's event, a person. */
+    actor_kind   TEXT NOT NULL CHECK (actor_kind IN ('person', 'agent', 'automation', 'node', 'integration', 'system')),
+    actor_id     TEXT,
+    actor_name   TEXT NOT NULL,
+    at           TEXT NOT NULL,
+    delivered_at TEXT,
+    read_at      TEXT
+  );
+  CREATE INDEX notification_person ON notification (person_id, at);
+
+  /*
+    Where one app — a node — can be woken with a message, and whose app it
+    is: its push subscription, replaced as the platform renews it. A secret
+    in effect: whoever has it can wake that app.
+  */
+  CREATE TABLE push_endpoint (
+    node_id    TEXT PRIMARY KEY,
+    person_id  TEXT NOT NULL REFERENCES person (id),
+    provider   TEXT NOT NULL CHECK (provider IN ('webpush', 'apns', 'fcm')),
+    token      TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX push_endpoint_person ON push_endpoint (person_id);
+
+  /*
     Each person's own shortcuts on their home page (docs/PLAN-WORLD-MODEL.md
     §8.3): the automations they start from it, in their order. A person's
     own, never the family's; an automation deleted, or a person erased,

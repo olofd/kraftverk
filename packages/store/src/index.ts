@@ -32,6 +32,7 @@ export * from './invitations.ts';
 export * from './shortcuts.ts';
 export * from './device-people.ts';
 export * from './presence.ts';
+export * from './notifications.ts';
 export * from './personal.ts';
 export * from './media.ts';
 export * from './device-store.ts';

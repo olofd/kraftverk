@@ -136,6 +136,10 @@ export function HomeScreen() {
             <Row title="Where everyone is" subtitle="Your family on the map, as far as each shares" accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />} />
           </Pressable>
           <RowSeparator />
+          <Pressable onPress={() => router.push(PATHS.notifications)}>
+            <Row title="Notifications" subtitle="What kraftverk has told you" accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />} />
+          </Pressable>
+          <RowSeparator />
           <Pressable onPress={() => router.push(PATHS.devices.add())}>
             <Row
               title="Add a device"

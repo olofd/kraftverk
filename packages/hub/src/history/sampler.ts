@@ -1,7 +1,7 @@
 import type { SeriesPoint } from '@kraftverk/api-contract';
 import { isCurrent, isPosition, keepsHistory, partOf, type AttributeSpec, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
 
-import type { AuditLog, EventStore, HistoryStore, Sample, TrackStore } from '@kraftverk/store';
+import type { AuditLog, EventStore, HistoryStore, NotificationStore, Sample, TrackStore } from '@kraftverk/store';
 
 import type { DeviceViews } from '../devices/views.ts';
 import { unref } from '../timers.ts';
@@ -61,6 +61,8 @@ const every = (ms: number, what: string, job: () => void): ReturnType<typeof set
 };
 /** How far back each roll-up looks: late readings from a node that was away land in hours already rolled up. */
 const ROLLUP_WINDOW_MS = 48 * 3_600_000;
+/** How long what a person was told is kept. */
+const NOTIFICATION_DAYS = 90;
 /** Spans longer than this are drawn from the hourly roll-ups. */
 const HOURLY_ABOVE_HOURS = 48;
 
@@ -70,7 +72,7 @@ export class Sampler {
   #rollupTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
-    private readonly kept: { history: HistoryStore; audit: AuditLog; events: EventStore; tracks: TrackStore },
+    private readonly kept: { history: HistoryStore; audit: AuditLog; events: EventStore; tracks: TrackStore; notifications?: NotificationStore },
     private readonly views: DeviceViews,
     private readonly positionHidden: (deviceId: string) => boolean = () => false
   ) {}
@@ -129,6 +131,8 @@ export class Sampler {
     this.kept.audit.prune(daysBefore(now, TIMELINE_DAYS));
     // What a device said happened is kept as long as what was done to it.
     this.kept.events.prune(daysBefore(now, TIMELINE_DAYS));
+    // What people were told, after 90 days.
+    this.kept.notifications?.prune(daysBefore(now, NOTIFICATION_DAYS));
   }
 }
 

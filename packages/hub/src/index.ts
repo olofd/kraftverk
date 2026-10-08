@@ -33,3 +33,4 @@ export * from './follower/follower.ts';
 export * from './personal/personal.ts';
 export { acceptInvitation } from './people/join.ts';
 export * from './node/lead.ts';
+export type { PushSender } from './notifications/notify.ts';

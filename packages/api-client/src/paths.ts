@@ -23,6 +23,7 @@
     /integrations/<id>/gateways/<gateway>   or a gateway
     /problems
     /family[/<person>]                      where everyone is, and one person
+    /notifications                          your inbox
     /settings[/accounts|/connectivity|/configuration|/server-log|/maps|/homes[/<id>]|/zones[/<id>]|/labels|/people|/join]
 
   Built here and nowhere else: a screen asks for an address, it never
@@ -50,6 +51,9 @@ export type SetupFrom = { method?: string; address?: string; through?: string; a
 
 export const PATHS = {
   home: '/',
+
+  /** What you were told: your inbox. */
+  notifications: '/notifications',
 
   family: {
     /** Where everyone is: the family's map, and each in words. */

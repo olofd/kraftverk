@@ -13,6 +13,7 @@ import {
   type HomeView,
   type ZoneView,
   type PresenceView,
+  type NotificationView,
   type LabelView,
   type InvitationView,
   type PersonView,
@@ -303,6 +304,14 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
     },
     presence: {
       list: async () => (await get<{ presence: PresenceView[] }>('/presence')).presence,
+    },
+    notifications: {
+      list: async () => (await get<{ notifications: NotificationView[] }>('/notifications')).notifications,
+      read: async (id) => void (await call('POST', '/notifications/read', { id })),
+      pushKey: async () => (await get<{ key: string | null }>('/notifications/push-key')).key,
+      keepPushEndpoint: async (nodeId, subscription) => void (await call('PUT', `/notifications/endpoints/${encodeURIComponent(nodeId)}`, subscription)),
+      forgetPushEndpoint: async (nodeId) => void (await call('DELETE', `/notifications/endpoints/${encodeURIComponent(nodeId)}`)),
+      test: () => call('POST', '/notifications/test'),
     },
     zones: {
       list: async (options = {}) => (await get<{ zones: ZoneView[] }>('/zones', options.removed ? { removed: 'true' } : undefined)).zones,

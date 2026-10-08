@@ -20,6 +20,7 @@ import { installedFromDisk } from './platform/packages.ts';
 import { thisNode } from './platform/node.ts';
 import { serverSecrets } from './platform/secrets.ts';
 import { ConfigSnapshot } from './platform/snapshot.ts';
+import { webPush } from './platform/webpush.ts';
 
 /*
   The server process: everything that starts something.
@@ -127,6 +128,8 @@ const hub = createHub({
   clock: scaledClock(config.clockRate),
   http: scopedHttp,
   node: thisNode(database, besideDatabase(config, 'node-id')),
+  // Notifications pushed to people's browsers: this server's key, kept beside its database; who to contact about them, as push services ask.
+  push: webPush(besideDatabase(config, 'push', 'vapid.json'), process.env.PUSH_CONTACT ?? 'mailto:push@kraftverk.invalid'),
 });
 if (config.clockRate > 1) console.log(`CLOCK: the home's time runs ${config.clockRate} times real time.`);
 

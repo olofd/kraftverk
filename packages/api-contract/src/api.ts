@@ -11,7 +11,7 @@ import type { ConfigExported, ConfigExportRequest, ConfigSnapshotView, ImportAns
 import type { MapRegionAsk, MapRegionsView } from './map.ts';
 import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DevicePeople, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, FamilyElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
-import type { FoundFamily, InvitationInput, InvitationMade, InvitationView, Joined, MemberChanges, PersonView, SharingChanges, SharingLevel, PresenceView } from './people.ts';
+import type { FoundFamily, InvitationInput, InvitationMade, InvitationView, Joined, MemberChanges, PersonView, SharingChanges, SharingLevel, PresenceView, NotificationView, WebPushSubscription } from './people.ts';
 import type { HomeInput, HomeView, ZoneInput, ZoneView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView } from './homes.ts';
 import type { MediaData, MediaView, NewMedia } from './media.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, FamilyView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
@@ -265,6 +265,20 @@ export interface KraftverkApi {
     update(id: string, changes: Partial<HomeInput>): Promise<HomeView>;
     /** Left, or moved from: archived, what was recorded there kept. Never its last. */
     remove(id: string): Promise<HomeView>;
+  };
+  /** A person's own notifications (docs/PLAN-WORLD-MODEL.md §8.14): their inbox, and where their apps are woken. */
+  notifications: {
+    /** Their inbox, newest first. */
+    list(): Promise<NotificationView[]>;
+    /** One read — or, null, every one. */
+    read(id: string | null): Promise<void>;
+    /** The public key pushes are signed with, for a browser to subscribe with; null where nothing sends a push. */
+    pushKey(): Promise<string | null>;
+    /** This app — a node, by its id — woken with their notifications at this subscription. */
+    keepPushEndpoint(nodeId: string, subscription: WebPushSubscription): Promise<void>;
+    forgetPushEndpoint(nodeId: string): Promise<void>;
+    /** A test, to themselves: in their inbox, and pushed where it can be. */
+    test(): Promise<NotificationView>;
   };
   /** Where each member is, as far as each shares (docs/PLAN-WORLD-MODEL.md §8.9, §11). */
   presence: {

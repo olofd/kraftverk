@@ -83,6 +83,18 @@ test('what you share of where you are: chosen on People, kept, paused for an hou
   await expect(page.getByText(/shares which place they are at/).first()).toBeVisible();
 });
 
+test('a test notification: sent from App settings, in your inbox not read, and then read', async ({ page }) => {
+  await page.goto('/settings');
+  await page.getByRole('button', { name: 'Send me a test' }).click();
+  // No browser of yours is woken with them in this run: it waits in your inbox.
+  await expect(page.getByRole('status').filter({ hasText: /In your inbox|Sent:/ })).toBeVisible();
+  await page.goto('/notifications');
+  await expect(page.getByText('● A test from kraftverk').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Mark all read' }).click();
+  await expect(page.getByText('● A test from kraftverk')).toHaveCount(0);
+  await expect(page.getByText('A test from kraftverk', { exact: true }).first()).toBeVisible();
+});
+
 test('a zone: added in degrees, listed, renamed on its own page, and let go', async ({ page }) => {
   const name = unique('School');
   await page.goto('/settings/zones');

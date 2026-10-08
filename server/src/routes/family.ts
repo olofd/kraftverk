@@ -48,6 +48,24 @@ export function familyRoutes(deps: AppDeps): Hono {
       location: z.object({ latitude: z.number().finite().min(-90).max(90), longitude: z.number().finite().min(-180).max(180), radius: z.number().finite().min(10).max(50_000) }).strict(),
     })
     .strict();
+  // A person's own notifications: their inbox, where their apps are woken, and a test.
+  api.get('/notifications', async (c) => c.json({ notifications: await familyFor(deps, c).notifications.list() }));
+  api.post('/notifications/read', async (c) => {
+    const { id } = await body(c, z.object({ id: z.string().max(60).nullable() }).strict());
+    await familyFor(deps, c).notifications.read(id);
+    return c.json({ ok: true });
+  });
+  api.get('/notifications/push-key', async (c) => c.json({ key: await familyFor(deps, c).notifications.pushKey() }));
+  api.put('/notifications/endpoints/:node', async (c) => {
+    const subscription = await body(c, z.object({ endpoint: z.string().url().max(1000), expirationTime: z.number().nullable().optional(), keys: z.object({ p256dh: z.string().max(200), auth: z.string().max(100) }).strict() }).strict());
+    await familyFor(deps, c).notifications.keepPushEndpoint(c.req.param('node'), { endpoint: subscription.endpoint, keys: subscription.keys });
+    return c.json({ ok: true });
+  });
+  api.delete('/notifications/endpoints/:node', async (c) => {
+    await familyFor(deps, c).notifications.forgetPushEndpoint(c.req.param('node'));
+    return c.json({ ok: true });
+  });
+  api.post('/notifications/test', async (c) => c.json(await familyFor(deps, c).notifications.test()));
   // Where each member is, as far as each shares: never more.
   api.get('/presence', async (c) => c.json({ presence: await familyFor(deps, c).presence.list() }));
   api.get('/zones', async (c) => c.json({ zones: await familyFor(deps, c).zones.list({ removed: c.req.query('removed') === 'true' }) }));

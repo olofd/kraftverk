@@ -51,6 +51,24 @@ export type PresenceView = {
   places: { id: string; kind: 'home' | 'zone'; name: string; since: string }[];
 };
 
+/** Something a person was told (docs/PLAN-WORLD-MODEL.md §8.14): in their inbox, and pushed to their apps. */
+export type NotificationView = {
+  id: string;
+  /** The home it is about, if one. */
+  homeId: string | null;
+  level: 'info' | 'warning' | 'alarm';
+  title: string;
+  body: string | null;
+  /** Who said it: an automation, a device, a person. */
+  from: { kind: string; id: string | null; name: string };
+  at: string;
+  deliveredAt: string | null;
+  readAt: string | null;
+};
+
+/** A browser's push subscription, as PushManager gives it: where its push service wakes it, and the keys a message is sealed to. */
+export type WebPushSubscription = { endpoint: string; keys: { p256dh: string; auth: string } };
+
 /** What a person changes of their sharing; an admin a child's. */
 export type SharingChanges = { level?: SharingLevel; keepDays?: number; pausedUntil?: string | null };
 

@@ -397,6 +397,14 @@ export function followerApi(h: Follower): KraftverkApi {
     presence: {
       list: () => home.presence.list(),
     },
+    notifications: {
+      list: () => home.notifications.list(),
+      read: (id) => home.notifications.read(id),
+      pushKey: () => home.notifications.pushKey(),
+      keepPushEndpoint: (nodeId, subscription) => home.notifications.keepPushEndpoint(nodeId, subscription),
+      forgetPushEndpoint: (nodeId) => home.notifications.forgetPushEndpoint(nodeId),
+      test: () => home.notifications.test(),
+    },
     zones: {
       list: (options) => home.zones.list(options),
       add: (input) => home.zones.add(input),
