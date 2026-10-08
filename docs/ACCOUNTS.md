@@ -22,6 +22,13 @@ model with sign-up switched on, and one extra piece for reaching stations (see
 
 ## Today
 
+*(Since W3, 2026-10-08, an account is a **person** — an id and a chain of
+statements they sign — kept on their own devices, made in the app with no
+server, locally or with Sign in with Apple. A server's logins each name a
+person, and a person's device signs in by its key. See
+[PLAN-WORLD-MODEL.md](PLAN-WORLD-MODEL.md) §10. What follows is the server
+as it was before, and still is for a login with a password.)*
+
 - Local password accounts, argon2id, cookie sessions. See
   [SECURITY.md](SECURITY.md).
 - Everyone signs in, at home too, for reads as well as writes.

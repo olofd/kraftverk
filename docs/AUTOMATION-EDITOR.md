@@ -149,12 +149,11 @@ CREATE TABLE automation (
   time_zone       TEXT NOT NULL,
   mode            TEXT NOT NULL CHECK (mode IN ('off', 'watch', 'act')),
   recheck_minutes INTEGER CHECK (recheck_minutes IS NULL OR recheck_minutes BETWEEN 1 AND 1440),
-  home_place      INTEGER CHECK (home_place IS NULL OR home_place >= 0),  -- on the home page, and where; NULL: not on it
   looked_at       TEXT,
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
-CREATE UNIQUE INDEX automation_home ON automation (home_place) WHERE home_place IS NOT NULL;
+-- Its place on a home page is each person's own: shortcut (docs/DATA-MODEL.md).
 
 -- A role is filled by a part of a device, or by another automation.
 CREATE TABLE automation_role (
@@ -179,7 +178,7 @@ started_by_run TEXT REFERENCES automation_run (id) ON DELETE SET NULL
 - `automation_trigger` stays, keyed by a trigger's place in the rule.
   Editing the rule already starts its triggers afresh, so a place never
   means two triggers.
-- Every NULL means something: built from nothing; not on the home page; a
+- Every NULL means something: built from nothing; a
   role an automation fills; a run nothing else started.
 - An automation deleted takes with it the roles that would start it. The
   automations that used it then say "a role has nothing to start", as they
@@ -245,7 +244,7 @@ that acts), and `stop` stops. It does not build rules; a person does.
 
 **The home page:**
 - A "Shortcuts" row, before the devices, with each automation put there
-  (`homePlace`, in order).
+  (`homePlace`, in order) — the person's own, never one list for everyone.
 - Each tile shows a play or stop button, the step it is in and the last
   outcome.
 - "Show on the home page" is a switch on the card.

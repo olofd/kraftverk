@@ -30,15 +30,16 @@ the owner's Forgejo checks it and deploys it onto the server it runs on
 empty: the core names no product, and every device is found, not listed.
 
 - **The world model** ([PLAN-WORLD-MODEL.md](PLAN-WORLD-MODEL.md), the work
-  in [PLAN-WORLD-MODEL-WORK.md](PLAN-WORLD-MODEL-WORK.md)): **W1 and W2 are
-  built**.
+  in [PLAN-WORLD-MODEL-WORK.md](PLAN-WORLD-MODEL-WORK.md)): **W1, W2 and W3
+  are built**.
   - Every id is a prefix and a ULID.
   - Who did something is one actor shape everywhere.
   - A server's sign-ins live in `node.db`, apart from the family's database.
   - The root is the **family**, with **homes** inside it, each a place with
     its own clock, and an automation for one of them.
-  - Configuration version 10 holds the family and its homes — and, since
-    W2, their spaces, openings, where each device stands, and labels.
+  - Configuration version 11 holds the family and its homes, their
+    spaces, openings, where each device stands, labels, and its people
+    with their own shortcuts.
   - Pictures are kept by their content.
   - Each home is a tree of **spaces** (buildings, floors, rooms) with
     **openings** between them; a device's **placement** is kept as
@@ -46,8 +47,19 @@ empty: the core names no product, and every device is found, not listed.
     home screen groups devices by room and filters by **label**. A device's
     session asks its own home's place and clock (`ctx.home()`), and the
     gateway its home's values.
+  - **People** (W3): a person is an id and a chain of signed statements
+    (`packages/identity`), their keys on their own devices. An account is
+    made in the app with no server — locally, or with Sign in with Apple
+    (`packages/sign-in/apple`) — with twelve recovery words; the first
+    person founds a family on the phone. At a server, a person signs in by
+    their device's key (a challenge), or by a login that names them.
+    Invitations are a link and a QR code from a server; a second device is
+    linked by two codes; every device lost, the words bring the account
+    back. Shortcuts are each person's own; a person says their own name and
+    picture, and can be forgotten (`people.erase`). What was left for later
+    is listed under W3 in the work plan.
 
-  Next is W3: people.
+  Next is W4: who carries what, and where everyone is.
 
 - **The shared core** ([PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md)): the
   home is one hub (`@kraftverk/hub`) behind one interface (`KraftverkApi`),

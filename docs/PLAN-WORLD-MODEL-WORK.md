@@ -316,6 +316,42 @@ room's history right.
 
 ## W3. People
 
+**Built, 2026-10-08** (commits W3.1 to W3.8). What building it changed:
+
+- **An account works with no server**, made locally or with Sign in with
+  Apple (the owner's ask: Apple is the one provider for now). Providers
+  are packages, `packages/sign-in/*`; the core verifies any OpenID
+  Connect ID token and names none.
+- **A key proves itself when it is added**: the key's own signature over
+  `{ kind: 'kraftverk key', key }` rides in its `key-added` statement.
+  Chains made before that do not check, and are left out where kept.
+- **A device's keys are kept by their key id** (`DeviceKeys`), so a second
+  device makes its key before it is anyone's. On a phone they live in the
+  secure store as software keys; the platform keystore is the upgrade
+  behind the port (world model §10.7).
+- **Invitations need a server.** A family kept on one phone has no door
+  anyone else can knock on, so the People page says so. The *done when*
+  below is met with a server between the two phones, not without one.
+- **A second device** is linked by two codes, one each way, pasted or
+  shared; a device that lost everything comes back with its twelve words
+  and the family's server.
+- **Shortcuts are each person's own** (`shortcut`), and the configuration
+  file, version 11, keeps them under each person. Version 10's one home
+  page becomes everyone's shortcuts.
+- **A person's own name, short name and picture** are said in their chain
+  from App settings; a family that heard an older copy is shown the newer
+  when it is next opened. Nickname and colour stay the family's, set on
+  the People page.
+- **Erasure** (world model §11.6): oneself, or anyone by an admin. They
+  leave, become "Someone who left" in the family and on its timeline, and
+  lose keys, linked identities and shortcuts; at a server their logins and
+  sessions go. The id stays. The last admin is not erased.
+- **Left for later:** Sign in with Apple *at a server* (the server would
+  find provider packages at run time); letting go of a lost device's key
+  from the app; coming back by a provider a family vouches for;
+  `private_place` and `sharing` (W4, where they are used);
+  `person_contact`; managed people in the configuration file.
+
 The step the owner named next. Its order matters: the personal store and
 keys first, since everything else is signed by them.
 

@@ -19,9 +19,19 @@ and check a file with the same code.
 
 ```yaml
 # yaml-language-server: $schema=http://<your server>/api/config/schema.json
-kraftverk: 10                     # the document's version: required
+kraftverk: 11                     # the document's version: required
 
 family: { name: The Examples, kind: family, locale: en-GB }
+
+people:                           # each by a key for the file; who they are is their chain
+  anna-example:
+    id: p-01JA8ZK3Q4R7T9V2W5X6Y8Z0AB
+    name: Anna Example            # for whoever reads it: the chain says it
+    role: admin                   # admin · member · child
+    nickname: Mum                 # what this family calls her
+    color: "#10b981"
+    chain: eyJ…                   # her signed statements, as written: not to be edited
+    shortcuts: [start-charging-the-scooter]   # her own home page, in order
 
 labels:                           # the family's own groupings, by key
   heating: { name: Heating, color: "#f76b15" }
@@ -143,6 +153,15 @@ devices standing in them, and adds or changes by key, never removing: a
 space, an opening or a label the file does not have is left. A device
 without `place:`, or with no `labels:`, is left where it is and as it is —
 one device's YAML in the app says neither.
+
+**People** (docs/PLAN-WORLD-MODEL.md §8.2, §8.3). Each by a key for the
+file, with their id verbatim and their `chain` — who they are, as they
+prove it, nothing private in it — beside what this family calls them,
+their colour and their role, and their own `shortcuts`: automations by
+key, in the order of their home page. A restore checks each chain again,
+takes a newer one than the family has, and leaves out — or, not lenient,
+refuses — one that does not check. Someone with no key of their own yet
+is not written: they have nothing to prove.
 
 ## Rules in words
 
@@ -397,7 +416,7 @@ it goes to must have — or be given one of its own for each.
   — **Form** or **YAML** at the top — the same draft: a change in its YAML
   is read back into the form as soon as it reads right, and saved as the
   form saves it, letting it act asked first. Its YAML may say what the form
-  does not: its mode, clock, keeping it so, its place on the home page. A
+  does not: its mode, clock, keeping it so. A
   role nothing fills yet is written empty (`plug: ~`).
 
 The editor in a browser is CodeMirror with its YAML language: the JSON Schema
@@ -434,7 +453,8 @@ nothing wrong — and write back the same.
 | 7 | As 6; a Zigbee socket is reached through its Tuya gateway, a device of its own (Tuya's migration): one gateway entry per gateway address, its key the one the sockets had, and each socket `via: gateway` by its Zigbee address |
 | 8 | A device may say it is `paused: true`: kept, and not reached, until resumed. Nothing older says so, so nothing changes |
 | 9 | A device may say how long where it has been is kept: `track: 30 days`, 1 to 366. Where it was is never in the file. Nothing older says so, so nothing changes |
-| 10 | A family and its homes (docs/PLAN-WORLD-MODEL.md): `family:` (name, kind, locale) and `homes:`, each by key with its name, type, location and geofence, time zone, address, country and policy. An automation may say the `home:` it is for, and `clock:` only for a clock of its own. Version 9's `home:` becomes the first home, `home`; an automation that said no clock keeps the home's. Added since, with nothing to migrate — every version-10 file reads as it did: a home's `spaces:` and `openings:`, a device's `place:` or `based:`, and `labels:` |
+| 10 | A family and its homes (docs/PLAN-WORLD-MODEL.md): `family:` (name, kind, locale) and `homes:`, each by key with its name, type, location and geofence, time zone, address, country and policy. An automation may say the `home:` it is for, and `clock:` only for a clock of its own. Version 9's `home:` becomes the first home, `home`; an automation that said no clock keeps the home's. Added since, with nothing to migrate — every version-10 file reads as it did: a home's `spaces:` and `openings:`, a device's `place:` or `based:`, and `labels:`; `people:` |
+| 11 | Shortcuts are each person's own: `shortcuts:` under a person, automations by key in order. An automation has no `home page:`; version 10's become every person's shortcuts, in their places — a file with no people keeps none |
 
 **An integration's own entries.** A change to what a type is reached by —
 a way it no longer has — is not the document's shape, but a home kept

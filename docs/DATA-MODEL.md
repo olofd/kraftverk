@@ -343,6 +343,13 @@ erDiagram
   automation ||--o{ labelled : "has"
   home }o--o| media : "is pictured by"
   device }o--o| media : "is pictured by"
+  person ||--o{ person_key : "signs with"
+  person ||--o{ person_identity : "linked"
+  person ||--o| member : "is in the family as"
+  person ||--o{ invitation : "made, or took"
+  person ||--o{ shortcut : "keeps"
+  automation ||--o{ shortcut : "is started from"
+  person }o--o| media : "is pictured by"
   home ||--o{ automation : "is the clock of"
   device ||--o{ device_kv : "remembers"
   device ||--o{ device_reading : "last said"
@@ -473,6 +480,59 @@ erDiagram
     text until "null: now · one open row per device and part"
     text actor_kind "person · … · who placed it, with actor_id and actor_name"
   }
+  person {
+    text id PK "p-01J… · made where they signed up · the same in every family"
+    text name "Anna Example · as their chain says · Someone who left, erased"
+    text short_name "Anna · null: their name"
+    text picture_id FK "the media it is · null"
+    text locale "sv-SE · null: the family's"
+    text managed_by FK "p-… · an admin who keeps them · null"
+    json chain "their signed statements · null: no key of their own yet"
+    text updated_at "their profile's own time: a newer copy replaces an older"
+    text erased_at "null · set when forgotten: the id alone stays"
+  }
+  person_key {
+    text id PK "k-… · the key's thumbprint"
+    text person_id FK "p-…"
+    text kind "device · recovery"
+    json public_key "a P-256 JWK"
+    text device_name "Anna's iPhone · null for a recovery key"
+    text added_with FK "k-… · the key that signed it in · null: their first"
+    text vouched "null: their chain says it · provider:apple · an admin's p-…"
+    text revoked_at "null"
+  }
+  person_identity {
+    text provider PK "apple"
+    text subject PK "what the provider calls them"
+    text person_id FK "p-…"
+    text email "null · when they let it be given"
+  }
+  member {
+    text person_id PK "p-…"
+    text role "admin · member · child · at least one admin, always"
+    text nickname "Mum · what this family calls them · null"
+    text color "#10b981 · one each, among those in it"
+    text joined_at "2026-10-08T12:00:00Z"
+    text invited_by FK "p-… · null"
+    text left_at "null · set when they leave: the row stays for history"
+  }
+  invitation {
+    text id PK "i-…"
+    text role "admin · member · child"
+    text for_name "Grandma · null: anyone with it"
+    text secret_hash "SHA-256 of its secret: the secret is never kept"
+    int needs_approval "1: an admin lets them in"
+    text made_by FK "p-…"
+    text expires_at "a day to thirty after it was made"
+    text used_by FK "p-… · null: not taken"
+    text approved_by FK "p-… · null"
+    text revoked_at "null"
+  }
+  shortcut {
+    text person_id PK "p-… · a person's own, never the family's"
+    text automation_id PK "a-…"
+    int position "0 · its place on their home page"
+  }
   label {
     text id PK "l-…"
     text key "heating · unique: its name in configuration"
@@ -586,7 +646,6 @@ erDiagram
     text time_zone "Europe/Stockholm · the owner's clock"
     text mode "off · watch · act"
     int recheck_minutes "10 · null: never; how often a condition that still holds keeps things so"
-    int home_place "0 · its place among the home page's shortcuts · null: not there"
     text looked_at "when it last looked again · null: not yet"
     text created_at "2026-10-15T08:00:00Z"
   }
@@ -725,29 +784,32 @@ erDiagram
   }
 ```
 
-**A server's own tables.** Accounts are the server's: a phone or a browser
-keeping a home has none, so they are not in the schema every node carries.
-The server keeps them beside the home's in the same file
-([`server/src/auth/schema.ts`](../server/src/auth/schema.ts)), and its
-fingerprint covers both; a reset of the home leaves them alone. A database
-set aside for a new schema hands `users` to the new one, never
-`login_session` (§5).
+**A server's own tables.** Logins are the server's: a phone or a browser
+keeping a family has none, so they are not in the schema every node
+carries. The server keeps them in a database of its own, `node.db` beside
+the family's ([`server/src/auth/schema.ts`](../server/src/auth/schema.ts)),
+set aside only when its own schema changes — and then it hands `login` to
+the new one, never `login_session` (§5). A family's database set aside
+signs nobody out. Each login names the person it is; a person's own device
+signs in by its key, with no login at all.
 
 ```mermaid
 erDiagram
-  users ||--o{ login_session : "has"
-  users {
+  login ||--o{ login_session : "opened"
+  login {
     text id PK "u-2a9c40e1b7d8"
+    text person_id "p-… · the person it is, in the family's database"
     text username UK "olof · unique regardless of case"
     text password_hash "argon2id"
     text created_at "2026-08-01T12:00:00Z"
-    text created_by "null for the first account"
+    text created_by "null for the first login"
     text password_changed_at "2026-08-01T12:00:00Z"
     text last_login_at "2026-09-27T19:30:00Z"
   }
   login_session {
     text token_hash PK "sha-256 of the cookie · the token is never stored"
-    text user_id FK "u-2a9c40e1b7d8"
+    text person_id "p-… · who is signed in"
+    text login_id FK "u-2a9c40e1b7d8 · null: their own key opened it"
     text created_at "2026-09-27T19:30:00Z"
     text last_seen_at "2026-09-27T21:05:00Z"
     text expires_at "2026-10-27T19:30:00Z"
@@ -758,7 +820,17 @@ erDiagram
 
 A node's `account_id` names one of these where the master is a server — the
 account it joined for — and deleting the account forgets the nodes it
-joined; elsewhere it is plain text, null.
+joined; elsewhere it is plain text, null. A person forgotten takes their
+logins and sessions with them.
+
+**What a device keeps of its own accounts.** The personal store
+([`packages/store/src/personal.ts`](../packages/store/src/personal.ts)) is
+a third database, on each device that runs the app, never on a server's
+behalf: `me` — each account on this device, its chain, the id of this
+device's key for it (whose private half the platform keeps), what the
+device is called, whether its recovery words were checked, and the one it
+opens as — and `my_family`, the families each account is in and where
+each one's master is: this device, or a server by its address.
 
 ### What each table is for, traced to the flow
 
@@ -775,6 +847,10 @@ joined; elsewhere it is plain text, null.
 | `place`, `home` | The family's homes — each a place with its geofence, its clock and its address, and what a home has more: its type, its picture, its order. The first is made with the family; one left is archived. Zones come with presence. | with the family; then in App settings › Homes |
 | `space`, `opening` | A home's buildings, floors, rooms, areas, stairs and outdoors, as a tree from its site — the home itself, made with it — and the doors, stairs and windows where they meet, or meet the outside. Removed, a space is archived with what is inside it and its openings; what stood in it moves out to its parent. | on a home's page; from a file |
 | `placement` | Where a device stands — or, one that moves, where it is based — as intervals: placing it closes the open row and opens the next in one transaction, so a reading is the room's it was read in, and a space's history is what stood there while it stood there. | a device's *Where it is*; from a file |
+| `person`, `person_key`, `person_identity` | A person as their own chain says: their profile, the keys they sign with — each device's, and the recovery key their twelve words make — and the sign-in providers they linked. Kept by every family they are in, a newer copy replacing an older; checked statement by statement. Erased, only the id stays. | founding a family, taking an invitation, showing a newer copy |
+| `member` | Being in this family: a role, what it calls them, their colour. Left, the row stays for the history that names them. | founding, an invitation taken or let in; the People page |
+| `invitation` | A one-time secret in a link and a QR code — kept as its hash — taken once by someone showing who they are, in its role at once or once an admin lets them in. | the People page, by an admin |
+| `shortcut` | Each person's own shortcuts on their home page, in their order: an automation's place is never everyone's. | an automation's page; from a file, under each person |
 | `label`, `labelled` | The family's own groupings, on devices, spaces and automations; the home screen filters by one, a label on a space being on what stands in it. Removed, it comes off everything. | App settings › Labels; a device's settings; from a file |
 | `home_setting`, `node_setting` | A home's values (its policy), by home; and what this node settled about the family it keeps — moved to a server, a server's copy brought in. | when set |
 | `media`, `media_data` | Pictures, kept by their content: a home's, a device's own photo. Let go when nothing names one. | when one is added |
