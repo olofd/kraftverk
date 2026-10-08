@@ -9,7 +9,7 @@ import {
   HistoryStore,
   TrackStore,
   HomeSettings,
-  HomeStore,
+  FamilyStore,
   NodeStore,
   ConnectionStore,
   resetDatabase,
@@ -44,9 +44,9 @@ import { KeepingCopy } from '../handover/keep.ts';
 import { nodeParts } from './parts.ts';
 import { SetupService } from '../setup/service.ts';
 
-/** What a home is made from: everything only the place it runs can give it (docs/PLAN-SHARED-CORE.md, phase 5). */
+/** What a family's hub is made from: everything only the place it runs can give it (docs/PLAN-SHARED-CORE.md, phase 5). */
 export type HubOptions = {
-  /** Where the home is kept, its schema current: the place opens it, and sets an older one aside. */
+  /** Where the family is kept, its schema current: the place opens it, and sets an older one aside. */
   database: SqlDatabase;
   /** How a connection's secrets are sealed at rest: the server's key, a phone's secure storage. */
   secrets: SecretsAtRest;
@@ -91,7 +91,7 @@ export type HubOptions = {
 };
 
 /**
- * A kraftverk home, running (README.md): its stores over the database it is
+ * A kraftverk family, running (README.md, docs/PLAN-WORLD-MODEL.md): its stores over the database it is
  * given, one session for every device it holds, the gateway every action
  * goes through, the engine, history, setup, what is near, attention and its
  * configuration — each made here, from what the place gave, and nothing at
@@ -111,8 +111,8 @@ export class Hub {
   // What it keeps.
   readonly audit: AuditLog;
   readonly settings: HomeSettings;
-  /** The home this database keeps, and its master. */
-  readonly home: HomeStore;
+  /** The family this database is, and its master. */
+  readonly family: FamilyStore;
   /** This node: what its database is, and what holds the ways it holds. */
   get self(): NodeRecord {
     return this.nodes.self()!;
@@ -178,7 +178,7 @@ export class Hub {
 
     this.audit = options.audit ?? new AuditLog(db);
     const record = (entry: AuditRecord) => this.audit.record(entry);
-    this.home = new HomeStore(db);
+    this.family = new FamilyStore(db);
     this.events = new EventStore(db);
     this.history = new HistoryStore(db);
     this.tracks = new TrackStore(db);
@@ -220,9 +220,9 @@ export class Hub {
     );
     ({ settings: this.settings, catalog: this.catalog, connections: this.connections, links: this.links, nodes: this.nodes, bus: this.bus, sessions: this.sessions, gateway: this.gateway, setup: this.setup } = parts);
     const { self } = parts;
-    // The home, made the first time, its master this node. A hub is the master of what its database keeps: never a copy another node is the master of.
-    const home = this.home.ensure({ name: 'Home', masterId: self.id });
-    if (home.masterId !== self.id) throw new Error(`This database is kept for another master (${home.masterId}): it is not opened as a home of its own`);
+    // The family, made the first time, its master this node. A hub is the master of what its database keeps: never a copy another node is the master of.
+    const family = this.family.ensure({ name: 'Family', masterId: self.id });
+    if (family.masterId !== self.id) throw new Error(`This database is kept for another master (${family.masterId}): it is not opened as a family of its own`);
     this.policy = { values: () => policyValues(this.settings), set: (name, value) => setPolicyValue(this.settings, name, value) };
     const { catalog, connections, links, nodes, sessions } = this;
 
@@ -230,11 +230,11 @@ export class Hub {
     this.library = new AutomationLibrary(types.contributions(), (message) => this.#log('warn', message));
     // What a package brings to automations comes with its code: when its integration loads.
     this.#stopContributions = types.onContribution((contributed) => this.library.add([contributed]));
-    this.engine = new AutomationEngine({ store: automations, library: this.library, device: homeDevices(catalog, sessions), gateway: this.gateway, record, bus: this.bus, history: this.history, location: () => this.home.get()?.location ?? null, clock: options.clock });
+    this.engine = new AutomationEngine({ store: automations, library: this.library, device: homeDevices(catalog, sessions), gateway: this.gateway, record, bus: this.bus, history: this.history, location: () => this.family.get()?.location ?? null, clock: options.clock });
     this.drafts = drafts({ history: this.history, events, catalog, sessions, library: this.library, engine: this.engine, automations });
 
     this.heldReadings = new HeldReadings(this.history);
-    this.views = new DeviceViews({ catalog, types, sessions, connections, links, nodes, transports, heldReadings: this.heldReadings, self: self.id, master: () => this.home.get()!.masterId, readOnly: options.readOnly });
+    this.views = new DeviceViews({ catalog, types, sessions, connections, links, nodes, transports, heldReadings: this.heldReadings, self: self.id, master: () => this.family.get()!.masterId, readOnly: options.readOnly });
     this.ignored = new IgnoredSightings(this.db);
     this.nearby = new Nearby({ types, protocols, transports, connections, catalog, sessions, ignored: this.ignored });
     this.sampler = new Sampler({ history: this.history, audit: this.audit, events, tracks: this.tracks }, this.views);
@@ -256,7 +256,7 @@ export class Hub {
       engine: this.engine,
       checked: this.drafts.checked,
       policy: this.policy,
-      location: { get: () => this.home.get()?.location ?? null, set: (location) => void this.home.locate(location) },
+      location: { get: () => this.family.get()?.location ?? null, set: (location) => void this.family.locate(location) },
       sealing: options.sealing,
       kept: options.secrets,
       self: self.id,
@@ -310,7 +310,7 @@ export class Hub {
     return { tables, rows };
   }
 
-  /** Everything this home answers (`KraftverkApi`), for one caller: a person, or an assistant acting for one. */
+  /** Everything this family answers (`KraftverkApi`), for one caller: a person, or an assistant acting for one. */
   as(caller: Caller): KraftverkApi {
     return homeApi(this, caller);
   }
@@ -331,5 +331,5 @@ export class Hub {
   }
 }
 
-/** A home, made from what the place gives it: `start()` it, ask it, `stop()` it. */
+/** A family's hub, made from what the place gives it: `start()` it, ask it, `stop()` it. */
 export const createHub = (options: HubOptions): Hub => new Hub(options);

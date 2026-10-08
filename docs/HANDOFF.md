@@ -137,7 +137,7 @@ record — address, name — kept in `localStorage` by
 the app keeps a home of its own — the hub, in its own SQLite: in the app's process on a
 phone, in a worker in a browser (`client/src/platform/home/`) — and holds
 every connection. Every screen asks one interface either way
-(`client/src/state/HomeProvider.tsx`). On
+(`client/src/state/FamilyProvider.tsx`). On
 first run the app probes the build-time default address and adopts the server if
 one answers, so `npm run dev` still just works.
 

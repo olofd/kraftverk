@@ -133,7 +133,7 @@ export class NodeStore {
 
   /** Forgets a node, and every connection it held. Never this database's own, nor the home's master. */
   remove(id: string): void {
-    this.#db.query('DELETE FROM node WHERE id = ? AND self = 0 AND id NOT IN (SELECT master_id FROM home)').run(id);
+    this.#db.query('DELETE FROM node WHERE id = ? AND self = 0 AND id NOT IN (SELECT master_id FROM family)').run(id);
   }
 
   #write(node: NodeDeclaration | Omit<NodeRecord, 'self' | 'accountId'>, how: { accountId: string | null; self: boolean; at?: { created: string; seen: string } }): NodeRecord {

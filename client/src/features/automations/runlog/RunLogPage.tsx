@@ -13,7 +13,7 @@ import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
 import { useTone } from '../../../components/tone';
 import { saveText } from '../../../platform/download';
-import { useHome } from '../../../state/HomeProvider';
+import { useFamily } from '../../../state/FamilyProvider';
 import { dayOf, lasted, OUTCOME } from '../looks';
 import { Empty, Group } from '../page/Group';
 import { Mark as OutcomeMark } from '../page/History';
@@ -38,7 +38,7 @@ const LATE_MS = 2_000;
 const RUNNING_EVERY_MS = 2_000;
 
 export function RunLogPage({ id, runId }: { id: string; runId: string }) {
-  const { api } = useHome();
+  const { api } = useFamily();
   const [log, setLog] = useState<RunLog | null>(null);
   const [automation, setAutomation] = useState<AutomationView | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -335,11 +335,11 @@ export function followerApi(h: Follower): KraftverkApi {
       },
     },
 
-    home: async () => (await h.kept(HEARD.home, () => home.home())).answer,
+    family: async () => (await h.kept(HEARD.family, () => home.family())).answer,
     /** Said on the master, and kept here as it answers: the sun's times here are told by it as well. */
     setHomeLocation: async (location) => {
       const view = await home.setHomeLocation(location);
-      h.heard.keep(HEARD.home, view);
+      h.heard.keep(HEARD.family, view);
       return view;
     },
     timeline: (query) => home.timeline(query),

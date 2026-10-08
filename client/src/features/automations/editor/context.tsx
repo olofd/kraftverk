@@ -5,7 +5,7 @@ import { capitalise, describeExpr, describeSteps, describeTriggers, draftOfRecip
 import { capabilitiesOf, meetsNeed, type CapabilityNeed, type DeviceDescription, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import { useAnswer } from '../../../components/useAnswer';
-import { useHome } from '../../../state/HomeProvider';
+import { useFamily } from '../../../state/FamilyProvider';
 
 /** An automation as it is being built (`@kraftverk/automation`'s draft), and its name. */
 export type Draft = AutomationDraft & { name: string };
@@ -37,7 +37,7 @@ const EditorContext = createContext<EditorKit | null>(null);
 
 /** What the editor needs from the home: the recipes and functions it offers, and the automations a step may start. */
 export function useEditorKit() {
-  const { api } = useHome();
+  const { api } = useFamily();
   const { value, error } = useAnswer(() => Promise.all([api.automations.kit(), api.automations.list()]), [api]);
   return { kit: value?.[0] ?? null, automations: value?.[1] ?? null, error };
 }

@@ -12,7 +12,7 @@ import { useAnswer } from '../../components/useAnswer';
 import { useAttempt } from '../../components/useAttempt';
 import { HERE } from '../../platform/here';
 import { useDevices } from '../../state/DevicesProvider';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 import { useReach } from '../../state/useReach';
 import { Categories } from './Categories';
 import { Finish } from './Finish';
@@ -41,7 +41,7 @@ const adding = (kind: DeviceTypeListing['kind']) => `Add ${kind === 'account' ? 
 
 /** The home's installed types, and whether it can hold each way. */
 function useTypes() {
-  const { api } = useHome();
+  const { api } = useFamily();
   const { value, error } = useAnswer(() => api.deviceTypes().then((list) => list.types), [api], { failure: 'What can be added could not be read' });
   return { types: value ?? null, error };
 }
@@ -114,7 +114,7 @@ export function CategoryScreen({ shelf }: { shelf: Shelf }) {
 export function WaysScreen() {
   const params = useLocalSearchParams<{ type?: string; id?: string; method?: string; address?: string; through?: string; then?: string }>();
   const { devices } = useDevices();
-  const { api, role } = useHome();
+  const { api, role } = useFamily();
   const reach = useReach();
   const { types, error: loadError } = useTypes();
   const { busy, error, attempt } = useAttempt();
@@ -222,7 +222,7 @@ export function WaysScreen() {
 
 export function AgainScreen() {
   const { id, connection } = useLocalSearchParams<{ id: string; connection: string }>();
-  const { api } = useHome();
+  const { api } = useFamily();
   const { busy, error, attempt } = useAttempt();
   const started = useRef(false);
   useEffect(() => {
@@ -276,7 +276,7 @@ const backTo = (path: string) => (router.canGoBack() ? router.back() : router.re
 export function SetupScreen() {
   const params = useLocalSearchParams<{ draft: string; step?: string; attach?: string; address?: string; through?: string; held?: string; then?: string }>();
   const { devices, refresh } = useDevices();
-  const { api } = useHome();
+  const { api } = useFamily();
   const { types } = useTypes();
   const holder: HeldBy = params.held === 'here' ? 'this-node' : 'master';
   const { flow, error: lost } = useFlow(api, params.draft, holder);

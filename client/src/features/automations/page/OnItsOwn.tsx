@@ -6,7 +6,7 @@ import { RowSeparator, SegmentedControl, ToggleRow } from '@kraftverk/ui';
 import { ErrorText } from '../../../components/ErrorText';
 import { useAttempt } from '../../../components/useAttempt';
 import { ask } from '../../../platform/confirm';
-import { useHome } from '../../../state/HomeProvider';
+import { useFamily } from '../../../state/FamilyProvider';
 import { every } from '../looks';
 import { Group } from './Group';
 
@@ -47,7 +47,7 @@ const recheckSays = (minutes: number | null) =>
 
 /** What it does on its own: off, only watching, or acting — keeping things so, and a place on the home page. */
 export function OnItsOwn({ automation, onChanged }: { automation: AutomationView; onChanged: (next: AutomationView) => void }) {
-  const { api } = useHome();
+  const { api } = useFamily();
   const { busy, error: problem, attempt } = useAttempt();
   const onItsOwn = automation.when.length > 0;
   const canKeep = keepsSo(automation.rule);

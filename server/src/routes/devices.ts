@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { connectionId, savedDeviceId } from '@kraftverk/device-sdk';
 
-import { homeFor, type AppDeps, type ConfirmPassword } from './context.ts';
+import { familyFor, type AppDeps, type ConfirmPassword } from './context.ts';
 import { body, query } from './parse.ts';
 
 /*
@@ -29,111 +29,111 @@ export function deviceRoutes(deps: AppDeps, confirm: ConfirmPassword): Hono {
   const id = (raw: string | undefined) => savedDeviceId(raw ?? '');
   const ids = (c: { req: { param(name: string): string | undefined } }) => [id(c.req.param('id')), connectionId(c.req.param('connection') ?? '')] as const;
 
-  api.get('/device-types', async (c) => c.json(await homeFor(deps, c).deviceTypes()));
+  api.get('/device-types', async (c) => c.json(await familyFor(deps, c).deviceTypes()));
 
-  api.get('/devices', async (c) => c.json({ devices: await homeFor(deps, c).devices.list() }));
+  api.get('/devices', async (c) => c.json({ devices: await familyFor(deps, c).devices.list() }));
 
   /** Removed devices, kept with their history: to bring back by adding again, or to delete. */
-  api.get('/devices/removed', async (c) => c.json({ devices: await homeFor(deps, c).devices.removed() }));
+  api.get('/devices/removed', async (c) => c.json({ devices: await familyFor(deps, c).devices.removed() }));
 
-  api.get('/devices/:id', async (c) => c.json(await homeFor(deps, c).devices.get(id(c.req.param('id')))));
+  api.get('/devices/:id', async (c) => c.json(await familyFor(deps, c).devices.get(id(c.req.param('id')))));
 
   api.patch('/devices/:id', async (c) => {
     const changes = await body(c, z.object({ name: z.string().trim().min(1).max(60).optional(), key: z.string().trim().min(1).max(63).optional() }).strict());
-    return c.json(await homeFor(deps, c).devices.update(id(c.req.param('id')), changes));
+    return c.json(await familyFor(deps, c).devices.update(id(c.req.param('id')), changes));
   });
 
   api.delete('/devices/:id', async (c) => {
-    await homeFor(deps, c).devices.remove(id(c.req.param('id')));
+    await familyFor(deps, c).devices.remove(id(c.req.param('id')));
     return c.json({ ok: true });
   });
 
   api.post('/devices/:id/delete-history', async (c) => {
     const { name } = await body(c, z.object({ name: z.string().max(60) }).strict());
-    return c.json({ ok: true, ...(await homeFor(deps, c).devices.deleteHistory(id(c.req.param('id')), name)) });
+    return c.json({ ok: true, ...(await familyFor(deps, c).devices.deleteHistory(id(c.req.param('id')), name)) });
   });
 
   /** Paused, or resumed: kept, and not reached, until resumed. */
   api.put('/devices/:id/paused', async (c) => {
     const { paused } = await body(c, z.object({ paused: z.boolean() }).strict());
-    return c.json(await homeFor(deps, c).devices.setPaused(id(c.req.param('id')), paused));
+    return c.json(await familyFor(deps, c).devices.setPaused(id(c.req.param('id')), paused));
   });
 
   /** Where it has been, kept for so many days, or none of it: null forgets what was kept. */
   api.put('/devices/:id/track', async (c) => {
     const { days } = await body(c, z.object({ days: z.number().int().min(1).max(366).nullable() }).strict());
-    return c.json(await homeFor(deps, c).devices.setTrack(id(c.req.param('id')), days));
+    return c.json(await familyFor(deps, c).devices.setTrack(id(c.req.param('id')), days));
   });
 
   /** Where it has been since a time, while that is kept: never cached, never in an export. */
   api.get('/devices/:id/track', async (c) => {
     const { since } = query(c, z.object({ since: z.iso.datetime({ offset: true }) }).strict());
-    return c.json({ points: await homeFor(deps, c).devices.track(id(c.req.param('id')), since) });
+    return c.json({ points: await familyFor(deps, c).devices.track(id(c.req.param('id')), since) });
   });
 
   /** Which picture it shows: the home says which it has. */
   api.put('/devices/:id/picture', async (c) => {
     const { picture } = await body(c, z.object({ picture: z.string().min(1).max(40) }).strict());
-    return c.json(await homeFor(deps, c).devices.setPicture(id(c.req.param('id')), picture as `type:${number}`));
+    return c.json(await familyFor(deps, c).devices.setPicture(id(c.req.param('id')), picture as `type:${number}`));
   });
 
   api.patch('/devices/:id/attributes', async (c) => {
     const input = await body(c, z.object({ patch: z.record(z.string().max(64), VALUE), confirmation: z.string().max(64).optional() }).strict());
-    const result = await homeFor(deps, c).devices.write(id(c.req.param('id')), input);
+    const result = await familyFor(deps, c).devices.write(id(c.req.param('id')), input);
     return c.json(result, result.outcome === 'verified' || result.outcome === 'unverified' ? 200 : 409);
   });
 
-  api.get('/problems', async (c) => c.json({ problems: await homeFor(deps, c).problems(query(c, LIMITED).limit) }));
-  api.get('/needs-you', async (c) => c.json({ needsYou: await homeFor(deps, c).needsYou() }));
+  api.get('/problems', async (c) => c.json({ problems: await familyFor(deps, c).problems(query(c, LIMITED).limit) }));
+  api.get('/needs-you', async (c) => c.json({ needsYou: await familyFor(deps, c).needsYou() }));
 
-  api.get('/devices/:id/events', async (c) => c.json({ events: await homeFor(deps, c).devices.events(id(c.req.param('id')), query(c, LIMITED).limit) }));
+  api.get('/devices/:id/events', async (c) => c.json({ events: await familyFor(deps, c).devices.events(id(c.req.param('id')), query(c, LIMITED).limit) }));
 
   api.get('/devices/:id/history', async (c) => {
     const asked = query(c, z.object({ key: z.string().min(1).max(64), points: z.coerce.number().int().min(20).max(1000).default(240), ...SPAN }).strict());
-    return c.json(await homeFor(deps, c).devices.history(id(c.req.param('id')), asked));
+    return c.json(await familyFor(deps, c).devices.history(id(c.req.param('id')), asked));
   });
 
   api.get('/devices/:id/changes', async (c) => {
     const asked = query(c, z.object({ key: z.string().min(1).max(64).optional(), ...SPAN }).strict());
-    return c.json(await homeFor(deps, c).devices.changes(id(c.req.param('id')), asked));
+    return c.json(await familyFor(deps, c).devices.changes(id(c.req.param('id')), asked));
   });
 
   api.post('/devices/:id/parts/:part/commands/:capability/:command', async (c) => {
     const input = await body(c, z.object({ args: z.record(z.string().max(64), VALUE), confirmation: z.string().max(64).optional(), reason: z.string().min(1).max(200).optional() }).strict());
-    const result = await homeFor(deps, c).devices.command(id(c.req.param('id')), c.req.param('part'), c.req.param('capability'), c.req.param('command'), input);
+    const result = await familyFor(deps, c).devices.command(id(c.req.param('id')), c.req.param('part'), c.req.param('capability'), c.req.param('command'), input);
     return c.json(result, result.outcome === 'refused' ? 409 : 200);
   });
 
   /** A query a part's capability declares — a forecast's hours — answered in the type it declares. */
   api.post('/devices/:id/parts/:part/queries/:capability/:query', async (c) => {
     const { args } = await body(c, z.object({ args: z.record(z.string().max(64), VALUE).default({}) }).strict());
-    const answer: unknown = await homeFor(deps, c).devices.query(id(c.req.param('id')), c.req.param('part'), c.req.param('capability'), c.req.param('query'), args);
+    const answer: unknown = await familyFor(deps, c).devices.query(id(c.req.param('id')), c.req.param('part'), c.req.param('capability'), c.req.param('query'), args);
     return c.json(answer);
   });
 
   /** A tool that only reads is a GET, its input in the query; one that writes is a POST. */
-  api.get('/devices/:id/tools/:name', async (c) => c.json(await homeFor(deps, c).devices.tool(id(c.req.param('id')), c.req.param('name'), { input: c.req.query(), reading: true })));
+  api.get('/devices/:id/tools/:name', async (c) => c.json(await familyFor(deps, c).devices.tool(id(c.req.param('id')), c.req.param('name'), { input: c.req.query(), reading: true })));
 
   api.post('/devices/:id/tools/:name', async (c) => {
     const request = await body(c, z.object({ input: z.record(z.string().max(64), VALUE).optional(), confirmation: z.string().max(64).optional() }).strict());
-    return c.json(await homeFor(deps, c).devices.tool(id(c.req.param('id')), c.req.param('name'), request));
+    return c.json(await familyFor(deps, c).devices.tool(id(c.req.param('id')), c.req.param('name'), request));
   });
 
   /** Lets devices join a bridge that devices join — a Zigbee coordinator — for a while; 0 stops them. */
   api.post('/devices/:id/join', async (c) => {
     const { seconds } = await body(c, z.object({ seconds: z.number().int().min(0).max(3600) }).strict());
-    return c.json(await homeFor(deps, c).devices.join(id(c.req.param('id')), seconds));
+    return c.json(await familyFor(deps, c).devices.join(id(c.req.param('id')), seconds));
   });
 
   // --- how it is reached ---------------------------------------------------------
 
-  api.post('/devices/:id/connections/:connection/prefer', async (c) => c.json(await homeFor(deps, c).connections.prefer(...ids(c))));
+  api.post('/devices/:id/connections/:connection/prefer', async (c) => c.json(await familyFor(deps, c).connections.prefer(...ids(c))));
 
-  api.delete('/devices/:id/connections/:connection', async (c) => c.json(await homeFor(deps, c).connections.remove(...ids(c))));
+  api.delete('/devices/:id/connections/:connection', async (c) => c.json(await familyFor(deps, c).connections.remove(...ids(c))));
 
   api.put('/devices/:id/connections/:connection/secrets', async (c) => {
     const given = await body(c, z.record(z.string().max(64), z.string().min(1).max(4096)));
-    return c.json(await homeFor(deps, c).connections.setSecrets(...ids(c), given));
+    return c.json(await familyFor(deps, c).connections.setSecrets(...ids(c), given));
   });
 
   api.patch('/devices/:id/connections/:connection', async (c) => {
@@ -143,7 +143,7 @@ export function deviceRoutes(deps: AppDeps, confirm: ConfirmPassword): Hono {
       const refused = await confirm(c, input.yourPassword);
       if (refused) return refused;
     }
-    return c.json(await homeFor(deps, c).connections.setExportable(...ids(c), input.secretsExportable));
+    return c.json(await familyFor(deps, c).connections.setExportable(...ids(c), input.secretsExportable));
   });
 
   return api;

@@ -2,7 +2,7 @@ import { Button, Spinner, Text, YStack } from 'tamagui';
 
 import { Card, haptic, Row } from '@kraftverk/ui';
 
-import type { Opening } from '../state/HomeProvider';
+import type { Opening } from '../state/FamilyProvider';
 import { useServers } from '../state/ServersProvider';
 import { Pressable } from './Pressable';
 

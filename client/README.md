@@ -14,12 +14,12 @@ the server's home and holds what only it can reach, its own Bluetooth.
   home is opened (`src/platform/home`), its preferences, what it is
   (`platform/here.ts`), the platform's dialog, downloads, the servers it
   knows. Every screen asks the home through one interface, `KraftverkApi`
-  (`useHome().api`), whether the home is a server's or its own.
+  (`useFamily().api`), whether the home is a server's or its own.
 - **Does not:** decide anything about a home. What a device is, what the
   gateway allows, how an automation reads, what an import still needs, what
   a step of the add flow comes next: the shared packages say, and the same
   code runs on the server. Nor does it decide behaviour from which node it
-  is: this node's role (`useHome().role`) chooses words — "through your
+  is: this node's role (`useFamily().role`) chooses words — "through your
   server", "from this phone" (`useReach`) — never what a screen does.
 
 ## Where it fits

@@ -5,7 +5,7 @@ import { describeError, type DeviceView } from '@kraftverk/api-client';
 import { Card, haptic, SectionLabel } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 
 /** "3:12": what is left of a countdown, in minutes and seconds. */
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
@@ -32,7 +32,7 @@ function useSecondsLeft(until: string | null): number {
  * it is, then to add. Nothing for a device nothing joins.
  */
 export function Joining({ device, onUntil }: { device: DeviceView; onUntil?: (until: string | null) => void }) {
-  const { api } = useHome();
+  const { api } = useFamily();
   const [until, setUntilHere] = useState<string | null>(device.joins?.until ?? null);
   // Told to the page too: what is behind it is looked at often while devices may join.
   const setUntil = (next: string | null) => {

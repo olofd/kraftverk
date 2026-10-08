@@ -56,7 +56,17 @@ export type NodeView = {
 export type NodeJoin = Pick<NodeView, 'id' | 'name' | 'platform' | 'transports' | 'alwaysOn' | 'reachable' | 'trusted'>;
 
 /** The home: what its people call it, which node is its master, and where it is — null until its people say. */
-export type HomeView = { id: string; name: string; master: NodeId; createdAt: string; location: Coordinates | null };
+export type FamilyView = {
+  id: string;
+  name: string;
+  /** Only the words on screen: "your family", "your household", "your friends", "your group". */
+  kind: 'family' | 'household' | 'friends' | 'other';
+  /** BCP 47: what is said to all of it is said in. */
+  locale: string;
+  master: NodeId;
+  createdAt: string;
+  location: Coordinates | null;
+};
 
 /** One line of the server's own log. */
 export type ServerLogLine = { at: string; level: 'debug' | 'info' | 'warn' | 'error'; text: string };

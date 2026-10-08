@@ -76,7 +76,7 @@ export function metaOf(db: SqlDatabase): Record<string, string> {
  * recreating it here would be a second definition to drift.
  */
 export function resetDatabase(db: SqlDatabase): { tables: string[]; rows: number } {
-  const kept = new Set(['node', 'home', 'meta']);
+  const kept = new Set(['node', 'family', 'meta']);
   const own = new Set([...SCHEMA.matchAll(/CREATE TABLE (\w+)/g)].map((match) => match[1]!).filter((table) => !kept.has(table)));
   const tables = db
     .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")

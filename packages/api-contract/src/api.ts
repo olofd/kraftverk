@@ -8,9 +8,9 @@ import type { Rehearsal, VocabularyView, WorldView } from './assistant.ts';
 import type { AutomationChanges, AutomationDraftView, AutomationKit, AutomationRun, AutomationView, NewAutomation, RunLog } from './automations.ts';
 import type { ConfigExported, ConfigExportRequest, ConfigSnapshotView, ImportAnswers, ImportApplied, ImportPlan } from './configuration.ts';
 import type { MapRegionAsk, MapRegionsView } from './map.ts';
-import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, HomeElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
+import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, FamilyElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
-import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, HomeView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
+import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, FamilyView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
 import type { CheckOutcome, DraftView, FoundAt, FoundView, HeldSetupInput, KeptView, SaveInput, SightingView } from './setup.ts';
 
 /*
@@ -219,7 +219,7 @@ export interface KraftverkApi {
     /** What you have, as a file — its secrets left out, sealed, or plain where allowed. `schemaUrl`: for its first line. */
     export(request: ConfigExportRequest, options?: { schemaUrl?: string }): Promise<ConfigExported>;
     /** What importing a file would do, nothing written. */
-    plan(request: { text: string; mode?: 'merge' | 'replace'; passphrase?: string } | { from: HomeElsewhere; mode?: 'merge' | 'replace' }): Promise<ImportPlan>;
+    plan(request: { text: string; mode?: 'merge' | 'replace'; passphrase?: string } | { from: FamilyElsewhere; mode?: 'merge' | 'replace' }): Promise<ImportPlan>;
     /** A plan applied, with its answers, in one transaction; what it sets acting or removes wants a person's yes. */
     apply(answers: ImportAnswers): Promise<ImportApplied>;
     /** What a home this node keeps beside the one it shows has, to bring in (`plan({ from })`); null when there is none — always, for a server's own home. */
@@ -238,9 +238,9 @@ export interface KraftverkApi {
   /** The words the world is said in: capabilities, meanings, link kinds, recipes, the home's values. */
   vocabulary(): Promise<VocabularyView>;
   /** The home: what its people call it, and which node is its master. */
-  home(): Promise<HomeView>;
+  family(): Promise<FamilyView>;
   /** Where the home is — what sunrise and sunset are told by — or, null, not said. */
-  setHomeLocation(location: Coordinates | null): Promise<HomeView>;
+  setHomeLocation(location: Coordinates | null): Promise<FamilyView>;
   /** The nodes of the home: its master, and every node that follows it. */
   nodes: {
     list(): Promise<NodeView[]>;

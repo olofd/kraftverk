@@ -9,7 +9,7 @@ export const HEARD = {
   deviceTypes: 'device-types',
   transports: 'transports',
   policy: 'policy',
-  home: 'home',
+  family: 'family',
   nodes: 'nodes',
   /** The home as one file: what this node keeps if its master is gone (`handover/keep.ts`). */
   configuration: 'configuration',

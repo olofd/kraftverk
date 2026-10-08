@@ -50,13 +50,19 @@ export const SCHEMA = `
   CREATE UNIQUE INDEX node_self ON node (self) WHERE self = 1;
 
   /*
-    The home this database keeps: one. What every node and device here is
-    part of; and its master — the node whose database is the home's, the
-    one that writes it. Another node follows it, and can take its place.
+    The family this database is (docs/PLAN-WORLD-MODEL.md §8.1): one. The
+    people who share its devices, nodes and homes — a family, a household,
+    friends with a cabin. What every node and device here is part of; and its
+    master — the node whose database is the family's, the one that writes
+    it. Another node follows it, and can take its place.
   */
-  CREATE TABLE home (
+  CREATE TABLE family (
     id         TEXT PRIMARY KEY,
-    name       TEXT NOT NULL,
+    name       TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 60),
+    /* Only the words on screen: "your family", "your household", "your friends", "your group". */
+    kind       TEXT NOT NULL DEFAULT 'family' CHECK (kind IN ('family', 'household', 'friends', 'other')),
+    /* BCP 47: what is said to all of it — an announcement, a speaker. */
+    locale     TEXT NOT NULL,
     master_id  TEXT NOT NULL REFERENCES node (id),
     created_at TEXT NOT NULL,
     /* Where it is, in degrees — what the sun's times are told by. Both null: not said. */

@@ -9,7 +9,7 @@ import { Pressable } from '../../components/Pressable';
 import { useAnswer } from '../../components/useAnswer';
 import { useAuth } from '../../state/AuthProvider';
 import { useDevices } from '../../state/DevicesProvider';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 
 /** How often what waits on you is looked at again, while the home page is seen. */
 const LOOK_AGAIN_MS = 15_000;
@@ -22,7 +22,7 @@ const LOOK_AGAIN_MS = 15_000;
  * is offered beside it, under "Found near you". Nothing when nothing waits.
  */
 export function NeedsYou() {
-  const { api } = useHome();
+  const { api } = useFamily();
   const { allowed } = useAuth();
   const { heard, devices } = useDevices();
   const theme = useTheme();

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { HELD_LIMITS } from '@kraftverk/api-contract';
 import { nodeId, savedDeviceId, type AuditSubject, type DeviceDescription, type DeviceInfo, type Value } from '@kraftverk/device-sdk';
 
-import { HELD_BY, homeFor, RESOURCE_KIND, type AppDeps } from './context.ts';
+import { HELD_BY, familyFor, RESOURCE_KIND, type AppDeps } from './context.ts';
 import { body } from './parse.ts';
 
 /**
@@ -63,7 +63,7 @@ export function followerRoutes(deps: AppDeps): Hono {
         })
         .strict()
     );
-    return c.json(await homeFor(deps, c).setup.startHeld(input));
+    return c.json(await familyFor(deps, c).setup.startHeld(input));
   });
 
   /** Readings the follower took: live ones become the device's state, queued ones go straight into history. */
@@ -106,15 +106,15 @@ export function followerRoutes(deps: AppDeps): Hono {
       // Each value the home holds to its attribute's declared type.
       readings: input.readings.map((reading) => ({ ...reading, value: reading.value as Value })),
     };
-    return c.json(await homeFor(deps, c).held.readings(savedDeviceId(c.req.param('id')), upload));
+    return c.json(await familyFor(deps, c).held.readings(savedDeviceId(c.req.param('id')), upload));
   });
 
   /** The device's own store, which a session keeps between runs. The follower keeps a copy for when it is offline. */
-  api.get('/devices/:id/store', async (c) => c.json({ values: await homeFor(deps, c).held.store(savedDeviceId(c.req.param('id'))) }));
+  api.get('/devices/:id/store', async (c) => c.json({ values: await familyFor(deps, c).held.store(savedDeviceId(c.req.param('id'))) }));
 
   api.put('/devices/:id/store/:key', async (c) => {
     const input = await body(c, z.object({ ...HELD_BY, value: z.unknown() }).strict());
-    await homeFor(deps, c).held.keep(savedDeviceId(c.req.param('id')), c.req.param('key'), input);
+    await familyFor(deps, c).held.keep(savedDeviceId(c.req.param('id')), c.req.param('key'), input);
     return c.json({ ok: true });
   });
 
@@ -142,7 +142,7 @@ export function followerRoutes(deps: AppDeps): Hono {
         })
         .strict()
     );
-    return c.json(await homeFor(deps, c).held.audit(nodeId(c.req.param('id')), entries.map((entry) => entry as typeof entry & AuditSubject)));
+    return c.json(await familyFor(deps, c).held.audit(nodeId(c.req.param('id')), entries.map((entry) => entry as typeof entry & AuditSubject)));
   });
 
   return api;

@@ -10,7 +10,7 @@ import { ConfirmHost } from "../src/components/ConfirmHost";
 import { AuthGate } from "../src/features/auth/AuthGate";
 import { AuthProvider } from "../src/state/AuthProvider";
 import { DevicesProvider } from "../src/state/DevicesProvider";
-import { HomeProvider } from "../src/state/HomeProvider";
+import { FamilyProvider } from "../src/state/FamilyProvider";
 import { ServerMap } from "../src/state/ServerMap";
 import { ServersProvider } from "../src/state/ServersProvider";
 import config, { BACKGROUNDS } from "../tamagui.config";
@@ -40,7 +40,7 @@ export default function RootLayout() {
             <AuthProvider>
               <AuthGate>
                 {/* The home the app shows: a server's, or its own — one interface either way. */}
-                <HomeProvider>
+                <FamilyProvider>
                   <ServerMap>
                     <DevicesProvider>
                       {/*
@@ -53,7 +53,7 @@ export default function RootLayout() {
                       </Stack>
                     </DevicesProvider>
                   </ServerMap>
-                </HomeProvider>
+                </FamilyProvider>
               </AuthGate>
             </AuthProvider>
             {/* Where the app asks for a yes, on the web: above every screen, signed in or not. */}

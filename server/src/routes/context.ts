@@ -44,7 +44,7 @@ export type AppDeps = {
 export type ConfirmPassword = (c: Context, password: string | undefined) => Promise<Response | null>;
 
 /** The home, as the person a request is from asks it. */
-export const homeFor = (deps: Pick<AppDeps, 'hub'>, c: Context): KraftverkApi => {
+export const familyFor = (deps: Pick<AppDeps, 'hub'>, c: Context): KraftverkApi => {
   const account = userOf(c)?.id;
   const caller: Caller = { kind: 'person', name: usernameOf(c), ...(account ? { account } : {}) };
   return deps.hub.as(caller);

@@ -9,7 +9,7 @@ import { DeviceImage } from '../../components/DeviceImage';
 import { Pressable } from '../../components/Pressable';
 import { useAnswer } from '../../components/useAnswer';
 import { useAuth } from '../../state/AuthProvider';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 import { pictureFor } from '../devices/registry';
 
 /** How often what is near is looked at again, while the home page is seen. */
@@ -28,7 +28,7 @@ const foundAt = (entry: FoundView) => ({ transport: entry.transport, through: en
  * ignored: it is listed apart, and can be offered again.
  */
 export function FoundNearYou() {
-  const { api } = useHome();
+  const { api } = useFamily();
   const theme = useTheme();
   const { allowed } = useAuth();
   const [showIgnored, setShowIgnored] = useState(false);

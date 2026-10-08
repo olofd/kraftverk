@@ -9,7 +9,7 @@ import { DeviceImage } from '../../components/DeviceImage';
 import { Pressable } from '../../components/Pressable';
 import { useAnswer } from '../../components/useAnswer';
 import { useDevices } from '../../state/DevicesProvider';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 
 /**
  * A member at a glance: what it says now — "On · 12 W", "23.2 °C · 38 %",
@@ -34,7 +34,7 @@ function summaryOf(member: DeviceView): string {
  */
 export function Members({ device, joiningUntil }: { device: DeviceView; /** Until when devices may join it, as the page knows it: looked at every few seconds until then. */ joiningUntil?: string | null }) {
   const { devices } = useDevices();
-  const { api } = useHome();
+  const { api } = useFamily();
   const theme = useTheme();
   const yours = devices.filter((other) => other.connections.some((connection) => connection.through?.id === device.id));
   // Looked at often while devices may join it: one that joins shows up within seconds.

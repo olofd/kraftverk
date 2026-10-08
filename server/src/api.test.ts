@@ -194,7 +194,7 @@ for (const way of WAYS) {
 
     test('knows its master and the nodes that join it, and forgets one only for its person', async () => {
       const home = way.api();
-      expect(await home.home()).toMatchObject({ master: MACHINE_NODE.id });
+      expect(await home.family()).toMatchObject({ master: MACHINE_NODE.id });
       const browser = await home.nodes.join({ id: nodeId('n-0000000000000000000000BB01'), name: 'A test browser', platform: 'web', transports: [], alwaysOn: false, reachable: false, trusted: false });
       expect((await home.nodes.list()).map((each) => [each.id, each.master])).toEqual([[MACHINE_NODE.id, true], [browser.id, false]]);
       await home.nodes.forget(browser.id);

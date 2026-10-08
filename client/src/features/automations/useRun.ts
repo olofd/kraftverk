@@ -4,7 +4,7 @@ import type { AutomationId } from '@kraftverk/device-sdk';
 import { describeError, type AutomationView } from '@kraftverk/api-client';
 import { triggerAsNext } from '@kraftverk/automation';
 
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 import { haptic } from '@kraftverk/ui';
 
 import { confirmAction } from '../../platform/confirm';
@@ -22,7 +22,7 @@ import { ago, OUTCOME, stopwatch, useNow } from './looks';
  * stopped. Off, it cannot be started, and says so.
  */
 export function useRun(automation: AutomationView, onChanged: (next: AutomationView) => void) {
-  const { api } = useHome();
+  const { api } = useFamily();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const running = automation.running;

@@ -9,7 +9,7 @@ import { ErrorText } from '../../components/ErrorText';
 import { useTone } from '../../components/tone';
 import { YamlEditor } from '../../components/YamlEditor';
 import { useDevices } from '../../state/DevicesProvider';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 import { ExportOne } from './ExportOne';
 import { KeyField } from './KeyField';
 
@@ -22,7 +22,7 @@ import { KeyField } from './KeyField';
 export function DeviceConfig({ device }: { device: DeviceView }) {
   const tone = useTone();
   const { setKey } = useDevices();
-  const { api } = useHome();
+  const { api } = useFamily();
   const [shown, setShown] = useState<ReturnType<typeof deviceYaml> | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);

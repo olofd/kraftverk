@@ -7,7 +7,7 @@ import { ErrorText } from '../../components/ErrorText';
 import { Screen } from '../../components/Screen';
 import { useAnswer } from '../../components/useAnswer';
 import { HERE } from '../../platform/here';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 import { Diagnostics } from './Diagnostics';
 import { Nodes } from './Nodes';
 
@@ -22,7 +22,7 @@ import { Nodes } from './Nodes';
  * transport (§2).
  */
 export function Connectivity() {
-  const { api, role, holding } = useHome();
+  const { api, role, holding } = useFamily();
   const theme = useTheme();
   const { value: list, error } = useAnswer(() => api.transports.list(), [api], { failure: 'It did not say what it can reach' });
   // The home's own, and — with a server — this app's, which it holds the server's ways over.

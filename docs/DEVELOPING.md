@@ -100,7 +100,7 @@ client/                  Expo app (iOS + web)
   app/devices/[id]/      one device: dashboard, settings, tools, parts, its ways
   src/platform/home/     the home, where the app runs: its own, or what it holds for a server — in its process on a phone, in a worker in a browser
   src/platform/          what is the app's own and not a screen: its preferences, its cipher, where it runs
-  src/state/             the home the screens ask (HomeProvider), its devices, the servers
+  src/state/             the home the screens ask (FamilyProvider), its devices, the servers
   src/generated/         the installed packages, bound in by npm run gen:devices
 packages/hub/            a home, running: what is installed, devices' views, setup, history, attention
 server/

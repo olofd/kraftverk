@@ -7,7 +7,7 @@ import { ErrorText } from '../../components/ErrorText';
 import { Screen } from '../../components/Screen';
 import { useAnswer } from '../../components/useAnswer';
 import { useDevices } from '../../state/DevicesProvider';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 
 /**
  * What wants looking at: every warning and error your devices said happened,
@@ -19,7 +19,7 @@ export const PROBLEMS_SHOWN = 100;
 
 export function ProblemsScreen() {
   const { devices, heard } = useDevices();
-  const { api } = useHome();
+  const { api } = useFamily();
 
   const { value: list, error } = useAnswer(() => api.problems(PROBLEMS_SHOWN), [api, heard.count], { failure: 'They could not be read' });
 

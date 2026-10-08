@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { linkId, type LinkKind } from '@kraftverk/device-sdk';
 
-import { homeFor, PART, type AppDeps } from './context.ts';
+import { familyFor, PART, type AppDeps } from './context.ts';
 import { body } from './parse.ts';
 
 /**
@@ -16,11 +16,11 @@ export function linkRoutes(deps: AppDeps): Hono {
 
   api.post('/links', async (c) => {
     const input = await body(c, z.object({ kind: z.string().min(1).max(40), source: PART, target: PART }).strict());
-    return c.json(await homeFor(deps, c).links.add({ ...input, kind: input.kind as LinkKind }));
+    return c.json(await familyFor(deps, c).links.add({ ...input, kind: input.kind as LinkKind }));
   });
 
   api.delete('/links/:id', async (c) => {
-    await homeFor(deps, c).links.remove(linkId(c.req.param('id')));
+    await familyFor(deps, c).links.remove(linkId(c.req.param('id')));
     return c.json({ ok: true });
   });
 

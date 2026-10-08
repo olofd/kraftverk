@@ -13,7 +13,7 @@ import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
 import { useTone } from '../../../components/tone';
 import { confirmAction } from '../../../platform/confirm';
-import { useHome } from '../../../state/HomeProvider';
+import { useFamily } from '../../../state/FamilyProvider';
 import { useShowing } from '../../../state/useShowing';
 import { startsBy } from '../AutomationCard';
 import { AutomationForm } from '../editor/AutomationForm';
@@ -34,7 +34,7 @@ import { OnItsOwn } from './OnItsOwn';
  * the same groups, editable — with Cancel and Save below it.
  */
 export function AutomationPage({ id, edit = null }: { id: string; edit?: 'form' | 'yaml' | null }) {
-  const { api } = useHome();
+  const { api } = useFamily();
   const [automation, setAutomation] = useState<AutomationView | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Being changed — through the form, or as its YAML — is its editor's own address (`PATHS.automations.edit`). */
@@ -213,7 +213,7 @@ function Header({
   onChecked: (run: AutomationRun) => void;
   onRehearsed: (rehearsal: Rehearsal) => void;
 }) {
-  const { api } = useHome();
+  const { api } = useFamily();
   const tone = useTone();
   const run = useRun(automation, onChanged);
   const [menu, setMenu] = useState(false);
@@ -322,7 +322,7 @@ function Header({
 
 /** What it is doing, what it did last, and — opened — everything it has done and every change made to it. */
 function Activity({ automation }: { automation: AutomationView }) {
-  const { api } = useHome();
+  const { api } = useFamily();
   const tone = useTone();
   const [history, setHistory] = useState<History | null>(null);
   const [open, setOpen] = useState(false);

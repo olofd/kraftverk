@@ -11,7 +11,7 @@ import { useTone } from '../../components/tone';
 import { useAttempt } from '../../components/useAttempt';
 import { confirmAction } from '../../platform/confirm';
 import { saveText } from '../../platform/download';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 import { ConfirmWithYours } from '../auth/ConfirmWithYours';
 
 /*
@@ -26,7 +26,7 @@ export type SecretsMode = 'none' | 'sealed' | 'plain';
 
 /** An export as it is made: its secrets' mode and passphrase, the file once made, and making it. */
 export function useExportFile() {
-  const { api, asksYourPassword } = useHome();
+  const { api, asksYourPassword } = useFamily();
   const [mode, chooseMode] = useState<SecretsMode>('none');
   const [passphrase, typePassphrase] = useState('');
   const [yours, setYours] = useState('');

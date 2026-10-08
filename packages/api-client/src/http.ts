@@ -226,7 +226,7 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
     timeline: (query = {}) => get('/audit', query),
     world: () => get('/world'),
     vocabulary: () => get('/vocabulary'),
-    home: () => get('/home'),
+    family: () => get('/family'),
     setHomeLocation: (location) => call('PUT', '/home/location', { location }),
 
     nodes: {

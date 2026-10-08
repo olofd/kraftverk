@@ -5,7 +5,7 @@ import { ApiError, CONFIG_SCHEMA_PATH, type ConfigSnapshotView } from '@kraftver
 import { actor } from '@kraftverk/device-sdk';
 
 import { usernameOf } from '../auth/routes.ts';
-import { homeFor, type AppDeps, type ConfirmPassword } from './context.ts';
+import { familyFor, type AppDeps, type ConfirmPassword } from './context.ts';
 import { body } from './parse.ts';
 
 /*
@@ -24,7 +24,7 @@ export function configurationRoutes(deps: AppDeps, confirm: ConfirmPassword): Ho
     return c.json(deps.hub.configuration.schema());
   });
 
-  api.get('/config/vocabulary', async (c) => c.json(await homeFor(deps, c).configuration.vocabulary()));
+  api.get('/config/vocabulary', async (c) => c.json(await familyFor(deps, c).configuration.vocabulary()));
 
   api.post('/config/export', async (c) => {
     const input = await body(
@@ -49,7 +49,7 @@ export function configurationRoutes(deps: AppDeps, confirm: ConfirmPassword): Ho
       const refused = await confirm(c, yourPassword);
       if (refused) return refused;
     }
-    return c.json(await homeFor(deps, c).configuration.export(request, { schemaUrl: `${new URL(c.req.url).origin}/api${CONFIG_SCHEMA_PATH}` }));
+    return c.json(await familyFor(deps, c).configuration.export(request, { schemaUrl: `${new URL(c.req.url).origin}/api${CONFIG_SCHEMA_PATH}` }));
   });
 
   /** `restored`: the copy the last restore was made from, kept aside — to import again with its answers, when the restore could not do it all. */
@@ -72,12 +72,12 @@ export function configurationRoutes(deps: AppDeps, confirm: ConfirmPassword): Ho
       return c.json(await deps.snapshot.planAgain(input.mode, actor('person', usernameOf(c))));
     }
     // A home kept beside this one: where there is none, the home says so.
-    if (input.from) return c.json(await homeFor(deps, c).configuration.plan({ from: input.from, mode: input.mode }));
-    return c.json(await homeFor(deps, c).configuration.plan({ text: input.text!, mode: input.mode, passphrase: input.passphrase }));
+    if (input.from) return c.json(await familyFor(deps, c).configuration.plan({ from: input.from, mode: input.mode }));
+    return c.json(await familyFor(deps, c).configuration.plan({ text: input.text!, mode: input.mode, passphrase: input.passphrase }));
   });
 
   /** What a home kept beside this one has, to bring in: where there is none, the home says so. */
-  api.get('/config/elsewhere', async (c) => c.json(await homeFor(deps, c).configuration.elsewhere()));
+  api.get('/config/elsewhere', async (c) => c.json(await familyFor(deps, c).configuration.elsewhere()));
 
   api.post('/config/apply', async (c) => {
     const input = await body(
@@ -92,7 +92,7 @@ export function configurationRoutes(deps: AppDeps, confirm: ConfirmPassword): Ho
         })
         .strict()
     );
-    return c.json(await homeFor(deps, c).configuration.apply(input));
+    return c.json(await familyFor(deps, c).configuration.apply(input));
   });
 
   /** The configuration kept beside the database: where, when it was last written, and what restoring it last did. */

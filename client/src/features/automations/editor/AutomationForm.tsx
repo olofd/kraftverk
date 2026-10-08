@@ -15,7 +15,7 @@ import { useTone } from '../../../components/tone';
 import { YamlEditor } from '../../../components/YamlEditor';
 import { ask, confirmAction } from '../../../platform/confirm';
 import { useDevices } from '../../../state/DevicesProvider';
-import { useHome } from '../../../state/HomeProvider';
+import { useFamily } from '../../../state/FamilyProvider';
 import { useAutomationYaml } from '../../config/useAutomationYaml';
 import { Group } from '../page/Group';
 import { BlockList } from './Blocks';
@@ -116,7 +116,7 @@ function Editing({
   onCancel: () => void;
   onView?: (view: View) => void;
 }) {
-  const { api } = useHome();
+  const { api } = useFamily();
   const tone = useTone();
   const editor = useEditor();
   const { draft } = editor;

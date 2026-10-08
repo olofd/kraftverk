@@ -4,7 +4,7 @@ import { holderOf, type DeviceView } from '@kraftverk/api-client';
 import { Icon } from '@kraftverk/ui';
 
 import { useDevices } from '../../state/DevicesProvider';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 import { useReach } from '../../state/useReach';
 
 /**
@@ -14,7 +14,7 @@ import { useReach } from '../../state/useReach';
  */
 export function WhereWritesGo({ device }: { device: DeviceView }) {
   const { screenProps } = useDevices();
-  const { role } = useHome();
+  const { role } = useFamily();
   const { readOnly } = screenProps(device);
   // Which holder is this screen's business, not a device package's: the app says where writes go.
   const holder = holderOf(device);

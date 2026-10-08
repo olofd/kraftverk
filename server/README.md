@@ -44,7 +44,7 @@ src/
   config.ts       everything read from the environment, once; what this server is (name, version)
   log.ts          the console, kept: recent lines for /diagnostics/log, daily files
   routes/
-    context.ts    AppDeps, homeFor (the home as the caller asks it), shapes several routes take
+    context.ts    AppDeps, familyFor (the home as the caller asks it), shapes several routes take
     parse.ts      a body or a query checked against its shape; refused as the home refuses
     server.ts     /health, /version, /diagnostics/log, /admin/reset — the server's own
     home.ts       /home, /nodes, /policy, /audit

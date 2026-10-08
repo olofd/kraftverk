@@ -133,10 +133,10 @@ export type HeldBy = 'master' | 'this-node';
  * copy it kept of the master it followed last, staying with this node. Only
  * an app keeps either: a server's home has neither, and says so.
  */
-export type HomeElsewhere = 'this-node' | 'copy';
+export type FamilyElsewhere = 'this-node' | 'copy';
 
 /** What a home this node keeps beside the one it shows has: what bringing it in would bring. Null when there is none, or it has been brought. */
-export type ElsewhereView = { from: HomeElsewhere; devices: number; automations: number } | null;
+export type ElsewhereView = { from: FamilyElsewhere; devices: number; automations: number } | null;
 
 /**
  * One way a type can be added: its method, which node would hold it, whether

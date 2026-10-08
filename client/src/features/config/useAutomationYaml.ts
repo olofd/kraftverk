@@ -8,7 +8,7 @@ import { entryJsonSchema } from '@kraftverk/home-file';
 
 import type { TextProblem } from '../../components/ProblemList';
 import { useAnswer } from '../../components/useAnswer';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 
 /** What the form edits: its name, rule, and what fills each role. */
 type Draft = { name: string; rule: Rule } & RoleFills;
@@ -38,7 +38,7 @@ export function useAutomationYaml({
   /** What it read: the draft and settings — and the key a whole file pasted in gives it, when it differs. */
   onRead: (read: { draft: Draft; settings: AutomationSettings; key: string | null; madeFrom: string | null }) => void;
 }) {
-  const { api } = useHome();
+  const { api } = useFamily();
   // What a file may name here — the installed types, the keys of what you have — read once.
   const { value: vocabulary, error } = useAnswer(() => api.configuration.vocabulary(), [api], { failure: 'What a configuration may name could not be read' });
   const [text, setText] = useState('');

@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, type HomeView } from '@kraftverk/api-client';
+import { describeError, type FamilyView } from '@kraftverk/api-client';
 import { sunTimes, type Coordinates } from '@kraftverk/automation';
 import { clockTime, localTime } from '@kraftverk/device-sdk';
 import { Card, formatCoordinates, haptic, Row, SectionLabel } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 
 /** The time zone this app keeps time in: what today's sunrise and sunset are shown on. */
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -33,14 +33,14 @@ const degrees = (typed: string, most: number): number | null => {
  * soon as it is, so a mistake shows.
  */
 export function HomeLocation() {
-  const { api } = useHome();
-  const [home, setHome] = useState<HomeView | null>(null);
+  const { api } = useFamily();
+  const [home, setHome] = useState<FamilyView | null>(null);
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   useEffect(() => {
     void api
-      .home()
+      .family()
       .then(setHome)
       .catch(() => undefined);
   }, [api]);

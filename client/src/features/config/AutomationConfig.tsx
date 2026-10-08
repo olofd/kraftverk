@@ -8,7 +8,7 @@ import { haptic, Icon, RowSeparator } from '@kraftverk/ui';
 import { ErrorText } from '../../components/ErrorText';
 import { useTone } from '../../components/tone';
 import { YamlEditor } from '../../components/YamlEditor';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 import { Group } from '../automations/page/Group';
 import { ExportOne } from './ExportOne';
 import { KeyField } from './KeyField';
@@ -20,7 +20,7 @@ import { KeyField } from './KeyField';
  * write it so instead of through the form; and an export of it alone.
  */
 export function AutomationConfig({ automation, onChanged, onEditYaml }: { automation: AutomationView; onChanged: (next: AutomationView) => void; onEditYaml: () => void }) {
-  const { api } = useHome();
+  const { api } = useFamily();
   const tone = useTone();
   const [shown, setShown] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);

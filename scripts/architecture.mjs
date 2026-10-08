@@ -499,6 +499,30 @@ function measure() {
   return { imports, leaks, placement };
 }
 
+// --- the words of the world model ---------------------------------------------------
+
+/*
+  The root is the family (docs/PLAN-WORLD-MODEL.md §4): "home" means a
+  property inside it, never the database, its master or what it answers. The
+  names the root had before can never come back.
+*/
+const OLD_ROOT_NAMES = /\b(HomeStore|HomeRecord|HomeView|HomeElsewhere|HomeWideApi|homeWideApi|homeRoutes|homeFor|HomeProvider|HomeValue|HomeOpening|homeKept)\b|\buseHome\b(?!Place)|CREATE TABLE home\b/;
+
+function oldRootNames() {
+  return sourceFiles()
+    .filter((file) => file !== 'scripts/architecture.mjs')
+    .flatMap((file) => {
+      let source;
+      try {
+        source = readFileSync(resolve(ROOT, file), 'utf8');
+      } catch {
+        return [];
+      }
+      const found = OLD_ROOT_NAMES.exec(source);
+      return found ? [`${file}: ${found[0]} — the root is the family now`] : [];
+    });
+}
+
 // --- one API contract ----------------------------------------------------------
 
 /**
@@ -688,6 +712,12 @@ const undocumented = undocumentedPackages();
 if (undocumented.length) {
   console.error('A package that does not say what it is:\n');
   for (const line of undocumented) console.error(`  ✗ ${line}`);
+  process.exit(1);
+}
+const oldNames = oldRootNames();
+if (oldNames.length) {
+  console.error('The root named a home:\n');
+  for (const line of oldNames) console.error(`  ✗ ${line}`);
   process.exit(1);
 }
 const stale = stalePaths();

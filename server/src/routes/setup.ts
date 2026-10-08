@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { LINK_KIND_IDS, type LinkKind } from '@kraftverk/device-sdk';
 
-import { homeFor, PART, type AppDeps } from './context.ts';
+import { familyFor, PART, type AppDeps } from './context.ts';
 import { body } from './parse.ts';
 
 const values = z.record(z.string().max(64), z.union([z.string().max(4096), z.number(), z.boolean()]));
@@ -23,23 +23,23 @@ export function setupRoutes(deps: AppDeps): Hono {
       c,
       z.object({ typeId: z.string().min(1).max(80), methodId: z.string().min(1).max(40).nullable().optional(), holder: z.enum(['master', 'this-node']).optional(), through: z.string().min(1).max(40).optional() }).strict()
     );
-    return c.json(await homeFor(deps, c).setup.start(input));
+    return c.json(await familyFor(deps, c).setup.start(input));
   });
 
   /** One of a device's ways, set up again: signed in again, its key fetched again. */
   api.post('/again', async (c) => {
     const input = await body(c, z.object({ deviceId: z.string().min(1).max(40), connectionId: z.string().min(1).max(40) }).strict());
-    return c.json(await homeFor(deps, c).setup.again(input));
+    return c.json(await familyFor(deps, c).setup.again(input));
   });
 
-  api.get('/:id', async (c) => c.json(await homeFor(deps, c).setup.get(c.req.param('id'))));
+  api.get('/:id', async (c) => c.json(await familyFor(deps, c).setup.get(c.req.param('id'))));
 
   api.delete('/:id', async (c) => {
-    await homeFor(deps, c).setup.discard(c.req.param('id'));
+    await familyFor(deps, c).setup.discard(c.req.param('id'));
     return c.json({ ok: true });
   });
 
-  api.get('/:id/sightings', async (c) => c.json({ sightings: await homeFor(deps, c).setup.sightings(c.req.param('id')) }));
+  api.get('/:id/sightings', async (c) => c.json({ sightings: await familyFor(deps, c).setup.sightings(c.req.param('id')) }));
 
   api.post('/:id/choose', async (c) => {
     const input = await body(
@@ -52,22 +52,22 @@ export function setupRoutes(deps: AppDeps): Hono {
         z.object({ chooser: z.object({ showAll: z.boolean().optional() }).strict() }).strict(),
       ])
     );
-    return c.json(await homeFor(deps, c).setup.choose(c.req.param('id'), input));
+    return c.json(await familyFor(deps, c).setup.choose(c.req.param('id'), input));
   });
 
   api.patch('/:id', async (c) => {
     const input = await body(c, z.object({ device: values.optional(), connection: values.optional() }).strict());
-    return c.json(await homeFor(deps, c).setup.update(c.req.param('id'), input));
+    return c.json(await familyFor(deps, c).setup.update(c.req.param('id'), input));
   });
 
   api.post('/:id/steps/:step/actions/:action', async (c) => {
     const { input } = await body(c, z.object({ input: values.default({}) }).strict());
-    return c.json(await homeFor(deps, c).setup.action(c.req.param('id'), c.req.param('step'), c.req.param('action'), input, c.req.raw.signal));
+    return c.json(await familyFor(deps, c).setup.action(c.req.param('id'), c.req.param('step'), c.req.param('action'), input, c.req.raw.signal));
   });
 
-  api.post('/:id/steps/:step/discover', async (c) => c.json(await homeFor(deps, c).setup.discover(c.req.param('id'), c.req.param('step'), c.req.raw.signal)));
+  api.post('/:id/steps/:step/discover', async (c) => c.json(await familyFor(deps, c).setup.discover(c.req.param('id'), c.req.param('step'), c.req.raw.signal)));
 
-  api.post('/:id/check', async (c) => c.json(await homeFor(deps, c).setup.check(c.req.param('id'))));
+  api.post('/:id/check', async (c) => c.json(await familyFor(deps, c).setup.check(c.req.param('id'))));
 
   api.post('/:id/save', async (c) => {
     const input = await body(
@@ -95,7 +95,7 @@ export function setupRoutes(deps: AppDeps): Hono {
         })
         .strict()
     );
-    return c.json(await homeFor(deps, c).setup.save(c.req.param('id'), input));
+    return c.json(await familyFor(deps, c).setup.save(c.req.param('id'), input));
   });
 
   return api;

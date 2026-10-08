@@ -7,7 +7,7 @@ import { Card, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 import { DeviceImage } from '../../components/DeviceImage';
 import { Pressable } from '../../components/Pressable';
 import { HERE } from '../../platform/here';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 
 const SUPPORT: Record<string, string> = {
   verified: 'Verified on real hardware',
@@ -33,7 +33,7 @@ function whereItRuns(type: Pick<DeviceTypeListing, 'ways'>, role: 'follower' | '
 
 export function Types({ types, onPick, onBack }: { types: DeviceTypeListing[]; onPick: (id: string) => void; onBack: () => void }) {
   const theme = useTheme();
-  const { role } = useHome();
+  const { role } = useFamily();
   return (
     <YStack gap="$2">
       <SectionLabel>Which one?</SectionLabel>

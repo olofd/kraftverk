@@ -2,7 +2,7 @@ import { ApiError, HELD_LIMITS, type ConnectionView, type DeviceView, type Kraft
 import { isPolicyValueName, type AuditRecord, type DeviceSession, type DeviceStore, type NodeId, type Platform, type PolicyValues, type Reading, type SavedDeviceId, type ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, Confirmations } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, toHold, toolsOf, withInUse, type DeviceEventMessage } from '@kraftverk/holder';
-import { ConnectionStore, DeviceCatalog, deviceStore, HomeSettings, HomeStore, LastHeard, LinkStore, NodeStore, SendQueue, type DeviceRecord, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { ConnectionStore, DeviceCatalog, deviceStore, HomeSettings, FamilyStore, LastHeard, LinkStore, NodeStore, SendQueue, type DeviceRecord, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import type { PassphraseSealing } from '../configuration/seal.ts';
 import { MovingToMaster } from '../handover/move.ts';
@@ -90,7 +90,7 @@ export class Follower {
   /** This node, as its own database knows it. */
   readonly nodes: NodeStore;
   /** The home as the master has it: its name, and which node is its master. */
-  readonly homeKept: HomeStore;
+  readonly familyKept: FamilyStore;
 
   readonly settings: HomeSettings;
   readonly catalog: DeviceCatalog;
@@ -138,7 +138,7 @@ export class Follower {
     this.#log = options.log ?? ((level, message) => console[level === 'info' ? 'log' : level](message));
 
     this.queue = new SendQueue(db);
-    this.homeKept = new HomeStore(db);
+    this.familyKept = new FamilyStore(db);
     this.heard = new LastHeard(db);
     // Its timeline is owed to the master, sent with its readings.
     const record = (entry: AuditRecord) => this.owe('audit', null, entry);
@@ -313,13 +313,13 @@ export class Follower {
    * it no longer has, the old master among them.
    */
   async keepHome(): Promise<void> {
-    const [home, nodes] = await Promise.all([this.home.home(), this.home.nodes.list()]);
+    const [home, nodes] = await Promise.all([this.home.family(), this.home.nodes.list()]);
     this.db.transaction(() => {
       for (const node of nodes) {
         const { master: _master, yours: _yours, ...record } = node;
         this.nodes.mirror(record);
       }
-      this.homeKept.mirror({ id: home.id, name: home.name, masterId: home.master, createdAt: home.createdAt, location: home.location });
+      this.familyKept.mirror({ id: home.id, name: home.name, kind: home.kind, locale: home.locale, masterId: home.master, createdAt: home.createdAt, location: home.location });
       const listed = new Set(nodes.map((node) => node.id));
       for (const kept of this.nodes.all()) if (!kept.self && !listed.has(kept.id)) this.nodes.remove(kept.id);
     })();
@@ -332,7 +332,7 @@ export class Follower {
 
   /** The master this node follows, as it declared itself when last heard; null before it was. */
   master(): NodeRecord | null {
-    const home = this.homeKept.get();
+    const home = this.familyKept.get();
     return home ? this.nodes.get(home.masterId) : null;
   }
 

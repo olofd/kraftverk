@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
 import { changesOf, planReadiness, rebindAnswerKey, secretAnswerKey } from '@kraftverk/api-client/config';
-import { applyPlan, describeError, withConfirmation, type ElsewhereView, type HomeElsewhere, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-client';
+import { applyPlan, describeError, withConfirmation, type ElsewhereView, type FamilyElsewhere, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-client';
 import { checkDocument, configJsonSchema, CURRENT_VERSION, holdsSealed, readConfig, type Vocabulary } from '@kraftverk/home-file';
 import { Card, formatCoordinates, haptic, Icon, RowSeparator, SectionLabel, SegmentedControl, Toggle, toggled } from '@kraftverk/ui';
 
@@ -13,7 +13,7 @@ import { ProblemList } from '../../components/ProblemList';
 import { useTone, type Tone } from '../../components/tone';
 import { YamlEditor } from '../../components/YamlEditor';
 import { ask } from '../../platform/confirm';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 import { useServers } from '../../state/ServersProvider';
 
 type Mode = 'merge' | 'replace';
@@ -35,10 +35,10 @@ const ACTION: Record<ImportItem['action'], { label: string; tone: Tone }> = {
  * it would set acting or take away.
  */
 /** Where a plan was read from, to read it again. */
-type Source = { restored: true } | { text: string } | { from: HomeElsewhere };
+type Source = { restored: true } | { text: string } | { from: FamilyElsewhere };
 
 /** What bringing in a home kept elsewhere is called, by where it is. */
-const BRING: Record<HomeElsewhere, string> = { 'this-node': 'Move this app’s own home here', copy: 'Keep your server’s home in this app' };
+const BRING: Record<FamilyElsewhere, string> = { 'this-node': 'Move this app’s own home here', copy: 'Keep your server’s home in this app' };
 
 export function ImportCard({
   vocabulary,
@@ -52,10 +52,10 @@ export function ImportCard({
   /** A home this app keeps beside this one, to bring in, if there is one. */
   elsewhere: ElsewhereView;
   /** Read straight away: the home kept elsewhere a card on the home page offered. */
-  start: HomeElsewhere | null;
+  start: FamilyElsewhere | null;
   onApplied: () => void;
 }) {
-  const { api } = useHome();
+  const { api } = useFamily();
   // The copy a restore was made from is a server's: only offered with one.
   const { server } = useServers();
   const tone = useTone();
@@ -203,7 +203,7 @@ export function ImportCard({
  * for; and Apply.
  */
 function PlanView({ plan, onAgain, onApplied }: { plan: ImportPlan; onAgain: () => void; onApplied: (applied: ImportApplied) => void }) {
-  const { api } = useHome();
+  const { api } = useFamily();
   const tone = useTone();
   const [devices, setDevices] = useState<ReadonlySet<string>>(() => new Set(changesOf(plan).devices));
   const [automations, setAutomations] = useState<ReadonlySet<string>>(() => new Set(changesOf(plan).automations));

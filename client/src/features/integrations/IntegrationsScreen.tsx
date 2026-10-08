@@ -9,7 +9,7 @@ import { Pressable } from '../../components/Pressable';
 import { Screen } from '../../components/Screen';
 import { useAnswer } from '../../components/useAnswer';
 import { useDevices } from '../../state/DevicesProvider';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 
 /**
  * Where kraftverk meets each service and platform (docs/PLAN-INTEGRATIONS.md
@@ -18,7 +18,7 @@ import { useHome } from '../../state/HomeProvider';
  * its accounts are managed.
  */
 export function IntegrationsScreen() {
-  const { api } = useHome();
+  const { api } = useFamily();
   const { devices } = useDevices();
   const theme = useTheme();
   const { value: list, error } = useAnswer(() => api.deviceTypes(), [api], { failure: 'What is installed could not be read' });

@@ -4,7 +4,7 @@ import type { HeldBy } from '@kraftverk/api-client';
 import { Card, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../components/Pressable';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 import { useReach } from '../../state/useReach';
 
 /** One way to connect, and who would hold it. */
@@ -29,7 +29,7 @@ const needSaid = (need: NonNullable<Way['needs']>): string => (need.kind === 'ac
 
 export function Ways({ ways, busy, onPick, onNeed, onBack }: { ways: Way[]; busy: boolean; onPick: (way: Way) => void; onNeed: (need: NonNullable<Way['needs']>) => void; onBack?: () => void }) {
   const theme = useTheme();
-  const { role } = useHome();
+  const { role } = useFamily();
   const reach = useReach();
   return (
     <YStack gap="$2">

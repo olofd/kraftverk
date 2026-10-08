@@ -9,7 +9,7 @@ import { automationId, savedDeviceId } from '@kraftverk/device-sdk';
 
 import { hostName } from '../auth/host.ts';
 import { SESSION_COOKIE } from '../auth/routes.ts';
-import { homeFor, type AppDeps } from './context.ts';
+import { familyFor, type AppDeps } from './context.ts';
 
 /**
  * `GET /api/live`: what changed, as it changes — a WebSocket (docs/API.md).
@@ -105,7 +105,7 @@ export function liveRoutes(deps: AppDeps, upgradeWebSocket: UpgradeWebSocket, co
     fromHere,
     upgradeWebSocket((c) => {
       const token = getCookie(c, SESSION_COOKIE);
-      const home = homeFor(deps, c);
+      const home = familyFor(deps, c);
       let stream: LiveStream | null = null;
       let stop = () => {};
 

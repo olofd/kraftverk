@@ -23,7 +23,7 @@ export * from './ignored.ts';
 export * from './links.ts';
 export * from './events.ts';
 export * from './nodes.ts';
-export * from './home.ts';
+export * from './family.ts';
 export * from './device-store.ts';
 export * from './last-readings.ts';
 export * from './transport-store.ts';

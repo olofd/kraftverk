@@ -7,7 +7,7 @@ import { runLogCsv } from '@kraftverk/automation-engine';
 import { automationId, fileNameOf, savedDeviceId } from '@kraftverk/device-sdk';
 import { REHEARSAL_MAX_HOURS } from '@kraftverk/hub';
 
-import { bindingsOf, homeFor, PART, type AppDeps } from './context.ts';
+import { bindingsOf, familyFor, PART, type AppDeps } from './context.ts';
 import { body, query } from './parse.ts';
 
 /**
@@ -45,35 +45,35 @@ export function automationRoutes(deps: AppDeps): Hono {
   const api = new Hono();
   const id = (raw: string | undefined) => automationId(raw ?? '');
 
-  api.get('/automations/recipes', async (c) => c.json(await homeFor(deps, c).automations.kit()));
+  api.get('/automations/recipes', async (c) => c.json(await familyFor(deps, c).automations.kit()));
 
   /** A recipe copied into a rule of its own, its settings written into its blocks: what a new automation starts from. */
   api.post('/automations/recipes/:id/copy', async (c) => {
     const { params } = await body(c, z.object({ params: z.record(z.string().min(1).max(40), z.union([z.string().max(200), z.number(), z.boolean(), z.null()])).default({}) }).strict());
-    return c.json(await homeFor(deps, c).automations.fromRecipe(c.req.param('id'), params));
+    return c.json(await familyFor(deps, c).automations.fromRecipe(c.req.param('id'), params));
   });
 
   api.post('/automations/draft', async (c) => {
     const input = await body(c, draft.extend({ self: z.string().min(1).max(80).nullable().optional() }).strict());
-    return c.json(await homeFor(deps, c).automations.draft(asDraft(input), input.self ? automationId(input.self) : null));
+    return c.json(await familyFor(deps, c).automations.draft(asDraft(input), input.self ? automationId(input.self) : null));
   });
 
   /** Every automation — or, with `?device=`, those a device fills a role of: what its page lists. */
   api.get('/automations', async (c) => {
     const device = c.req.query('device');
-    return c.json({ automations: await homeFor(deps, c).automations.list(device ? { device: savedDeviceId(device) } : {}) });
+    return c.json({ automations: await familyFor(deps, c).automations.list(device ? { device: savedDeviceId(device) } : {}) });
   });
 
-  api.get('/automations/:id', async (c) => c.json(await homeFor(deps, c).automations.get(id(c.req.param('id')))));
+  api.get('/automations/:id', async (c) => c.json(await familyFor(deps, c).automations.get(id(c.req.param('id')))));
 
   api.get('/automations/:id/runs', async (c) => {
     const { limit } = query(c, z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) }).strict());
-    return c.json({ runs: await homeFor(deps, c).automations.runs(id(c.req.param('id')), limit) });
+    return c.json({ runs: await familyFor(deps, c).automations.runs(id(c.req.param('id')), limit) });
   });
 
   /** `?format=csv`: its steps, readings and reachability as one table in time order, to download. */
   api.get('/automations/:id/runs/:runId/log', async (c) => {
-    const home = homeFor(deps, c);
+    const home = familyFor(deps, c);
     const log = await home.automations.runLog(id(c.req.param('id')), c.req.param('runId'));
     if (c.req.query('format') !== 'csv') return c.json(log);
     const { name } = await home.automations.get(id(c.req.param('id')));
@@ -82,18 +82,18 @@ export function automationRoutes(deps: AppDeps): Hono {
     return c.body(runLogCsv(log));
   });
 
-  api.post('/automations/:id/start', async (c) => c.json(await homeFor(deps, c).automations.start(id(c.req.param('id')))));
+  api.post('/automations/:id/start', async (c) => c.json(await familyFor(deps, c).automations.start(id(c.req.param('id')))));
 
-  api.post('/automations/:id/stop', async (c) => c.json(await homeFor(deps, c).automations.stop(id(c.req.param('id')))));
+  api.post('/automations/:id/stop', async (c) => c.json(await familyFor(deps, c).automations.stop(id(c.req.param('id')))));
 
   api.post('/automations/rehearse', async (c) => {
     const input = await body(c, draft.extend({ timeZone: z.string().min(1).max(64), hours: z.number().min(1).max(REHEARSAL_MAX_HOURS).default(24 * 7) }).strict());
-    return c.json(await homeFor(deps, c).automations.rehearse({ draft: asDraft(input), timeZone: input.timeZone }, input.hours));
+    return c.json(await familyFor(deps, c).automations.rehearse({ draft: asDraft(input), timeZone: input.timeZone }, input.hours));
   });
 
   api.get('/automations/:id/rehearse', async (c) => {
     const { hours } = query(c, z.object({ hours: z.coerce.number().min(1).max(REHEARSAL_MAX_HOURS).default(24 * 7) }).strict());
-    return c.json(await homeFor(deps, c).automations.rehearse({ automation: id(c.req.param('id')) }, hours));
+    return c.json(await familyFor(deps, c).automations.rehearse({ automation: id(c.req.param('id')) }, hours));
   });
 
   api.post('/automations', async (c) => {
@@ -109,7 +109,7 @@ export function automationRoutes(deps: AppDeps): Hono {
         })
         .strict()
     );
-    return c.json(await homeFor(deps, c).automations.create({ ...input, ...asDraft(input) }));
+    return c.json(await familyFor(deps, c).automations.create({ ...input, ...asDraft(input) }));
   });
 
   api.patch('/automations/:id', async (c) => {
@@ -141,15 +141,15 @@ export function automationRoutes(deps: AppDeps): Hono {
       ...(grouped !== undefined ? { groups: groupsOf(grouped) } : {}),
       ...(started !== undefined ? { starts: startsOf(started) } : {}),
     };
-    return c.json(await homeFor(deps, c).automations.update(id(c.req.param('id')), changes));
+    return c.json(await familyFor(deps, c).automations.update(id(c.req.param('id')), changes));
   });
 
   api.delete('/automations/:id', async (c) => {
-    await homeFor(deps, c).automations.delete(id(c.req.param('id')));
+    await familyFor(deps, c).automations.delete(id(c.req.param('id')));
     return c.json({ ok: true });
   });
 
-  api.post('/automations/:id/check', async (c) => c.json(await homeFor(deps, c).automations.check(id(c.req.param('id')))));
+  api.post('/automations/:id/check', async (c) => c.json(await familyFor(deps, c).automations.check(id(c.req.param('id')))));
 
   return api;
 }

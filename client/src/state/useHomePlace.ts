@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { useHome } from './HomeProvider';
+import { useFamily } from './FamilyProvider';
 
 type Place = { latitude: number; longitude: number };
 
@@ -13,14 +13,14 @@ const asked = new WeakMap<object, Promise<Place | null>>();
  * when it never was.
  */
 export function useHomePlace(): Place | null {
-  const { api } = useHome();
+  const { api } = useFamily();
   const [place, setPlace] = useState<Place | null>(null);
   useEffect(() => {
     let current = true;
     let pending = asked.get(api);
     if (!pending) {
       pending = api
-        .home()
+        .family()
         .then((home) => home.location ?? null)
         .catch(() => null);
       asked.set(api, pending);

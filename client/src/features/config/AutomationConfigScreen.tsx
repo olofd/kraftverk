@@ -6,7 +6,7 @@ import { type AutomationView, describeError, PATHS } from '@kraftverk/api-client
 
 import { Loading } from '../../components/Loading';
 import { Screen } from '../../components/Screen';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 import { AutomationConfig } from './AutomationConfig';
 
 /**
@@ -16,7 +16,7 @@ import { AutomationConfig } from './AutomationConfig';
  */
 export function AutomationConfigScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { api } = useHome();
+  const { api } = useFamily();
   const [automation, setAutomation] = useState<AutomationView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(() => {

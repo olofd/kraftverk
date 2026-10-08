@@ -1,7 +1,7 @@
 import { ApiError, type ElsewhereView, type ImportAnswers, type ImportApplied, type ImportPlan } from '@kraftverk/api-contract';
 import { isSimulated, methodOf, randomHex } from '@kraftverk/device-sdk';
 import { writeConfig, type Scalar } from '@kraftverk/home-file';
-import { HomeSettings, HomeStore, AutomationStore, ConnectionStore, DeviceCatalog, LinkStore, NodeStore, policyValues, setPolicyValue, type HomeSettingKey, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { HomeSettings, FamilyStore, AutomationStore, ConnectionStore, DeviceCatalog, LinkStore, NodeStore, policyValues, setPolicyValue, type HomeSettingKey, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import { exportConfig, type ConfigDeps } from '../configuration/export.ts';
 import type { PassphraseSealing } from '../configuration/seal.ts';
@@ -57,7 +57,7 @@ export class MovingToMaster {
     if (this.#own) return this.#own;
     const db = this.#database;
     const settings = new HomeSettings(db);
-    const homeKept = new HomeStore(db);
+    const familyKept = new FamilyStore(db);
     const { types, protocols } = this.#follower.installed;
     this.#own = {
       settings,
@@ -70,7 +70,7 @@ export class MovingToMaster {
       types,
       protocols,
       policy: { values: () => policyValues(settings), set: (name, value) => setPolicyValue(settings, name, value) },
-      location: { get: () => homeKept.get()?.location ?? null, set: (location) => void homeKept.locate(location) },
+      location: { get: () => familyKept.get()?.location ?? null, set: (location) => void familyKept.locate(location) },
       sealing: this.#sealing,
       kept: this.#secrets,
     };

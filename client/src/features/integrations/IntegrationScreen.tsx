@@ -12,7 +12,7 @@ import { Pressable } from '../../components/Pressable';
 import { Screen } from '../../components/Screen';
 import { useAnswer } from '../../components/useAnswer';
 import { useDevices } from '../../state/DevicesProvider';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 import { integrationScreens } from './registry';
 
 const SUPPORT: Record<string, string> = {
@@ -96,7 +96,7 @@ function ago(at: string): string {
  * device added asks for it afresh. Nothing when it keeps nothing.
  */
 function Kept({ integration }: { integration: string }) {
-  const { api } = useHome();
+  const { api } = useFamily();
   const [asked, setAsked] = useState(0);
   const kept = useAnswer(() => api.integrations.kept(integration), [api, integration, asked]).value ?? [];
   if (!kept.length) return null;
@@ -152,7 +152,7 @@ function YoursSection({ label, yours, integration }: { label: string; yours: Dev
  */
 export function IntegrationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { api } = useHome();
+  const { api } = useFamily();
   const { devices } = useDevices();
   const { value: list, error } = useAnswer(() => api.deviceTypes(), [api], { failure: 'What is installed could not be read' });
   const platform = list ? (byPlatform(list).find((each) => each.integration.id === id) ?? null) : null;

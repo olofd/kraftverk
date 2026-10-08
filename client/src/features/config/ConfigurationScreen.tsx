@@ -11,7 +11,7 @@ import { Screen } from '../../components/Screen';
 import { ExportCard } from './ExportCard';
 import { ImportCard } from './ImportCard';
 import { useDevices } from '../../state/DevicesProvider';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 import { useServers } from '../../state/ServersProvider';
 
 /**
@@ -25,7 +25,7 @@ import { useServers } from '../../state/ServersProvider';
 export function ConfigurationScreen() {
   const params = useLocalSearchParams<{ devices?: string; automations?: string; import?: string; from?: string }>();
   const { devices, refresh } = useDevices();
-  const { api } = useHome();
+  const { api } = useFamily();
   const { server } = useServers();
   const [automations, setAutomations] = useState<AutomationView[] | null>(null);
   const [vocabulary, setVocabulary] = useState<Vocabulary | null>(null);

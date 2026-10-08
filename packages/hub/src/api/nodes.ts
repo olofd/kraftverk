@@ -65,7 +65,7 @@ export function nodesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'nodes' |
     if (!connection || connection.deviceId !== device.id || connection.heldBy !== node.id) throw new ApiError('forbidden', 'That node does not hold a connection to this device');
     return { device, node, connection };
   };
-  const masterId = () => hub.home.get()!.masterId;
+  const masterId = () => hub.family.get()!.masterId;
 
   return {
     nodes: {

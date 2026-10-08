@@ -109,7 +109,7 @@ test('the ways this app can hold are offered beside the server’s, for a type i
     [follower.nodeId, 'Chrome on a test', ['bus'], false],
   ]);
   // And the follower keeps the home as the master has it: which node it follows, and what that one is.
-  expect(follower.homeKept.get()?.masterId).toBe(MACHINE_NODE.id);
+  expect(follower.familyKept.get()?.masterId).toBe(MACHINE_NODE.id);
   expect(follower.master()).toMatchObject({ id: MACHINE_NODE.id, name: 'Test machine', alwaysOn: true, reachable: true, self: false });
   expect(follower.nodes.self()?.id).toBe(follower.nodeId);
 });
@@ -120,7 +120,7 @@ test('the machine behind the address another now: the follower keeps the new mas
   // As this node last kept it: another machine was the master then.
   const old = { id: nodeId('n-000000000000000000000000DD'), name: 'Old machine', platform: 'system' as const, transports: [], alwaysOn: true, reachable: true, trusted: true, createdAt: '2026-10-01T00:00:00.000Z', lastSeenAt: '2026-10-01T00:00:00.000Z' };
   follower.nodes.mirror(old);
-  follower.homeKept.mirror({ id: 'h-000000000old', name: 'Home', masterId: old.id, createdAt: old.createdAt, location: null });
+  follower.familyKept.mirror({ id: 'f-000000000old', name: 'Family', kind: 'family', locale: 'en', masterId: old.id, createdAt: old.createdAt, location: null });
 
   await follower.keepHome();
   expect(follower.master()?.id).toBe(MACHINE_NODE.id);

@@ -6,7 +6,7 @@ import { POLICY_VALUES, type PolicyValueName, type PolicyValues } from '@kraftve
 import { Card, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 
 /**
  * The numbers this home decides that the capabilities name: a switch says
@@ -15,7 +15,7 @@ import { useHome } from '../../state/HomeProvider';
  * this app holds for it.
  */
 export function HomePolicy() {
-  const { api } = useHome();
+  const { api } = useFamily();
   const [kept, setKept] = useState<PolicyValues>({});
   const [values, setValues] = useState<Record<string, string>>({});
   const [problem, setProblem] = useState<string | null>(null);

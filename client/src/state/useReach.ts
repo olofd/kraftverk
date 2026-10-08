@@ -4,7 +4,7 @@ import type { ConnectionView, HeldBy } from '@kraftverk/api-client';
 import type { IconName } from '@kraftverk/ui';
 
 import { HERE, HERE_PLATFORM } from '../platform/here';
-import { useHome } from './HomeProvider';
+import { useFamily } from './FamilyProvider';
 
 /** Where a device is reached from, as a person reads it: "through your server", "from this phone" — and its icon. */
 export type Reach = { words: string; icon: IconName };
@@ -16,7 +16,7 @@ export type Reach = { words: string; icon: IconName };
  * by its name. Words only: what a screen does never depends on it.
  */
 export function useReach() {
-  const { role } = useHome();
+  const { role } = useFamily();
   return useMemo(() => {
     const here: Reach = { words: `from ${HERE}`, icon: HERE_PLATFORM === 'web' ? 'monitor' : 'smartphone' };
     const master: Reach = role === 'follower' ? { words: 'through your server', icon: 'server' } : here;

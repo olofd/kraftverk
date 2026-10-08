@@ -1,5 +1,5 @@
-import { ApiError, type Caller, type HomeView, type KraftverkApi } from '@kraftverk/api-contract';
-import type { HomeRecord } from '@kraftverk/store';
+import { ApiError, type Caller, type FamilyView, type KraftverkApi } from '@kraftverk/api-contract';
+import type { FamilyRecord } from '@kraftverk/store';
 import { type CapabilitySpec } from '@kraftverk/device-sdk';
 
 import { vocabularyOf, worldOf } from '../assistant/world.ts';
@@ -12,23 +12,23 @@ import { actorOf } from './caller.ts';
   with the words it is said in.
 */
 
-type HomeWideApi = Pick<KraftverkApi, 'home' | 'setHomeLocation' | 'timeline' | 'world' | 'vocabulary'>;
+type FamilyWideApi = Pick<KraftverkApi, 'family' | 'setHomeLocation' | 'timeline' | 'world' | 'vocabulary'>;
 
 /** The home as everything that asks sees it. */
-const viewOf = (home: HomeRecord): HomeView => ({ id: home.id, name: home.name, master: home.masterId, createdAt: home.createdAt, location: home.location });
+const viewOf = (family: FamilyRecord): FamilyView => ({ id: family.id, name: family.name, kind: family.kind, locale: family.locale, master: family.masterId, createdAt: family.createdAt, location: family.location });
 
-export function homeWideApi(hub: Hub, caller: Caller): HomeWideApi {
+export function familyWideApi(hub: Hub, caller: Caller): FamilyWideApi {
   const actor = actorOf(caller);
   return {
     /** The home: what its people call it, its master, and where it is. */
-    async home() {
-      return viewOf(hub.home.get()!);
+    async family() {
+      return viewOf(hub.family.get()!);
     },
 
     /** Where it is: within the globe, or not said — on the timeline as the home's, never its coordinates. */
     async setHomeLocation(location) {
       if (location && !(Math.abs(location.latitude) <= 90 && Math.abs(location.longitude) <= 180)) throw new ApiError('invalid', 'A latitude is from -90 to 90, a longitude from -180 to 180');
-      const home = hub.home.locate(location ? { latitude: location.latitude, longitude: location.longitude } : null);
+      const home = hub.family.locate(location ? { latitude: location.latitude, longitude: location.longitude } : null);
       hub.audit.record({ at: new Date().toISOString(), kind: 'home.located', actor, summary: location ? 'Said where the home is: sunrise and sunset are told by it' : 'Forgot where the home is', detail: {} });
       return viewOf(home);
     },

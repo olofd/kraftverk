@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { NODE_ID, nodeId, type PolicyValueName } from '@kraftverk/device-sdk';
 
-import { homeFor, RESOURCE_KIND, type AppDeps } from './context.ts';
+import { familyFor, RESOURCE_KIND, type AppDeps } from './context.ts';
 import { body, query } from './parse.ts';
 
 /**
@@ -12,15 +12,15 @@ import { body, query } from './parse.ts';
  * values it decides, and its timeline. What each does is the home's
  * (`KraftverkApi`).
  */
-export function homeRoutes(deps: AppDeps): Hono {
+export function familyRoutes(deps: AppDeps): Hono {
   const api = new Hono();
 
-  api.get('/home', async (c) => c.json(await homeFor(deps, c).home()));
+  api.get('/family', async (c) => c.json(await familyFor(deps, c).family()));
 
   /** Where the home is — what sunrise and sunset are told by — or, null, not said. */
   api.put('/home/location', async (c) => {
     const { location } = await body(c, z.object({ location: z.object({ latitude: z.number().finite().min(-90).max(90), longitude: z.number().finite().min(-180).max(180) }).strict().nullable() }).strict());
-    return c.json(await homeFor(deps, c).setHomeLocation(location));
+    return c.json(await familyFor(deps, c).setHomeLocation(location));
   });
 
   /**
@@ -43,23 +43,23 @@ export function homeRoutes(deps: AppDeps): Hono {
         })
         .strict()
     );
-    return c.json(await homeFor(deps, c).nodes.join({ ...input, id: nodeId(input.id) }));
+    return c.json(await familyFor(deps, c).nodes.join({ ...input, id: nodeId(input.id) }));
   });
 
-  api.get('/nodes', async (c) => c.json({ nodes: await homeFor(deps, c).nodes.list() }));
+  api.get('/nodes', async (c) => c.json({ nodes: await familyFor(deps, c).nodes.list() }));
 
   /** Forgets a node, and every connection it held. */
   api.delete('/nodes/:id', async (c) => {
-    await homeFor(deps, c).nodes.forget(nodeId(c.req.param('id')));
+    await familyFor(deps, c).nodes.forget(nodeId(c.req.param('id')));
     return c.json({ ok: true });
   });
 
   /** What this home decides that declarations name: how much is a load worth confirming. */
-  api.get('/policy', async (c) => c.json(await homeFor(deps, c).policy.list()));
+  api.get('/policy', async (c) => c.json(await familyFor(deps, c).policy.list()));
 
   api.put('/policy/:name', async (c) => {
     const { value } = await body(c, z.object({ value: z.number().finite().nullable() }).strict());
-    return c.json(await homeFor(deps, c).policy.set(c.req.param('name') as PolicyValueName, value));
+    return c.json(await familyFor(deps, c).policy.set(c.req.param('name') as PolicyValueName, value));
   });
 
   /** The timeline, newest first: all of it, one kind of thing's, or one thing's; `before` pages back. */
@@ -75,7 +75,7 @@ export function homeRoutes(deps: AppDeps): Hono {
         })
         .strict()
     );
-    return c.json(await homeFor(deps, c).timeline(asked));
+    return c.json(await familyFor(deps, c).timeline(asked));
   });
 
   return api;

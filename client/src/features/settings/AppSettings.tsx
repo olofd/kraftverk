@@ -8,7 +8,7 @@ import { Pressable } from '../../components/Pressable';
 import { Screen } from '../../components/Screen';
 import { useAuth } from '../../state/AuthProvider';
 import { useDevices } from '../../state/DevicesProvider';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 import { useServers } from '../../state/ServersProvider';
 import { HomeLocation } from './HomeLocation';
 import { HomePolicy } from './HomePolicy';
@@ -23,7 +23,7 @@ import { Servers } from './Servers';
  */
 export function AppSettings() {
   const { version, removed } = useDevices();
-  const { writesAllowed, allowWrites, role } = useHome();
+  const { writesAllowed, allowWrites, role } = useFamily();
   const { active } = useServers();
   const auth = useAuth();
   const theme = useTheme();

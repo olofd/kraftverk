@@ -5,7 +5,7 @@ import { PATHS, type ElsewhereView } from '@kraftverk/api-client';
 import { Card, haptic, Icon } from '@kraftverk/ui';
 
 import { useAnswer } from '../../components/useAnswer';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 
 /**
  * A home this app keeps beside this one, offered to bring in
@@ -15,7 +15,7 @@ import { useHome } from '../../state/HomeProvider';
  * the import's plan, seen before anything moves.
  */
 export function Elsewhere() {
-  const { api } = useHome();
+  const { api } = useFamily();
   const theme = useTheme();
   const focused = useIsFocused();
   const elsewhere: ElsewhereView = useAnswer(() => api.configuration.elsewhere(), [api], { when: focused }).value;

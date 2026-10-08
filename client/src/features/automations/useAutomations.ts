@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { describeError, type AutomationView } from '@kraftverk/api-client';
 import { savedDeviceId } from '@kraftverk/device-sdk';
 
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 import { useReadAgain } from './useReadAgain';
 
 /**
@@ -13,7 +13,7 @@ import { useReadAgain } from './useReadAgain';
  * false.
  */
 export function useAutomations({ device, followReadings = false, when = true }: { device?: string; followReadings?: boolean; when?: boolean } = {}) {
-  const { api } = useHome();
+  const { api } = useFamily();
   const [automations, setAutomations] = useState<AutomationView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(() => {

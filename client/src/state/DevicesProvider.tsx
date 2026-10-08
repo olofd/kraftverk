@@ -26,7 +26,7 @@ import { savedDeviceId, type ConnectionId, type LinkId } from '@kraftverk/device
 
 import { ask, confirmAction } from '../platform/confirm';
 import { useAuth } from './AuthProvider';
-import { useHome } from './HomeProvider';
+import { useFamily } from './FamilyProvider';
 import { useServers } from './ServersProvider';
 import { useHomePlace } from './useHomePlace';
 import { useReach } from './useReach';
@@ -34,7 +34,7 @@ import { useReach } from './useReach';
 /**
  * The things you have, whoever holds them.
  *
- * The list is the home's (`useHome`): a server's, with what this app holds
+ * The list is the home's (`useFamily`): a server's, with what this app holds
  * for it wrapped in, or the app's own — one interface either way, so
  * nothing here asks which. A device is one `DeviceView`, and its screens
  * get actions that the home sends to whoever holds its connection in use:
@@ -109,7 +109,7 @@ const DevicesContext = createContext<DevicesContextValue | null>(null);
 export function DevicesProvider({ children }: { children: ReactNode }) {
   const servers = useServers();
   const { allowed } = useAuth();
-  const { api, role, away } = useHome();
+  const { api, role, away } = useFamily();
   const reach = useReach();
   const home = useHomePlace();
   // A server's list is read once signed in; the app's own, always.

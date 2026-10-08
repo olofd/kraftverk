@@ -18,7 +18,7 @@ import { configurationRoutes } from './routes/configuration.ts';
 import type { AppDeps } from './routes/context.ts';
 import { deviceRoutes } from './routes/devices.ts';
 import { followerRoutes } from './routes/followers.ts';
-import { homeRoutes } from './routes/home.ts';
+import { familyRoutes } from './routes/family.ts';
 import { linkRoutes } from './routes/links.ts';
 import { liveRoutes } from './routes/live.ts';
 import { MAP_CACHED, mapRoutes } from './routes/map.ts';
@@ -140,7 +140,7 @@ export function createApp(deps: AppDeps) {
   api.route('/users', auth.users);
 
   api.route('/', serverRoutes(deps, auth));
-  api.route('/', homeRoutes(deps));
+  api.route('/', familyRoutes(deps));
   api.route('/setup', setupRoutes(deps));
   api.route('/', followerRoutes(deps));
   api.route('/', deviceRoutes(deps, auth.confirm));

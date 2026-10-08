@@ -6,7 +6,7 @@ import { Card, formatAgo, Row, RowSeparator, SectionLabel } from '@kraftverk/ui'
 
 import { ErrorText } from '../../components/ErrorText';
 import { confirmAction } from '../../platform/confirm';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 
 /**
  * The kraftverk nodes of the home (docs/DATA-MODEL.md §3): every place
@@ -16,7 +16,7 @@ import { useHome } from '../../state/HomeProvider';
  * another browser or phone can be forgotten, with every way it held.
  */
 export function Nodes({ labels }: { labels: Record<string, string> }) {
-  const { api, nodeId } = useHome();
+  const { api, nodeId } = useFamily();
   const [nodes, setNodes] = useState<NodeView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 

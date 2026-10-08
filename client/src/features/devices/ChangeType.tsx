@@ -7,7 +7,7 @@ import { Card, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 import { Pressable } from '../../components/Pressable';
 import { useAnswer } from '../../components/useAnswer';
 import { useDevices } from '../../state/DevicesProvider';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 
 /**
  * What else a device could be (docs/PLAN-ZIGBEE.md §2.1): the other types
@@ -18,7 +18,7 @@ import { useHome } from '../../state/HomeProvider';
  * other type.
  */
 export function ChangeType({ device }: { device: DeviceView }) {
-  const { api } = useHome();
+  const { api } = useFamily();
   const { devices } = useDevices();
   const theme = useTheme();
   const types = useAnswer(() => api.deviceTypes().then((list) => list.types), [api]).value ?? [];

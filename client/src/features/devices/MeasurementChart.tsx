@@ -5,7 +5,7 @@ import { Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 import { describeError } from '@kraftverk/api-client';
 import type { AttributeSpec, SavedDeviceId } from '@kraftverk/device-sdk';
 
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 import type { SeriesPoint } from '@kraftverk/api-client';
 import { quantityOf } from '@kraftverk/device-sdk';
 import {
@@ -58,7 +58,7 @@ export function MeasurementChart({
   const [error, setError] = useState<string | null>(null);
   const [width, setWidth] = useState(0);
   const theme = useTheme();
-  const { api } = useHome();
+  const { api } = useFamily();
 
   const load = useCallback(
     async (signal: AbortSignal) => {

@@ -4,7 +4,7 @@ import { EventList } from '@kraftverk/ui';
 
 import { useAnswer } from '../../components/useAnswer';
 import { useDevices } from '../../state/DevicesProvider';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 
 /**
  * What it said happened, newest first — one part's, or all of them — read
@@ -16,7 +16,7 @@ const EVENTS_SHOWN = 50;
 
 export function Events({ device, part }: { device: DeviceView; part?: string }) {
   const { heard } = useDevices();
-  const { api } = useHome();
+  const { api } = useFamily();
   const count = heard.byDevice[device.id] ?? 0;
   const declares = (device.description.events?.length ?? 0) > 0;
 

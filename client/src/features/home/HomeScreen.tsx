@@ -10,7 +10,7 @@ import { Pressable } from '../../components/Pressable';
 import { Screen } from '../../components/Screen';
 import { useAnswer } from '../../components/useAnswer';
 import { useDevices } from '../../state/DevicesProvider';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 import { useHomePlace } from '../../state/useHomePlace';
 import { useShowing } from '../../state/useShowing';
 import { Shortcuts } from '../automations/Shortcuts';
@@ -48,7 +48,7 @@ const productList = (installed: readonly { meta: { name: string } }[]) => {
  */
 export function HomeScreen() {
   const { devices, removed, loading, error, heard } = useDevices();
-  const { api, role } = useHome();
+  const { api, role } = useFamily();
   const theme = useTheme();
   // What the home can add: the installed types, as it lists them.
   const installed: readonly DeviceTypeListing[] = useAnswer(() => api.deviceTypes(), [api]).value?.types ?? [];

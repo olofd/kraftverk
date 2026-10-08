@@ -11,7 +11,7 @@ import { Pressable } from '../../components/Pressable';
 import { secretWords } from '../../components/ProblemList';
 import { confirmAction } from '../../platform/confirm';
 import { HERE } from '../../platform/here';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 
 export function Finish({
   flow,
@@ -43,7 +43,7 @@ export function Finish({
   /** Whether the secrets just given may leave in an export as plain text: off unless chosen, and warned against (docs/CONFIG.md). */
   const [exportable, setExportable] = useState(false);
   const keepsSecrets = flow.holder === 'master' && flow.secrets.length > 0;
-  const { role: nodeRole } = useHome();
+  const { role: nodeRole } = useFamily();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

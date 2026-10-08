@@ -5,7 +5,7 @@ import { automationsApi } from './automations.ts';
 import { configurationApi } from './configuration.ts';
 import { connectionsApi } from './connections.ts';
 import { devicesApi } from './devices.ts';
-import { homeWideApi } from './home.ts';
+import { familyWideApi } from './family.ts';
 import { integrationsApi } from './integrations.ts';
 import { liveApi } from './live.ts';
 import { nodesApi } from './nodes.ts';
@@ -26,7 +26,7 @@ export function homeApi(hub: Hub, caller: Caller): KraftverkApi {
     ...transportsApi(hub),
     ...integrationsApi(hub),
     ...automationsApi(hub, caller),
-    ...homeWideApi(hub, caller),
+    ...familyWideApi(hub, caller),
     ...configurationApi(hub, caller),
     ...nodesApi(hub, caller),
     ...liveApi(hub, caller),

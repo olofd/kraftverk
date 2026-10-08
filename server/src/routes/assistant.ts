@@ -4,7 +4,7 @@ import { answerMcp, worldText } from '@kraftverk/hub';
 
 import { usernameOf } from '../auth/routes.ts';
 import { SERVER } from '../config.ts';
-import { homeFor, type AppDeps } from './context.ts';
+import { familyFor, type AppDeps } from './context.ts';
 
 /** The most messages one batch may carry: each may be a command, run together. */
 export const MCP_BATCH_MAX = 20;
@@ -24,12 +24,12 @@ export function assistantRoutes(deps: AppDeps): Hono {
 
   /** The house now: every device, its parts, what each offers and reports and how fresh, and the links. `?format=text` for a context window. */
   api.get('/world', async (c) => {
-    const now = await homeFor(deps, c).world();
+    const now = await familyFor(deps, c).world();
     return c.req.query('format') === 'text' ? c.text(worldText(now)) : c.json(now);
   });
 
   /** The words the world is said in: capabilities, meanings, link kinds, recipes, and the values the home has set. */
-  api.get('/vocabulary', async (c) => c.json(await homeFor(deps, c).vocabulary()));
+  api.get('/vocabulary', async (c) => c.json(await familyFor(deps, c).vocabulary()));
 
   /**
    * MCP over HTTP: JSON-RPC in, JSON out — one message or a batch. Nothing

@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { httpApi } from '@kraftverk/api-client/http';
 import type { KraftverkApi } from '@kraftverk/api-contract';
 
-import { NotOpen, Waiting } from '../components/HomeOpening';
+import { NotOpen, Waiting } from '../components/FamilyOpening';
 import { HomeOpenElsewhere, type OpenHome, type OpenOptions } from '../platform/home/home';
 import { openHome } from '../platform/home/open';
 import { keepNodeId, thisNode } from '../platform/node';
@@ -20,7 +20,7 @@ import { useServers } from './ServersProvider';
  * one interface, `KraftverkApi`, and no screen asks which.
  */
 
-type HomeValue = {
+type FamilyValue = {
   /** Everything the home answers. */
   api: KraftverkApi;
   /** This node's role in the home it shows: its master — the app's own home — or following one, a server's. For words — "through your server" — never for what a screen does. */
@@ -46,7 +46,7 @@ type HomeValue = {
   away: boolean;
 };
 
-const HomeContext = createContext<HomeValue | null>(null);
+const HomeContext = createContext<FamilyValue | null>(null);
 
 export type Opening =
   | { status: 'opening' }
@@ -99,7 +99,7 @@ function useWritesFor(home: OpenHome | null): [boolean, (allowed: boolean) => vo
   return [home !== null && allowedFor === home, (allowed) => setAllowedFor(allowed ? home : null)];
 }
 
-export function HomeProvider({ children }: { children: ReactNode }) {
+export function FamilyProvider({ children }: { children: ReactNode }) {
   const servers = useServers();
   const { generation } = useAuth();
   // Not yet known whether a server stands beside this app: nothing is opened until it is.
@@ -127,7 +127,7 @@ function ServerHome({ serverKey, url, children }: { serverKey: string; url: stri
   const home = state.status === 'open' ? state.home : null;
   const [writesAllowed, setWritesAllowed] = useWritesFor(home);
 
-  const value = useMemo<HomeValue | null>(() => {
+  const value = useMemo<FamilyValue | null>(() => {
     if (state.status === 'opening') return null;
     // Not held here: the server's home alone, and why — its own ways can be taken back from the tab that has them.
     const holding =
@@ -161,7 +161,7 @@ function OwnHome({ children }: { children: ReactNode }) {
   const home = state.status === 'open' ? state.home : null;
   const [writesAllowed, setWritesAllowed] = useWritesFor(home);
 
-  const value = useMemo<HomeValue | null>(
+  const value = useMemo<FamilyValue | null>(
     () =>
       home
         ? {
@@ -186,8 +186,8 @@ function OwnHome({ children }: { children: ReactNode }) {
 }
 
 /** The home the app shows, and what goes with it. */
-export function useHome(): HomeValue {
+export function useFamily(): FamilyValue {
   const context = useContext(HomeContext);
-  if (!context) throw new Error('useHome must be used inside <HomeProvider>');
+  if (!context) throw new Error('useFamily must be used inside <FamilyProvider>');
   return context;
 }

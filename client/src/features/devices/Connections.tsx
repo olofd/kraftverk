@@ -11,7 +11,7 @@ import { secretWords } from '../../components/ProblemList';
 import { useAttempt } from '../../components/useAttempt';
 import { confirmAction } from '../../platform/confirm';
 import { useDevices } from '../../state/DevicesProvider';
-import { useHome } from '../../state/HomeProvider';
+import { useFamily } from '../../state/FamilyProvider';
 import { useReach } from '../../state/useReach';
 import { ConfirmWithYours } from '../auth/ConfirmWithYours';
 
@@ -22,7 +22,7 @@ import { ConfirmWithYours } from '../auth/ConfirmWithYours';
  */
 export function Connections({ device }: { device: DeviceView }) {
   const { prefer, removeConnection, setExportable } = useDevices();
-  const { asksYourPassword } = useHome();
+  const { asksYourPassword } = useFamily();
   // The connection whose secrets are to leave in plain text, once your password says it is you.
   const [asking, setAsking] = useState<string | null>(null);
   const [yours, setYours] = useState('');

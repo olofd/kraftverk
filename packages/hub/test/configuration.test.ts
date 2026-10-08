@@ -158,7 +158,7 @@ describe('configuration', () => {
   });
 
   test('where the home is: said, kept, on the timeline without its coordinates, exported, and planned and applied from a file', async () => {
-    expect((await t.home.home()).location).toBeNull();
+    expect((await t.home.family()).location).toBeNull();
     // Made-up coordinates: Greenwich.
     const there = { latitude: 51.4779, longitude: 0 };
     expect((await t.home.setHomeLocation(there)).location).toEqual(there);
@@ -175,7 +175,7 @@ describe('configuration', () => {
     expect(plan.location).toEqual({ before: null, after: there });
     const applied = await t.home.configuration.apply({ plan: plan.id! });
     expect(applied.location).toBe(true);
-    expect((await t.home.home()).location).toEqual(there);
+    expect((await t.home.family()).location).toEqual(there);
     // The same again: nothing to change.
     expect((await t.home.configuration.plan({ text })).location).toBeNull();
   });

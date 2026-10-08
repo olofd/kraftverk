@@ -6,7 +6,7 @@ import {
   HomeSettings,
   AuditLog,
   AutomationStore,
-  HomeStore,
+  FamilyStore,
   NodeStore,
   databaseLedger,
   DeviceCatalog,
@@ -137,7 +137,7 @@ for (const driver of DRIVERS) {
     });
 
     test('the home: made once, its master a node of it — never forgotten — and kept by a follower as the master has it', () => {
-      const homes = new HomeStore(database);
+      const homes = new FamilyStore(database);
       const nodes = new NodeStore(database);
       const master = nodes.self()!;
       const made = homes.ensure({ name: 'Home', masterId: master.id });

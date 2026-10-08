@@ -22,7 +22,7 @@ afterEach(async () => {
 
 describe('the home and its nodes', () => {
   test('the home names its master: this machine, a node of its own', async () => {
-    expect(await t.home.home()).toMatchObject({ name: 'Home', master: MACHINE_NODE.id });
+    expect(await t.home.family()).toMatchObject({ name: 'Family', master: MACHINE_NODE.id });
   });
 
   test('a node joins by its own id, for the account it joins from; the home lists every node; only its person forgets it', async () => {
