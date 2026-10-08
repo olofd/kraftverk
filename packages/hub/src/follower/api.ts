@@ -56,7 +56,7 @@ export function followerApi(h: Follower): KraftverkApi {
     if (!session) throw new ApiError('unavailable', `${device.name} is not answering: ${h.sessions.health(device).detail}`);
     return { device, session };
   };
-  const intent = () => ({ actor: 'person' as const, by: h.name });
+  const intent = () => ({ by: { kind: 'person' as const, id: null, name: h.name } });
 
   // --- setting up a way this node holds ---------------------------------------------
   /** Drafts set up here, and the master's draft each became once read. */

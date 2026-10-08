@@ -12,6 +12,7 @@ import { AuditLog, type SecretsAtRest } from '@kraftverk/store';
 import { openDatabase } from './database.ts';
 import { serverSecrets } from './secrets.ts';
 import { ConfigSnapshot } from './snapshot.ts';
+import { actor } from '@kraftverk/device-sdk';
 
 /*
   The configuration kept beside the database, as a file on the server's
@@ -74,9 +75,9 @@ describe('the configuration kept beside the database', () => {
       if (changesConfiguration(entry.kind)) snapshot.schedule();
     });
     hub.catalog.add({ typeId: 'test.lamp', name: 'Porch lamp', description: LAMP });
-    audit.record({ at: new Date().toISOString(), kind: 'device.added', actor: 'test', summary: 'Added "Porch lamp"' });
+    audit.record({ at: new Date().toISOString(), kind: 'device.added', actor: actor('person', 'test'), summary: 'Added "Porch lamp"' });
     // A reading, a run: not a change to the configuration.
-    audit.record({ at: new Date().toISOString(), kind: 'automation.started', actor: 'test', summary: 'Started' });
+    audit.record({ at: new Date().toISOString(), kind: 'automation.started', actor: actor('person', 'test'), summary: 'Started' });
     stop();
     await snapshot.stop();
     expect(readFileSync(file, 'utf8')).toContain('porch-lamp:');
@@ -121,7 +122,7 @@ describe('the configuration kept beside the database', () => {
     expect(heard).toEqual(['kraftverk: 4\n# the one restored from\n']);
     expect(restored.from.startsWith(join(folder, 'kraftverk.before-'))).toBe(true);
     // What it could not do alone is planned again from that copy.
-    await restoring.planAgain('merge', 'olof');
+    await restoring.planAgain('merge', actor('person', 'olof'));
     expect(planned).toEqual(heard);
     const copies = readdirSync(folder).filter((name) => name.startsWith('kraftverk.before-')).sort();
     expect(copies.length).toBe(5);

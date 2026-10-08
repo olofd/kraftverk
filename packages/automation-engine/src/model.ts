@@ -1,7 +1,7 @@
 import type { AutomationRun } from '@kraftverk/api-contract';
 import type { AutomationMode, Coordinates, RoleBinding, Rule, RulePart } from '@kraftverk/automation';
 import type { AuditRecord, AutomationId, CapabilityId, Clock, DeviceDescription } from '@kraftverk/device-sdk';
-import type { ActionGateway } from '@kraftverk/gateway';
+import type { ActionGateway, GatewayActor } from '@kraftverk/gateway';
 import type { LiveBus } from '@kraftverk/holder';
 
 import type { AutomationLibrary } from './library.ts';
@@ -94,16 +94,15 @@ export type AutomationEngineDeps = {
   everyMs?: number;
 };
 
-/** How the gateway's audit and memory name what an automation did: by its id, which a rename does not change. */
-export const AUTOMATION_ACTOR = 'automation:';
-export const actorOf = (automation: Pick<AutomationRecord, 'id'>): string => `${AUTOMATION_ACTOR}${automation.id}`;
+/** An automation as the actor of what it does: known by its id, which a rename does not change, and said by its name. */
+export const actorOf = (automation: Pick<AutomationRecord, 'id' | 'name'>): GatewayActor & { kind: 'automation' } => ({ kind: 'automation', id: automation.id, name: automation.name });
 
 /** Why a run cannot be started or stopped, in words for the person who asked. */
 export class RunRefusal extends Error {}
 
 /**
- * Who asked for a run: a person, or an assistant for one. `name` is how the
- * run says it ("olof", "assistant for olof"); `actor` is how the gateway
- * treats its first switches — a person's dwell, or an assistant's.
+ * Who asked for a run: a person, or an assistant for one — an actor, whose
+ * name is how the run says it and whose kind is how the gateway treats its
+ * first switches: a person's dwell, or an assistant's.
  */
-export type Asker = { name: string; actor: 'person' | 'agent' };
+export type Asker = GatewayActor & { kind: 'person' | 'agent' };

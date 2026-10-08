@@ -1,5 +1,5 @@
 import { AutomationEngine, AutomationLibrary } from '@kraftverk/automation-engine';
-import type { AuditRecord, Clock, PolicyValueName, PolicyValues, ScopedHttp } from '@kraftverk/device-sdk';
+import { SYSTEM, type Actor, type AuditRecord, type Clock, type PolicyValueName, type PolicyValues, type ScopedHttp } from '@kraftverk/device-sdk';
 import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
 import { ActionGateway, Confirmations, type GatewayPolicy } from '@kraftverk/gateway';
 import { LiveBus, SessionManager } from '@kraftverk/holder';
@@ -201,7 +201,7 @@ export class Hub {
             if (this.catalog.byIdentity(identity).active) return;
             const device = this.catalog.update(deviceId, { identity });
             // On the timeline — and so in the configuration kept beside the database, which is written again after it.
-            if (device) record({ at: new Date().toISOString(), kind: 'device.identified', actor: 'kraftverk', resourceKind: 'device', resource: deviceId, summary: `"${device.name}" said who it is: ${identity}`, detail: { identity } });
+            if (device) record({ at: new Date().toISOString(), kind: 'device.identified', actor: SYSTEM, resourceKind: 'device', resource: deviceId, summary: `"${device.name}" said who it is: ${identity}`, detail: { identity } });
           },
           onDescribed: (deviceId, description, info, source) => this.catalog.describe(deviceId, description, info, source),
           onEvent: (deviceId, event) => events.record(deviceId, event),
@@ -296,7 +296,7 @@ export class Hub {
    * nothing writes into a table being emptied. The first entry of the new
    * timeline says so; every open screen reads its list again.
    */
-  async reset(by: string): Promise<{ tables: string[]; rows: number }> {
+  async reset(by: Actor): Promise<{ tables: string[]; rows: number }> {
     this.sampler.stop();
     // Runs end and holds are let go before their automations' rows are: nothing steps, or fires, into an emptied home.
     this.engine.clear();

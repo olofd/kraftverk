@@ -3,7 +3,7 @@ import { dayAfter, localTime, MAIN_PART, zonedInstant, type ClockTimer } from '@
 import type { LiveMessage } from '@kraftverk/holder';
 
 import type { RuleContext } from './context.ts';
-import { actorOf, AUTOMATION_ACTOR, type AutomationEngineDeps, type AutomationRecord } from './model.ts';
+import { type AutomationEngineDeps, type AutomationRecord } from './model.ts';
 import type { Runs } from './runs.ts';
 import type { TriggerState } from './storage.ts';
 
@@ -155,10 +155,9 @@ export class Triggers {
       if (!differing.length) return;
       // The last edge wins: what another automation set since stays, until a condition of this one turns to
       // yes again. What a person or an assistant changed is switched back: that is what keeping things so is for.
-      const own = actorOf(automation);
       const others = differing.some((change) => {
         const by = ('command' in change ? this.deps.gateway.lastSwitch(change.command.binding.device, change.command.binding.part) : this.deps.gateway.lastWrite(change.write.binding.device, change.write.key))?.by;
-        return by !== undefined && by.startsWith(AUTOMATION_ACTOR) && by !== own;
+        return by !== undefined && by.kind === 'automation' && by.id !== automation.id;
       });
       if (others) return;
       await this.#runs.runAndKeep(automation, `Looked again after ${automation.recheckMinutes} min, and it still holds: ${this.#context.said(automation, rule, trigger.becomes)}`, key);

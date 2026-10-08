@@ -1,6 +1,6 @@
 import type { RuleSteps } from '@kraftverk/automation';
 import type { AutomationRun, ConditionState, RunLog } from '@kraftverk/api-contract';
-import type { ClockTimer } from '@kraftverk/device-sdk';
+import type { Actor, ClockTimer } from '@kraftverk/device-sdk';
 import type { LiveMessage } from '@kraftverk/holder';
 
 import { RuleContext } from './context.ts';
@@ -138,7 +138,7 @@ export class AutomationEngine {
   }
 
   /** Stops a run in progress: the step it is in ends as stopped, and its `otherwise` steps run. */
-  stopAsked(automationId: string, by: string): AutomationRun {
+  stopAsked(automationId: string, by: Actor): AutomationRun {
     return this.#runs.stopAsked(automationId, by);
   }
 

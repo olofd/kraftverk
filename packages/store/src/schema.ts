@@ -121,7 +121,10 @@ export const SCHEMA = `
     device_id   TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
     part        TEXT NOT NULL,
     switched_at TEXT NOT NULL,
-    switched_by TEXT NOT NULL,
+    /* Who switched it: an actor, as everything names one (docs/PLAN-WORLD-MODEL.md §6). */
+    by_kind     TEXT NOT NULL CHECK (by_kind IN ('person', 'agent', 'automation', 'node', 'integration', 'system')),
+    by_id       TEXT,
+    by_name     TEXT NOT NULL,
     PRIMARY KEY (device_id, part)
   );
 
@@ -130,7 +133,9 @@ export const SCHEMA = `
     device_id  TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
     attribute  TEXT NOT NULL,
     written_at TEXT NOT NULL,
-    written_by TEXT NOT NULL,
+    by_kind    TEXT NOT NULL CHECK (by_kind IN ('person', 'agent', 'automation', 'node', 'integration', 'system')),
+    by_id      TEXT,
+    by_name    TEXT NOT NULL,
     PRIMARY KEY (device_id, attribute)
   );
 
@@ -417,9 +422,9 @@ export const SCHEMA = `
   /*
     Each time an automation ran, or runs now (docs/SEQUENCES.md): when it
     started and ended, how it came out, why, and — in detail — what it read,
-    how its conditions stood and each step it took. started_by: the person or
-    assistant who started it — or who started the run that started it; NULL,
-    triggers did. started_by_run: the run of another automation whose step
+    how its conditions stood and each step it took. started_by_*: the person or
+    assistant who started it — or who started the run that started it — as an
+    actor; all NULL, triggers did. started_by_run: the run of another automation whose step
     started it; NULL, none did (or that run is gone). ended_at NULL: it is
     running, and its row is written at every step, so a screen follows it and
     a restart finds it: a run found unended on start was interrupted, and is
@@ -433,12 +438,15 @@ export const SCHEMA = `
     started_at    TEXT NOT NULL,
     ended_at      TEXT,
     outcome       TEXT NOT NULL CHECK (outcome IN ('acted', 'unverified', 'would-act', 'idle', 'unknown', 'refused', 'failed', 'running', 'stopped', 'interrupted')),
-    started_by    TEXT,
+    started_by_kind TEXT CHECK (started_by_kind IN ('person', 'agent', 'automation', 'node', 'integration', 'system')),
+    started_by_id   TEXT,
+    started_by_name TEXT,
     started_by_run TEXT REFERENCES automation_run (id) ON DELETE SET NULL,
     why           TEXT NOT NULL,
     summary       TEXT NOT NULL,
     detail        TEXT NOT NULL,
-    CHECK ((ended_at IS NULL) = (outcome = 'running'))
+    CHECK ((ended_at IS NULL) = (outcome = 'running')),
+    CHECK ((started_by_kind IS NULL) = (started_by_name IS NULL) AND (started_by_id IS NULL OR started_by_kind IS NOT NULL))
   );
   CREATE INDEX automation_run_recent ON automation_run (automation_id, started_at);
   CREATE INDEX automation_run_started_by_run ON automation_run (started_by_run);
@@ -585,7 +593,10 @@ export const SCHEMA = `
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     at            TEXT NOT NULL,
     kind          TEXT NOT NULL,
-    actor         TEXT NOT NULL,
+    /* Who did it, as they were called then: no reference, so a rename or a removal never rewrites what happened. */
+    actor_kind    TEXT NOT NULL CHECK (actor_kind IN ('person', 'agent', 'automation', 'node', 'integration', 'system')),
+    actor_id      TEXT,
+    actor_name    TEXT NOT NULL,
     resource_kind TEXT CHECK (resource_kind IN ('device', 'node', 'automation', 'account', 'transport')),
     resource      TEXT,
     summary       TEXT NOT NULL,
@@ -594,7 +605,7 @@ export const SCHEMA = `
   );
   CREATE INDEX audit_at ON audit (at);
   /* One entry once, when it is about something: a node that sends its timeline again adds nothing. */
-  CREATE UNIQUE INDEX audit_once ON audit (at, kind, actor, resource_kind, resource, summary) WHERE resource IS NOT NULL;
+  CREATE UNIQUE INDEX audit_once ON audit (at, kind, actor_kind, actor_name, resource_kind, resource, summary) WHERE resource IS NOT NULL;
   CREATE INDEX audit_resource ON audit (resource_kind, resource, at);
 
   /*

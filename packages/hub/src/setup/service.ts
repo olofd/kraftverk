@@ -13,6 +13,8 @@ import {
   methodOf,
   newId,
   randomHex,
+  sameActor,
+  type Actor,
   setupPlan,
   sightingMatches,
   type AuditRecord,
@@ -117,7 +119,7 @@ export class SetupService {
    * Begins setting up a device of `typeId`, over `methodId`, held by this
    * home. Refused when the method's transport cannot be used here, saying why.
    */
-  async start(input: { typeId: string; methodId?: string | null; by: string; through?: string }): Promise<DraftView> {
+  async start(input: { typeId: string; methodId?: string | null; by: Actor; through?: string }): Promise<DraftView> {
     // Its integration's code is loaded now, if it has not been: adding one is what it is needed for.
     const type = await this.#load(input.typeId);
 
@@ -177,7 +179,7 @@ export class SetupService {
    * for its own check, and saves the connection held by that app. Its secrets
    * never come here: they stay in the app.
    */
-  async startHeld(input: HeldSetupInput & { by: string }): Promise<DraftView> {
+  async startHeld(input: HeldSetupInput & { by: Actor }): Promise<DraftView> {
     const type = await this.#load(input.typeId);
     const method = type.connections.find((candidate) => candidate.id === input.methodId);
     if (!method) throw new ApiError('invalid', `${type.meta.name} has no way called "${input.methodId}"`);
@@ -225,8 +227,8 @@ export class SetupService {
   }
 
   /** Refuses a draft to anyone but the account that started it: it may hold a key. */
-  assertOwner(id: string, by: string): void {
-    if (this.#draft(id).by !== by) throw new ApiError('not-found', 'That setup has expired; start again');
+  assertOwner(id: string, by: Actor): void {
+    if (!sameActor(this.#draft(id).by, by)) throw new ApiError('not-found', 'That setup has expired; start again');
   }
 
   discard(id: string): void {
@@ -519,7 +521,7 @@ export class SetupService {
    * this node holds itself, over a transport: one through a bridge has
    * nothing of its own to give — its bridge is signed into instead.
    */
-  async again(input: { deviceId: string; connectionId: string; by: string }): Promise<DraftView> {
+  async again(input: { deviceId: string; connectionId: string; by: Actor }): Promise<DraftView> {
     const device = this.deps.catalog.active(input.deviceId as SavedDeviceId);
     const connection = device ? this.deps.connections.forDevice(device.id).find((each) => each.id === input.connectionId) : undefined;
     if (!device || !connection) throw new ApiError('not-found', 'No such way to reach it');

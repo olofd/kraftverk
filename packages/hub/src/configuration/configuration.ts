@@ -1,5 +1,5 @@
 import { ApiError, type ConfigExported, type ConfigExportRequest, type ImportAnswers, type ImportApplied, type ImportPlan } from '@kraftverk/api-contract';
-import type { AuditRecord } from '@kraftverk/device-sdk';
+import type { Actor, AuditRecord } from '@kraftverk/device-sdk';
 import { Confirmations, subjectOf } from '@kraftverk/gateway';
 import type { LiveBus } from '@kraftverk/holder';
 import { checkDocument, configJsonSchema, PASSPHRASE_MIN, readConfig, writeConfig, type Vocabulary } from '@kraftverk/home-file';
@@ -74,7 +74,7 @@ export class Configuration {
    * carries them is on the timeline. `schemaUrl`: where an editor finds the
    * schema, for the file's first line.
    */
-  async export(request: ConfigExportRequest, by: string, options: { schemaUrl?: string } = {}): Promise<ConfigExported> {
+  async export(request: ConfigExportRequest, by: Actor, options: { schemaUrl?: string } = {}): Promise<ConfigExported> {
     const secrets = request.secrets ?? 'none';
     if (secrets === 'sealed' && (request.passphrase ?? '').length < PASSPHRASE_MIN) {
       throw new ApiError('invalid', `A passphrase is at least ${PASSPHRASE_MIN} characters: an export travels`);
@@ -112,7 +112,7 @@ export class Configuration {
    * with its own key. `lenient`: planned as a restore is — what it cannot
    * carry is left out and said, never asked for — and applied so.
    */
-  plan(text: string, options: { mode: ImportMode; passphrase?: string; kept?: boolean; lenient?: boolean }, by: string): Promise<ImportPlan> {
+  plan(text: string, options: { mode: ImportMode; passphrase?: string; kept?: boolean; lenient?: boolean }, by: Actor): Promise<ImportPlan> {
     return planImport(this.#deps, text, { ...options, by });
   }
 
@@ -122,7 +122,7 @@ export class Configuration {
    * transaction. What it sets acting on its own, or removes, wants a
    * person's yes: refused with a token to send back as `confirmation`.
    */
-  async apply(answers: ImportAnswers, by: string): Promise<ImportApplied> {
+  async apply(answers: ImportAnswers, by: Actor): Promise<ImportApplied> {
     const plan = keptPlan(this.#deps, answers.plan, by);
     if (!plan) throw new ApiError('not-found', 'That plan has gone: read the file again');
     // What it asks a yes to is asked whatever part of it is applied: a yes is not narrowed by the person's own choice of what to leave out.

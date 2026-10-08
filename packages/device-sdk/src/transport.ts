@@ -1,4 +1,4 @@
-import type { AuditSubject } from './audit.ts';
+import type { Actor, AuditSubject } from './audit.ts';
 import type { Channel, ChannelKind, OpenOptions } from './channel.ts';
 import type { Platform } from './node.ts';
 import type { ConfigValues } from './schema.ts';
@@ -250,7 +250,7 @@ export type TransportContext = {
    * Records something security-relevant in the audit timeline: a command the
    * broker refused, a client that presented the wrong secret.
    */
-  audit(entry: { kind: string; actor: string; summary: string; detail?: unknown } & AuditSubject): void;
+  audit(entry: { kind: string; actor: Actor; summary: string; detail?: unknown } & AuditSubject): void;
   /** What this transport keeps between runs, its own and no other transport's. */
   store: TransportStore;
 };

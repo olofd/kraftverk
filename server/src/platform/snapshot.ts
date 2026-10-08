@@ -2,6 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameS
 import { basename, dirname, join } from 'node:path';
 
 import { ApiError, type ImportPlan } from '@kraftverk/api-contract';
+import type { Actor } from '@kraftverk/device-sdk';
 import type { Configuration, ImportMode, Restored } from '@kraftverk/hub';
 
 import { asideName } from './aside.ts';
@@ -166,7 +167,7 @@ export class ConfigSnapshot {
    * this server's own, sealed with its key — opened as only the server's own
    * copy may be, never through the API.
    */
-  planAgain(mode: ImportMode, by: string): Promise<ImportPlan> {
+  planAgain(mode: ImportMode, by: Actor): Promise<ImportPlan> {
     const from = this.restored?.from;
     if (!from || !existsSync(from)) throw new ApiError('not-found', 'There is no restored copy to import again');
     return this.configuration.plan(readFileSync(from, 'utf8'), { mode, kept: true }, by);

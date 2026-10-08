@@ -55,7 +55,7 @@ test('a home from lists, on the WebAssembly build: a lamp added through setup, s
   const result = await home.devices.command(lamp.id, 'main', 'switch', 'set', { args: { on: true } });
   expect(result).toMatchObject({ outcome: 'verified' });
   expect(bus.lamps.get('lamp-1')!.on).toBe(true);
-  expect((await home.timeline({ limit: 5 })).map((entry) => entry.actor)).toContain('you');
+  expect((await home.timeline({ limit: 5 })).map((entry) => entry.actor.name)).toContain('you');
 });
 
 test("a device picked in the platform's chooser: chosen, checked and saved — and a dismissed chooser chooses nothing", async () => {

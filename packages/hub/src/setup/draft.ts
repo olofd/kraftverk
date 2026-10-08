@@ -1,5 +1,5 @@
 import type { CheckOutcome, DraftView, SaveInput } from '@kraftverk/api-contract';
-import type { NodeId, ConfigValues, ConnectionMethod, DeviceType, Identified, memoryHeld, SavedDeviceId, SetupStepView, Sighting } from '@kraftverk/device-sdk';
+import type { Actor, NodeId, ConfigValues, ConnectionMethod, DeviceType, Identified, memoryHeld, SavedDeviceId, SetupStepView, Sighting } from '@kraftverk/device-sdk';
 
 import type { Reach } from './reach.ts';
 
@@ -14,7 +14,7 @@ export const DRAFT_TTL_MS = 15 * 60_000;
 
 export type Draft = {
   id: string;
-  by: string;
+  by: Actor;
   /** The node that will hold the connection: this one, or the node that ran the steps itself, following this one. */
   heldBy: NodeId;
   type: DeviceType<any>;

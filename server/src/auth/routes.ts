@@ -5,6 +5,7 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
 import { ApiError, CLIENT_HEADER, CONFIG_SCHEMA_PATH } from '@kraftverk/api-contract';
+import { actor } from '@kraftverk/device-sdk';
 import type { AuditLog } from '@kraftverk/store';
 import { body } from '../routes/parse.ts';
 import { LoginLimiter, limiterKeys } from './limiter.ts';
@@ -55,8 +56,8 @@ export type Access = {
 
 const accessByRequest = new WeakMap<Request, Access>();
 
-/** Who is acting, for the audit log. */
-export function actorOf(c: Context): string {
+/** The signed-in account's name: what a caller is named by. */
+export function usernameOf(c: Context): string {
   return accessByRequest.get(c.req.raw)?.user?.username ?? 'unknown';
 }
 
@@ -187,7 +188,7 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
     const tooMany = limiter.admit(c, keys, 'Too many wrong passwords.');
     if (tooMany) return tooMany;
     if (!(await accounts.passwordMatches(user.id, password))) {
-      audit.record({ at: now(), kind: 'auth.confirm-failed', actor: user.username, resourceKind: 'account', resource: user.id, summary: `${user.username} gave a wrong password to confirm a change`, detail: { clientIp: trust.clientIp, path: c.req.path } });
+      audit.record({ at: now(), kind: 'auth.confirm-failed', actor: actor('person', user.username), resourceKind: 'account', resource: user.id, summary: `${user.username} gave a wrong password to confirm a change`, detail: { clientIp: trust.clientIp, path: c.req.path } });
       throw new ApiError('forbidden', 'Your password is not right');
     }
     limiter.succeeded(keys);
@@ -234,7 +235,7 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
     const { token } = accounts.createSession(user.id, trust.clientIp, c.req.header('user-agent') ?? null);
     accounts.markLoggedIn(user.id);
     writeCookie(c, token);
-    audit.record({ at: now(), kind: 'auth.setup', actor: username, resourceKind: 'account', resource: user.id, summary: `${username} created the first account`, detail: { clientIp: trust.clientIp } });
+    audit.record({ at: now(), kind: 'auth.setup', actor: actor('person', username), resourceKind: 'account', resource: user.id, summary: `${username} created the first account`, detail: { clientIp: trust.clientIp } });
     return c.json({ user: { id: user.id, username: user.username } }, 201);
   });
 
@@ -248,7 +249,7 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
 
     const user = await accounts.verifyLogin(username, password);
     if (!user) {
-      audit.record({ at: now(), kind: 'auth.login-failed', actor: username, summary: `Failed login for ${username}`, detail: { clientIp: trust.clientIp, reason: trust.reason } });
+      audit.record({ at: now(), kind: 'auth.login-failed', actor: actor('person', username), summary: `Failed login for ${username}`, detail: { clientIp: trust.clientIp, reason: trust.reason } });
       // One message for both: which half was wrong is what a guesser wants to know.
       return c.json({ error: 'That username and password do not match.' }, 401);
     }
@@ -258,7 +259,7 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
     accounts.endSession(getCookie(c, SESSION_COOKIE));
     const { token } = accounts.createSession(user.id, trust.clientIp, c.req.header('user-agent') ?? null);
     writeCookie(c, token);
-    audit.record({ at: now(), kind: 'auth.login', actor: user.username, resourceKind: 'account', resource: user.id, summary: `${user.username} logged in`, detail: { clientIp: trust.clientIp, reason: trust.reason } });
+    audit.record({ at: now(), kind: 'auth.login', actor: actor('person', user.username), resourceKind: 'account', resource: user.id, summary: `${user.username} logged in`, detail: { clientIp: trust.clientIp, reason: trust.reason } });
     return c.json({ user: { id: user.id, username: user.username } });
   });
 
@@ -266,7 +267,7 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
     const { user } = access(c);
     accounts.endSession(getCookie(c, SESSION_COOKIE));
     clearCookie(c);
-    if (user) audit.record({ at: now(), kind: 'auth.logout', actor: user.username, resourceKind: 'account', resource: user.id, summary: `${user.username} logged out` });
+    if (user) audit.record({ at: now(), kind: 'auth.logout', actor: actor('person', user.username), resourceKind: 'account', resource: user.id, summary: `${user.username} logged out` });
     return c.json({ ok: true });
   });
 
@@ -277,7 +278,7 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
     const refused = await confirmIdentity(c, user, current);
     if (refused) return refused;
     await accounts.setPassword(user.id, password, getCookie(c, SESSION_COOKIE)).catch(rethrow);
-    audit.record({ at: now(), kind: 'user.password', actor: user.username, resourceKind: 'account', resource: user.id, summary: `${user.username} changed their password; their other sessions were signed out` });
+    audit.record({ at: now(), kind: 'user.password', actor: actor('person', user.username), resourceKind: 'account', resource: user.id, summary: `${user.username} changed their password; their other sessions were signed out` });
     return c.json({ ok: true });
   });
 
@@ -289,29 +290,29 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
   });
 
   users.post('/', async (c) => {
-    const actor = requireUser(c);
+    const signedIn = requireUser(c);
     const { username, password, yourPassword: confirmation } = await body(c, credentials.extend({ yourPassword }));
-    const refused = await confirmIdentity(c, actor, confirmation);
+    const refused = await confirmIdentity(c, signedIn, confirmation);
     if (refused) return refused;
-    const user = await accounts.createUser(username, password, actor.username).catch(rethrow);
-    audit.record({ at: now(), kind: 'user.created', actor: actor.username, resourceKind: 'account', resource: user.id, summary: `${actor.username} added ${user.username}` });
+    const user = await accounts.createUser(username, password, signedIn.username).catch(rethrow);
+    audit.record({ at: now(), kind: 'user.created', actor: actor('person', signedIn.username), resourceKind: 'account', resource: user.id, summary: `${signedIn.username} added ${user.username}` });
     return c.json({ user }, 201);
   });
 
   users.delete('/:id', async (c) => {
-    const actor = requireUser(c);
+    const signedIn = requireUser(c);
     const target = accounts.getUser(c.req.param('id'));
     if (!target) throw new ApiError('not-found', 'No such user');
     const { yourPassword: confirmation } = await body(c, z.object({ yourPassword }));
-    const refused = await confirmIdentity(c, actor, confirmation);
+    const refused = await confirmIdentity(c, signedIn, confirmation);
     if (refused) return refused;
     try {
       accounts.deleteUser(target.id);
     } catch (error) {
       rethrow(error);
     }
-    if (target.id === actor.id) clearCookie(c);
-    audit.record({ at: now(), kind: 'user.removed', actor: actor.username, resourceKind: 'account', resource: target.id, summary: `${actor.username} removed ${target.username}` });
+    if (target.id === signedIn.id) clearCookie(c);
+    audit.record({ at: now(), kind: 'user.removed', actor: actor('person', signedIn.username), resourceKind: 'account', resource: target.id, summary: `${signedIn.username} removed ${target.username}` });
     return c.json({ ok: true });
   });
 
@@ -323,17 +324,17 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
    * This route used to take your own id as well, and was then a way around it.
    */
   users.post('/:id/password', async (c) => {
-    const actor = requireUser(c);
+    const signedIn = requireUser(c);
     const target = accounts.getUser(c.req.param('id'));
     if (!target) throw new ApiError('not-found', 'No such user');
-    if (target.id === actor.id) {
+    if (target.id === signedIn.id) {
       throw new ApiError('invalid', 'Change your own password under “Change your password”; it needs your current one.');
     }
     const { password, yourPassword: confirmation } = await body(c, z.object({ password: z.string().min(1).max(256), yourPassword }));
-    const refused = await confirmIdentity(c, actor, confirmation);
+    const refused = await confirmIdentity(c, signedIn, confirmation);
     if (refused) return refused;
     await accounts.setPassword(target.id, password).catch(rethrow);
-    audit.record({ at: now(), kind: 'user.password', actor: actor.username, resourceKind: 'account', resource: target.id, summary: `${actor.username} set a new password for ${target.username}; their sessions were signed out` });
+    audit.record({ at: now(), kind: 'user.password', actor: actor('person', signedIn.username), resourceKind: 'account', resource: target.id, summary: `${signedIn.username} set a new password for ${target.username}; their sessions were signed out` });
     return c.json({ ok: true });
   });
 

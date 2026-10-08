@@ -1,5 +1,5 @@
 import { ApiError, type ConfigRestored } from '@kraftverk/api-contract';
-import type { AuditRecord } from '@kraftverk/device-sdk';
+import { SYSTEM, type AuditRecord } from '@kraftverk/device-sdk';
 
 import { planImport, startWritten, writeImport, type ImportDeps, type Written } from './import.ts';
 
@@ -17,7 +17,7 @@ import { planImport, startWritten, writeImport, type ImportDeps, type Written } 
 export type Restored = ConfigRestored;
 
 /** Who a restore is on the timeline: no person asked for it. */
-const BY = 'kraftverk';
+const BY = SYSTEM;
 
 export async function restoreFrom(deps: ImportDeps & { record: (entry: AuditRecord) => void }, text: string, from: string): Promise<Restored> {
   const at = new Date().toISOString();

@@ -15,7 +15,7 @@ import { actorOf } from './caller.ts';
 export function liveApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'live'> {
   return {
     live(listener: (update: LiveUpdate) => void, options = {}) {
-      const viewer = hub.attention.open(caller.kind === 'person' ? caller.name : actorOf(caller));
+      const viewer = hub.attention.open(actorOf(caller).name);
       const stop = coalesced(hub.bus, listener, options.draining);
       // In the process, it is up at once.
       options.onState?.('live');

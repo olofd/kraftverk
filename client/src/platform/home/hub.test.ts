@@ -61,7 +61,7 @@ test('every installed type can be added, and a simulated plug is added, switched
     await new Promise((resolve) => setTimeout(resolve, 20));
     runs = await home.automations.runs(automation.id);
   }
-  expect(runs[0]).toMatchObject({ startedBy: 'you' });
+  expect(runs[0]).toMatchObject({ startedBy: { name: 'you' } });
   expect(runs[0]!.outcome).not.toBe('interrupted');
-  expect((await home.timeline({ limit: 20 })).some((entry) => entry.actor === 'you')).toBe(true);
+  expect((await home.timeline({ limit: 20 })).some((entry) => entry.actor.name === 'you')).toBe(true);
 });

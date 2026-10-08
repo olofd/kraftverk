@@ -19,6 +19,7 @@ import {
   type SqlDatabase,
 } from '../src/index.ts';
 import { DRIVERS } from './drivers.ts';
+import { actor } from '@kraftverk/device-sdk';
 
 /*
   Every other store, on each SQLite a home is kept in: what the server and the
@@ -55,10 +56,10 @@ for (const driver of DRIVERS) {
       const audit = new AuditLog(database);
       const heard: AuditRecord[] = [];
       const stop = audit.onRecord((entry) => void heard.push(entry));
-      audit.record({ at: at(1), kind: 'device.added', actor: 'olof', resourceKind: 'device', resource: 'd-one', summary: 'Added One' });
-      audit.record({ at: at(2), kind: 'automation.ran', actor: 'automation', resourceKind: 'automation', resource: 'a-one', summary: 'Ran', detail: { steps: 2 } });
+      audit.record({ at: at(1), kind: 'device.added', actor: actor('person', 'olof'), resourceKind: 'device', resource: 'd-one', summary: 'Added One' });
+      audit.record({ at: at(2), kind: 'automation.ran', actor: actor('automation', 'automation'), resourceKind: 'automation', resource: 'a-one', summary: 'Ran', detail: { steps: 2 } });
       stop();
-      audit.record({ at: at(3), kind: 'device.renamed', actor: 'olof', resourceKind: 'device', resource: 'd-one', summary: 'Renamed One' });
+      audit.record({ at: at(3), kind: 'device.renamed', actor: actor('person', 'olof'), resourceKind: 'device', resource: 'd-one', summary: 'Renamed One' });
       expect(heard.map((entry) => entry.kind)).toEqual(['device.added', 'automation.ran']);
       expect(audit.recent().map((entry) => entry.kind)).toEqual(['device.renamed', 'automation.ran', 'device.added']);
       expect(audit.recent({ resourceKind: 'device', resource: 'd-one' }).map((entry) => entry.summary)).toEqual(['Renamed One', 'Added One']);
@@ -95,11 +96,11 @@ for (const driver of DRIVERS) {
       const ledger = databaseLedger(database);
       const plug = device('Ledgered');
       expect(ledger.lastSwitch(plug, MAIN_PART)).toBeNull();
-      ledger.switched(plug, MAIN_PART, { at: Date.parse(at(5)), by: 'automation:a-one' });
-      ledger.switched(plug, MAIN_PART, { at: Date.parse(at(6)), by: 'olof' });
-      expect(ledger.lastSwitch(plug, MAIN_PART)).toEqual({ at: Date.parse(at(6)), by: 'olof' });
-      ledger.wrote(plug, 'indicator', { at: Date.parse(at(7)), by: 'olof' });
-      expect(ledger.lastWrite(plug, 'indicator')).toEqual({ at: Date.parse(at(7)), by: 'olof' });
+      ledger.switched(plug, MAIN_PART, { at: Date.parse(at(5)), by: actor('automation', 'a-one', 'a-one') });
+      ledger.switched(plug, MAIN_PART, { at: Date.parse(at(6)), by: actor('person', 'olof') });
+      expect(ledger.lastSwitch(plug, MAIN_PART)).toEqual({ at: Date.parse(at(6)), by: actor('person', 'olof') });
+      ledger.wrote(plug, 'indicator', { at: Date.parse(at(7)), by: actor('person', 'olof') });
+      expect(ledger.lastWrite(plug, 'indicator')).toEqual({ at: Date.parse(at(7)), by: actor('person', 'olof') });
     });
 
     test("a device's events, newest first; warnings and errors across devices, with whose", () => {
@@ -167,7 +168,7 @@ for (const driver of DRIVERS) {
       store.startAfresh(made.id, at(11));
       expect(store.trigger(made.id, 'low')).toBeNull();
 
-      const run = { id: null, at: at(12), startedBy: 'olof', startedByRun: null, endedAt: null, outcome: 'running' as const, summary: 'Taking steps', why: 'Started by olof', saw: [], conditions: [], steps: [], answered: null };
+      const run = { id: null, at: at(12), startedBy: actor('person', 'olof'), startedByRun: null, endedAt: null, outcome: 'running' as const, summary: 'Taking steps', why: 'Started by olof', saw: [], conditions: [], steps: [], answered: null };
       const runId = store.beginRun(made.id, run);
       expect(store.unended().map((unended) => unended.automationId)).toEqual([made.id]);
       store.recordLog(runId, { keys: [], readings: [] });

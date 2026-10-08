@@ -177,7 +177,7 @@ for (const way of WAYS) {
       expect((await home.policy.set('reserveSoc', 20)).find((value) => value.name === 'reserveSoc')!.value).toBe(20);
       expect((await refused(home.policy.set('reserveSoc', 1000))).kind).toBe('invalid');
       const [latest] = await home.timeline({ limit: 1 });
-      expect(latest).toMatchObject({ kind: 'policy.changed', actor: 'olof' });
+      expect(latest).toMatchObject({ kind: 'policy.changed', actor: { name: 'olof' } });
     });
 
     test('exports what it has, by key', async () => {

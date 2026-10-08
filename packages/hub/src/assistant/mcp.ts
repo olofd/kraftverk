@@ -164,7 +164,7 @@ const TOOLS: Tool[] = [
     run: async (args, home) => {
       const input = checked<{ device?: string; automation?: string; limit?: number }>(args, TOOL_SCHEMA.receipts!);
       const entries = await home.timeline({ limit: input.limit ?? 20, ...(input.device ? { resourceKind: 'device', resource: input.device } : input.automation ? { resourceKind: 'automation', resource: input.automation } : {}) });
-      return entries.length ? entries.map((entry) => `${entry.at} ${entry.kind} by ${entry.actor}: ${entry.summary}`).join('\n') : 'Nothing yet.';
+      return entries.length ? entries.map((entry) => `${entry.at} ${entry.kind} by ${entry.actor.name}: ${entry.summary}`).join('\n') : 'Nothing yet.';
     },
   },
   {

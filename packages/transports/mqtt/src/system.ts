@@ -9,6 +9,8 @@ import type {
   TransportFactory,
 } from '@kraftverk/device-sdk';
 
+import { actor } from '@kraftverk/device-sdk';
+
 import { duration, formatEntry } from './broker/journal.ts';
 import { matches } from './broker/broker.ts';
 import { brokerToken, type DevicePresence } from './broker/shared.ts';
@@ -182,7 +184,7 @@ const createMqttTransport: TransportFactory = (context: TransportContext): Trans
     // What it tried to reach: a device's address on the broker, which may be no device you have.
     const address = entry.device;
     const about: AuditSubject = address ? { resourceKind: 'transport', resource: address } : {};
-    context.audit({ kind: 'mqtt.refused', actor: entry.clientId ?? 'unknown', ...about, summary: entry.message, detail: entry.data });
+    context.audit({ kind: 'mqtt.refused', actor: actor('system', 'the MQTT broker'), ...about, summary: entry.message, detail: entry.data });
   });
 
   /** The broker, as the server sees it: running or not, connected or not, and what it holds. */

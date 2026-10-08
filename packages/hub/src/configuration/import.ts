@@ -12,6 +12,8 @@ import {
   isPolicyValueName,
   POLICY_VALUES,
   newId,
+  sameActor,
+  type Actor,
   validateConfig,
   type AutomationId,
   type ConfigValues,
@@ -79,7 +81,7 @@ type Kept = {
   mode: ImportMode;
   /** Each secret by "device.connectIndex.field": opened, or still needed. */
   secrets: Map<string, string>;
-  by: string;
+  by: Actor;
   expiresAt: number;
   /** Restoring: automations restored turned off, and why. */
   turnedOff: Map<string, string[]>;
@@ -146,7 +148,7 @@ const secretKey = (device: string, index: number, field: string) => `${device}.$
  * What importing a file would do. `kept`: the snapshot's own secrets, sealed
  * with this home's key, are opened as the home opens them.
  */
-export async function planImport(deps: ImportDeps, text: string, options: { mode: ImportMode; passphrase?: string; by: string; kept?: boolean; lenient?: boolean }): Promise<ImportPlan> {
+export async function planImport(deps: ImportDeps, text: string, options: { mode: ImportMode; passphrase?: string; by: Actor; kept?: boolean; lenient?: boolean }): Promise<ImportPlan> {
   const vocabulary = homeVocabulary(deps);
   // A restore reads what it can: an entry it cannot read is left out and said, never the whole home lost for it.
   // A file kept before an installed integration's entries changed comes back as they are now.
@@ -489,9 +491,9 @@ export type ImportChoices = {
 };
 
 /** A kept plan, if it is this person's and still current. */
-export function keptPlan(deps: Pick<ImportDeps, 'pending'>, id: string, by: string): ImportPlan | null {
+export function keptPlan(deps: Pick<ImportDeps, 'pending'>, id: string, by: Actor): ImportPlan | null {
   const kept = deps.pending.get(id);
-  return kept && kept.by === by && kept.expiresAt > Date.now() ? kept.view : null;
+  return kept && sameActor(kept.by, by) && kept.expiresAt > Date.now() ? kept.view : null;
 }
 
 /** A plan written: what it did, and what is set going after (`startWritten`). */
@@ -504,9 +506,9 @@ export type Written = { applied: ImportApplied; touched: AutomationId[]; forgott
  * invalid — an answer missing, a row the database will not keep; a fault in
  * the code goes on as one.
  */
-export function writeImport(deps: ImportDeps, id: string, by: string, choices: ImportChoices, options: { lenient?: boolean } = {}): Written {
+export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: ImportChoices, options: { lenient?: boolean } = {}): Written {
   const kept = deps.pending.get(id);
-  if (!kept || kept.by !== by || kept.expiresAt < Date.now()) throw new ApiError('not-found', 'That plan has gone: read the file again');
+  if (!kept || !sameActor(kept.by, by) || kept.expiresAt < Date.now()) throw new ApiError('not-found', 'That plan has gone: read the file again');
   const { document, view } = kept;
   // A plan made as a restore is applied as one.
   options = { lenient: options.lenient ?? kept.lenient };

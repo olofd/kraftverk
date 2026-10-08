@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import { ApiError, type VersionInfo } from '@kraftverk/api-contract';
+import { actor } from '@kraftverk/device-sdk';
 
 import { LoginLimiter, limiterKeys } from '../auth/limiter.ts';
 import type { createAuth } from '../auth/routes.ts';
@@ -82,14 +83,14 @@ export function serverRoutes(deps: AppDeps, auth: ReturnType<typeof createAuth>)
     const { secret } = await body(c, z.object({ secret: z.string().max(1024) }));
     if (!secretMatches(secret, expected)) {
       resetGuesses.failed(keys);
-      deps.hub.audit.record({ at: new Date().toISOString(), kind: 'database.reset-refused', actor: who, summary: `${who} gave a wrong reset passphrase`, detail: { clientIp: trust.clientIp } });
+      deps.hub.audit.record({ at: new Date().toISOString(), kind: 'database.reset-refused', actor: actor('person', who), summary: `${who} gave a wrong reset passphrase`, detail: { clientIp: trust.clientIp } });
       // Deliberately says nothing about length or how close it was.
       throw new ApiError('forbidden', 'That is not the reset passphrase');
     }
     resetGuesses.succeeded(keys);
 
     // What emptying the home stops and starts again is the home's.
-    const { tables, rows } = await deps.hub.reset(who);
+    const { tables, rows } = await deps.hub.reset(actor('person', who));
     console.log(`[admin] database reset — ${rows} rows across ${tables.length} tables`);
     return c.json({ ok: true, tables, rows });
   });

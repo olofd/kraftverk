@@ -9,6 +9,7 @@ import { AutomationEngine, type AutomationRecord, type EngineDevice, type Engine
 import { AutomationStore, type SqlDatabase } from '@kraftverk/store';
 
 import { testDatabase } from './home.ts';
+import { actor } from '@kraftverk/device-sdk';
 
 /*
   The engine runs rules — whoever wrote them — and the gateway acts: these
@@ -333,7 +334,7 @@ describe('at a time of day', () => {
       steps: [{ kind: 'command', depth: 0, what: 'Turn Heater plug on', outcome: 'would', detail: '' }],
     });
     expect(sent).toEqual([]);
-    expect(recorded[0]).toMatchObject({ kind: 'automation.would-act', actor: 'automation:Test automation', resourceKind: 'automation', detail: { device: PLUG } });
+    expect(recorded[0]).toMatchObject({ kind: 'automation.would-act', actor: expect.objectContaining({ kind: 'automation', name: 'Test automation' }), resourceKind: 'automation', detail: { device: PLUG } });
   });
 
   test('what it would do says what is already so, as it stands now', async () => {
@@ -350,7 +351,7 @@ describe('at a time of day', () => {
     const automation = sunny({}, 'act');
     expect((await engine.run(automation)).outcome).toBe('acted');
     // Named by its id, which a rename does not change: how keeping things so tells its own switches from another's.
-    expect(sent).toEqual([expect.objectContaining({ deviceId: PLUG, part: 'main', capability: 'switch', command: 'set', args: { on: true }, actor: 'automation', by: `automation:${automation.id}` })]);
+    expect(sent).toEqual([expect.objectContaining({ deviceId: PLUG, part: 'main', capability: 'switch', command: 'set', args: { on: true }, by: actor('automation', automation.name, automation.id) })]);
     expect(sent[0]!.reason).toContain('Tomorrow looks sunny');
   });
 
@@ -775,11 +776,11 @@ describe('keeping things so', () => {
     const kept = window(context, 10);
     await engine.hear({ kind: 'readings', deviceId: STATION, readings: [] });
     await settle();
-    expect(sent.map((intent) => [intent.args.on, intent.by])).toEqual([[false, `automation:${kept.id}`]]);
+    expect(sent.map((intent) => [intent.args.on, intent.by])).toEqual([[false, actor('automation', kept.name, kept.id)]]);
 
     // Another automation turns it on: its edge stands, look after look.
     plug.on = true;
-    ledger.switched(PLUG, 'main', { at: context.now().getTime(), by: 'automation:a-other' });
+    ledger.switched(PLUG, 'main', { at: context.now().getTime(), by: actor('automation', 'a-other', 'a-other') });
     context.at(new Date(MORNING.getTime() + 10 * MINUTE));
     await engine.tick();
     context.at(new Date(MORNING.getTime() + 20 * MINUTE));
@@ -787,7 +788,7 @@ describe('keeping things so', () => {
     expect(sent).toHaveLength(1);
 
     // A person turns it on after that: switched back at the next look.
-    ledger.switched(PLUG, 'main', { at: context.now().getTime(), by: 'olof' });
+    ledger.switched(PLUG, 'main', { at: context.now().getTime(), by: actor('person', 'olof') });
     context.at(new Date(MORNING.getTime() + 30 * MINUTE));
     await engine.tick();
     expect(sent.map((intent) => intent.args.on)).toEqual([false, false]);
@@ -801,7 +802,7 @@ describe('keeping things so', () => {
     const dark = make('test.kit.dark', { battery: { device: STATION, part: 'main' }, plug: { device: PLUG, part: 'main' } }, {}, 'act', 10);
     await engine.hear({ kind: 'readings', deviceId: STATION, readings: [] });
     await settle();
-    expect(written.map((intent) => [intent.patch, intent.by])).toEqual([[{ light: false }, `automation:${dark.id}`]]);
+    expect(written.map((intent) => [intent.patch, intent.by])).toEqual([[{ light: false }, { kind: 'automation', id: dark.id, name: dark.name }]]);
 
     // Put back on by hand: off again at the next look — and not written while it already is.
     plug.light = true;
@@ -1089,7 +1090,7 @@ describe('a battery kept between two levels', () => {
     const made = store.create({ name: 'Kept levels', rule: withSettings(recipe, levels), madeFrom: 'standard.charge-between', roles, groups: {}, starts: {}, timeZone: ZONE, recheckMinutes: null });
     const window = store.update(made.id, { mode: 'act' })!;
     station.soc = 4;
-    const run = await engine.run(window, { askedBy: { actor: 'person', name: 'olof' } });
+    const run = await engine.run(window, { askedBy: actor('person', 'olof') });
     expect(run.outcome).toBe('acted');
     expect(sent.map((intent) => intent.args.on)).toEqual([true]);
     expect(run.conditions).toEqual([
@@ -1120,7 +1121,7 @@ describe('a battery kept between two levels', () => {
     plug.on = false;
     const window = context.make('standard.charge-between', roles, levels, 'act');
     station.soc = 4;
-    const going = engine.run(window, { askedBy: { actor: 'person', name: 'olof' } });
+    const going = engine.run(window, { askedBy: actor('person', 'olof') });
     // The plug says something new: its reading is fresh again, and the gateway takes it.
     await new Promise((resolve) => setTimeout(resolve, 50));
     stale = false;
@@ -1160,14 +1161,14 @@ describe('an automation as a function', () => {
     };
     expect(checkRule(starting, { fn: () => null })).toEqual([]);
     const parent = store.create({ name: 'Asks', rule: starting, madeFrom: null, roles: {}, groups: {}, starts: { answers: child.id }, timeZone: ZONE, recheckMinutes: null });
-    const run = await engine.run(store.get(parent.id)!, { askedBy: { actor: 'person', name: 'olof' } });
+    const run = await engine.run(store.get(parent.id)!, { askedBy: actor('person', 'olof') });
     expect(run.outcome).toBe('acted');
     expect(store.memory(parent.id)).toEqual({ got: 85 });
     const answered = store.runs(child.id)[0]!;
     expect(answered).toMatchObject({ answered: 85, summary: 'Answered 85 %' });
 
     // Played by a person, nothing given: its default.
-    const alone = await engine.run(store.get(child.id)!, { askedBy: { actor: 'person', name: 'olof' } });
+    const alone = await engine.run(store.get(child.id)!, { askedBy: actor('person', 'olof') });
     expect(alone.answered).toBe(75);
   });
 });
@@ -1406,7 +1407,7 @@ describe('how a run goes: round after round, tried, ended where it is, waiting f
     const made = context.store.create({ name: 'Steps', rule, madeFrom: null, roles: { plug: { device: PLUG, part: 'main' }, station: { device: STATION, part: 'input.ac' } }, groups: {}, starts: {}, timeZone: ZONE, recheckMinutes: null });
     return context.store.update(made.id, { mode: 'act' })!;
   };
-  const OLOF = { askedBy: { actor: 'person' as const, name: 'olof' } };
+  const OLOF = { askedBy: actor('person', 'olof') };
 
   test('so many rounds: each takes its steps', async () => {
     const context = setup();

@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { nodeId, savedDeviceId, type AuditRecord, type DeviceDescription, type DeviceSession, type Value } from '@kraftverk/device-sdk';
 
 import { ActionGateway, type WriteIntent } from './gateway.ts';
+import { actor } from '@kraftverk/device-sdk';
 
 /*
   Settings go through the gateway like commands: attributes the description
@@ -60,8 +61,7 @@ function gateway(options: { stubborn?: boolean; readOnly?: boolean } = {}) {
 const intent = (patch: Record<string, Value>, extra: Partial<WriteIntent> = {}): WriteIntent => ({
   deviceId: savedDeviceId('d-1'),
   patch,
-  actor: 'person',
-  by: 'olof',
+  by: actor('person', 'olof'),
   ...extra,
 });
 
@@ -108,7 +108,7 @@ describe('settings through the gateway', () => {
     const token = asked.needsConfirmation;
     expect(asked).toMatchObject({ outcome: 'refused', needsConfirmation: expect.any(String) });
     expect(asked.detail).toContain('Sleep after');
-    expect((await g.write(intent({ sleepMinutes: 60 }, { actor: 'automation', by: 'automation:x', confirmation: token }))).outcome).toBe('refused');
+    expect((await g.write(intent({ sleepMinutes: 60 }, { by: actor('automation', 'x', 'x'), confirmation: token }))).outcome).toBe('refused');
     expect(device.writes).toEqual([]);
     // The token is for this patch: another value is asked about afresh.
     const other = await g.write(intent({ sleepMinutes: 120 }, { confirmation: token }));

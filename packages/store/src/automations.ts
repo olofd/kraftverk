@@ -1,7 +1,7 @@
 
 import type { AutomationRun, RunLog, RunLogDevice, RunLogKey, RunLogReach, RunLogReading, RunLogRole } from '@kraftverk/api-contract';
 import { KEY, keyFrom } from '@kraftverk/device-sdk';
-import { automationId, savedDeviceId, type AutomationId, type Quantity, type Value } from '@kraftverk/device-sdk';
+import { automationId, savedDeviceId, type ActorKind, type AutomationId, type Quantity, type Value } from '@kraftverk/device-sdk';
 import type { RoleBinding, Rule } from '@kraftverk/automation';
 
 import type { SqlDatabase } from './database.ts';
@@ -37,7 +37,9 @@ type RunRow = {
   started_at: string;
   ended_at: string | null;
   outcome: AutomationRun['outcome'];
-  started_by: string | null;
+  started_by_kind: ActorKind | null;
+  started_by_id: string | null;
+  started_by_name: string | null;
   started_by_run: string | null;
   why: string;
   summary: string;
@@ -67,13 +69,16 @@ const parse = <T>(json: string | null, fallback: T): T => {
   }
 };
 
+/** Who started a run, as its three columns: all null when its own triggers did. */
+const startedBy = (run: AutomationRun): [ActorKind | null, string | null, string | null] => [run.startedBy?.kind ?? null, run.startedBy?.id ?? null, run.startedBy?.name ?? null];
+
 const runOf = (row: RunRow): AutomationRun => {
   const detail = parse<Partial<RunDetail>>(row.detail, {});
   return {
     id: row.id,
     at: row.started_at,
     endedAt: row.ended_at,
-    startedBy: row.started_by,
+    startedBy: row.started_by_kind && row.started_by_name !== null ? { kind: row.started_by_kind, id: row.started_by_id, name: row.started_by_name } : null,
     startedByRun:
       row.started_by_run && row.parent_automation && row.parent_name !== null
         ? { id: row.started_by_run, automationId: automationId(row.parent_automation), name: row.parent_name }
@@ -358,8 +363,10 @@ export class AutomationStore implements AutomationStorage {
   beginRun(automationId: string, run: AutomationRun): string {
     const id = newId('r');
     this.#db
-      .query('INSERT INTO automation_run (id, automation_id, started_at, ended_at, outcome, started_by, started_by_run, why, summary, detail) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)')
-      .run(id, automationId, run.at, 'running', run.startedBy, run.startedByRun?.id ?? null, run.why, run.summary, detailOf(run));
+      .query(
+        'INSERT INTO automation_run (id, automation_id, started_at, ended_at, outcome, started_by_kind, started_by_id, started_by_name, started_by_run, why, summary, detail) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)'
+      )
+      .run(id, automationId, run.at, 'running', ...startedBy(run), run.startedByRun?.id ?? null, run.why, run.summary, detailOf(run));
     return id;
   }
 
@@ -384,9 +391,9 @@ export class AutomationStore implements AutomationStorage {
     const id = newId('r');
     const kept = this.#db
       .query(
-        'INSERT INTO automation_run (id, automation_id, started_at, ended_at, outcome, started_by, started_by_run, why, summary, detail) SELECT ?, id, ?, ?, ?, ?, ?, ?, ?, ? FROM automation WHERE id = ?'
+        'INSERT INTO automation_run (id, automation_id, started_at, ended_at, outcome, started_by_kind, started_by_id, started_by_name, started_by_run, why, summary, detail) SELECT ?, id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM automation WHERE id = ?'
       )
-      .run(id, run.at, run.endedAt ?? run.at, run.outcome, run.startedBy, run.startedByRun?.id ?? null, run.why, run.summary, detailOf(run), automationId);
+      .run(id, run.at, run.endedAt ?? run.at, run.outcome, ...startedBy(run), run.startedByRun?.id ?? null, run.why, run.summary, detailOf(run), automationId);
     return kept.changes > 0 ? id : null;
   }
 

@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { MAIN_PART, nodeId, savedDeviceId, type CommandResult, type ConnectionHealth, type DeviceDescription, type DeviceSession, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import { ActionGateway, memoryLedger, type CommandIntent, type GatewayDevice, type GatewayLedger, type GatewayPolicy, type OutgoingLink } from './gateway.ts';
+import { actor } from '@kraftverk/device-sdk';
 
 /**
  * The guards that stand between a web request and the hardware.
@@ -162,7 +163,7 @@ function harness(
   const stationSession = station.session();
   const ledger = options.ledger ?? memoryLedger();
   // Most cases are about a plug that has been switched before; the first switch has its own test.
-  if (options.everSwitched !== false && ledger.lastSwitch(PLUG, MAIN_PART) === null) ledger.switched(PLUG, MAIN_PART, { at: 0, by: 'olof' });
+  if (options.everSwitched !== false && ledger.lastSwitch(PLUG, MAIN_PART) === null) ledger.switched(PLUG, MAIN_PART, { at: 0, by: actor('person', 'olof') });
 
   const devices: Record<string, GatewayDevice> = {
     [PLUG]: { name: 'Heater plug', session: plugSession, description: PLUG_DESCRIPTION, offline: 'Not answering' },
@@ -201,8 +202,7 @@ const cut = (overrides: Partial<CommandIntent> = {}): CommandIntent => ({
   command: 'set',
   args: { on: false },
   reason: 'battery first',
-  actor: 'automation',
-  by: 'automation:test',
+  by: actor('automation', 'test', 'test'),
   ...overrides,
 });
 
@@ -245,11 +245,11 @@ describe('what may be commanded', () => {
   test('a person cutting mains must confirm; an automation has its own gates', async () => {
     const { gateway, plug } = harness();
 
-    const asked = await gateway.execute(cut({ actor: 'person', by: 'olof' }));
+    const asked = await gateway.execute(cut({ by: actor('person', 'olof') }));
     expect(asked.outcome).toBe('refused');
     expect(plug.commands).toHaveLength(0);
 
-    const confirmed = await gateway.execute(cut({ actor: 'person', by: 'olof', confirmation: asked.needsConfirmation }));
+    const confirmed = await gateway.execute(cut({ by: actor('person', 'olof'), confirmation: asked.needsConfirmation }));
     expect(confirmed.outcome).not.toBe('refused');
     expect(plug.commands).toEqual([false]);
   });
@@ -259,28 +259,28 @@ describe('what may be commanded', () => {
     station.reading = () => ({ present: true, at: now(), connected: true });
 
     // The constant that used to be enough is no yes at all.
-    expect(await gateway.execute(cut({ actor: 'person', by: 'olof', confirmation: 'confirm' }))).toMatchObject({ outcome: 'refused', needsConfirmation: expect.any(String) });
+    expect(await gateway.execute(cut({ by: actor('person', 'olof'), confirmation: 'confirm' }))).toMatchObject({ outcome: 'refused', needsConfirmation: expect.any(String) });
 
-    const asked = await gateway.execute(cut({ actor: 'person', by: 'olof' }));
+    const asked = await gateway.execute(cut({ by: actor('person', 'olof') }));
     // Someone else presenting it, or it presented for another command, is refused, and it is spent.
-    expect((await gateway.execute(cut({ actor: 'person', by: 'guest', confirmation: asked.needsConfirmation }))).outcome).toBe('refused');
-    expect((await gateway.execute(cut({ actor: 'person', by: 'olof', confirmation: asked.needsConfirmation }))).outcome).toBe('refused');
-    const again = await gateway.execute(cut({ actor: 'person', by: 'olof', args: { on: true } }));
-    expect((await gateway.execute(cut({ actor: 'person', by: 'olof', confirmation: again.needsConfirmation }))).outcome).toBe('refused');
+    expect((await gateway.execute(cut({ by: actor('person', 'guest'), confirmation: asked.needsConfirmation }))).outcome).toBe('refused');
+    expect((await gateway.execute(cut({ by: actor('person', 'olof'), confirmation: asked.needsConfirmation }))).outcome).toBe('refused');
+    const again = await gateway.execute(cut({ by: actor('person', 'olof'), args: { on: true } }));
+    expect((await gateway.execute(cut({ by: actor('person', 'olof'), confirmation: again.needsConfirmation }))).outcome).toBe('refused');
     expect(plug.commands).toHaveLength(0);
   });
 
   test('the first switch of a plug that feeds a station needs confirmation, even to turn it on', async () => {
     const plug = new StubPlug({ on: false });
     const { gateway } = harness({ plug, everSwitched: false });
-    const result = await gateway.execute(cut({ actor: 'person', by: 'olof', args: { on: true } }));
+    const result = await gateway.execute(cut({ by: actor('person', 'olof'), args: { on: true } }));
     expect(result.outcome).toBe('refused');
     expect(result.detail).toContain('confirmation');
   });
 
   test('turning off an outlet carrying a load needs confirmation; one carrying nothing does not', async () => {
     const { gateway, station } = harness();
-    const intent = cut({ deviceId: STATION, part: 'outlet.ac', actor: 'person', by: 'olof' });
+    const intent = cut({ deviceId: STATION, part: 'outlet.ac', by: actor('person', 'olof') });
 
     // As `switch.set` declares it: off, while it draws more than 5 W. The gateway reads the declaration.
     expect(await gateway.execute(intent)).toMatchObject({ outcome: 'refused', needsConfirmation: expect.any(String), detail: 'This action needs explicit confirmation. Power is 40 W.' });
@@ -292,7 +292,7 @@ describe('what may be commanded', () => {
 
   test('an agent does what needs no one’s yes, and is told to leave to a person what does', async () => {
     const { gateway, station } = harness();
-    const agent = { deviceId: STATION, part: 'outlet.ac', actor: 'agent' as const, by: 'agent:assistant' };
+    const agent = { deviceId: STATION, part: 'outlet.ac', by: actor('agent', 'agent:assistant') };
 
     // Off while it carries a load: a person's, in the app — and no token to confirm it with.
     const refused = await gateway.execute(cut(agent));
@@ -310,7 +310,7 @@ describe('what may be commanded', () => {
   test('a load that is not known is not taken for none: it asks', async () => {
     const { gateway, station } = harness();
     station.outlet = { on: true, watts: null };
-    const intent = cut({ deviceId: STATION, part: 'outlet.ac', actor: 'person', by: 'olof' });
+    const intent = cut({ deviceId: STATION, part: 'outlet.ac', by: actor('person', 'olof') });
     expect(await gateway.execute(intent)).toMatchObject({ outcome: 'refused', needsConfirmation: expect.any(String), detail: 'This action needs explicit confirmation. Power is not known.' });
     expect(station.outletCommands).toHaveLength(0);
   });
@@ -319,11 +319,11 @@ describe('what may be commanded', () => {
     // A night light at 6 W: over the default, under what this home has set.
     const { gateway, station } = harness({ policyValues: { loadWatts: 10 } });
     station.outlet = { on: true, watts: 6 };
-    expect((await gateway.execute(cut({ deviceId: STATION, part: 'outlet.ac', actor: 'person', by: 'olof' }))).outcome).toBe('verified');
+    expect((await gateway.execute(cut({ deviceId: STATION, part: 'outlet.ac', by: actor('person', 'olof') }))).outcome).toBe('verified');
 
     const strict = harness({ policyValues: { loadWatts: 3 } });
     strict.station.outlet = { on: true, watts: 4 };
-    expect(await strict.gateway.execute(cut({ deviceId: STATION, part: 'outlet.ac', actor: 'person', by: 'olof' }))).toMatchObject({ detail: 'This action needs explicit confirmation. Power is 4 W.' });
+    expect(await strict.gateway.execute(cut({ deviceId: STATION, part: 'outlet.ac', by: actor('person', 'olof') }))).toMatchObject({ detail: 'This action needs explicit confirmation. Power is 4 W.' });
   });
 });
 
@@ -348,7 +348,7 @@ describe('links between parts', () => {
 
   test('cutting what a station’s outlet feeds is confirmed, naming the part it reaches', async () => {
     const { gateway, station } = chain();
-    const result = await gateway.execute(cut({ deviceId: STATION, part: 'outlet.ac', actor: 'person', by: 'olof' }));
+    const result = await gateway.execute(cut({ deviceId: STATION, part: 'outlet.ac', by: actor('person', 'olof') }));
     expect(result).toMatchObject({ outcome: 'refused', needsConfirmation: expect.any(String) });
     expect(result.detail).toContain('This feeds Cabin station — Mains and has never been switched from here');
     expect(station.outletCommands).toHaveLength(0);
@@ -403,7 +403,7 @@ describe('what a command declares', () => {
       close: async () => {},
     };
     const { gateway } = harness({ devices: { [LOCK]: { name: 'Safe', session, description: LOCK_DESCRIPTION, offline: 'Not answering' } } });
-    const intent = cut({ deviceId: LOCK, capability: 'acme.safe.bolt', command: 'set', args: { thrown: true }, actor: 'person', by: 'olof' });
+    const intent = cut({ deviceId: LOCK, capability: 'acme.safe.bolt', command: 'set', args: { thrown: true }, by: actor('person', 'olof') });
     const asked = await gateway.execute(intent);
     // Read before matching: bun's toMatchObject writes its matchers into what it was given.
     const token = asked.needsConfirmation;
@@ -685,18 +685,18 @@ describe('a reserve the home keeps', () => {
       outcome: 'refused',
       detail: "Garage P280's charge is 15 %, below the 20 % reserve: it is kept for when it is needed, and only a person may draw on it",
     });
-    expect((await gateway.execute(on({ actor: 'agent', by: 'assistant for olof' }))).outcome).toBe('refused');
+    expect((await gateway.execute(on({ by: actor('agent', 'assistant for olof') }))).outcome).toBe('refused');
     expect(station.outletCommands).toEqual([]);
   });
 
   test('below it, a person is asked — and with their yes, it is done', async () => {
     const { gateway, station } = low();
-    const asked = await gateway.execute(on({ actor: 'person', by: 'olof' }));
+    const asked = await gateway.execute(on({ by: actor('person', 'olof') }));
     // Read before it is matched: matching against expect.any puts the matcher in its place.
     const confirmation = (asked as { needsConfirmation: string }).needsConfirmation;
     expect(typeof confirmation).toBe('string');
     expect(asked).toMatchObject({ outcome: 'refused', detail: "This action needs explicit confirmation. Garage P280's charge is 15 %, below the 20 % reserve." });
-    expect(await gateway.execute(on({ actor: 'person', by: 'olof', confirmation }))).toMatchObject({ outcome: 'verified' });
+    expect(await gateway.execute(on({ by: actor('person', 'olof'), confirmation }))).toMatchObject({ outcome: 'verified' });
     expect(station.outletCommands).toEqual([['outlet.ac', true]]);
   });
 
@@ -756,7 +756,7 @@ describe('a device that does not answer as it should', () => {
       },
     });
     const first = gateway.execute(cut());
-    const second = await gateway.execute(cut({ deviceId: other, actor: 'person', by: 'olof' }));
+    const second = await gateway.execute(cut({ deviceId: other, by: actor('person', 'olof') }));
     expect(second.outcome).toBe('verified');
     expect(await first).toMatchObject({ outcome: 'failed', detail: 'Heater plug did not answer within 0 s' });
   });
@@ -775,7 +775,7 @@ describe('a device that does not answer as it should', () => {
         [bell]: { name: 'Doorbell', session: { health: () => health(), readings: () => [], command: async (request) => (rung.push(request.command), { accepted: true }), close: async () => {} }, description: BUTTON, offline: 'Not answering' },
       },
     });
-    const result = await gateway.execute(cut({ deviceId: bell, capability: 'acme.bell', command: 'ring', args: {}, actor: 'person', by: 'olof' }));
+    const result = await gateway.execute(cut({ deviceId: bell, capability: 'acme.bell', command: 'ring', args: {}, by: actor('person', 'olof') }));
     expect(rung).toEqual(['ring']);
     expect(result.outcome).toBe('unverified');
   });

@@ -18,6 +18,7 @@ import { ProtocolRegistry } from '../src/installed/protocols.ts';
 import { DeviceTypeRegistry } from '../src/installed/types.ts';
 import { LAMP, lampProtocol, lampType, MACHINE_NODE, TEST_INTEGRATION, TEST_SOURCE } from '../src/testing.ts';
 import { testDatabase } from './home.ts';
+import { actor, type Actor } from '@kraftverk/device-sdk';
 
 /*
   A configuration imported: planned — nothing written — then applied, in one
@@ -35,7 +36,7 @@ let deps: ImportDeps & { record: (entry: AuditRecord) => void };
 let location: Coordinates | null = null;
 
 /** A plan applied as an apply does: written, then set going. */
-async function applyImport(on: ImportDeps, id: string, by: string, choices: ImportChoices) {
+async function applyImport(on: ImportDeps, id: string, by: Actor, choices: ImportChoices) {
   const written = writeImport(on, id, by, choices);
   await startWritten(on, written);
   return written.applied;
@@ -124,7 +125,7 @@ describe('a server’s own export, into a database wiped', () => {
     const text = await exported();
     db.exec('DELETE FROM automation; DELETE FROM device;');
 
-    const plan = await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: 'olof' });
+    const plan = await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') });
     expect(plan.problems).toEqual([]);
     expect(plan.devices.map((item) => [item.key, item.action])).toEqual([
       ['hall-lamp', 'add'],
@@ -133,7 +134,7 @@ describe('a server’s own export, into a database wiped', () => {
     expect(plan.automations).toEqual([{ key: 'morning', name: 'Morning', action: 'add', changes: [] }]);
     expect(plan.needs).toEqual({ passphrase: null, secrets: [], rebind: [], confirm: ['"Morning" will act on its own'] });
 
-    const applied = await applyImport(deps, plan.id!, 'olof', {});
+    const applied = await applyImport(deps, plan.id!, actor('person', 'olof'), {});
     expect(applied.devices.added).toEqual(['hall-lamp', 'porch-lamp']);
     const hall = deps.catalog.byKey('hall-lamp')!;
     expect(hall).toMatchObject({ name: 'Hall lamp', identity: 'test-lamp:HALL', config: { room: 'Hall' } });
@@ -145,17 +146,17 @@ describe('a server’s own export, into a database wiped', () => {
     expect(sessionsSynced.at(-1)).toBe(2);
 
     // Read again over what it made: nothing to do.
-    const again = await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: 'olof' });
+    const again = await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') });
     expect([...again.devices, ...again.automations].map((item) => item.action)).toEqual(['same', 'same', 'same']);
     expect(again.needs.confirm).toEqual([]);
   });
 
   test('a plan is used once, and only by whoever read it', async () => {
     aHome();
-    const plan = await planImport(deps, await exported(), { mode: 'merge', passphrase: PASSPHRASE, by: 'olof' });
-    await expect(applyImport(deps, plan.id!, 'someone else', {})).rejects.toThrow('That plan has gone');
-    await applyImport(deps, plan.id!, 'olof', {});
-    await expect(applyImport(deps, plan.id!, 'olof', {})).rejects.toThrow('That plan has gone');
+    const plan = await planImport(deps, await exported(), { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') });
+    await expect(applyImport(deps, plan.id!, actor('person', 'someone else'), {})).rejects.toThrow('That plan has gone');
+    await applyImport(deps, plan.id!, actor('person', 'olof'), {});
+    await expect(applyImport(deps, plan.id!, actor('person', 'olof'), {})).rejects.toThrow('That plan has gone');
   });
 
   test('what the database will not keep is the file’s, refused; a fault in the code is not said as one — and either way nothing is written', async () => {
@@ -167,16 +168,16 @@ describe('a server’s own export, into a database wiped', () => {
     deps.catalog.add = () => {
       throw new Error('UNIQUE constraint failed: device.key');
     };
-    const refused = await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: 'olof' });
-    const error = await applyImport(deps, refused.id!, 'olof', {}).catch((caught: unknown) => caught);
+    const refused = await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') });
+    const error = await applyImport(deps, refused.id!, actor('person', 'olof'), {}).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).kind).toBe('invalid');
 
     deps.catalog.add = () => {
       throw new TypeError('a fault in the code');
     };
-    const faulty = await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: 'olof' });
-    const fault = await applyImport(deps, faulty.id!, 'olof', {}).catch((caught: unknown) => caught);
+    const faulty = await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') });
+    const fault = await applyImport(deps, faulty.id!, actor('person', 'olof'), {}).catch((caught: unknown) => caught);
     expect(fault).toBeInstanceOf(TypeError);
 
     deps.catalog.add = add;
@@ -188,8 +189,8 @@ describe('what a file cannot do, and what it needs', () => {
   test('its sealed secrets need the passphrase — the right one', async () => {
     aHome();
     const text = await exported();
-    expect((await planImport(deps, text, { mode: 'merge', by: 'olof' })).needs.passphrase).toBe('missing');
-    expect((await planImport(deps, text, { mode: 'merge', passphrase: 'not the passphrase at all', by: 'olof' })).needs.passphrase).toBe('wrong');
+    expect((await planImport(deps, text, { mode: 'merge', by: actor('person', 'olof') })).needs.passphrase).toBe('missing');
+    expect((await planImport(deps, text, { mode: 'merge', passphrase: 'not the passphrase at all', by: actor('person', 'olof') })).needs.passphrase).toBe('wrong');
   });
 
   test('a key naming a device of another type is a problem, at its line', async () => {
@@ -201,8 +202,8 @@ devices:
     name: Hall lamp
 `;
     // The same type: a change of name only.
-    expect((await planImport(deps, text.replace('name: Hall lamp', 'name: Big hall lamp'), { mode: 'merge', by: 'olof' })).devices[0]).toEqual({ key: 'hall-lamp', name: 'Big hall lamp', action: 'change', changes: ['name: Hall lamp → Big hall lamp', 'no longer reached bus'] });
-    const other = await planImport(deps, text.replace('type: test.lamp', 'type: test.nothing'), { mode: 'merge', by: 'olof' });
+    expect((await planImport(deps, text.replace('name: Hall lamp', 'name: Big hall lamp'), { mode: 'merge', by: actor('person', 'olof') })).devices[0]).toEqual({ key: 'hall-lamp', name: 'Big hall lamp', action: 'change', changes: ['name: Hall lamp → Big hall lamp', 'no longer reached bus'] });
+    const other = await planImport(deps, text.replace('type: test.lamp', 'type: test.nothing'), { mode: 'merge', by: actor('person', 'olof') });
     expect(other.id).toBeNull();
     expect(other.problems).toEqual([{ message: 'No installed device type is called "test.nothing"', path: ['devices', 'hall-lamp', 'type'], line: 4, column: 11 }]);
   });
@@ -218,11 +219,11 @@ devices:
         address: lamp-desk
         secrets: { pin: !secret desk-pin }
 `;
-    const plan = await planImport(deps, text, { mode: 'merge', by: 'olof' });
+    const plan = await planImport(deps, text, { mode: 'merge', by: actor('person', 'olof') });
     expect(plan.needs.secrets).toEqual([{ device: 'desk-lamp', deviceName: 'Desk lamp', field: 'pin', title: 'PIN' }]);
-    await expect(applyImport(deps, plan.id!, 'olof', {})).rejects.toThrow('It still needs Desk lamp: its PIN');
-    const again = await planImport(deps, text, { mode: 'merge', by: 'olof' });
-    await applyImport(deps, again.id!, 'olof', { secrets: { 'desk-lamp.pin': '4321' } });
+    await expect(applyImport(deps, plan.id!, actor('person', 'olof'), {})).rejects.toThrow('It still needs Desk lamp: its PIN');
+    const again = await planImport(deps, text, { mode: 'merge', by: actor('person', 'olof') });
+    await applyImport(deps, again.id!, actor('person', 'olof'), { secrets: { 'desk-lamp.pin': '4321' } });
     const desk = deps.catalog.byKey('desk-lamp')!;
     expect(deps.connections.secret(deps.connections.forDevice(desk.id)[0]!.id, 'pin')).toBe('4321');
   });
@@ -241,7 +242,7 @@ automations:
     do:
       - turn on: lamp
 `;
-    const plan = await planImport(deps, text, { mode: 'merge', by: 'olof' });
+    const plan = await planImport(deps, text, { mode: 'merge', by: actor('person', 'olof') });
     expect(plan.needs.rebind).toEqual([
       {
         automation: 'evening',
@@ -256,30 +257,30 @@ automations:
     ]);
     // A device the same file adds can fill it too.
     const withCellar = text.replace('automations:', 'devices:\n  attic-lamp:\n    type: test.lamp\n    name: Attic lamp\n    connect:\n      - via: simulated\nautomations:');
-    const planned = await planImport(deps, withCellar, { mode: 'merge', by: 'olof' });
+    const planned = await planImport(deps, withCellar, { mode: 'merge', by: actor('person', 'olof') });
     expect(planned.needs.rebind[0]!.candidates.map((candidate) => candidate.use)).toEqual(['hall-lamp', 'porch-lamp', 'attic-lamp']);
-    await applyImport(deps, planned.id!, 'olof', { rebind: { 'evening.lamp': 'attic-lamp' } });
+    await applyImport(deps, planned.id!, actor('person', 'olof'), { rebind: { 'evening.lamp': 'attic-lamp' } });
     expect(deps.automations.byKey('evening')!.roles.lamp!.device).toBe(deps.catalog.byKey('attic-lamp')!.id);
     deps.automations.delete(deps.automations.byKey('evening')!.id);
-    await expect(applyImport(deps, plan.id!, 'olof', {})).rejects.toThrow('a device for Lamp');
-    const again = await planImport(deps, text, { mode: 'merge', by: 'olof' });
-    await applyImport(deps, again.id!, 'olof', { rebind: { 'evening.lamp': 'porch-lamp' } });
+    await expect(applyImport(deps, plan.id!, actor('person', 'olof'), {})).rejects.toThrow('a device for Lamp');
+    const again = await planImport(deps, text, { mode: 'merge', by: actor('person', 'olof') });
+    await applyImport(deps, again.id!, actor('person', 'olof'), { rebind: { 'evening.lamp': 'porch-lamp' } });
     expect(deps.automations.byKey('evening')!.roles.lamp!.device).toBe(deps.catalog.byKey('porch-lamp')!.id);
   });
 
   test('one automation\'s own YAML — as its page shows it — is imported under a key made from its name', async () => {
     aHome();
     const text = 'name: Evening\nclock: Europe/Stockholm\nuses:\n  lamp: porch-lamp\nwhen:\n  - at: "19:00"\ndo:\n  - turn on: lamp\n';
-    const plan = await planImport(deps, text, { mode: 'merge', by: 'olof' });
+    const plan = await planImport(deps, text, { mode: 'merge', by: actor('person', 'olof') });
     expect(plan.problems).toEqual([]);
     expect(plan.automations).toEqual([{ key: 'evening', name: 'Evening', action: 'add', changes: [] }]);
     expect(plan.notes).toEqual(['Read as one automation, known by "evening"']);
-    await applyImport(deps, plan.id!, 'olof', {});
+    await applyImport(deps, plan.id!, actor('person', 'olof'), {});
     expect(deps.automations.byKey('evening')!.roles.lamp!.device).toBe(deps.catalog.byKey('porch-lamp')!.id);
     // Again: the one by that key is changed to it, and said so.
-    expect((await planImport(deps, text.replace('19:00', '20:00'), { mode: 'merge', by: 'olof' })).notes).toEqual(['Read as one automation, known by "evening": the one you have by that key is changed to it']);
+    expect((await planImport(deps, text.replace('19:00', '20:00'), { mode: 'merge', by: actor('person', 'olof') })).notes).toEqual(['Read as one automation, known by "evening": the one you have by that key is changed to it']);
     // A device's own, too: its problems in its own text.
-    const device = await planImport(deps, 'type: test.lamp\nname: Cellar lamp\nconnect:\n  - via: bus\n    address: lamp-cellar\n', { mode: 'merge', by: 'olof' });
+    const device = await planImport(deps, 'type: test.lamp\nname: Cellar lamp\nconnect:\n  - via: bus\n    address: lamp-cellar\n', { mode: 'merge', by: actor('person', 'olof') });
     expect(device.devices).toEqual([{ key: 'cellar-lamp', name: 'Cellar lamp', action: 'add', changes: [] }]);
   });
 
@@ -313,18 +314,18 @@ automations:
     expect(refused).toEqual([]);
     const text = (limit: string) =>
       `kraftverk: 4\ndevices:\n  meter:\n    type: test.flow\n    name: Meter\n    connect:\n      - via: simulated\nautomations:\n  flowing:\n    name: Flowing\n    clock: Europe/Stockholm\n    uses:\n      meter: { part: meter, needs: [powerMeter] }\n    when:\n      - becomes: meter.test.flow > ${limit}\n    do:\n      - wait: 1 s\n`;
-    const plan = await planImport(deps, text('2 kW'), { mode: 'merge', by: 'olof' });
+    const plan = await planImport(deps, text('2 kW'), { mode: 'merge', by: actor('person', 'olof') });
     expect(plan.problems).toEqual([]);
-    await applyImport(deps, plan.id!, 'olof', {});
+    await applyImport(deps, plan.id!, actor('person', 'olof'), {});
     // Kept as written; a run converts it.
     expect(deps.automations.byKey('flowing')!.rule.when[0]).toMatchObject({ becomes: { right: { value: 2, unit: 'kW' } } });
-    expect((await planImport(deps, text('2 °C'), { mode: 'merge', by: 'olof' })).problems.map((problem) => problem.message)).toEqual(['Meter’s flow is in W: "°C" is not a unit of it']);
+    expect((await planImport(deps, text('2 °C'), { mode: 'merge', by: actor('person', 'olof') })).problems.map((problem) => problem.message)).toEqual(['Meter’s flow is in W: "°C" is not a unit of it']);
   });
 
   test('simulated devices share their address: no claim on it, as setup makes none', async () => {
     deps.connections.add({ deviceId: deps.catalog.add({ typeId: 'test.lamp', name: 'Sim lamp', description: LAMP }).id, method: 'simulated', transport: 'simulated', heldBy: MACHINE_NODE.id, address: 'simulated' });
     const text = 'kraftverk: 4\ndevices:\n  other-sim:\n    type: test.lamp\n    name: Other sim\n    connect:\n      - via: simulated\n';
-    expect((await planImport(deps, text, { mode: 'merge', by: 'olof' })).problems).toEqual([]);
+    expect((await planImport(deps, text, { mode: 'merge', by: actor('person', 'olof') })).problems).toEqual([]);
   });
 
   test('a role nothing fills — written while it was being built — is a problem at its line, not an import that fails', async () => {
@@ -339,7 +340,7 @@ automations:
     do:
       - turn on: lamp
 `;
-    const plan = await planImport(deps, text, { mode: 'merge', by: 'olof' });
+    const plan = await planImport(deps, text, { mode: 'merge', by: actor('person', 'olof') });
     expect(plan.id).toBeNull();
     expect(plan.problems).toEqual([{ message: 'Lamp: nothing fills it — name a device for it', path: ['automations', 'evening', 'uses', 'lamp'], line: 7, column: 13 }]);
   });
@@ -364,7 +365,7 @@ automations:
         setting: brightness
         to: 50
 `;
-    const plan = await planImport(deps, text, { mode: 'merge', by: 'olof' });
+    const plan = await planImport(deps, text, { mode: 'merge', by: actor('person', 'olof') });
     expect(plan.id).toBeNull();
     expect(plan.problems).toEqual([{ message: 'Lamp: New lamp has no setting "brightness"', path: ['automations', 'broken'], line: 11, column: 5 }]);
   });
@@ -388,11 +389,11 @@ automations:
     do:
       - turn on: lamp
 `;
-    const plan = await planImport(deps, text, { mode: 'merge', by: 'olof' });
+    const plan = await planImport(deps, text, { mode: 'merge', by: actor('person', 'olof') });
     expect(plan.problems).toEqual([]);
     // Between the plan and the yes, the lamp it uses goes.
     deps.catalog.remove(hall.id);
-    await expect(applyImport(deps, plan.id!, 'olof', {})).rejects.toBeInstanceOf(ApiError);
+    await expect(applyImport(deps, plan.id!, actor('person', 'olof'), {})).rejects.toBeInstanceOf(ApiError);
     expect(deps.catalog.byKey('new-lamp')).toBeNull();
     expect(deps.automations.byKey('evening')).toBeNull();
   });
@@ -410,14 +411,14 @@ devices:
       - via: bus
         address: lamp-hall
 `;
-    const plan = await planImport(deps, text, { mode: 'replace', by: 'olof' });
+    const plan = await planImport(deps, text, { mode: 'replace', by: actor('person', 'olof') });
     expect(plan.devices.map((item) => [item.key, item.action])).toEqual([
       ['hall-lamp', 'same'],
       ['porch-lamp', 'remove'],
     ]);
     expect(plan.automations).toEqual([{ key: 'morning', name: 'Morning', action: 'remove', changes: [] }]);
     expect(plan.needs.confirm).toEqual(['"Porch lamp" is removed: Porch lamp — their history is kept', '"Morning" is deleted']);
-    const applied = await applyImport(deps, plan.id!, 'olof', {});
+    const applied = await applyImport(deps, plan.id!, actor('person', 'olof'), {});
     expect(applied.devices.removed).toEqual(['porch-lamp']);
     expect(applied.automations.removed).toEqual(['morning']);
     expect(deps.catalog.byKey('porch-lamp')).toBeNull();

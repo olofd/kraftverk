@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 
 import { answerMcp, worldText } from '@kraftverk/hub';
 
-import { actorOf } from '../auth/routes.ts';
+import { usernameOf } from '../auth/routes.ts';
 import { SERVER } from '../config.ts';
 import { homeFor, type AppDeps } from './context.ts';
 
@@ -43,7 +43,7 @@ export function assistantRoutes(deps: AppDeps): Hono {
     if (!messages.length || messages.some((message) => !message || typeof message !== 'object' || Array.isArray(message)))
       return c.json({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Each message is a JSON-RPC object' } }, 400);
     // The assistant asks as an agent acting for whoever is signed in.
-    const home = deps.hub.as({ kind: 'agent', for: actorOf(c) });
+    const home = deps.hub.as({ kind: 'agent', for: usernameOf(c) });
     const said = (await Promise.all(messages.map((message) => answerMcp(message as Record<string, unknown>, home, { name: 'kraftverk', version: SERVER.version })))).filter((reply) => reply !== null);
     if (!said.length) return c.body(null, 202);
     return c.json(Array.isArray(payload) ? said : said[0]!);

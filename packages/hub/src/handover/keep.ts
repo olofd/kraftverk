@@ -1,4 +1,5 @@
 import { ApiError, type ElsewhereView, type ImportAnswers, type ImportApplied, type ImportPlan } from '@kraftverk/api-contract';
+import type { Actor } from '@kraftverk/device-sdk';
 import { readConfig } from '@kraftverk/home-file';
 import { ConnectionStore, DeviceCatalog, HomeSettings, LastHeard, type HomeSettingKey, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
@@ -59,7 +60,7 @@ export class KeepingCopy {
   }
 
   /** What keeping the copy would do here: planned as a restore is, and what comes beside the file said. */
-  async plan(mode: 'merge' | 'replace', by: string): Promise<ImportPlan> {
+  async plan(mode: 'merge' | 'replace', by: Actor): Promise<ImportPlan> {
     const text = this.#text();
     if (!text) throw new ApiError('not-found', 'This app keeps no copy of a server’s home to bring in');
     const plan = await this.#hub.configuration.plan(text, { mode, lenient: true }, by);
@@ -79,7 +80,7 @@ export class KeepingCopy {
   }
 
   /** Brings it in, and the ways this node held with their secrets; what could not come is said. */
-  async apply(answers: ImportAnswers, by: string): Promise<ImportApplied> {
+  async apply(answers: ImportAnswers, by: Actor): Promise<ImportApplied> {
     const applied = await this.#hub.configuration.apply(answers, by);
     this.#plans.delete(answers.plan);
     const { catalog, connections } = this.#hub;

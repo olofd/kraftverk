@@ -211,7 +211,7 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
        */
       async start(id) {
         const current = automationOf(id);
-        const run = await engine.startAsked(current.id, { name: intent.by, actor: intent.actor }).catch((error: unknown) => {
+        const run = await engine.startAsked(current.id, intent.by).catch((error: unknown) => {
           throw error instanceof RunRefusal ? new ApiError('conflict', error.message) : error;
         });
         record('automation.started', current.id, `Started "${current.name}"`, { run: run.id });

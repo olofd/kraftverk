@@ -143,7 +143,7 @@ describe('a device you have', () => {
     expect(refused.message).toContain('overheat');
     const kinds = (await t.home.timeline()).filter((entry) => entry.kind.startsWith('device.tool'));
     expect(kinds.map((entry) => entry.kind).sort()).toEqual(['device.tool', 'device.tool-refused', 'device.tool-refused']);
-    expect(kinds.every((entry) => entry.actor === 'olof')).toBe(true);
+    expect(kinds.every((entry) => entry.actor.name === 'olof')).toBe(true);
   });
 
   test('a tool that cannot be undone waits for a person’s yes: a token for this tool and this person, good once', async () => {

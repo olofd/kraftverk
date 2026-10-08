@@ -1,9 +1,9 @@
 import type { AuditEntry } from '@kraftverk/api-contract';
-import type { AuditRecord, ResourceKind } from '@kraftverk/device-sdk';
+import type { ActorKind, AuditRecord, ResourceKind } from '@kraftverk/device-sdk';
 
 import type { SqlDatabase } from './database.ts';
 
-type AuditRow = { id: number; at: string; kind: string; actor: string; resource_kind: ResourceKind | null; resource: string | null; summary: string; detail: string | null };
+type AuditRow = { id: number; at: string; kind: string; actor_kind: ActorKind; actor_id: string | null; actor_name: string; resource_kind: ResourceKind | null; resource: string | null; summary: string; detail: string | null };
 
 /** The timeline: every line of what was done, by whom, to what. */
 export class AuditLog {
@@ -19,11 +19,13 @@ export class AuditLog {
     try {
       this.#db
         // Sent again by a node that was not sure it arrived: the entry already kept.
-        .query<unknown, (string | null)[]>('INSERT OR IGNORE INTO audit (at, kind, actor, resource_kind, resource, summary, detail) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .query<unknown, (string | null)[]>('INSERT OR IGNORE INTO audit (at, kind, actor_kind, actor_id, actor_name, resource_kind, resource, summary, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .run(
           entry.at,
           entry.kind,
-          entry.actor,
+          entry.actor.kind,
+          entry.actor.id,
+          entry.actor.name,
           entry.resource === undefined ? null : entry.resourceKind,
           entry.resource ?? null,
           entry.summary,
@@ -49,14 +51,14 @@ export class AuditLog {
     if (options.before) (where.push('id < ?'), args.push(options.before));
     return this.#db
       .query<AuditRow, (string | number)[]>(
-        `SELECT id, at, kind, actor, resource_kind, resource, summary, detail FROM audit ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY id DESC LIMIT ?`
+        `SELECT id, at, kind, actor_kind, actor_id, actor_name, resource_kind, resource, summary, detail FROM audit ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY id DESC LIMIT ?`
       )
       .all(...args, options.limit ?? 100)
       .map((row) => ({
         id: row.id,
         at: row.at,
         kind: row.kind,
-        actor: row.actor,
+        actor: { kind: row.actor_kind, id: row.actor_id, name: row.actor_name },
         resourceKind: row.resource_kind,
         resource: row.resource,
         summary: row.summary,

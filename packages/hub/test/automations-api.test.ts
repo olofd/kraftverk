@@ -186,7 +186,7 @@ describe('automations', () => {
     expect((await refusal(t.home.automations.update(created.id, other))).kind).toBe('needs-yes');
     expect((await refusal(t.home.automations.update(created.id, { rule: other.rule }))).kind).toBe('invalid');
 
-    expect((await t.home.timeline()).find((entry) => entry.kind === 'automation.let-act')).toMatchObject({ actor: 'olof' });
+    expect((await t.home.timeline()).find((entry) => entry.kind === 'automation.let-act')).toMatchObject({ actor: { name: 'olof' } });
   });
 
   test('played, it runs now — for real, though it only watches on its own — takes its steps as it goes, and its runs are listed', async () => {
@@ -205,7 +205,7 @@ describe('automations', () => {
     ]);
 
     const started = await t.home.automations.start(created.id);
-    expect(started.running).toMatchObject({ outcome: 'running', startedBy: 'olof', why: 'Started by olof', startedByRun: null });
+    expect(started.running).toMatchObject({ outcome: 'running', startedBy: { name: 'olof' }, why: 'Started by olof', startedByRun: null });
     const run = await ended(created.id);
     expect(run).toMatchObject({ outcome: 'acted' });
     // Simulated, the outlet and the plug may be on already: "already so" is as good as done.
@@ -258,7 +258,7 @@ describe('automations', () => {
     await t.home.automations.start(morning.id);
     expect((await ended(morning.id)).outcome).toBe('acted');
     const [child] = await t.home.automations.runs(charge.id);
-    expect(child).toMatchObject({ outcome: 'acted', startedBy: 'olof', startedByRun: { automationId: morning.id, name: 'Morning' } });
+    expect(child).toMatchObject({ outcome: 'acted', startedBy: { name: 'olof' }, startedByRun: { automationId: morning.id, name: 'Morning' } });
 
     // The other made to start this one back: refused, as a chain that would start itself.
     const back = { rule: { roles: role, params: { fields: {} }, when: [], then: [{ start: { role: 'charging' } }] } as Rule, roles: {}, groups: {}, starts: { charging: morning.id } };

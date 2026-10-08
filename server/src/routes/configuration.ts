@@ -2,8 +2,9 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import { ApiError, CONFIG_SCHEMA_PATH, type ConfigSnapshotView } from '@kraftverk/api-contract';
+import { actor } from '@kraftverk/device-sdk';
 
-import { actorOf } from '../auth/routes.ts';
+import { usernameOf } from '../auth/routes.ts';
 import { homeFor, type AppDeps, type ConfirmPassword } from './context.ts';
 import { body } from './parse.ts';
 
@@ -68,7 +69,7 @@ export function configurationRoutes(deps: AppDeps, confirm: ConfirmPassword): Ho
     );
     if (input.restored) {
       if (!deps.snapshot) throw new ApiError('not-found', 'There is no restored copy to import again');
-      return c.json(await deps.snapshot.planAgain(input.mode, actorOf(c)));
+      return c.json(await deps.snapshot.planAgain(input.mode, actor('person', usernameOf(c))));
     }
     // A home kept beside this one: where there is none, the home says so.
     if (input.from) return c.json(await homeFor(deps, c).configuration.plan({ from: input.from, mode: input.mode }));

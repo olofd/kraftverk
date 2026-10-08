@@ -213,7 +213,7 @@ describe('a connection a browser holds', () => {
 
     expect(await t.home.held.audit(client.id, [{ at: new Date().toISOString(), kind: 'command.verified', resourceKind: 'device', resource: device.id, summary: 'Desk lamp: switched off' }])).toEqual({ recorded: 1 });
     const entry = (await t.home.timeline()).find((each) => each.kind === 'command.verified');
-    expect(entry).toMatchObject({ actor: 'olof', resourceKind: 'device', resource: device.id, detail: { from: { name: 'Olof’s laptop' } } });
+    expect(entry).toMatchObject({ actor: { name: 'olof' }, resourceKind: 'device', resource: device.id, detail: { from: { name: 'Olof’s laptop' } } });
 
     // The timeline, asked for one device's.
     const its = await t.home.timeline({ resourceKind: 'device', resource: device.id });

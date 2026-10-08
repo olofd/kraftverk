@@ -1,6 +1,6 @@
 import type { AutomationRun, RunLog, RunStep } from '@kraftverk/api-contract';
 import { bindingsOf, eachAsGroup, settingOf, triggerOf, isGroupRole, memberRole, branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, measure, paramText, toRemember, secondsNow, fieldValue, negation, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepsOf, stepSpec, takesSteps, type StepOf, type Command, type Expr, type Rule, type RoleBinding, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
-import { attributeMeaning, MAIN_PART, readingOf, type AutomationId, type Value } from '@kraftverk/device-sdk';
+import { attributeMeaning, MAIN_PART, readingOf, type Actor, type AutomationId, type Value } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
 import type { RuleContext, StartingEvent } from './context.ts';
@@ -197,7 +197,7 @@ export class Runs {
     const automation = this.deps.store.get(automationId);
     if (!automation) throw new RunRefusal('No such automation');
     // Starting is a person's yes to act: one that only watches is its owner's to start, not an assistant's.
-    if (by.actor === 'agent' && automation.mode !== 'act') throw new RunRefusal('It only watches: its owner lets it act before an assistant may start it');
+    if (by.kind === 'agent' && automation.mode !== 'act') throw new RunRefusal('It only watches: its owner lets it act before an assistant may start it');
     return this.#start(automation, { asker: by, from: null }).begun;
   }
 
@@ -240,10 +240,10 @@ export class Runs {
   }
 
   /** Stops a run in progress: the step it is in ends as stopped, and its `otherwise` steps run. */
-  stopAsked(automationId: string, by: string): AutomationRun {
+  stopAsked(automationId: string, by: Actor): AutomationRun {
     const live = this.#live.get(automationId);
     if (!live) throw new RunRefusal('It is not running');
-    this.#stopLive(live, by);
+    this.#stopLive(live, by.name);
     return live.run;
   }
 
@@ -275,7 +275,7 @@ export class Runs {
       this.deps.record({
         at,
         kind: 'automation.interrupted',
-        actor: `automation:${automation?.name ?? automationId}`,
+        actor: automation ? actorOf(automation) : { kind: 'automation', id: automationId, name: automationId },
         resourceKind: 'automation',
         resource: automationId,
         summary: `${automation?.name ?? 'An automation'}: ${ended.summary}`,
@@ -324,7 +324,7 @@ export class Runs {
       id: null,
       at: at.toISOString(),
       endedAt: null,
-      startedBy: options.askedBy?.name ?? null,
+      startedBy: options.askedBy ?? null,
       startedByRun: from && from.run.id ? { id: from.run.id, automationId: from.automation.id, name: from.automation.name } : null,
       outcome: 'running',
       summary: '',
@@ -479,7 +479,7 @@ export class Runs {
     this.deps.record({
       at: run.endedAt ?? run.at,
       kind: `automation.${run.outcome}`,
-      actor: run.startedBy ?? `automation:${automation.name}`,
+      actor: run.startedBy ?? actorOf(automation),
       resourceKind: 'automation',
       resource: automation.id,
       summary: `${automation.name}: ${run.summary}`,
@@ -825,10 +825,9 @@ export class Runs {
           command: planned.command,
           args: planned.args,
           reason,
-          actor: 'automation',
           by: actorOf(here.automation),
           // A part of a group: as often as its group's parts each may be.
-          run: { id: live.id, askedBy: live.asker?.actor ?? null, switches: live.allowance[here.each[planned.role] ?? planned.role] ?? 1 },
+          run: { id: live.id, askedBy: live.asker?.kind ?? null, switches: live.allowance[here.each[planned.role] ?? planned.role] ?? 1 },
         });
       } catch (error) {
         return { outcome: 'failed', detail: (error as Error).message };
@@ -906,7 +905,7 @@ export class Runs {
     }
     let result: WriteResult;
     try {
-      result = await this.deps.gateway.write({ deviceId: binding.device, patch: { [key]: value }, actor: 'automation', by: actorOf(here.automation) });
+      result = await this.deps.gateway.write({ deviceId: binding.device, patch: { [key]: value }, by: actorOf(here.automation) });
     } catch (error) {
       result = { outcome: 'failed', detail: (error as Error).message };
     }

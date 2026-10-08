@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { RunLog, RunLogKey, RunLogReach, RunStep } from '@kraftverk/api-contract';
 
 import { atOf, awayOf, changed, heldPath, marksOf, said, seriesOf, sinceStart, spansOf, valueAt, windowOf, xOf } from './run-chart.ts';
+import { actor } from '@kraftverk/device-sdk';
 
 /*
   A run's log, as its page draws it: each value held from one reading to the
@@ -24,7 +25,7 @@ const LOG: Pick<RunLog, 'run' | 'keys' | 'readings' | 'reach'> = {
     id: 'r-1',
     at: iso(0),
     endedAt: iso(60),
-    startedBy: 'olof',
+    startedBy: actor('person', 'olof'),
     startedByRun: null,
     outcome: 'acted',
     summary: 'Turned Smart plug on',

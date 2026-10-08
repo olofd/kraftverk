@@ -1,5 +1,5 @@
 import type { AutomationDraft, AutomationMode, ProblemArea, RoleFills, Rule, StepKind, StepLine } from '@kraftverk/automation';
-import type { AutomationId, CapabilityName, EnumOption, Quantity, Value, ValueType } from '@kraftverk/device-sdk';
+import type { Actor, AutomationId, CapabilityName, EnumOption, Quantity, Value, ValueType } from '@kraftverk/device-sdk';
 
 /*
   Automations as a home answers for them: what can be made from (recipes,
@@ -99,7 +99,7 @@ export type AutomationRun = {
   /** When it started. */
   at: string;
   /** The person or assistant who started it — or the run that started it; null when its own triggers did. */
-  startedBy: string | null;
+  startedBy: Actor | null;
   /** The run of another automation whose step started it; null when none did, or it is gone. */
   startedByRun: { id: string; automationId: AutomationId; name: string } | null;
   /** When it ended; null while it runs. A run of commands alone ends as it starts. */

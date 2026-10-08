@@ -1,5 +1,5 @@
 import { ApiError, type ToolBody } from '@kraftverk/api-contract';
-import type { DeviceSession, Joining, ToolSpec, Value } from '@kraftverk/device-sdk';
+import type { Actor, DeviceSession, Joining, ToolSpec, Value } from '@kraftverk/device-sdk';
 import { subjectOf, type Confirmations } from '@kraftverk/gateway';
 import { runTool } from '@kraftverk/holder';
 
@@ -11,7 +11,7 @@ export type AskedTool = {
   session: DeviceSession;
   body: ToolBody & { reading?: boolean };
   /** Who asked: what a yes is bound to, and the timeline says. */
-  by: string;
+  by: Actor;
   /** Where a yes to one that cannot be undone is asked, and its token accepted. */
   confirmations: Confirmations;
   /** Every write to hardware refused where it runs, and this device not simulated. */

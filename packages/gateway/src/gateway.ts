@@ -1,4 +1,5 @@
 import {
+  type Actor,
   type AuditRecord,
   type PolicyValues,
   attributeMeaning,
@@ -62,17 +63,12 @@ export type CommandIntent = {
   args: Readonly<Record<string, Value>>;
   reason: string;
   /**
-   * The kind of caller. It decides policy — a person confirms; an automation
-   * has its own dwell time; an agent (an assistant acting for a person) may do
-   * what needs no one's yes, and never gives that yes itself.
+   * Who is asking. Its kind decides policy — a person confirms; an
+   * automation has its own dwell time; an agent (an assistant acting for a
+   * person) may do what needs no one's yes, and never gives that yes itself
+   * — and is set by the code that made it, never read out of its name.
    */
-  actor: Actor;
-  /**
-   * Who, for the audit trail: an account name, or "automation:a-…". Kept apart
-   * from `actor`, which is a kind and drives policy — a name must never be able
-   * to change which rules apply.
-   */
-  by: string;
+  by: GatewayActor;
   /**
    * The token a refusal handed out, presented with the retry once a person
    * has said yes: required for a consequential command, and for the first
@@ -98,8 +94,8 @@ export type CommandIntent = {
   };
 };
 
-/** Who is asking, as policy sees it. */
-export type Actor = 'person' | 'automation' | 'agent';
+/** Who may ask the gateway for anything: a person, an assistant for one, or an automation. */
+export type GatewayActor = Actor & { readonly kind: 'person' | 'agent' | 'automation' };
 
 export type GatewayOutcome =
   | 'verified' // it happened, and everything that can say so agrees
@@ -174,8 +170,8 @@ export const DEFAULT_POLICY: GatewayPolicy = {
   runSwitchCeiling: 12,
 };
 
-/** When something was last switched or written, in milliseconds, and by whom — the intent's `by`: "olof", "automation:a-…". */
-export type LedgerMark = { at: number; by: string };
+/** When something was last switched or written, in milliseconds, and by whom: the intent's `by`. */
+export type LedgerMark = { at: number; by: Actor };
 
 /**
  * What the gateway remembers of each device: when each part was last
@@ -225,8 +221,7 @@ export type WriteIntent = {
   deviceId: SavedDeviceId;
   /** Only what should change: writing the full set would rewrite every register to change one. */
   patch: Readonly<Record<string, Value>>;
-  actor: Actor;
-  by: string;
+  by: GatewayActor;
   /** The token a refusal handed out, once a person has said yes: required when the patch touches an attribute that can damage the hardware. */
   confirmation?: string;
 };
@@ -504,7 +499,7 @@ export class ActionGateway {
       }
     } else {
       // A run switches first as whoever asked for it would: a person as a person, an assistant as an assistant.
-      const actor = intent.run?.askedBy ?? intent.actor;
+      const actor = intent.run?.askedBy ?? intent.by.kind;
       const dwell = actor === 'automation' ? this.#policy.automationDwellMs : actor === 'agent' ? this.#policy.agentDwellMs : this.#policy.personDwellMs;
       if (this.#lastSwitchAt(intent) > 0 && sinceLast < dwell) {
         // Said as what it is: a pause that protects the relay and what it feeds, and how long is left of it.
@@ -553,13 +548,13 @@ export class ActionGateway {
         ? `This ${consequentialLink.kind.verb} ${consequentialLink.name}`
         : (declared.because ?? 'This needs confirming');
     // An agent cannot say yes for a person: what needs one is theirs to do, in the app, and the refusal says so.
-    if (intent.actor === 'agent' && (consequential || firstThroughLink)) return refuse(`A person has to do this, in the app: it needs their confirmation. ${why}.`);
+    if (intent.by.kind === 'agent' && (consequential || firstThroughLink)) return refuse(`A person has to do this, in the app: it needs their confirmation. ${why}.`);
     // The home's reserve, for what drains a store — unless it is already so: what was not drained is not now.
     const alreadySo = settings.every((setting) => readingOf(readingsNow(), setting.attribute.key)?.value === setting.value);
     const reserve = alreadySo ? null : this.#belowReserve(device, intent, spec, readingsNow, values);
-    if (reserve && intent.actor !== 'person') return refuse(`${reserve}: it is kept for when it is needed, and only a person may draw on it`);
+    if (reserve && intent.by.kind !== 'person') return refuse(`${reserve}: it is kept for when it is needed, and only a person may draw on it`);
     const asks = consequential || firstThroughLink || reserve !== null;
-    if (intent.actor === 'person' && asks && !this.#confirmations.accept(intent.confirmation, subject)) {
+    if (intent.by.kind === 'person' && asks && !this.#confirmations.accept(intent.confirmation, subject)) {
       const said = [consequential || firstThroughLink ? why : null, reserve].filter((reason) => reason !== null).join('. ');
       return { ...refuse(`This action needs explicit confirmation. ${said}.`), needsConfirmation: this.#confirmations.ask(subject), reason: `${said}.` };
     }
@@ -748,7 +743,7 @@ export class ActionGateway {
     if (this.#deps.isReadOnly(intent.deviceId)) return refuse(this.#deps.readOnlyReason ?? 'Every write to hardware is refused here: read-only');
 
     // A setting written moments ago is still settling: one write per setting per dwell, whoever asks.
-    const writeDwell = intent.actor === 'automation' ? this.#policy.automationDwellMs : intent.actor === 'agent' ? this.#policy.agentDwellMs : this.#policy.userWriteDwellMs;
+    const writeDwell = intent.by.kind === 'automation' ? this.#policy.automationDwellMs : intent.by.kind === 'agent' ? this.#policy.agentDwellMs : this.#policy.userWriteDwellMs;
     const settling = keys
       .map((key) => ({ key, since: this.#now() - (this.#ledger.lastWrite(intent.deviceId, key)?.at ?? 0) }))
       .find(({ since }) => since < writeDwell);
@@ -756,7 +751,7 @@ export class ActionGateway {
 
     const risky = keys.filter((key) => writable.get(key)!.dangerous);
     const labelled = (list: readonly string[]) => list.map((key) => writable.get(key)?.label ?? key).join(', ');
-    if (risky.length && intent.actor !== 'person') return refuse(`${intent.actor === 'agent' ? 'An assistant' : 'An automation'} may not change ${labelled(risky)}: it can damage the hardware. A person can, in the app`);
+    if (risky.length && intent.by.kind !== 'person') return refuse(`${intent.by.kind === 'agent' ? 'An assistant' : 'An automation'} may not change ${labelled(risky)}: it can damage the hardware. A person can, in the app`);
     const subject = subjectOf({ device: intent.deviceId, patch: changed, by: intent.by });
     if (risky.length && !this.#confirmations.accept(intent.confirmation, subject)) {
       const labels = risky.map((key) => writable.get(key)!.label).join(', ');

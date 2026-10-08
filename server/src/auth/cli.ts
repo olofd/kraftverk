@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
+import { actor } from '@kraftverk/device-sdk';
 import { AuditLog } from '@kraftverk/store';
 
 import { loadConfig } from '../config.ts';
@@ -51,7 +52,7 @@ function fail(message: string): never {
 }
 
 const record = (kind: string, summary: string, account: string) =>
-  timeline.record({ at: new Date().toISOString(), kind, actor: 'server console', resourceKind: 'account', resource: account, summary });
+  timeline.record({ at: new Date().toISOString(), kind, actor: actor('system', 'the server console'), resourceKind: 'account', resource: account, summary });
 
 try {
   switch (command) {

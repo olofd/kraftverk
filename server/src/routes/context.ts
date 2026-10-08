@@ -7,7 +7,7 @@ import { NODE_ID, RESOURCE_KINDS, savedDeviceId, type ResourceKind } from '@kraf
 import type { Hub } from '@kraftverk/hub';
 
 import type { Accounts } from '../auth/accounts.ts';
-import { actorOf, userOf } from '../auth/routes.ts';
+import { usernameOf, userOf } from '../auth/routes.ts';
 import type { LoginLimiter } from '../auth/limiter.ts';
 import type { ProxyDirectory } from '../auth/trust.ts';
 import type { MapParts } from './map.ts';
@@ -46,7 +46,7 @@ export type ConfirmPassword = (c: Context, password: string | undefined) => Prom
 /** The home, as the person a request is from asks it. */
 export const homeFor = (deps: Pick<AppDeps, 'hub'>, c: Context): KraftverkApi => {
   const account = userOf(c)?.id;
-  const caller: Caller = { kind: 'person', name: actorOf(c), ...(account ? { account } : {}) };
+  const caller: Caller = { kind: 'person', name: usernameOf(c), ...(account ? { account } : {}) };
   return deps.hub.as(caller);
 };
 

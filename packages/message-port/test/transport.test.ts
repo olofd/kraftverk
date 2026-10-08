@@ -3,6 +3,7 @@ import { afterEach, expect, test } from 'bun:test';
 import { memoryTransportStore, sightingMatches, type ByteChannel, type HttpChannel, type Sighting, type Transport, type TransportContext, type TransportDefinition } from '@kraftverk/device-sdk';
 
 import { serveTransport, transportOver } from '../src/index.ts';
+import { actor } from '@kraftverk/device-sdk';
 
 /*
   A transport run on one side of a real MessageChannel — a page — and
@@ -25,7 +26,7 @@ function pageTransport(context: TransportContext) {
     available: () => (started ? { ok: true } : { ok: false, reason: 'Not started' }),
     start: async () => {
       started = true;
-      context.audit({ kind: 'wire.started', actor: 'wire', summary: 'The wire started' });
+      context.audit({ kind: 'wire.started', actor: actor('person', 'wire'), summary: 'The wire started' });
     },
     stop: async () => void (started = false),
     choose: async (matchers) => (sightingMatches(matchers, SIGHTING) ? SIGHTING : null),
@@ -87,7 +88,7 @@ test('started there, available here — and what it says on its timeline is said
   expect(hub.available()).toEqual({ ok: true });
   expect(hub.values?.()).toEqual({ broker: '192.0.2.10' });
   await later();
-  expect(audited).toEqual([{ kind: 'wire.started', actor: 'wire', summary: 'The wire started' }]);
+  expect(audited).toEqual([{ kind: 'wire.started', actor: actor('person', 'wire'), summary: 'The wire started' }]);
   stop();
 });
 

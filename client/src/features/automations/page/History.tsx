@@ -235,7 +235,7 @@ export function Timeline({ history, automation }: { history: History | null; aut
             const look = run ? OUTCOME[run.outcome] : (CHANGE[change!.kind] ?? { icon: 'edit-3', tone: '$color' });
             const expanded = open === entry.key;
             const changes = change ? changesOf(change) : [];
-            const by = run?.startedByRun ? `“${run.startedByRun.name}”` : (run?.startedBy ?? (change?.actor && !change.actor.startsWith('automation:') ? change.actor : null));
+            const by = run?.startedByRun ? `“${run.startedByRun.name}”` : (run?.startedBy?.name ?? (change?.actor && change.actor.kind !== 'automation' ? change.actor.name : null));
             const row = (
               <XStack gap="$3" alignItems="stretch">
                 {/* The rail: a mark for each entry, joined to the next. */}

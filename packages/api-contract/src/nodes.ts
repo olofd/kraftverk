@@ -1,5 +1,5 @@
 import type { Coordinates } from '@kraftverk/automation';
-import type { AuditSubject, Availability, DeviceDescription, DeviceInfo, NodeId, Platform, PolicyValueName, PolicyValueSpec, Reading, ResourceKind, TransportDefinition, Value } from '@kraftverk/device-sdk';
+import type { Actor, AuditSubject, Availability, DeviceDescription, DeviceInfo, NodeId, Platform, PolicyValueName, PolicyValueSpec, Reading, ResourceKind, TransportDefinition, Value } from '@kraftverk/device-sdk';
 
 import type { HeldBy, Refused } from './devices.ts';
 
@@ -69,7 +69,8 @@ export type AuditEntry = {
   id: number;
   at: string;
   kind: string;
-  actor: string;
+  /** Who did it, as they were called then. */
+  actor: Actor;
   /** What it is about — a device, a node, an automation, an account — or nothing. */
   resourceKind: ResourceKind | null;
   resource: string | null;

@@ -215,7 +215,7 @@ test('a way this app holds: set up here, judged and kept by the server, held her
   expect(follower.queue.count()).toBe(0);
   await until(async () => (await home.devices.get(saved.id)).readings.some((reading) => reading.key === 'on' && reading.value === true), 'the server hearing the lamp is on');
   const timeline = await home.timeline({ limit: 20 });
-  expect(timeline.find((entry) => entry.kind === 'command.intent')).toMatchObject({ actor: 'olof', resource: saved.id, detail: { from: { node: follower.nodeId, name: 'Chrome on a test' } } });
+  expect(timeline.find((entry) => entry.kind === 'command.intent')).toMatchObject({ actor: { name: 'olof' }, resource: saved.id, detail: { from: { node: follower.nodeId, name: 'Chrome on a test' } } });
 
   // Its secret changes here, and stays here.
   const changed = await api.connections.setSecrets(saved.id, way.id, { pin: '9999' });

@@ -1,4 +1,5 @@
 import {
+  actor,
   attributeMeaning,
   isBridged,
   isSimulated,
@@ -629,7 +630,7 @@ export class SessionManager {
       // The address now leads somewhere else: nothing it says is this device's.
       await this.close(deviceId);
       this.#refusals.set(deviceId, { status: 'error', detail: `That connection reaches a different device (${said}), not the one you added` });
-      this.deps.record?.({ at: new Date(this.#clock.now()).toISOString(), kind: 'device.mismatch', actor: this.deps.node.name, resourceKind: 'device', resource: deviceId, summary: `${record.name}'s connection reaches ${said} instead`, detail: { expected: record.identity } });
+      this.deps.record?.({ at: new Date(this.#clock.now()).toISOString(), kind: 'device.mismatch', actor: actor('node', this.deps.node.name, this.deps.node.id), resourceKind: 'device', resource: deviceId, summary: `${record.name}'s connection reaches ${said} instead`, detail: { expected: record.identity } });
       this.deps.onChange?.();
       return false;
     }

@@ -145,7 +145,7 @@ describe('adding a device', () => {
 
     // The draft is gone, and the timeline says who added what.
     expect((await refusal(t.home.setup.get(started.id))).kind).toBe('not-found');
-    expect((await t.home.timeline()).find((entry) => entry.kind === 'device.added')?.actor).toBe('olof');
+    expect((await t.home.timeline()).find((entry) => entry.kind === 'device.added')?.actor.name).toBe('olof');
   });
 
   test('a lamp found on the bus is checked, told apart by its identity, and saved with what the check learnt', async () => {

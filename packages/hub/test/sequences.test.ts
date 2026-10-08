@@ -9,6 +9,7 @@ import { AutomationEngine, RunRefusal, type Asker, type EngineDevice, Automation
 import { AutomationStore, type SqlDatabase } from '@kraftverk/store';
 
 import { testDatabase } from './home.ts';
+import { actor } from '@kraftverk/device-sdk';
 
 /*
   Sequences (docs/SEQUENCES.md), run by the engine through a scripted
@@ -222,7 +223,7 @@ function setup(world: Partial<World> = {}) {
 }
 
 /** A person asking. */
-const OLOF: Asker = { name: 'olof', actor: 'person' };
+const OLOF: Asker = actor('person', 'olof');
 
 /** A few seconds of a step, fast: how long the charger is given, and how long it is switched off. */
 const QUICK = { reachSeconds: 20, withinSeconds: 5, offSeconds: 3, tries: 3 };
@@ -232,7 +233,7 @@ describe('starting a charge', () => {
     const { engine, make, ended, switches, store } = setup({ reachableAfterMs: 20 });
     const automation = make('standard.start-charging', QUICK);
     const begun = await engine.startAsked(automation.id, OLOF);
-    expect(begun).toMatchObject({ outcome: 'running', startedBy: 'olof', why: 'Started by olof' });
+    expect(begun).toMatchObject({ outcome: 'running', startedBy: actor('person', 'olof'), why: 'Started by olof' });
 
     const run = await ended(automation.id);
     expect(switches()).toEqual(['supply on', 'charger on']);
@@ -297,7 +298,7 @@ describe('starting a charge', () => {
     // Said by the plug between two looks, and gone again before the next: only the bus has it.
     const at = new Date().toISOString();
     bus.publish({ kind: 'readings', deviceId: PLUG, readings: [{ key: 'watts', value: 77, at }] });
-    engine.stopAsked(automation.id, 'olof');
+    engine.stopAsked(automation.id, actor('person', 'olof'));
     const run = await ended(automation.id);
     const log = engine.runLog(store.get(automation.id)!, run.id!)!;
     expect(log.readings.find((reading) => reading.device === PLUG && reading.key === 'watts' && reading.value === 77)).toMatchObject({ at });
@@ -341,7 +342,7 @@ describe('starting a charge', () => {
     ]);
     // Every switch is the run's, a person's, with what its rule allows: on, then off and on 3 times, then off if it fails.
     expect(new Set(sent.map((intent) => intent.run?.id))).toEqual(new Set([run.id!]));
-    expect(sent.every((intent) => intent.run?.askedBy === 'person' && intent.actor === 'automation')).toBe(true);
+    expect(sent.every((intent) => intent.run?.askedBy === 'person' && intent.by.kind === 'automation')).toBe(true);
     expect(sent.find((intent) => intent.deviceId === PLUG)!.run!.switches).toBe(1 + 2 * 3 + 1);
     // Ended, the gateway is told, and counts nothing more for it.
     expect(runsEnded).toEqual([run.id!]);
@@ -394,7 +395,7 @@ describe('starting a charge', () => {
     const automation = make('standard.start-charging', QUICK);
     await engine.startAsked(automation.id, OLOF);
     await new Promise((resolve) => setTimeout(resolve, 20));
-    const stopping = engine.stopAsked(automation.id, 'olof');
+    const stopping = engine.stopAsked(automation.id, actor('person', 'olof'));
     expect(stopping.outcome).toBe('running');
     const run = await ended(automation.id);
 
@@ -411,7 +412,7 @@ describe('starting a charge', () => {
     const automation = make('standard.start-charging', QUICK);
     await engine.startAsked(automation.id, OLOF);
     await new Promise((resolve) => setTimeout(resolve, 15));
-    engine.stopAsked(automation.id, 'olof');
+    engine.stopAsked(automation.id, actor('person', 'olof'));
     const run = await ended(automation.id);
 
     expect(run.outcome).toBe('stopped');
@@ -457,7 +458,7 @@ describe('starting a charge', () => {
     await engine.startAsked(automation.id, OLOF);
     await expect(engine.startAsked(automation.id, OLOF)).rejects.toThrow('It is already running');
     const midway = store.get(automation.id)!;
-    expect(midway.running).toMatchObject({ outcome: 'running', startedBy: 'olof' });
+    expect(midway.running).toMatchObject({ outcome: 'running', startedBy: actor('person', 'olof') });
     expect(midway.running!.steps.length).toBeGreaterThan(0);
 
     await ended(automation.id);
@@ -485,7 +486,7 @@ describe('starting a charge', () => {
     expect(store.get(watching.id)!.lastRun).toBeNull();
 
     // An assistant starts only what its owner has let act: an owner's yes, not its own.
-    await expect(engine.startAsked(watching.id, { name: 'assistant for olof', actor: 'agent' })).rejects.toThrow('It only watches');
+    await expect(engine.startAsked(watching.id, actor('agent', 'assistant for olof'))).rejects.toThrow('It only watches');
     // A person's play is a yes: it runs, for real, though it only watches on its own.
     expect((await engine.startAsked(watching.id, OLOF)).outcome).toBe('running');
     expect((await ended(watching.id)).outcome).toBe('acted');
@@ -504,7 +505,7 @@ describe('starting a charge', () => {
       id: null,
       at,
       endedAt: null,
-      startedBy: 'olof',
+      startedBy: actor('person', 'olof'),
       startedByRun: null,
       outcome: 'running',
       summary: 'Running',
@@ -613,7 +614,7 @@ describe('blocks its owner builds', () => {
     const run = await ended(fast.id);
     expect(run.outcome).toBe('acted');
     expect(run.steps[2]).toMatchObject({ kind: 'write', what: 'Set Scooter plug’s Live readings to on', outcome: 'done' });
-    expect(writes.map((write) => [write.deviceId, write.patch, write.actor])).toEqual([[PLUG, { live: true }, 'automation']]);
+    expect(writes.map((write) => [write.deviceId, write.patch, write.by.kind])).toEqual([[PLUG, { live: true }, 'automation']]);
     expect(state.live).toBe(true);
     expect(run.summary).toContain('set Scooter plug’s Live readings to on');
 
@@ -640,7 +641,7 @@ describe('blocks its owner builds', () => {
     expect(run.steps[0]!.detail).toStartWith('It ran: turned Garage station — AC outlets on');
     expect(run.summary).toBe('Started “Start charging the scooter”');
     const child = store.runs(charge.id)[0]!;
-    expect(child).toMatchObject({ outcome: 'acted', startedBy: 'olof', startedByRun: { id: run.id, automationId: morning.id, name: 'Morning' }, why: 'Started by “Morning”' });
+    expect(child).toMatchObject({ outcome: 'acted', startedBy: actor('person', 'olof'), startedByRun: { id: run.id, automationId: morning.id, name: 'Morning' }, why: 'Started by “Morning”' });
     expect(switches()).toEqual(['supply on', 'charger on']);
   });
 
@@ -654,7 +655,7 @@ describe('blocks its owner builds', () => {
     );
     await engine.startAsked(morning.id, OLOF);
     await new Promise((resolve) => setTimeout(resolve, 40));
-    engine.stopAsked(morning.id, 'olof');
+    engine.stopAsked(morning.id, actor('person', 'olof'));
     const [parent, child] = [await ended(morning.id), await ended(charge.id)];
     expect(parent.outcome).toBe('stopped');
     expect(parent.steps[0]).toMatchObject({ kind: 'start', outcome: 'stopped' });
@@ -706,7 +707,7 @@ describe('automations that share a part', () => {
     // Kept, and on the timeline: its card says why it did nothing.
     expect(recorded.some((entry) => entry.kind === 'automation.refused' && entry.summary.includes('is in use by “Start charging the scooter”'))).toBe(true);
 
-    engine.stopAsked(start.id, 'olof');
+    engine.stopAsked(start.id, actor('person', 'olof'));
     expect((await ended(start.id)).outcome).toBe('stopped');
     await engine.startAsked(stop.id, OLOF);
     // Its turn now: it takes its steps — the plug, unpowered with its supply off, then answers for itself.
