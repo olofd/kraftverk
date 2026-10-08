@@ -45,8 +45,12 @@ const MOVING_FOR_MS = 10 * 60_000;
 const MOVED_METRES = 200;
 /** At or below this charge, a moving device is asked half as often, as Home Assistant does. */
 const LOW_BATTERY = 33;
-/** How often the account looks at what is due. */
-const TICK_MS = 30_000;
+/** While someone looks at a device of the account: where it is, every minute. Only its own page asks this, never the home screen. */
+export const WATCHED_EVERY_MS = 60_000;
+/** A person's "Locate now", or a page just opened, asks at once — unless the last ask is younger than this. */
+const LOCATE_AGAIN_MS = 60_000;
+/** How often the account looks at what is due: often enough for "every minute" to be about a minute. */
+const TICK_MS = 15_000;
 /** How soon an ask that failed is tried again, when Apple says nothing of when. */
 const RETRY_MS = 60_000;
 
@@ -72,6 +76,8 @@ export class Family implements Bridge<FindMyLink> {
   #movingUntil = 0;
   /** The ask out now, when one is. */
   #asking: Promise<void> | null = null;
+  /** Until when someone is looking at a device of it: asked every minute meanwhile. */
+  #watchedUntil = 0;
 
   constructor(private readonly source: FindMySource) {}
 
@@ -79,8 +85,9 @@ export class Family implements Bridge<FindMyLink> {
     return [...this.#devices.values()].map((device) => ({ key: device.id, name: device.name, model: device.model, identity: identityOf('icloud-web', device.id), typeId: null, about: null, joining: false }));
   }
 
-  /** How long until Find My is asked again: soon while a device someone added moves, rarely otherwise. */
+  /** How long until Find My is asked again: every minute while someone looks at a device, soon while one someone added moves, rarely otherwise. */
   interval(): number {
+    if (Date.now() < this.#watchedUntil) return WATCHED_EVERY_MS;
     if (Date.now() >= this.#movingUntil) return STILL_EVERY_MS;
     const low = [...this.#linked.keys()].some((id) => {
       const battery = this.#devices.get(id)?.battery;
@@ -158,6 +165,26 @@ export class Family implements Bridge<FindMyLink> {
         if (!device) throw new Error('That device is no longer in this account’s Find My');
         return device;
       },
+      locate: async () => {
+        if (Date.now() - this.#fetchedAt >= LOCATE_AGAIN_MS) await this.poll(Date.now(), true);
+        const device = this.#devices.get(id);
+        if (!device) throw new Error('That device is no longer in this account’s Find My');
+        return device;
+      },
+      watch: (until) => {
+        const sooner = until > this.#watchedUntil && this.#watchedUntil < Date.now();
+        this.#watchedUntil = Math.max(this.#watchedUntil, until);
+        if (!sooner) return;
+        // Just opened: asked now, when the last answer is older than a minute — the page shows where it is, not where it was.
+        if (Date.now() - this.#fetchedAt >= LOCATE_AGAIN_MS) void this.poll(Date.now(), true).catch(() => undefined);
+        // Its schedule changed: said at once, not at the next ask.
+        else for (const told of this.#linked.values()) for (const changed of told) changed();
+      },
+      schedule: () => ({
+        nextAt: this.#fetchedAt ? new Date(this.#fetchedAt + this.interval()).toISOString() : null,
+        everyMs: this.interval(),
+        watched: Date.now() < this.#watchedUntil,
+      }),
       playSound: () => this.source.playSound(id),
       lostMode: (options) => this.source.lostMode(id, options),
       close: () => {

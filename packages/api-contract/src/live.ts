@@ -68,8 +68,13 @@ export type LiveUpdate =
   /** An automation moved: a run started, took a step, or ended. Read it again. */
   | { type: 'automation'; id: AutomationId };
 
-/** Something a screen shows: a device, an automation. More kinds as screens show more. */
-export type ShownThing = { kind: 'device'; id: SavedDeviceId } | { kind: 'automation'; id: AutomationId };
+/**
+ * Something a screen shows: a device, an automation. More kinds as screens
+ * show more. A device shown `close` is its own page, open — not one of many
+ * in a list: what a device whose freshness costs something (a phone located
+ * by its account) is read more often for.
+ */
+export type ShownThing = { kind: 'device'; id: SavedDeviceId; close?: boolean } | { kind: 'automation'; id: AutomationId };
 
 /**
  * What an app says over `GET /api/live`, app to server: what it shows now.

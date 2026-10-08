@@ -83,6 +83,13 @@ export class Attention {
     return ids as Set<IdOf<K>>;
   }
 
+  /** The devices an attended app shows up close: their own page open, not one of many in a list. */
+  attendedClose(): Set<Extract<ShownThing, { kind: 'device' }>['id']> {
+    const ids = new Set<string>();
+    for (const viewer of this.#attendedViewers()) for (const thing of viewer.showing) if (thing.kind === 'device' && thing.close) ids.add(thing.id);
+    return ids as Set<Extract<ShownThing, { kind: 'device' }>['id']>;
+  }
+
   /** Whether an attended app shows it. */
   watched(thing: ShownThing): boolean {
     return this.#attendedViewers().some((viewer) => viewer.showing.some((shown) => shown.kind === thing.kind && shown.id === thing.id));

@@ -50,9 +50,15 @@ export function createViews(say: (view: ViewReport) => void, clock: Clock = SYST
   let pending: unknown = null;
 
   const current = (): ViewReport => {
-    // Each thing once, however many parts of the screen show it.
+    // Each thing once, however many parts of the screen show it — up close when any shows it so: a device's page over the list it was opened from.
     const things = new Map<string, ShownThing>();
-    for (const list of shown.values()) for (const thing of list) things.set(keyOf(thing), thing);
+    for (const list of shown.values()) {
+      for (const thing of list) {
+        const before = things.get(keyOf(thing));
+        const close = (before && 'close' in before && before.close) || ('close' in thing && thing.close);
+        things.set(keyOf(thing), close ? { ...thing, close: true } as ShownThing : thing);
+      }
+    }
     return { type: 'view', screen, showing: [...things.values()] };
   };
   const sayNow = () => {

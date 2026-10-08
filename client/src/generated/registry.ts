@@ -8,6 +8,7 @@
 import type { DeviceAssets, DeviceUi } from '../features/devices/registry';
 import type { IntegrationUi } from '../features/integrations/registry';
 
+import icloudDeviceUi from '@kraftverk/integration-icloud/ui';
 import niuScooterUi from '@kraftverk/integration-niu/ui';
 import niuUqiGtUi from '@kraftverk/device-niu-uqi-gt/ui';
 import niuIntegrationUi from '@kraftverk/integration-niu/ui/integration';
@@ -16,6 +17,7 @@ import atorchS1wUi from '@kraftverk/device-atorch-s1w/ui';
 
 /** Screens a device type ships, by device type id. */
 export const DEVICE_UI: Readonly<Record<string, DeviceUi>> = {
+  'icloud.device': icloudDeviceUi,
   'niu.scooter': niuScooterUi,
   'niu.uqi-gt': niuUqiGtUi,
   'aferiy.p280': aferiyP280Ui,

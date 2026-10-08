@@ -14,7 +14,7 @@ import { useDevices } from './DevicesProvider';
 export function useShowing(things: readonly ShownThing[]): void {
   const { views } = useDevices();
   // The same things in a new array are the same: said again only when they change.
-  const key = things.map((thing) => `${thing.kind}:${thing.id}`).join(',');
+  const key = things.map((thing) => `${thing.kind}:${thing.id}${'close' in thing && thing.close ? ':close' : ''}`).join(',');
   const stable = useMemo(() => things, [key]);
   useFocusEffect(useCallback(() => views.show(stable), [stable, views]));
 }

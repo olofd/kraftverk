@@ -251,8 +251,12 @@ export interface DeviceSession {
    * it sensibly can until that time, then as before. How often, and for how
    * long at most, is the device's own business; asked again, the later time
    * holds. A session that reports as often as it can already need not have it.
+   *
+   * `close` when someone has its own page open, not merely a list it is in:
+   * a device whose freshness costs something — a phone its account locates,
+   * at a cost to every phone on the account — may wait for that.
    */
-  wantFresh?(until: number): void;
+  wantFresh?(until: number, close?: boolean): void;
   /** For a type that is a bridge: who is behind it, and a link to each. Every session of a bridge has it, its simulator's included. */
   readonly bridge?: Bridge;
   close(): Promise<void>;

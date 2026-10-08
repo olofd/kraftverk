@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { isPosition, memoryKept, type DeviceSession, type HttpChannel, type OpenConnection, type SetupContext } from '@kraftverk/device-sdk';
 import { bridgedConnection, checkDeviceTypeContract, fakeConnection, simulatorContext } from '@kraftverk/device-sdk/testing';
 
-import account, { Family, MOVING_EVERY_MS, STILL_EVERY_MS } from '../src/account.ts';
+import account, { Family, MOVING_EVERY_MS, STILL_EVERY_MS, WATCHED_EVERY_MS } from '../src/account.ts';
 import device from '../src/device.ts';
 import protocol, { accountIdentity, stateOf, trustUntil, type FoundDevice } from '../src/protocol/index.ts';
 import { APPLE_ID, DEVICE_CODE, DSID, PASSWORD, playedApple } from './apple.ts';
@@ -110,6 +110,10 @@ describe('an iCloud account', () => {
     expect(reading('charge')?.value).toBe(42);
     expect(reading('charging')?.value).toBe(true);
     expect(reading('owner')?.value).toBe('Alex');
+    // What it is, and when it is looked for next — what its page says.
+    expect(reading('kind')?.value).toBe('phone');
+    expect(typeof reading('nextLook')?.value).toBe('string');
+    expect(reading('lookEvery')?.value).toBe(STILL_EVERY_MS / 1000);
     expect(alex.identity?.()).toEqual({ id: 'icloud-web:device-2', name: 'Alex’s iPhone' });
 
     expect(await alex.command({ part: 'main', capability: 'identify', command: 'identify', args: {} })).toEqual({ accepted: true });
@@ -161,6 +165,23 @@ describe('how often Find My is asked', () => {
 
     // Heard, and not there: gone, said so.
     expect(await family.link('gone', () => {}).catch((error: Error) => error.message)).toBe('That device is no longer in this account’s Find My');
+  });
+
+  test('every minute while someone looks at a device, asked at once when its page opens; "Locate now" at most once a minute; the schedule said', async () => {
+    let asked = 0;
+    const family = new Family({ devices: async () => (asked++, [phone(59.3)]), playSound: async () => {}, lostMode: async () => {} });
+    await family.poll(Date.now(), true);
+    const link = await family.link('p', () => {});
+    expect(link.schedule()).toMatchObject({ everyMs: STILL_EVERY_MS, watched: false });
+
+    // Its page opens: watched, every minute — not asked again at once, the last answer being a moment old.
+    link.watch(Date.now() + 30_000);
+    expect(link.schedule()).toMatchObject({ everyMs: WATCHED_EVERY_MS, watched: true });
+    expect(asked).toBe(1);
+    // "Locate now" a moment after an ask: that answer stands.
+    await link.locate();
+    expect(asked).toBe(1);
+    expect(Date.parse(link.schedule().nextAt!) - Date.now()).toBeLessThanOrEqual(WATCHED_EVERY_MS);
   });
 
   test('a device nobody added moving asks nothing more of anyone’s battery', () => {

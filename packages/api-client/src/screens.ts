@@ -75,6 +75,8 @@ export type DeviceScreenProps = {
   readOnly: boolean;
   /** The server holding it, when a server does. */
   version: VersionInfo | null;
+  /** Where the home is, when it has been said: what a position is told against — "At home", "2.3 km away". */
+  home: { latitude: number; longitude: number } | null;
 };
 
 /** What a package's card for one part is handed: the device, as every screen gets it, and the part. */

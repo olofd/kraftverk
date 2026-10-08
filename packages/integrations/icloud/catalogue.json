@@ -189,6 +189,14 @@
           },
           "writes": true,
           "confirm": "Its owner cannot use it until it is unlocked with its passcode."
+        },
+        "locate": {
+          "label": "Locate now",
+          "description": "Asks Find My where it is now, not at its account’s next turn. Every ask locates every device on the account, so it asks at most once a minute.",
+          "answer": {
+            "type": "timestamp"
+          },
+          "writes": false
         }
       },
       "description": {
@@ -268,6 +276,61 @@
               "type": "string"
             },
             "category": "diagnostic"
+          },
+          {
+            "key": "kind",
+            "label": "What it is",
+            "value": {
+              "type": "enum",
+              "options": [
+                {
+                  "value": "phone",
+                  "label": "Phone"
+                },
+                {
+                  "value": "tablet",
+                  "label": "Tablet"
+                },
+                {
+                  "value": "computer",
+                  "label": "Computer"
+                },
+                {
+                  "value": "watch",
+                  "label": "Watch"
+                },
+                {
+                  "value": "earbuds",
+                  "label": "Earbuds"
+                },
+                {
+                  "value": "other",
+                  "label": "Other"
+                }
+              ]
+            },
+            "category": "diagnostic"
+          },
+          {
+            "key": "nextLook",
+            "label": "Looked for next",
+            "description": "When its account next asks Find My where it is.",
+            "value": {
+              "type": "timestamp"
+            },
+            "category": "diagnostic"
+          },
+          {
+            "key": "lookEvery",
+            "label": "Looked for every",
+            "description": "How often its account asks Find My now: every minute while its page is open, every 2 minutes while it moves, every 15 while it is still.",
+            "value": {
+              "type": "number",
+              "unit": "s",
+              "integer": true
+            },
+            "category": "diagnostic",
+            "history": false
           }
         ]
       },

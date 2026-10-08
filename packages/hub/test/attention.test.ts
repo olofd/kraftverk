@@ -33,6 +33,21 @@ describe('what the people using kraftverk are looking at', () => {
     expect(attention.viewers()).toHaveLength(1);
   });
 
+  test('a device shown up close — its own page — is told apart from one in a list, and wantFresh hears which', () => {
+    const attention = new Attention();
+    attention.open('olof').report({ type: 'view', screen: 'device', showing: [{ kind: 'device', id: PLUG, close: true }] });
+    attention.open('anna').report({ type: 'view', screen: 'home', showing: [{ kind: 'device', id: PLUG }, { kind: 'device', id: STATION }] });
+    expect(attention.attendedClose()).toEqual(new Set([PLUG]));
+    const wanted: [string, boolean][] = [];
+    const stop = keepWatchedFresh(attention, (device, _until, close) => wanted.push([device, close]));
+    attention.open(null).report({ type: 'view', screen: 'home', showing: [] });
+    stop();
+    expect(wanted).toEqual([
+      [PLUG, true],
+      [STATION, false],
+    ]);
+  });
+
   test('an app that says nothing for ten minutes is not attended — a page left open in a tab — until it says something again', () => {
     let now = 1_000_000;
     const attention = new Attention(() => now);

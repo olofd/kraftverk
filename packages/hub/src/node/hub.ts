@@ -281,7 +281,7 @@ export class Hub {
     this.sampler.start();
     this.changeLog.start();
     this.engine.start();
-    this.#stopFreshness = keepWatchedFresh(this.attention, (device, until) => this.sessions.get(device)?.wantFresh?.(until));
+    this.#stopFreshness = keepWatchedFresh(this.attention, (device, until, close) => this.sessions.get(device)?.wantFresh?.(until, close));
   }
 
   /**

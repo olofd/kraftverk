@@ -43,6 +43,16 @@ describe('what the app tells the server its screen shows', () => {
     expect(said).toEqual([{ type: 'view', screen: 'device/[id]', showing: [plug, station] }]);
   });
 
+  test('a device shown up close by one part — its page over the list it was opened from — is said up close', () => {
+    const said: ViewReport[] = [];
+    const { clock, pass } = handClock();
+    const views = createViews((view) => void said.push(view), clock);
+    views.show([{ kind: 'device', id: 'd-plug' as never, close: true }]);
+    views.show([plug, station]);
+    pass(SETTLE_MS);
+    expect(said[0]!.showing).toEqual([{ kind: 'device', id: 'd-plug' as never, close: true }, station]);
+  });
+
   test('a part let go is said; nothing that did not change is said again', () => {
     const said: ViewReport[] = [];
     const { clock, pass } = handClock();

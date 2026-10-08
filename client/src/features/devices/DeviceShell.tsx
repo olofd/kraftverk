@@ -92,7 +92,8 @@ export function DeviceShell({ id, tab, children }: { id: string | undefined; tab
   const device = useDevice(id);
   const { loading } = useDevices();
   // Every page of a device shows it: while one is in front, the server reads it more often.
-  useShowing(device ? [{ kind: 'device', id: device.id }] : []);
+  // Up close: its own page — what a phone is located every minute for, where a list of them never is.
+  useShowing(device ? [{ kind: 'device', id: device.id, close: true }] : []);
 
   if (!device) {
     return (

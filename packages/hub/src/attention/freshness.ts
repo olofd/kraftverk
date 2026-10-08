@@ -18,11 +18,12 @@ export const FRESH_PAST_LOOK_MS = 30_000;
 /** How often the leases are renewed while someone looks. */
 export const RENEW_EVERY_MS = 10_000;
 
-/** Keeps every attended device fresh until stopped. `want` is a device's `wantFresh`. */
-export function keepWatchedFresh(attention: Attention, want: (device: SavedDeviceId, until: number) => void): () => void {
+/** Keeps every attended device fresh until stopped — saying of each whether its own page is open (`close`). `want` is a device's `wantFresh`. */
+export function keepWatchedFresh(attention: Attention, want: (device: SavedDeviceId, until: number, close: boolean) => void): () => void {
   const renew = () => {
     const until = Date.now() + FRESH_PAST_LOOK_MS;
-    for (const device of attention.attended('device')) want(device, until);
+    const close = attention.attendedClose();
+    for (const device of attention.attended('device')) want(device, until, close.has(device));
   };
   // At once when someone opens a device — the page fills while it is looked at — and on a clock after.
   const stopListening = attention.onChange(renew);

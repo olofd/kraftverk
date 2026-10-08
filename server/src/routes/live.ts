@@ -67,7 +67,7 @@ const VIEW_REPORT = z
   .object({
     type: z.literal('view'),
     screen: z.string().min(1).max(64),
-    showing: z.array(z.discriminatedUnion('kind', [z.object({ kind: z.literal('device'), id: SHOWN_ID }).strict(), z.object({ kind: z.literal('automation'), id: SHOWN_ID }).strict()])).max(500),
+    showing: z.array(z.discriminatedUnion('kind', [z.object({ kind: z.literal('device'), id: SHOWN_ID, close: z.boolean().optional() }).strict(), z.object({ kind: z.literal('automation'), id: SHOWN_ID }).strict()])).max(500),
   })
   .strict();
 /** Larger than any view an app could say: not parsed. */

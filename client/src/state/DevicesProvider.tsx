@@ -28,6 +28,7 @@ import { ask } from '../platform/confirm';
 import { useAuth } from './AuthProvider';
 import { useHome } from './HomeProvider';
 import { useServers } from './ServersProvider';
+import { useHomePlace } from './useHomePlace';
 import { useReach } from './useReach';
 
 /**
@@ -110,6 +111,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   const { allowed } = useAuth();
   const { api, role, away } = useHome();
   const reach = useReach();
+  const home = useHomePlace();
   // A server's list is read once signed in; the app's own, always.
   const reading = role === 'master' || allowed;
 
@@ -317,9 +319,10 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         // Said by the node holding it: its own switch, never for a simulated one.
         readOnly: device.readOnly,
         version: holder === 'master' && role === 'follower' ? version : null,
+        home,
       };
     },
-    [actionsFor, reach, role, version]
+    [actionsFor, reach, role, version, home]
   );
 
   // --- changing the list ----------------------------------------------------------
