@@ -370,6 +370,16 @@ export function configJsonSchema(vocabulary: Vocabulary): Schema {
             color: { type: 'string', pattern: '^#[0-9a-f]{6}$' },
             chain: { type: 'string', description: 'Who they are, as they prove it: their signed statements, as the file was written. Not to be edited.' },
             shortcuts: { type: 'array', items: { type: 'string' }, description: 'Their own shortcuts on their home page: automations by key, in order.' },
+            sharing: {
+              type: 'object',
+              description: 'What they share with the family of where they are, and how long their stays are kept.',
+              additionalProperties: false,
+              required: ['level'],
+              properties: {
+                level: { enum: ['precise', 'places', 'home-away', 'off'], enumDescriptions: ['Where they are on the map', 'Which home, zone or room — never coordinates', 'Only whether they are home', 'Nothing'] },
+                keep: { type: 'string', pattern: '^[0-9]+ ?days?$', description: 'How long their stays are kept: "90 days", 1 to 366.' },
+              },
+            },
           },
         },
       },

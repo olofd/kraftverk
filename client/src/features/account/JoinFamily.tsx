@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { Button, Input, Spinner, Text, XStack } from 'tamagui';
 
-import { describeError, readInvitationLink } from '@kraftverk/api-client';
+import { describeError, readInvitationLink, type SharingLevel } from '@kraftverk/api-client';
 import { serverApi } from '@kraftverk/api-client/http';
 import { Card, haptic } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { useAccount } from '../../state/AccountProvider';
 import { useServers } from '../../state/ServersProvider';
+import { SharingChoice } from './SharingChoice';
 
 /**
  * Joining a family with an invitation (docs/PLAN-WORLD-MODEL.md §8.3): its
@@ -19,6 +20,8 @@ export function JoinFamily({ onBack }: { onBack?: () => void }) {
   const { personal, account, reload } = useAccount();
   const servers = useServers();
   const [text, setText] = useState('');
+  // What they share of where they are, chosen as they join: which place, offered first.
+  const [sharing, setSharing] = useState<SharingLevel>('places');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [waiting, setWaiting] = useState<{ name: string; serverId: string } | null>(null);
@@ -30,7 +33,7 @@ export function JoinFamily({ onBack }: { onBack?: () => void }) {
     setBusy(true);
     setProblem(null);
     try {
-      const joined = await serverApi({ baseUrl: link.serverUrl }).join({ invitation: link.invitation, secret: link.secret, chain: await personal.chain(account.personId) });
+      const joined = await serverApi({ baseUrl: link.serverUrl }).join({ invitation: link.invitation, secret: link.secret, chain: await personal.chain(account.personId), sharing });
       const server = servers.all.find((each) => each.url === link.serverUrl) ?? (await servers.add({ url: link.serverUrl, name: joined.family.name }));
       await personal.keepFamily(account.personId, { familyId: joined.family.id, name: joined.family.name, master: 'server', serverUrl: link.serverUrl, joinedAt: new Date().toISOString() });
       await reload();
@@ -71,6 +74,7 @@ export function JoinFamily({ onBack }: { onBack?: () => void }) {
       </Text>
       <Input size="$4" aria-label="The invitation link" autoCapitalize="none" autoCorrect={false} placeholder="https://…/join#i=…" value={text} onChangeText={setText} />
       {text.trim() && !link ? <ErrorText>That is not an invitation link: it has /join# in it, then the invitation.</ErrorText> : null}
+      {link ? <SharingChoice label="What the family sees of where you are" value={sharing} onChange={setSharing} /> : null}
       <XStack gap="$2" justifyContent={onBack ? 'space-between' : 'flex-end'}>
         {onBack ? (
           <Button size="$4" minHeight={44} chromeless onPress={onBack} disabled={busy}>

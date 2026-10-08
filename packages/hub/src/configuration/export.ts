@@ -182,7 +182,9 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
         return automation ? [automation.key] : [];
       });
       personKeys.set(person.id, key);
-      document.people[key] = { id: person.id, name: person.name, role: person.member.role, nickname: person.member.nickname, color: person.member.color, chain: base64url(new TextEncoder().encode(JSON.stringify(chain))), shortcuts };
+      // What they share, once they said: a family's default is no one's choice to carry over.
+      const said = person.member.sharing.setBy !== null ? { level: person.member.sharing.level, keepDays: person.member.sharing.keepDays } : null;
+      document.people[key] = { id: person.id, name: person.name, role: person.member.role, nickname: person.member.nickname, color: person.member.color, chain: base64url(new TextEncoder().encode(JSON.stringify(chain))), shortcuts, sharing: said };
     }
     for (const zone of deps.places.zones()) document.zones[zone.key] = { name: zone.name, icon: zone.icon, location: zone.location };
     for (const home of deps.places.homes()) {

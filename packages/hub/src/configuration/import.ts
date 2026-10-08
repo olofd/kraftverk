@@ -339,6 +339,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     if (entry.role !== existing.member.role) changes.push(`${existing.member.role} → ${entry.role}`);
     if (entry.nickname !== null && entry.nickname !== existing.member.nickname) changes.push(`called ${entry.nickname}`);
     if (entry.color !== null && entry.color !== existing.member.color) changes.push('their colour');
+    if (entry.sharing && (entry.sharing.level !== existing.member.sharing.level || entry.sharing.keepDays !== existing.member.sharing.keepDays)) changes.push('what they share');
     if (entry.shortcuts.join() !== deps.shortcuts.of(entry.id).map((id) => deps.automations.get(id)?.key).join()) changes.push('their shortcuts');
     return [{ key, name: entry.name, action: changes.length ? 'change' : 'same', changes }];
   });
@@ -652,6 +653,9 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
         if (!member) deps.people.addMember(entry.id, { role: entry.role, invitedBy: null, at: new Date().toISOString() });
         const colourFree = entry.color !== null && !deps.people.members().some((each) => each.id !== entry.id && each.member?.color === entry.color);
         deps.people.updateMember(entry.id, { role: entry.role, ...(entry.nickname !== null ? { nickname: entry.nickname } : {}), ...(colourFree ? { color: entry.color! } : {}) });
+        // What they share, as the file says — set by them, as they once chose it.
+        const sharing = deps.people.get(entry.id)?.member?.sharing;
+        if (entry.sharing && sharing && (entry.sharing.level !== sharing.level || entry.sharing.keepDays !== sharing.keepDays)) deps.people.setSharing(entry.id, { level: entry.sharing.level, keepDays: entry.sharing.keepDays }, entry.id, new Date().toISOString());
         (member ? applied.people.changed : applied.people.added).push(item.key);
       }
       // Labels: before what is labelled with them.

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Share } from 'react-native';
 import { Button, Input, Spinner, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, invitationLink, PATHS, type InvitationView, type MemberRole, type PersonView } from '@kraftverk/api-client';
+import { describeError, invitationLink, PATHS, type InvitationView, type MemberRole, type PersonView, type SharingChanges } from '@kraftverk/api-client';
 import { Card, Chips, haptic, Row, RowSeparator, SectionLabel, ToggleRow } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
@@ -11,6 +11,7 @@ import { Screen } from '../../components/Screen';
 import { confirmAction } from '../../platform/confirm';
 import { useAccountIfAny } from '../../state/AccountProvider';
 import { useAuth } from '../../state/AuthProvider';
+import { SHARING_MEANS, SHARING_SHORT, SharingChoice } from '../account/SharingChoice';
 import { useFamily } from '../../state/FamilyProvider';
 import { useServers } from '../../state/ServersProvider';
 
@@ -104,8 +105,20 @@ export function People() {
                 <Row
                   leading={<YStack width={14} height={14} borderRadius={7} backgroundColor={(person.member?.color ?? '$borderColor') as never} />}
                   title={`${person.shownAs}${person.id === myId ? ' (you)' : ''}`}
-                  subtitle={[person.member ? ROLE_WORDS[person.member.role] : null, person.shownAs !== person.name ? person.name : null, person.keys.length ? null : 'No device of their own yet'].filter(Boolean).join(' · ')}
+                  subtitle={[
+                    person.member ? ROLE_WORDS[person.member.role] : null,
+                    person.shownAs !== person.name ? person.name : null,
+                    person.member ? (person.member.sharing.pausedUntil ? 'sharing paused' : SHARING_SHORT[person.member.sharing.now]) : null,
+                    person.keys.length ? null : 'No device of their own yet',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
                 />
+                {admin && person.member?.role === 'child' ? (
+                  <YStack paddingHorizontal="$4" paddingBottom="$3">
+                    <SharingChoice label={`What the family sees of where ${person.shownAs} is`} value={person.member.sharing.level} onChange={(level) => void doing(() => api.people.setSharing(person.id, { level }), 'That could not be changed')} />
+                  </YStack>
+                ) : null}
                 {admin && person.member && person.id !== myId ? (
                   <XStack paddingHorizontal="$4" paddingBottom="$3" gap="$2" flexWrap="wrap" alignItems="center">
                     <Chips label={`${person.shownAs}'s role`} options={ROLES} value={person.member.role} onChange={(next) => void doing(() => api.people.update(person.id, { role: next }), 'Their role could not be changed')} />
@@ -119,6 +132,8 @@ export function People() {
           </Card>
         </YStack>
       ) : null}
+
+      {me?.member ? <YourSharing person={me} onChange={(changes) => void doing(() => api.people.setSharing(me.id, changes), 'That could not be changed')} /> : null}
 
       {admin && waiting.length ? (
         <YStack gap="$2">
@@ -194,6 +209,62 @@ export function People() {
       ) : null}
       {problem ? <ErrorText paddingHorizontal="$1">{problem}</ErrorText> : null}
     </Screen>
+  );
+}
+
+/** How long a person's stays are kept, as the app offers it. */
+const KEEPS: readonly { value: number; label: string }[] = [
+  { value: 7, label: 'A week' },
+  { value: 30, label: 'A month' },
+  { value: 90, label: 'Three months' },
+  { value: 366, label: 'A year' },
+];
+
+/**
+ * What you share of where you are (docs/PLAN-WORLD-MODEL.md §11): yours to
+ * choose, and to pause for a while; how long the family keeps where you
+ * have been. A child is shown what an admin chose for them.
+ */
+function YourSharing({ person, onChange }: { person: PersonView; onChange: (changes: SharingChanges) => void }) {
+  const sharing = person.member!.sharing;
+  const child = person.member!.role === 'child';
+  return (
+    <YStack gap="$2">
+      <SectionLabel>Where you are</SectionLabel>
+      <Card gap="$3">
+        {child ? (
+          <Text fontSize={13} color="$muted" lineHeight={19}>
+            {SHARING_MEANS[sharing.now]} An admin of your family chose this for you.
+          </Text>
+        ) : (
+          <>
+            <SharingChoice label="What the family sees of where you are" value={sharing.level} onChange={(level) => onChange({ level })} />
+            <YStack gap="$1.5">
+              <Text fontSize={13} fontWeight="600" color="$color">
+                How long the family keeps where you have been
+              </Text>
+              <Chips label="How long the family keeps where you have been" options={KEEPS} value={KEEPS.some((keep) => keep.value === sharing.keepDays) ? sharing.keepDays : null} onChange={(keepDays) => onChange({ keepDays })} />
+            </YStack>
+            <XStack gap="$2" alignItems="center" flexWrap="wrap">
+              {sharing.pausedUntil ? (
+                <>
+                  <Text fontSize={13} color="$muted" flex={1}>
+                    Paused: the family sees nothing of where you are until {new Date(sharing.pausedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
+                  </Text>
+                  <Button size="$3" minHeight={44} onPress={() => onChange({ pausedUntil: null })}>
+                    Share again
+                  </Button>
+                </>
+              ) : sharing.level !== 'off' ? (
+                <Button size="$3" minHeight={44} onPress={() => onChange({ pausedUntil: new Date(Date.now() + 3_600_000).toISOString() })}>
+                  Pause for an hour
+                </Button>
+              ) : null}
+            </XStack>
+          </>
+        )}
+      </Card>
+    </YStack>
   );
 }
 

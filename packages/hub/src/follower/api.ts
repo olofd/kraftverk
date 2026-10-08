@@ -371,6 +371,7 @@ export function followerApi(h: Follower): KraftverkApi {
       approve: (id) => home.people.approve(id),
       revokeInvitation: (id) => home.people.revokeInvitation(id),
       erase: (id) => home.people.erase(id),
+      setSharing: (id, changes) => home.people.setSharing(id, changes),
     },
     /** Labels are the family's: the master's. */
     labels: {

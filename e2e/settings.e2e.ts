@@ -64,6 +64,25 @@ test('a button that cannot be undone asks first, in the server’s words; no run
   await expect.poll(ran).toBe(1);
 });
 
+test('what you share of where you are: chosen on People, kept, paused for an hour, and shared again', async ({ page }) => {
+  await page.goto('/settings/people');
+  const choice = page.getByRole('radiogroup', { name: 'What the family sees of where you are' });
+  await choice.getByRole('radio', { name: 'Only whether I’m home' }).click();
+  await expect(page.getByText('The family sees only whether you are at one of its homes.')).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('radiogroup', { name: 'What the family sees of where you are' }).getByRole('radio', { name: 'Only whether I’m home' })).toHaveAttribute('aria-checked', 'true');
+  // Your own row says it, as the others see it.
+  await expect(page.getByText(/shares only whether they are home/).first()).toBeVisible();
+
+  await page.getByRole('button', { name: 'Pause for an hour' }).click();
+  await expect(page.getByText(/^Paused: the family sees nothing of where you are until/)).toBeVisible();
+  await page.getByRole('button', { name: 'Share again' }).click();
+  await expect(page.getByRole('button', { name: 'Pause for an hour' })).toBeVisible();
+  // Back as it was, for the tests after.
+  await page.getByRole('radiogroup', { name: 'What the family sees of where you are' }).getByRole('radio', { name: 'Which place I’m at' }).click();
+  await expect(page.getByText(/shares which place they are at/).first()).toBeVisible();
+});
+
 test('a zone: added in degrees, listed, renamed on its own page, and let go', async ({ page }) => {
   const name = unique('School');
   await page.goto('/settings/zones');

@@ -170,6 +170,22 @@ export const SCHEMA = `
   CREATE UNIQUE INDEX member_color ON member (color) WHERE left_at IS NULL;
 
   /*
+    What each person shares with the family of where they are, and how long
+    their stays are kept (§11): their own to set, an admin's for a child.
+    By the person, not their membership: one waiting to be let in has
+    already chosen. No row: the family's default — places, 90 days.
+  */
+  CREATE TABLE sharing (
+    person_id    TEXT PRIMARY KEY REFERENCES person (id),
+    level        TEXT NOT NULL CHECK (level IN ('precise', 'places', 'home-away', 'off')),
+    /* Off until then, and the level after. */
+    paused_until TEXT,
+    keep_days    INTEGER NOT NULL DEFAULT 90 CHECK (keep_days BETWEEN 1 AND 366),
+    set_by       TEXT NOT NULL REFERENCES person (id),
+    changed_at   TEXT NOT NULL
+  );
+
+  /*
     An invitation into the family (§8.3): a one-time secret in a link or a
     code, kept here only as its hash. Taken by someone showing who they are
     — their chain — who then is a member in its role, or waits for an admin

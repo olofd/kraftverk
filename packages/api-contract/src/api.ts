@@ -11,7 +11,7 @@ import type { ConfigExported, ConfigExportRequest, ConfigSnapshotView, ImportAns
 import type { MapRegionAsk, MapRegionsView } from './map.ts';
 import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DevicePeople, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, FamilyElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
-import type { FoundFamily, InvitationInput, InvitationMade, InvitationView, Joined, MemberChanges, PersonView } from './people.ts';
+import type { FoundFamily, InvitationInput, InvitationMade, InvitationView, Joined, MemberChanges, PersonView, SharingChanges, SharingLevel } from './people.ts';
 import type { HomeInput, HomeView, ZoneInput, ZoneView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView } from './homes.ts';
 import type { MediaData, MediaView, NewMedia } from './media.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, FamilyView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
@@ -322,6 +322,12 @@ export interface KraftverkApi {
      * shortcuts go. Their id stays, so history adds up and points at no one.
      */
     erase(personId: string): Promise<void>;
+    /**
+     * What a person shares of where they are, and how long their stays are
+     * kept (docs/PLAN-WORLD-MODEL.md §11): each adult their own; an admin a
+     * child's. Paused — `pausedUntil` — it is off until then.
+     */
+    setSharing(personId: string, changes: SharingChanges): Promise<PersonView>;
   };
   /** A family's labels (docs/PLAN-WORLD-MODEL.md §8.13): any grouping it wants, on devices, spaces and automations. */
   labels: {
@@ -379,7 +385,7 @@ export interface ServerApi {
   /** Whether a kraftverk server answers here at all: what an address typed in is tried with. */
   probe(): Promise<boolean>;
   /** An invitation taken, with no session here yet: its secret, and who you are. */
-  join(input: { invitation: string; secret: string; chain: Statement[] }): Promise<Joined>;
+  join(input: { invitation: string; secret: string; chain: Statement[]; sharing?: SharingLevel }): Promise<Joined>;
   auth: {
     /** Who is signed in, whether this network is trusted, and whether the first account is still to be made. */
     state(): Promise<AuthState>;

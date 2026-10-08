@@ -1,4 +1,4 @@
-import type { MemberRole, PersonView } from '@kraftverk/api-contract';
+import type { MemberRole, PersonView, Sharing, SharingChanges, SharingLevel } from '@kraftverk/api-contract';
 import { checkChain, hashOf, keyId, type Json, type Person, type PublicJwk, type Statement } from '@kraftverk/identity';
 
 import type { SqlDatabase } from './database.ts';
@@ -17,6 +17,11 @@ export const MEMBER_COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5c
 type PersonRow = { id: string; name: string; short_name: string | null; picture_id: string | null; managed_by: string | null; chain: string | null; updated_at: string; erased_at: string | null };
 type MemberRow = { role: MemberRole; nickname: string | null; color: string; joined_at: string; left_at: string | null };
 type KeyRow = { id: string; kind: 'device' | 'recovery'; public_key: string; device_name: string | null; added_at: string; vouched: string | null; revoked_at: string | null };
+
+/** What a person shares when they never said: which place they are at, never where on the map (docs/PLAN-WORLD-MODEL.md §19, decision 5). */
+export const DEFAULT_SHARING: SharingLevel = 'places';
+/** How long a person's stays are kept when they never said. */
+export const DEFAULT_KEEP_DAYS = 90;
 
 /** What a person forgotten is called, wherever they were named. */
 export const SOMEONE_WHO_LEFT = 'Someone who left';
@@ -45,9 +50,32 @@ export class PeopleStore {
       managedBy: row.managed_by,
       linked: linked.map((each) => each.provider),
       keys: keys.map((key) => ({ id: key.id, kind: key.kind, deviceName: key.device_name, addedAt: key.added_at, vouched: key.vouched })),
-      member: now ? { role: now.role, nickname: now.nickname, color: now.color, joinedAt: now.joined_at } : null,
+      member: now ? { role: now.role, nickname: now.nickname, color: now.color, joinedAt: now.joined_at, sharing: this.sharing(row.id) } : null,
       updatedAt: row.updated_at,
     };
+  }
+
+  /** What a person shares now, and how long their stays are kept: the family's default when they never said. */
+  sharing(personId: string, at = new Date().toISOString()): Sharing {
+    const row = this.#db
+      .query<{ level: SharingLevel; paused_until: string | null; keep_days: number; set_by: string; changed_at: string }, [string]>('SELECT * FROM sharing WHERE person_id = ?')
+      .get(personId);
+    if (!row) return { level: DEFAULT_SHARING, keepDays: DEFAULT_KEEP_DAYS, pausedUntil: null, now: DEFAULT_SHARING, setBy: null, changedAt: null };
+    const paused = row.paused_until !== null && row.paused_until > at;
+    return { level: row.level, keepDays: row.keep_days, pausedUntil: paused ? row.paused_until : null, now: paused ? 'off' : row.level, setBy: row.set_by, changedAt: row.changed_at };
+  }
+
+  /** What a person shares, changed as given — the rest as it was — by them, or an admin for a child. */
+  setSharing(personId: string, changes: SharingChanges, by: string, at: string): Sharing {
+    const was = this.sharing(personId, at);
+    const next = { level: changes.level ?? was.level, keepDays: changes.keepDays ?? was.keepDays, pausedUntil: changes.pausedUntil === undefined ? was.pausedUntil : changes.pausedUntil };
+    this.#db
+      .query(
+        `INSERT INTO sharing (person_id, level, paused_until, keep_days, set_by, changed_at) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (person_id) DO UPDATE SET level = excluded.level, paused_until = excluded.paused_until, keep_days = excluded.keep_days, set_by = excluded.set_by, changed_at = excluded.changed_at`
+      )
+      .run(personId, next.level, next.pausedUntil, next.keepDays, by, at);
+    return this.sharing(personId, at);
   }
 
   /** The members now, in the order they joined. */
@@ -213,6 +241,7 @@ export class PeopleStore {
       this.#db.query('UPDATE member SET nickname = NULL WHERE person_id = ?').run(personId);
       this.#db.query('DELETE FROM person_identity WHERE person_id = ?').run(personId);
       this.#db.query('DELETE FROM shortcut WHERE person_id = ?').run(personId);
+      this.#db.query('DELETE FROM sharing WHERE person_id = ?').run(personId);
       this.#db.query('UPDATE person_key SET added_with = NULL WHERE person_id = ?').run(personId);
       this.#db.query('DELETE FROM person_key WHERE person_id = ?').run(personId);
       this.#db.query("UPDATE person SET name = ?, short_name = NULL, picture_id = NULL, locale = NULL, chain = NULL, managed_by = NULL, updated_at = ?, erased_at = ? WHERE id = ?").run(SOMEONE_WHO_LEFT, at, at, personId);

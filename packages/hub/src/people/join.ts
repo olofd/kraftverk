@@ -1,4 +1,4 @@
-import { ApiError, type Joined } from '@kraftverk/api-contract';
+import { ApiError, type Joined, type SharingLevel } from '@kraftverk/api-contract';
 import { actor } from '@kraftverk/device-sdk';
 import { checkChain, type Statement } from '@kraftverk/identity';
 
@@ -11,7 +11,7 @@ import type { Hub } from '../node/hub.ts';
  * have any session here: the secret is what lets them ask. Wrong, used,
  * expired or taken back are one refusal, so a guess learns nothing.
  */
-export function acceptInvitation(hub: Hub, input: { invitation: string; secret: string; chain: Statement[] }): Joined {
+export function acceptInvitation(hub: Hub, input: { invitation: string; secret: string; chain: Statement[]; sharing?: SharingLevel }): Joined {
   const checked = checkChain(input.chain);
   if (!checked.ok) throw new ApiError('invalid', `That is not who you say: ${checked.problem}`);
   const person = checked.person;
@@ -22,6 +22,8 @@ export function acceptInvitation(hub: Hub, input: { invitation: string; secret: 
     if (hub.people.chainOf(person.id).length <= input.chain.length) hub.people.present(input.chain);
     const invitation = hub.invitations.take(input.invitation, input.secret, person.id, at);
     if (!invitation) throw new ApiError('not-found', 'That invitation is not open: ask whoever sent it for another');
+    // What they share, as they chose it joining — kept already when they wait to be let in.
+    if (input.sharing && ['precise', 'places', 'home-away', 'off'].includes(input.sharing)) hub.people.setSharing(person.id, { level: input.sharing }, person.id, at);
     if (hub.people.roleOf(person.id)) return 'joined';
     if (invitation.needsApproval) return 'waiting';
     hub.people.addMember(person.id, { role: invitation.role, invitedBy: invitation.madeBy, at });

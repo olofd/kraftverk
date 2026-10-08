@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button, Input, ScrollView, Spinner, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, type HomeType, type HomeView, type KraftverkApi } from '@kraftverk/api-client';
+import { describeError, type HomeType, type HomeView, type KraftverkApi, type SharingLevel } from '@kraftverk/api-client';
 import { isTimeZone } from '@kraftverk/device-sdk';
 import { Card, Chips, haptic } from '@kraftverk/ui';
 
@@ -9,6 +9,7 @@ import { ErrorText } from '../../components/ErrorText';
 import { useAccount } from '../../state/AccountProvider';
 import { HomeLocation } from '../settings/HomeLocation';
 import { JoinFamily } from './JoinFamily';
+import { SharingChoice } from './SharingChoice';
 import { HOME_TYPES } from '../settings/Homes';
 
 /*
@@ -42,6 +43,8 @@ export function FoundFamily({ api, onFounded }: { api: KraftverkApi; onFounded: 
   const [name, setName] = useState('');
   const [homeName, setHomeName] = useState('Home');
   const [homeType, setHomeType] = useState<HomeType>('house');
+  // What the founder shares of where they are: which place, offered first.
+  const [sharing, setSharing] = useState<SharingLevel>('places');
   const [zone, setZone] = useState(deviceZone);
   const [home, setHome] = useState<HomeView | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -56,7 +59,7 @@ export function FoundFamily({ api, onFounded }: { api: KraftverkApi; onFounded: 
     setBusy(true);
     setProblem(null);
     try {
-      await api.people.found({ chain: await personal.chain(account.personId), name: name.trim(), kind, home: { name: homeName.trim(), type: homeType, timeZone: zone.trim() } });
+      await api.people.found({ chain: await personal.chain(account.personId), name: name.trim(), kind, home: { name: homeName.trim(), type: homeType, timeZone: zone.trim() }, sharing });
       const family = await api.family();
       await personal.keepFamily(account.personId, { familyId: family.id, name: family.name, master: 'here', serverUrl: null, joinedAt: new Date().toISOString() });
       setHome((await api.homes.list())[0] ?? null);
@@ -122,6 +125,14 @@ export function FoundFamily({ api, onFounded }: { api: KraftverkApi; onFounded: 
                     {zoneValid ? 'What its automations keep time in: this device’s, unless you say another, as "Europe/Stockholm".' : `"${zone.trim()}" is not a time zone: as "Europe/Stockholm".`}
                   </Text>
                 </YStack>
+              </Card>
+            </YStack>
+            <YStack gap="$2">
+              <Text fontSize={15} fontWeight="700" color="$color">
+                What the family sees of where you are
+              </Text>
+              <Card>
+                <SharingChoice label="What the family sees of where you are" value={sharing} onChange={setSharing} />
               </Card>
             </YStack>
             <Button size="$5" minHeight={52} backgroundColor="$accent" color="$background" fontWeight="700" disabled={!ready || busy} opacity={ready && !busy ? 1 : 0.5} onPress={() => void found()}>

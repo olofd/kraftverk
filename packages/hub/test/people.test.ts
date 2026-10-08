@@ -227,6 +227,50 @@ describe('a family founded by its first person', () => {
     expect((await t.home.timeline()).find((entry) => entry.kind === 'label.added')?.actor.name).toBe('Mum');
   });
 
+  test('what each shares of where they are: chosen founding and joining, their own to change — an admin’s for a child — paused, kept in the file', async () => {
+    const { personal } = aDevice();
+    const anna = (await personal.create({ name: 'Anna', deviceName: 'Phone' })).account;
+    const bo = (await personal.create({ name: 'Bo', deviceName: 'Phone' })).account;
+    const sam = (await personal.create({ name: 'Sam', deviceName: 'Tablet' })).account;
+    const asAnna = t.as({ kind: 'person', id: anna.personId, name: 'Anna' });
+    const asBo = t.as({ kind: 'person', id: bo.personId, name: 'Bo' });
+    const asSam = t.as({ kind: 'person', id: sam.personId, name: 'Sam' });
+    await asAnna.people.found({ chain: await personal.chain(anna.personId), name: 'The Examples', kind: 'family', home: { name: 'Home', type: 'house', timeZone: 'Europe/Stockholm' }, sharing: 'precise' });
+    const member = await asAnna.people.invite({ role: 'member', needsApproval: false });
+    acceptInvitation(t.hub, { invitation: member.invitation.id, secret: member.secret, chain: await personal.chain(bo.personId), sharing: 'home-away' });
+    const child = await asAnna.people.invite({ role: 'child', needsApproval: false });
+    acceptInvitation(t.hub, { invitation: child.invitation.id, secret: child.secret, chain: await personal.chain(sam.personId) });
+
+    const sharingOf = async (id: string) => (await asAnna.people.list()).find((each) => each.id === id)!.member!.sharing;
+    expect(await sharingOf(anna.personId)).toMatchObject({ level: 'precise', now: 'precise', keepDays: 90, setBy: anna.personId });
+    expect(await sharingOf(bo.personId)).toMatchObject({ level: 'home-away', setBy: bo.personId });
+    // Never said: the family's default, places — and no one set it.
+    expect(await sharingOf(sam.personId)).toMatchObject({ level: 'places', setBy: null });
+
+    // Bo his own; Anna not his; Anna Sam's; Sam never his own.
+    expect((await asBo.people.setSharing(bo.personId, { level: 'places', keepDays: 30 })).member!.sharing).toMatchObject({ level: 'places', keepDays: 30 });
+    expect((await refusal(asAnna.people.setSharing(bo.personId, { level: 'precise' }))).kind).toBe('forbidden');
+    expect((await asAnna.people.setSharing(sam.personId, { level: 'home-away' })).member!.sharing).toMatchObject({ level: 'home-away', setBy: anna.personId });
+    expect((await refusal(asSam.people.setSharing(sam.personId, { level: 'off' }))).message).toBe('An admin sets what a child shares');
+    expect((await refusal(asBo.people.setSharing(bo.personId, { keepDays: 400 }))).kind).toBe('invalid');
+    // On the timeline in words, never a place; a change the kept file carries.
+    expect((await t.home.timeline()).find((entry) => entry.kind === 'person.sharing')?.summary).toBe('Sam shares only whether they are home');
+    expect(changesConfiguration('person.sharing')).toBe(true);
+
+    // Paused for an hour: off until then, and places after.
+    const paused = (await asBo.people.setSharing(bo.personId, { pausedUntil: new Date(Date.now() + 3_600_000).toISOString() })).member!.sharing;
+    expect([paused.level, paused.now]).toEqual(['places', 'off']);
+
+    // In the file once chosen, and back from it.
+    const { text } = await t.home.configuration.export({ secrets: 'none' });
+    expect(text).toContain('    sharing:\n      level: precise\n      keep: 90 days\n');
+    await asAnna.people.setSharing(anna.personId, { level: 'off' });
+    const plan = await t.home.configuration.plan({ text });
+    expect(plan.people.find((each) => each.name === 'Anna')?.changes).toContain('what they share');
+    await t.home.configuration.apply({ plan: plan.id! });
+    expect(await sharingOf(anna.personId)).toMatchObject({ level: 'precise' });
+  });
+
   test('their own name and picture, said by them; and forgotten — by themselves or an admin — their id alone stays', async () => {
     const { personal } = aDevice();
     const anna = (await personal.create({ name: 'Anna', deviceName: 'Phone' })).account;

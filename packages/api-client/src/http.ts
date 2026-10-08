@@ -280,6 +280,7 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
       approve: (id) => call('POST', `/people/invitations/${enc(id)}/approve`, {}),
       revokeInvitation: (id) => call('DELETE', `/people/invitations/${enc(id)}`),
       erase: async (id) => void (await call('DELETE', `/people/${enc(id)}`)),
+      setSharing: (id, changes) => call('PUT', `/people/${enc(id)}/sharing`, changes),
     },
     labels: {
       list: async () => (await get<{ labels: LabelView[] }>('/labels')).labels,

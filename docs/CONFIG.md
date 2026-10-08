@@ -32,6 +32,7 @@ people:                           # each by a key for the file; who they are is 
     color: "#10b981"
     chain: eyJ…                   # her signed statements, as written: not to be edited
     shortcuts: [start-charging-the-scooter]   # her own home page, in order
+    sharing: { level: places, keep: 90 days } # what she shares of where she is; never said: places, 90 days
 
 labels:                           # the family's own groupings, by key
   heating: { name: Heating, color: "#f76b15" }

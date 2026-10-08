@@ -8,6 +8,36 @@ import type { Statement } from '@kraftverk/identity';
 
 export type MemberRole = 'admin' | 'member' | 'child';
 
+/**
+ * What a person shares with the family of where they are
+ * (docs/PLAN-WORLD-MODEL.md §11.1): `precise`, where they are on the map;
+ * `places`, which home, zone or room, never coordinates; `home-away`, only
+ * whether they are at one of its homes; `off`, nothing — automations cannot
+ * see them either.
+ */
+export type SharingLevel = 'precise' | 'places' | 'home-away' | 'off';
+
+/**
+ * What a person shares, and for how long their stays are kept: their own to
+ * set — an admin's for a child. Paused, it is `off` until then, and its
+ * level after.
+ */
+export type Sharing = {
+  level: SharingLevel;
+  /** Days their stays are kept: 1 to 366. */
+  keepDays: number;
+  /** Shared again from then; null: not paused. */
+  pausedUntil: string | null;
+  /** What it is now: `off` while paused. */
+  now: SharingLevel;
+  /** Who set it last, and when; null: never set — the family's default. */
+  setBy: string | null;
+  changedAt: string | null;
+};
+
+/** What a person changes of their sharing; an admin a child's. */
+export type SharingChanges = { level?: SharingLevel; keepDays?: number; pausedUntil?: string | null };
+
 /** A person in a family. */
 export type PersonView = {
   id: string;
@@ -23,7 +53,7 @@ export type PersonView = {
   /** Their keys now, by the device each is on; a recovery key's name is null. */
   keys: { id: string; kind: 'device' | 'recovery'; deviceName: string | null; addedAt: string; vouched: string | null }[];
   /** In the family now; null for one who left, or was never in it. */
-  member: { role: MemberRole; nickname: string | null; color: string; joinedAt: string } | null;
+  member: { role: MemberRole; nickname: string | null; color: string; joinedAt: string; sharing: Sharing } | null;
   updatedAt: string;
 };
 
@@ -35,6 +65,8 @@ export type FoundFamily = {
   kind: 'family' | 'household' | 'friends' | 'other';
   /** Its first home: what it is called, and its clock. */
   home: { name: string; type: 'house' | 'apartment' | 'cabin' | 'boat' | 'caravan' | 'office' | 'other'; timeZone: string };
+  /** What the founder shares of where they are; the family's default when not said. */
+  sharing?: SharingLevel;
 };
 
 /** An invitation into the family, as its admins see it: never its secret, which is answered once, when it is made. */

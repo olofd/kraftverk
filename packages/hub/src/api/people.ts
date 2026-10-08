@@ -1,4 +1,4 @@
-import { ApiError, type Caller, type KraftverkApi } from '@kraftverk/api-contract';
+import { ApiError, type Caller, type KraftverkApi, type SharingLevel } from '@kraftverk/api-contract';
 import { isTimeZone } from '@kraftverk/device-sdk';
 import { checkChain } from '@kraftverk/identity';
 import { SOMEONE_WHO_LEFT } from '@kraftverk/store';
@@ -15,6 +15,14 @@ import { scopeOf } from './scope.ts';
 */
 
 const COLOR = /^#[0-9a-f]{6}$/;
+const SHARING_LEVELS: readonly SharingLevel[] = ['precise', 'places', 'home-away', 'off'];
+/** What a person shares, said on the timeline: never where they are. */
+const SHARING_WORDS: Record<SharingLevel, string> = {
+  precise: 'shares where they are on the map',
+  places: 'shares which place they are at',
+  'home-away': 'shares only whether they are home',
+  off: 'shares nothing of where they are',
+};
 const HOME_TYPES = ['house', 'apartment', 'cabin', 'boat', 'caravan', 'office', 'other'];
 
 /** The store's refusal, said as the family's. */
@@ -66,6 +74,7 @@ export function peopleApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'people'
           hub.db.transaction(() => {
             const person = hub.people.present(input.chain);
             hub.people.addMember(person.id, { role: 'admin', invitedBy: null, at });
+            if (input.sharing && SHARING_LEVELS.includes(input.sharing)) hub.people.setSharing(person.id, { level: input.sharing }, person.id, at);
             hub.family.update({ name, kind: input.kind });
             hub.family.foundedBy(person.id);
             const first = hub.places.first()!;
@@ -149,6 +158,28 @@ export function peopleApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'people'
         record('person.erased', 'person', id, me === id ? `${SOMEONE_WHO_LEFT} the family, and asked to be forgotten` : `${SOMEONE_WHO_LEFT} the family, forgotten by an admin`);
         // After the line that says so: one who forgot themselves is no one there too.
         hub.audit.forget(id, names, SOMEONE_WHO_LEFT);
+      },
+
+      async setSharing(id, changes) {
+        if (caller.kind === 'agent') throw new ApiError('forbidden', 'An assistant cannot change what anyone shares');
+        const person = personOf(id);
+        if (!person.member) throw new ApiError('not-found', 'They are not in the family');
+        // Each adult their own; an admin a child's — and a child never their own.
+        const child = person.member.role === 'child';
+        const mine = me === id;
+        if (child ? !(me === null || hub.people.roleOf(me) === 'admin') : !mine && me !== null) throw new ApiError('forbidden', child ? 'An admin sets what a child shares' : 'What a person shares is their own to say');
+        if (changes.level !== undefined && !SHARING_LEVELS.includes(changes.level)) throw new ApiError('invalid', `What is shared is one of: ${SHARING_LEVELS.join(', ')}`);
+        if (changes.keepDays !== undefined && !(Number.isInteger(changes.keepDays) && changes.keepDays >= 1 && changes.keepDays <= 366)) throw new ApiError('invalid', 'Stays are kept for 1 day to a year');
+        if (changes.pausedUntil != null && !(Number.isFinite(Date.parse(changes.pausedUntil)) && Date.parse(changes.pausedUntil) > Date.now())) throw new ApiError('invalid', 'A pause ends later than now');
+        const by = me ?? hub.people.members().find((each) => each.member?.role === 'admin')?.id ?? id;
+        const sharing = hub.people.setSharing(id, changes, by, new Date().toISOString());
+        const said = [
+          ...(changes.level !== undefined ? [SHARING_WORDS[changes.level]] : []),
+          ...(changes.keepDays !== undefined ? [`keeps where they have been ${changes.keepDays === 1 ? '1 day' : `${changes.keepDays} days`}`] : []),
+          ...(changes.pausedUntil !== undefined ? [changes.pausedUntil ? 'paused sharing for a while' : 'shares again'] : []),
+        ];
+        record('person.sharing', 'person', id, `${person.shownAs} ${said.join(', ') || 'kept what they share'}`, { level: sharing.level, keepDays: sharing.keepDays, paused: sharing.pausedUntil !== null });
+        return hub.people.get(id)!;
       },
 
       async update(id, changes) {

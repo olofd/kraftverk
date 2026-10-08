@@ -148,7 +148,17 @@ export type SpaceEntry = {
  * shortcuts on their home page: automations by key, in order. A restore
  * checks the chain again; nothing private is in it.
  */
-export type PersonEntry = { id: string; name: string; role: 'admin' | 'member' | 'child'; nickname: string | null; color: string | null; chain: string; shortcuts: string[] };
+export type PersonEntry = {
+  id: string;
+  name: string;
+  role: 'admin' | 'member' | 'child';
+  nickname: string | null;
+  color: string | null;
+  chain: string;
+  shortcuts: string[];
+  /** What they share of where they are, and how many days their stays are kept; null: never said, the family's default. */
+  sharing: { level: 'precise' | 'places' | 'home-away' | 'off'; keepDays: number } | null;
+};
 
 export const PERSON_ID = /^p-[0-9A-HJKMNP-TV-Z]{26}$/;
 
@@ -246,7 +256,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
           problem('Expected a person: their id, name, role and chain', path);
           continue;
         }
-        for (const field of Object.keys(entry)) if (!['id', 'name', 'role', 'nickname', 'color', 'chain', 'shortcuts'].includes(field)) problem(`"${field}" is not part of a person: they have id, name, role, nickname, color, chain and shortcuts`, [...path, field]);
+        for (const field of Object.keys(entry)) if (!['id', 'name', 'role', 'nickname', 'color', 'chain', 'shortcuts', 'sharing'].includes(field)) problem(`"${field}" is not part of a person: they have id, name, role, nickname, color, chain, shortcuts and sharing`, [...path, field]);
         const id = typeof entry.id === 'string' && PERSON_ID.test(entry.id) ? entry.id : (problem('"id" is a person’s id: p- and 26 letters and digits', [...path, 'id']), null);
         if (id && ids.has(id)) problem('Another person in this file has that id', [...path, 'id']);
         if (id) ids.add(id);
@@ -261,7 +271,20 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
             : Array.isArray(entry.shortcuts)
               ? entry.shortcuts.flatMap((each, index) => (typeof each === 'string' && KEY.test(each) ? [each] : (problem('A shortcut is an automation, by its key', [...path, 'shortcuts', index]), [])))
               : (problem('"shortcuts" is a list of automation keys, in order: [good-morning, away]', [...path, 'shortcuts']), []);
-        if (id && name && role && chain) people[key] = { id, name, role, nickname, color, chain, shortcuts };
+        // What they share, and how long their stays are kept: "sharing: { level: places, keep: 90 days }".
+        let sharing: PersonEntry['sharing'] = null;
+        if (entry.sharing !== undefined && entry.sharing !== null) {
+          const given = entry.sharing;
+          const LEVELS = ['precise', 'places', 'home-away', 'off'];
+          if (!isRecord(given) || Object.keys(given).some((field) => !['level', 'keep'].includes(field))) problem('"sharing" is what they share, and how long their stays are kept: { level: places, keep: 90 days }', [...path, 'sharing']);
+          else if (!LEVELS.includes(given.level as string)) problem(`"level" is one of ${LEVELS.join(', ')}`, [...path, 'sharing', 'level']);
+          else {
+            const keep = given.keep === undefined || given.keep === null ? 90 : trackDays(given.keep);
+            if (keep === undefined) problem('"keep" is how long their stays are kept: "90 days", from 1 day to 366', [...path, 'sharing', 'keep']);
+            else sharing = { level: given.level as NonNullable<PersonEntry['sharing']>['level'], keepDays: keep };
+          }
+        }
+        if (id && name && role && chain) people[key] = { id, name, role, nickname, color, chain, shortcuts, sharing };
       }
     }
   }
@@ -671,7 +694,7 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
           people: Object.fromEntries(
             Object.entries(document.people).map(([key, person]) => [
               key,
-              { id: person.id, name: person.name, role: person.role, ...(person.nickname !== null ? { nickname: person.nickname } : {}), ...(person.color !== null ? { color: person.color } : {}), chain: person.chain, ...(person.shortcuts.length ? { shortcuts: person.shortcuts } : {}) },
+              { id: person.id, name: person.name, role: person.role, ...(person.nickname !== null ? { nickname: person.nickname } : {}), ...(person.color !== null ? { color: person.color } : {}), chain: person.chain, ...(person.shortcuts.length ? { shortcuts: person.shortcuts } : {}), ...(person.sharing ? { sharing: { level: person.sharing.level, keep: person.sharing.keepDays === 1 ? '1 day' : `${person.sharing.keepDays} days` } } : {}) },
             ])
           ),
         }

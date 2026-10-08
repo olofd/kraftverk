@@ -38,6 +38,7 @@ export function familyRoutes(deps: AppDeps): Hono {
   api.patch('/homes/:id', async (c) => c.json(await familyFor(deps, c).homes.update(c.req.param('id'), await body(c, HOME.partial()))));
   api.delete('/homes/:id', async (c) => c.json(await familyFor(deps, c).homes.remove(c.req.param('id'))));
 
+  const SHARING = z.enum(['precise', 'places', 'home-away', 'off']);
   // Its zones: places it knows that are no home, each a circle on the map.
   const ZONE = z
     .object({
@@ -116,6 +117,7 @@ export function familyRoutes(deps: AppDeps): Hono {
           name: z.string().max(60),
           kind: z.enum(['family', 'household', 'friends', 'other']),
           home: z.object({ name: z.string().max(60), type: z.enum(['house', 'apartment', 'cabin', 'boat', 'caravan', 'office', 'other']), timeZone: z.string().max(60) }).strict(),
+          sharing: SHARING.optional(),
         })
         .strict()
     );
@@ -134,8 +136,13 @@ export function familyRoutes(deps: AppDeps): Hono {
   api.delete('/people/invitations/:id', async (c) => c.json(await familyFor(deps, c).people.revokeInvitation(c.req.param('id'))));
   /** An invitation taken: open — the secret is what lets someone with no session here ask — and taken once. */
   api.post('/join', async (c) => {
-    const input = await body(c, z.object({ invitation: z.string().max(40), secret: z.string().min(20).max(100), chain: CHAIN }).strict());
+    const input = await body(c, z.object({ invitation: z.string().max(40), secret: z.string().min(20).max(100), chain: CHAIN, sharing: SHARING.optional() }).strict());
     return c.json(acceptInvitation(deps.hub, input as unknown as Parameters<typeof acceptInvitation>[1]));
+  });
+  // What a person shares of where they are: their own, an admin's for a child.
+  api.put('/people/:id/sharing', async (c) => {
+    const changes = await body(c, z.object({ level: SHARING, keepDays: z.number().int().min(1).max(366), pausedUntil: z.string().datetime().nullable() }).partial().strict());
+    return c.json(await familyFor(deps, c).people.setSharing(c.req.param('id'), changes));
   });
   // A person forgotten: in the family, and every login here that was theirs, with its sessions.
   api.delete('/people/:id', async (c) => {
