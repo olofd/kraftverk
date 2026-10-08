@@ -28,6 +28,10 @@
       // The broker runs as a process of its own: its CLI, and what the supervisor launches.
       "entry": ["src/broker/cli.ts", "src/broker/main.ts", "src/broker/launcher.ts"]
     },
+    "packages/sign-in/apple": {
+      // Metro picks client.web.ts on the web from the import of ./client, which knip cannot follow.
+      "entry": ["src/client.web.ts"]
+    },
     "packages/ui": {
       // Each platform's own map: Metro picks MapView.web.tsx on the web from the import of ./map/MapView, which knip cannot follow.
       "entry": ["src/map/MapView.web.tsx"]

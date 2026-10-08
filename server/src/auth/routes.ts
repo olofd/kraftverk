@@ -70,11 +70,6 @@ export function personOf(c: Context): string | null {
   return accessByRequest.get(c.req.raw)?.signed?.personId ?? null;
 }
 
-/** The login a person signed in with, if a password opened their session. */
-export function userOf(c: Context): User | null {
-  return accessByRequest.get(c.req.raw)?.signed?.user ?? null;
-}
-
 type AuthDeps = {
   proxies: ProxyDirectory;
   /** The accounts that may sign in, and their sessions. */
