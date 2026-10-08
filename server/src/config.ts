@@ -43,6 +43,12 @@ export type ServerConfig = {
    * much shorter too.
    */
   clockRate: number;
+  /**
+   * Protomaps' `pmtiles` tool, which downloads the map's regions
+   * (`KRAFTVERK_PMTILES`; in the Docker image, on the path). Null when there
+   * is none: the map is then what is fetched as someone looks.
+   */
+  pmtiles: string | null;
   /** Origins allowed to call the API from a browser with credentials. */
   allowedOrigins: string[];
   /** Public names this server answers to (`KRAFTVERK_ALLOWED_HOSTS`, and the hosts of those origins). */
@@ -68,6 +74,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     readOnly: argv.includes('--read-only') || env.READ_ONLY === '1',
     allowRawFrames: env.ALLOW_RAW_FRAMES === '1',
     clockRate: Number(env.KRAFTVERK_CLOCK_RATE || 1),
+    pmtiles: env.KRAFTVERK_PMTILES || Bun.which('pmtiles'),
     allowedOrigins: allowedOrigins(env.ALLOWED_ORIGINS),
     allowedHosts: allowedHosts(env),
     development: env.NODE_ENV !== 'production',

@@ -7,6 +7,7 @@ import type { Account, AccountDetail, AuthState } from './accounts.ts';
 import type { Rehearsal, VocabularyView, WorldView } from './assistant.ts';
 import type { AutomationChanges, AutomationDraftView, AutomationKit, AutomationRun, AutomationView, NewAutomation, RunLog } from './automations.ts';
 import type { ConfigExported, ConfigExportRequest, ConfigSnapshotView, ImportAnswers, ImportApplied, ImportPlan } from './configuration.ts';
+import type { MapRegionAsk, MapRegionsView } from './map.ts';
 import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, HomeElsewhere, LinkRecord, NewLink, PictureRef, ToolBody } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, HomeView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
@@ -297,6 +298,21 @@ export interface ServerApi {
   reset: {
     available(): Promise<{ available: boolean; secretFile: string }>;
     run(secret: string): Promise<{ ok: true; tables: string[]; rows: number }>;
+  };
+  /**
+   * The map it holds (docs/PLAN-MAPS.md): the world, and the regions
+   * downloaded for detail — how big one would be, downloading it, getting it
+   * afresh, letting it go.
+   */
+  map: {
+    regions(): Promise<MapRegionsView>;
+    estimate(ask: MapRegionAsk): Promise<{ bytes: number }>;
+    add(ask: MapRegionAsk): Promise<MapRegionsView>;
+    refresh(id: string): Promise<MapRegionsView>;
+    remove(id: string): Promise<MapRegionsView>;
+    /** Detail fetched as someone looks, on or off; and what was kept of it let go. */
+    setFetching(on: boolean): Promise<MapRegionsView>;
+    clearCache(): Promise<MapRegionsView>;
   };
   /** The configuration kept beside its database: where, when last written, and what the last restore did. */
   snapshot(): Promise<ConfigSnapshotView>;

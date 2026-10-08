@@ -10,6 +10,7 @@ import type { Accounts } from '../auth/accounts.ts';
 import { actorOf, userOf } from '../auth/routes.ts';
 import type { LoginLimiter } from '../auth/limiter.ts';
 import type { ProxyDirectory } from '../auth/trust.ts';
+import type { MapParts } from './map.ts';
 import type { ServerConfig } from '../config.ts';
 import type { ServerLog } from '../log.ts';
 import type { ConfigSnapshot } from '../platform/snapshot.ts';
@@ -35,6 +36,8 @@ export type AppDeps = {
   limiter?: LoginLimiter;
   /** The configuration kept beside the database, as a file; none in a test that does not ask for one. */
   snapshot?: ConfigSnapshot;
+  /** The map it holds and serves (docs/PLAN-MAPS.md); none in a test that does not ask for one. */
+  map?: MapParts;
 };
 
 /** The signed-in person's password asked for again: the refusal to answer, or null when it is theirs (`createAuth`). */

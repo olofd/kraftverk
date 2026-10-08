@@ -20,8 +20,10 @@
     "@kraftverk/automation-engine": "*",
     "@kraftverk/device-sdk": "*",
     "@kraftverk/hub": "*",
+    "@kraftverk/map": "*",
     "@kraftverk/store": "*",
     "hono": "^4.13.1",
+    "pmtiles": "^4.5.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

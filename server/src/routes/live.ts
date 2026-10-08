@@ -85,7 +85,8 @@ function viewReportOf(data: unknown): ViewReport | null {
   const parsed = VIEW_REPORT.safeParse(json);
   if (!parsed.success) return null;
   // Where a string off the wire becomes an id: named, as at every edge.
-  const showing = parsed.data.showing.map((thing): ShownThing => (thing.kind === 'device' ? { kind: 'device', id: savedDeviceId(thing.id) } : { kind: 'automation', id: automationId(thing.id) }));
+  // Up close — a device's own page — kept: what a phone is located every minute for.
+  const showing = parsed.data.showing.map((thing): ShownThing => (thing.kind === 'device' ? { kind: 'device', id: savedDeviceId(thing.id), ...(thing.close ? { close: true } : {}) } : { kind: 'automation', id: automationId(thing.id) }));
   return { type: 'view', screen: parsed.data.screen, showing };
 }
 

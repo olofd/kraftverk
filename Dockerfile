@@ -115,6 +115,27 @@ EXPOSE 8080 8090
 HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
   CMD wget -q --spider http://127.0.0.1:8080/ || exit 1
 
+# --- the map's tool ----------------------------------------------------------
+#
+# Protomaps' `pmtiles` (BSD-3), which the server runs to download the map's
+# regions from Protomaps' daily build (docs/PLAN-MAPS.md). One static binary,
+# pinned by version and by the digest of its release archive.
+
+FROM debian:bookworm-slim AS pmtiles
+ARG TARGETARCH
+ARG PMTILES_VERSION=1.31.2
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
+RUN set -eu; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) arch=x86_64; digest=3ed7dbf4ec2e6dfe5e25b6f70d1ffc932729f93c86db353bf514dd71010a312f ;; \
+      arm64) arch=arm64; digest=f8bd47e7ea866863489cad588fbaf2f31f42e5821f7a03f009b3769f05801cb1 ;; \
+      *) echo "no pmtiles for ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/pmtiles.tar.gz "https://github.com/protomaps/go-pmtiles/releases/download/v${PMTILES_VERSION}/go-pmtiles_${PMTILES_VERSION}_Linux_${arch}.tar.gz"; \
+    echo "${digest}  /tmp/pmtiles.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/pmtiles.tar.gz -C /usr/local/bin pmtiles; \
+    /usr/local/bin/pmtiles version
+
 # --- server ------------------------------------------------------------------
 #
 # Last, so a plain `docker build .` builds it.
@@ -146,6 +167,8 @@ ENV NODE_ENV=production \
 # both stages build in /app and packages/ is copied alongside.
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/server/node_modules ./server/node_modules
+# The map's regions are downloaded with it (KRAFTVERK_PMTILES finds it on the path).
+COPY --from=pmtiles /usr/local/bin/pmtiles /usr/local/bin/pmtiles
 COPY package.json ./
 COPY packages ./packages
 COPY server ./server

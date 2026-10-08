@@ -46,6 +46,13 @@ owner wants:
     archive is about 2.5 GB for Sweden, less for most countries.
   - A tile is served from the most detailed region holding it, else from
     the world.
+  - **Detail as you look,** on by default. A tile no region holds is read
+    from Protomaps' build by byte range, by the server, and kept in a cache
+    of 2 GB at most, the least used let go. So a map has detail wherever it
+    is looked at, abroad included, with nothing downloaded first.
+  - Protomaps then sees which tiles the server fetches, never the browser.
+    It can be turned off under Maps: then only downloaded regions have
+    detail.
   - In the app, under **App settings › Maps**: the regions held, their size
     and date, add (a country before a journey), refresh, remove, with
     progress.

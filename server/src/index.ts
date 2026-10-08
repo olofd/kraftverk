@@ -1,3 +1,6 @@
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { scaledClock } from '@kraftverk/device-sdk';
 import { changesConfiguration, createHub, passphraseSealing, TransportHost } from '@kraftverk/hub';
 
@@ -10,6 +13,8 @@ import { besideDatabase, loadConfig } from './config.ts';
 import { keepConsole } from './log.ts';
 import { openDatabase } from './platform/database.ts';
 import { scopedHttp } from './platform/http.ts';
+import { MapRegions } from './platform/map/regions.ts';
+import { TileStore } from './platform/map/tiles.ts';
 import { installedFromDisk } from './platform/packages.ts';
 import { thisNode } from './platform/node.ts';
 import { serverSecrets } from './platform/secrets.ts';
@@ -157,15 +162,27 @@ proxies.start();
   change, so a database set aside for a new schema leaves a home to restore.
 */
 const snapshot = new ConfigSnapshot(hub.configuration, besideDatabase(config, 'config', 'kraftverk.yaml'));
+
+/*
+  The map (docs/PLAN-MAPS.md): the world fetched at the first start, regions
+  downloaded when asked, and detail fetched as someone looks — all in the
+  data folder beside the database, served under /api/map.
+*/
+const mapDir = besideDatabase(config, 'map');
+mkdirSync(mapDir, { recursive: true });
+let regions: MapRegions | null = null;
+const tiles = new TileStore(join(mapDir, 'cache.db'), () => regions?.buildUrl() ?? null);
+regions = new MapRegions({ dir: mapDir, tool: config.pmtiles, tiles });
+void regions.start().catch((error: unknown) => console.warn(`[map] not started: ${(error as Error).message}`));
 await snapshot.begin(fresh);
 const stopSnapshot = audit.onRecord((entry) => {
   if (changesConfiguration(entry.kind)) snapshot.schedule();
 });
 
-const { app, websocket } = createApp({ hub, accounts: new Accounts(database), snapshot, config, proxies, serverLog, startedAt });
+const { app, websocket } = createApp({ hub, accounts: new Accounts(database), snapshot, config, proxies, serverLog, startedAt, map: { tiles, regions } });
 
 // Everything is running: from here on, stopping also closes what was opened.
-onStop(stopSnapshot, () => snapshot.stop(), () => hub.stop());
+onStop(stopSnapshot, () => snapshot.stop(), () => hub.stop(), () => tiles.close());
 
 const saved = hub.catalog.list().length;
 console.log(

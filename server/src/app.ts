@@ -21,6 +21,7 @@ import { followerRoutes } from './routes/followers.ts';
 import { homeRoutes } from './routes/home.ts';
 import { linkRoutes } from './routes/links.ts';
 import { liveRoutes } from './routes/live.ts';
+import { MAP_CACHED, mapRoutes } from './routes/map.ts';
 import { invalid } from './routes/parse.ts';
 import { serverRoutes } from './routes/server.ts';
 import { setupRoutes } from './routes/setup.ts';
@@ -109,7 +110,8 @@ export function createApp(deps: AppDeps) {
   // API answers are about one person's house: never cached, sniffed or framed.
   app.use('/api/*', async (c, next) => {
     await next();
-    c.header('Cache-Control', 'no-store');
+    // Map data — tiles, fonts, icons — is nobody's house: kept by a browser a day, as its route says.
+    if (!(MAP_CACHED.test(c.req.path) && c.res.ok)) c.header('Cache-Control', 'no-store');
     c.header('X-Content-Type-Options', 'nosniff');
     c.header('X-Frame-Options', 'DENY');
     c.header('Referrer-Policy', 'no-referrer');
@@ -148,6 +150,7 @@ export function createApp(deps: AppDeps) {
   api.route('/', configurationRoutes(deps, auth.confirm));
   api.route('/', assistantRoutes(deps));
   api.route('/', liveRoutes(deps, upgradeWebSocket, allowed));
+  if (deps.map) api.route('/', mapRoutes(deps.map));
 
   app.route('/api', api);
 

@@ -30,4 +30,5 @@ export type * from './automations.ts';
 export type * from './configuration.ts';
 export type * from './assistant.ts';
 export type * from './accounts.ts';
+export type * from './map.ts';
 export type * from './api.ts';

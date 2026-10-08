@@ -60,10 +60,12 @@ const isCorePackage = (file) => /^packages\/[^/]+\//.test(file) && corePackageOf
  */
 const MAY_IMPORT = {
   'device-sdk': [],
+  // Where things are, drawn: a map's style, what it shows, and the regions a home may hold. Knows no platform.
+  map: ['device-sdk'],
   automation: ['device-sdk'],
   gateway: ['device-sdk'],
   'home-file': ['device-sdk', 'automation'],
-  'api-contract': ['device-sdk', 'automation', 'gateway', 'home-file'],
+  'api-contract': ['device-sdk', 'map', 'automation', 'gateway', 'home-file'],
   holder: ['device-sdk', 'gateway', 'api-contract'],
   'automation-engine': ['device-sdk', 'automation', 'gateway', 'api-contract', 'holder'],
   store: ['device-sdk', 'automation', 'gateway', 'home-file', 'api-contract', 'holder', 'automation-engine'],
@@ -71,8 +73,8 @@ const MAY_IMPORT = {
   // A home and a transport over a message port: served on one side, the same interface on the other.
   'message-port': ['device-sdk', 'automation', 'gateway', 'home-file', 'api-contract'],
   // The edges: the API over HTTP, and the React kit.
-  'api-client': ['device-sdk', 'automation', 'gateway', 'home-file', 'api-contract'],
-  ui: ['device-sdk'],
+  'api-client': ['device-sdk', 'map', 'automation', 'gateway', 'home-file', 'api-contract'],
+  ui: ['device-sdk', 'map'],
 };
 /** The edges among the core packages: the rest is shared. */
 const EDGE_PACKAGES = new Set(['api-client', 'ui']);

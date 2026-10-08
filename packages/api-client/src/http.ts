@@ -299,6 +299,15 @@ export function serverApi(options: HttpApiOptions): ServerApi {
       available: () => get('/admin/reset'),
       run: (secret) => call('POST', '/admin/reset', { secret }),
     },
+    map: {
+      regions: () => get('/map/regions'),
+      estimate: (ask) => call('POST', '/map/regions/estimate', ask),
+      add: (ask) => call('POST', '/map/regions', ask),
+      refresh: (id) => call('POST', `/map/regions/${enc(id)}/refresh`, {}),
+      remove: (id) => call('DELETE', `/map/regions/${enc(id)}`),
+      setFetching: (on) => call('PUT', '/map/fetching', { on }),
+      clearCache: () => call('DELETE', '/map/cache'),
+    },
     snapshot: () => get('/config/snapshot'),
     restoredPlan: (mode) => call('POST', '/config/plan', { restored: true, mode }),
   };

@@ -435,6 +435,9 @@ describe('the live stream', () => {
       socket.send(JSON.stringify({ type: 'view', screen: 'device', showing: [plug] }));
       await until(() => server.attention.watched(plug as never));
       expect(server.attention.viewers()).toEqual([expect.objectContaining({ person: 'olof', screen: 'device', showing: [plug] })]);
+      // Its own page, open: heard as up close — what a phone is located every minute for.
+      socket.send(JSON.stringify({ type: 'view', screen: 'device', showing: [{ ...plug, close: true }] }));
+      await until(() => server.attention.attendedClose().size === 1);
       socket.close();
       await until(() => server.attention.viewers().length === 0);
       expect(server.attention.watched(plug as never)).toBe(false);
