@@ -116,7 +116,7 @@ type Group = { id: number; friendly_name: string; members: { ieee_address: strin
 export type PlayedOptions = {
   devices?: BridgeDevice[];
   groups?: BridgeGroup[];
-  /** How long joining and interviewing take, in ms: short in a test. */
+  /** How long each step of joining, interviewing and an update takes, in ms: long enough to be seen happening, no longer. Shorter in a unit test. */
   stepMs?: number;
   /** What a firmware update changes of a device's own state: a setting a new firmware sets otherwise. */
   firmwareChanges?: Readonly<Record<string, unknown>>;
@@ -141,7 +141,7 @@ export type PlayedZigbee2Mqtt = {
 
 export function playedZigbee2Mqtt(options: PlayedOptions = {}): PlayedZigbee2Mqtt {
   const now = options.now ?? (() => Date.now());
-  const stepMs = options.stepMs ?? 1500;
+  const stepMs = options.stepMs ?? 500;
   const devices = options.devices ?? PLAYED_DEVICES();
   // Its own copies, changed as requests come.
   const groups: Group[] = (options.groups ?? []).map((group) => ({ ...group, members: [...group.members], scenes: [...(group.scenes ?? [])] }));

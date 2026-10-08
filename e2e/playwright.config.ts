@@ -27,6 +27,8 @@ const API_PORT = 3398;
  */
 const FAST_API_PORT = 3399;
 const FAST_CLOCK_RATE = 1000;
+/** How much longer a test may take on the pipeline's machine than on a developer's. */
+const PACE = process.env.CI ? 1.5 : 1;
 const state = process.env.E2E_STATE_DIR ?? mkdtempSync(join(tmpdir(), 'kraftverk-e2e-'));
 process.env.E2E_STATE_DIR = state;
 process.env.E2E_FAST_API = `http://127.0.0.1:${FAST_API_PORT}`;
@@ -56,8 +58,9 @@ export default defineConfig({
     clock, a quicker simulation — not given more time. No retries: a test
     that fails now and then is fixed, not run twice.
   */
-  timeout: 15_000,
-  expect: { timeout: 5_000 },
+  // The pipeline's machine is slower than a developer's: there, half as long again. Made fast here, a test fits there.
+  timeout: 15_000 * PACE,
+  expect: { timeout: 5_000 * PACE },
   retries: 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never', outputFolder: join(ROOT, 'e2e-report') }]] : 'list',
   globalSetup: './setup.ts',

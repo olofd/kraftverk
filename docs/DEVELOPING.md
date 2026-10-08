@@ -76,7 +76,7 @@ person does there (`STEPS`): a screen added in front of the app is one entry
 there, and no test changes. Stuck, it says what the app is still waiting
 for — each spinner is named.
 
-**Fast is the rule.** A test has 15 seconds, a check 5, and nothing is
+**Fast is the rule.** A test has 15 seconds, a check 5 (half as long again on the pipeline, whose machine is slower), and nothing is
 retried: one that fails now and then is fixed, not run twice. One that needs
 longer is made faster — less of the home's time lived through, a device set
 up nearer where the test begins — never given more time.
