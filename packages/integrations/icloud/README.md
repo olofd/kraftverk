@@ -9,16 +9,24 @@ from Home Assistant's `icloud` integration and pyicloud
 
 ## What it does — and does not
 
-- **Does:** sign in to an Apple ID as iCloud's web client does — SRP-6a
-  (`src/protocol/srp.ts`: the 2048-bit group of RFC 5054, SHA-256, the
-  password stretched with PBKDF2 and never sent), a second factor asked for
-  in turns of the setup step (`ask`): a code from a trusted device, or texted
-  to a trusted number, by choice or when Apple sends none to a device — then
-  has Apple trust this client, so signing in again with the password asks no
-  code (`auth.ts`); keep the session — its trust token, Apple's headers and
-  its cookies (`cookies.ts`) — as a secret the session writes itself
-  (`kept: 'session'`), and carry it on with no person, or say it waits on one
-  (`NeedsSignIn`) when Apple asks for a code again; list Find My's devices,
+- **Does:** sign in to an Apple ID as iCloud's web client does in 2026
+  (docs/ICLOUD.md) — SRP-6a (`src/protocol/srp.ts`: the 2048-bit group of
+  RFC 5054, SHA-256, padded as Apple's own client pads, the password
+  stretched with PBKDF2 and never sent); then, when Apple asks, a code: asked
+  for on the trusted devices (Apple shows none until asked), or texted or
+  read out by a call to a trusted number, each one tap away under "Didn't get
+  a code?", waiting longer each time (`sign-in.ts`); Apple's options read
+  from its page's boot_args or its JSON, in either nesting (`options.ts`);
+  Apple's escrow step — the password proved once more — when it asks; then
+  trust, so signing in again with the password asks no code (`auth.ts`).
+  Keep the session — its trust token, Apple's headers and its cookies
+  (`cookies.ts`) — as a secret the session writes itself (`kept: 'session'`),
+  and carry it on with no person: looked at every six hours, renewed with the
+  trust token past half the trust's life (about 90 days), never two silent
+  sign-ins within 15 minutes, and Apple refusing one waited out twice as long
+  each time, the wait kept across restarts. Say until when it is signed in,
+  warn a week before that ends unrenewed (`sign-in-ending`), and say it waits
+  on a person (`NeedsSignIn`) when Apple asks for a code again. List Find My's devices,
   the family's included, with where each is, how sure, and its charge; play
   a sound on one; put one in lost mode (`findmy.ts`). Offer the account as a
   device of its own — `icloud.account`, a bridge to every device in its Find
@@ -31,11 +39,12 @@ from Home Assistant's `icloud` integration and pyicloud
   its charge and whether it is charging, whose it is, a sound played
   (`identify`), and lost mode, a tool a person confirms, never an
   automation's. Where someone is, is not kept in history.
-- **Does not:** Apple's newer trusted-device
-  verifier (its "bridge" over Apple's push service) — a code is texted when
-  Apple routes a sign-in there; people's own locations (Find My Friends is
-  not on the web); China's iCloud (`icloud.com.cn`); anything in a browser,
-  whose page Apple's hosts do not answer.
+- **Does not:** Apple's trusted-device "bridge" over its push service —
+  where Apple routes a sign-in there, the code is asked for the plain way and
+  a text or a call is one tap away; security keys; accept Apple's updated
+  terms (a person does, at icloud.com); people's own locations (Find My
+  Friends is not on the web); China's iCloud (`icloud.com.cn`); anything in a
+  browser, whose page Apple's hosts do not answer.
 
 ## Where it fits
 
@@ -55,11 +64,15 @@ one.
 
 ## Verified
 
-Against Apple played in its tests (`test/apple.ts`), with made-up data: the
-SRP proof checked by a server that holds only the password's verifier; the
-second factor by device and by text; trust; the session carried on and
-signed in again with no code; Find My, a family member's device included.
-Not yet against Apple itself: that is the owner's Apple ID, at setup.
+Against Apple played in its tests (`test/apple.ts`), as Apple answers in
+2026, with made-up data: the SRP proof checked by a server that holds only
+the password's verifier, an A that begins with a zero byte included; the
+options in boot_args and flat; a code asked for, shown again, texted,
+called; escrow after a code and after a trust token; trust; the session
+carried on, renewed past half its trust and waited out when Apple refuses;
+Apple's terms; Find My, a family member's device included. Against Apple
+itself: the password, Apple's options and its asking for a code, at the
+owner's setup on 2026-10-08.
 
 Apple changes this sign-in several times a year. pyicloud's issue tracker
 (github.com/timlaing/pyicloud) is the early warning.

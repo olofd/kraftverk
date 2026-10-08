@@ -205,7 +205,38 @@ otherwise; a text when either fails.
 - **The holder, gateway and store do not change.** The account is a bridge
   device as before. What it keeps stays in its connection's secrets, sealed.
 
-## 4. The order of work
+## 4. Where it stands (2026-10-08)
+
+Built and deployed, in four commits:
+- **Phase 1** (e7e805f). The code is asked for. Apple's options are read in
+  every shape. 503 means busy. Every step is logged.
+- **Phase 2** (b75c234). The setup framework:
+  - a primary action;
+  - kept questions;
+  - `ctx.held`;
+  - signing in again from what is kept;
+  - the code field.
+- **Phase 3** (153e4d8). "Didn't get a code?" and `retryAt`. Also escrow,
+  and SRP padded as Apple's client pads it. Signed in, it says who is in
+  Find My, and states plainly when Find My or the updated terms stand in
+  the way.
+- **Phase 4** (4aee815). The trust's end is read and shown. Renewal past
+  half its life. A backoff kept across restarts. `sign-in-ending`.
+
+**Not built: the bridge (§3.3).** Where Apple routes a sign-in there, the
+code is asked for the plain way (the PUT), and a text or a call to a
+trusted number is one tap away. If an account is found whose devices then
+show no code, the text is how it signs in.
+
+`ctx.held` already gives the bridge's socket somewhere to live between
+turns. What the bridge would still need:
+- a WebSocket channel for setup actions;
+- the bridge's frames and steps;
+- its code check.
+
+The order of work as first planned follows.
+
+## 5. The order of work
 
 Each step is green (`typecheck`, `test`, `check:architecture`, `knip`) and
 pushed. Each is tried against Apple once, never in a loop.
