@@ -238,7 +238,8 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       applying ??= setTimeout(apply, APPLY_MS);
     };
     const start = () => {
-      if (stream.current) return;
+      // Opened behind another tab, or in the background: opened when it is shown, as on return.
+      if (stream.current || AppState.currentState === 'background') return;
       stream.current = api.live(onUpdate, { onState: setLive });
       // What the screen shows, said as it opens: the home keeps it only while the stream is open.
       const shown = views.current();
