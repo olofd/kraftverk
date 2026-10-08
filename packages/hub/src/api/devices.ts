@@ -152,6 +152,41 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
       },
 
       /**
+       * Where a device stands from now on: in a space of a home — its site
+       * when no room is said — perhaps at an opening, perhaps at coordinates.
+       * Null: nowhere said. Where it stood before is kept: its readings stay
+       * the room's they were read in.
+       */
+      async place(id, placement) {
+        const device = deviceOf(id);
+        const by = intentOf(caller).by;
+        if (placement === null) {
+          const was = hub.spaces.placement(device.id);
+          hub.spaces.unplace(device.id);
+          if (was) record('device.unplaced', 'device', device.id, `"${device.name}" stands nowhere said now`);
+        } else {
+          const space = hub.spaces.space(placement.spaceId);
+          if (!space || space.removedAt) throw new ApiError('invalid', 'No such space');
+          for (const [name, value, most] of [['x', placement.x, 10_000], ['y', placement.y, 10_000], ['z', placement.z, 1_000]] as const)
+            if (value !== undefined && value !== null && !(Number.isFinite(value) && Math.abs(value) <= most)) throw new ApiError('invalid', `${name} is metres, within ${most}`);
+          if (placement.facing !== undefined && placement.facing !== null && !(placement.facing >= 0 && placement.facing < 360)) throw new ApiError('invalid', 'Facing is degrees, from 0 to 360');
+          try {
+            hub.spaces.place(device.id, placement, by);
+          } catch (error) {
+            throw new ApiError('invalid', (error as Error).message);
+          }
+          const home = hub.places.home(space.homeId);
+          record('device.placed', 'device', device.id, `"${device.name}" stands in ${space.kind === 'site' ? home?.name ?? 'its home' : `${space.name}, ${home?.name ?? 'its home'}`}`, { space: space.id });
+        }
+        changed();
+        return viewOf(device.id);
+      },
+
+      async placements(id) {
+        return hub.spaces.history(deviceOf(id, { removed: true }).id);
+      },
+
+      /**
        * Pauses a device — kept, with its history, its connections and links,
        * and not reached, by its holder or anything through it — or resumes it.
        */

@@ -332,6 +332,8 @@ export class DeviceCatalog {
       this.#db.query('UPDATE device SET removed_at = ?, track_days = NULL WHERE id = ?').run(removedAt, id);
       // Where it has been is not history it keeps: that goes with it.
       this.#db.query('DELETE FROM track WHERE device_id = ?').run(id);
+      // Where it stood ends here; where it stood before is history, and stays.
+      this.#db.query('UPDATE placement SET until = ? WHERE device_id = ? AND until IS NULL AND since < ?').run(removedAt, id, removedAt);
     })();
     return { ...record, removedAt, trackDays: null };
   }

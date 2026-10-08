@@ -71,6 +71,33 @@ export function deviceRoutes(deps: AppDeps, confirm: ConfirmPassword): Hono {
     return c.json({ points: await familyFor(deps, c).devices.track(id(c.req.param('id')), since) });
   });
 
+  /** Where it stands from now on, or nowhere said: where it stood before is kept. */
+  api.put('/devices/:id/placement', async (c) => {
+    const { placement } = await body(
+      c,
+      z
+        .object({
+          placement: z
+            .object({
+              spaceId: z.string().min(1).max(40),
+              part: z.string().min(1).max(40).optional(),
+              openingId: z.string().min(1).max(40).nullable().optional(),
+              x: z.number().finite().nullable().optional(),
+              y: z.number().finite().nullable().optional(),
+              z: z.number().finite().nullable().optional(),
+              facing: z.number().finite().nullable().optional(),
+              role: z.enum(['stands', 'based']).optional(),
+            })
+            .strict()
+            .nullable(),
+        })
+        .strict()
+    );
+    return c.json(await familyFor(deps, c).devices.place(id(c.req.param('id')), placement));
+  });
+
+  api.get('/devices/:id/placements', async (c) => c.json({ placements: await familyFor(deps, c).devices.placements(id(c.req.param('id'))) }));
+
   /** Which picture it shows: the home says which it has. */
   api.put('/devices/:id/picture', async (c) => {
     const { picture } = await body(c, z.object({ picture: z.string().min(1).max(40) }).strict());

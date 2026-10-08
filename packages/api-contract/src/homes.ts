@@ -53,3 +53,78 @@ export type HomeInput = {
   country?: string | null;
   bearing?: number;
 };
+
+/*
+  A home's spaces, the openings between them, and where a device stands
+  (docs/PLAN-WORLD-MODEL.md §8.5, §8.7).
+*/
+
+export type SpaceKind = 'site' | 'building' | 'floor' | 'room' | 'area' | 'stairs' | 'outdoor';
+export type SpacePurpose = 'kitchen' | 'living' | 'dining' | 'bedroom' | 'children' | 'guest' | 'bathroom' | 'toilet' | 'hallway' | 'office' | 'laundry' | 'storage' | 'utility' | 'garage' | 'gym' | 'sauna' | 'other';
+
+/** A space of a home: the site at its root, buildings, floors, rooms, areas, stairs, the outdoors. */
+export type SpaceView = {
+  id: string;
+  homeId: string;
+  /** Null only for the site: the home's ground. */
+  parentId: string | null;
+  /** Its name in configuration, within its home. */
+  key: string;
+  kind: SpaceKind;
+  purpose: SpacePurpose | null;
+  name: string;
+  icon: string | null;
+  pictureId: string | null;
+  /** Its order among its siblings. */
+  position: number;
+  /** A floor's: 0 the ground floor. */
+  level: number | null;
+  /** A floor's: metres above the site's ground. */
+  elevation: number | null;
+  /** Metres floor to ceiling. */
+  height: number | null;
+  createdAt: string;
+  removedAt: string | null;
+};
+
+/** A space made: under its parent — the site, a building, a floor, a room. */
+export type SpaceInput = {
+  parentId: string;
+  key?: string;
+  kind: Exclude<SpaceKind, 'site'>;
+  purpose?: SpacePurpose | null;
+  name: string;
+  icon?: string | null;
+  pictureId?: string | null;
+  position?: number;
+  level?: number | null;
+  elevation?: number | null;
+  height?: number | null;
+};
+
+export type OpeningKind = 'door' | 'opening' | 'stairs' | 'window' | 'gate' | 'garage-door' | 'elevator';
+
+/** Where two spaces meet, or a space meets the outside. */
+export type OpeningView = { id: string; homeId: string; key: string; fromId: string; toId: string | null; kind: OpeningKind; name: string | null; removedAt: string | null };
+
+/** An opening made: from one space, to another or to the outside. */
+export type OpeningInput = { key?: string; fromId: string; toId: string | null; kind: OpeningKind; name?: string | null };
+
+/** Where a device stands, or is based: since when, in which space of which home, perhaps at an opening, perhaps at coordinates. */
+export type PlacementView = {
+  part: string;
+  homeId: string;
+  spaceId: string;
+  openingId: string | null;
+  /** Metres in the space's frame; null when not said. */
+  x: number | null;
+  y: number | null;
+  z: number | null;
+  facing: number | null;
+  role: 'stands' | 'based';
+  since: string;
+  until: string | null;
+};
+
+/** A device placed: in a space — a home's site when no room is said — perhaps at an opening, perhaps at coordinates. */
+export type PlacementInput = { spaceId: string; part?: string; openingId?: string | null; x?: number | null; y?: number | null; z?: number | null; facing?: number | null; role?: 'stands' | 'based' };

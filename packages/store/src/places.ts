@@ -136,6 +136,8 @@ export class PlaceStore {
     this.#db.transaction(() => {
       this.#writePlace(id, { ...input, key }, new Date().toISOString(), null);
       this.#db.query('INSERT INTO home (id, type, picture_id, bearing, position) VALUES (?, ?, ?, ?, ?)').run(id, input.type, input.pictureId ?? null, input.bearing ?? 0, position);
+      // Its site: the root of its spaces, where what stands "in the home, room not said" stands.
+      this.#db.query("INSERT INTO space (id, home_id, parent_id, key, kind, name, created_at) VALUES (?, ?, NULL, 'site', 'site', 'The site', ?)").run(newId('s'), id, new Date().toISOString());
     })();
     return this.home(id)!;
   }

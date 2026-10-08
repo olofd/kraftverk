@@ -2,6 +2,7 @@ import { stepJsonSchema, triggerJsonSchema, WHILE_RUNNING } from '@kraftverk/aut
 import type { ConfigField, ConfigSchema } from '@kraftverk/device-sdk';
 
 import { KEY, unitsOfQuantity, UNIT_LIST } from '@kraftverk/device-sdk';
+import { OPENING_KINDS, SPACE_KINDS, SPACE_PURPOSES } from './document.ts';
 import { CURRENT_VERSION } from './migrate.ts';
 import type { Vocabulary, VocabularyMethod, VocabularyType } from './vocabulary.ts';
 
@@ -82,6 +83,31 @@ function methodSchema(method: VocabularyMethod): Schema {
   };
 }
 
+/** Where a device is, by keys. */
+const PLACE: Schema = {
+  type: 'object',
+  required: ['home'],
+  additionalProperties: false,
+  properties: { home: { type: 'string' }, space: { type: 'string' }, opening: { type: 'string' } },
+};
+
+/** A space of a home, and the spaces inside it. */
+const SPACE: Schema = {
+  type: 'object',
+  title: 'A space',
+  required: ['kind'],
+  additionalProperties: false,
+  properties: {
+    kind: { enum: [...SPACE_KINDS] },
+    name: { type: 'string', minLength: 1, maxLength: 60, description: 'Its key, when it says none.' },
+    purpose: { enum: [...SPACE_PURPOSES], description: 'What it is for: a kitchen, a bedroom.' },
+    level: { type: 'integer', description: 'A floor’s: 0 the ground floor, -1 the cellar.' },
+    elevation: { type: 'number', description: 'A floor’s: metres above the ground.' },
+    height: { type: 'number', exclusiveMinimum: 0, description: 'Metres from floor to ceiling.' },
+    spaces: { type: 'object', propertyNames: { pattern: KEY.source }, additionalProperties: { $ref: '#/$defs/space' }, description: 'The spaces inside it, by key.' },
+  },
+};
+
 function deviceSchema(types: readonly VocabularyType[]): Schema {
   return {
     type: 'object',
@@ -95,6 +121,8 @@ function deviceSchema(types: readonly VocabularyType[]): Schema {
       picture: { type: 'string', pattern: '^(type:[0-9]+|own:.+)$', description: 'Which of its pictures it shows: "type:2".' },
       paused: { type: 'boolean', description: 'Paused by its owner: kept, and not reached, until resumed.' },
       track: { type: 'string', pattern: '^[0-9]+ ?days?$', description: 'How long where it has been is kept: "30 days", from 1 day to 366. Where it was is never in the file.' },
+      place: { ...PLACE, description: 'Where it stands: a home by its key, a space of it — the home itself when none — perhaps an opening it is at.' },
+      based: { ...PLACE, description: 'Where one that moves is based — a car, a scooter: a home by its key, perhaps a space of it.' },
       settings: { type: 'object', description: 'Its type’s settings.' },
       connect: {
         type: 'array',
@@ -286,7 +314,7 @@ function automationSchema(vocabulary: Vocabulary): Schema {
 
 /** The pieces every schema here refers to. */
 function definitions(vocabulary: Vocabulary): Record<string, Schema> {
-  return { device: deviceSchema(vocabulary.types), automation: automationSchema(vocabulary), step: STEP, trigger: TRIGGER, expression: EXPRESSION, duration: DURATION };
+  return { device: deviceSchema(vocabulary.types), automation: automationSchema(vocabulary), space: SPACE, step: STEP, trigger: TRIGGER, expression: EXPRESSION, duration: DURATION };
 }
 
 /** The whole configuration document's schema. */
@@ -341,6 +369,18 @@ export function configJsonSchema(vocabulary: Vocabulary): Schema {
               type: 'object',
               additionalProperties: false,
               properties: Object.fromEntries(Object.entries(vocabulary.policy).map(([name, spec]) => [name, { type: 'number', minimum: spec.min, maximum: spec.max, description: `${spec.label}, in ${spec.unit}.` }])),
+            },
+            spaces: { type: 'object', ...keys, additionalProperties: { $ref: '#/$defs/space' }, description: 'Its buildings, floors, rooms and the outdoors, by key — unique within the home — each with the spaces inside it.' },
+            openings: {
+              type: 'object',
+              ...keys,
+              description: 'Where its spaces meet, or meet the outside: doors, stairs, windows, by key.',
+              additionalProperties: {
+                type: 'object',
+                required: ['kind', 'from', 'to'],
+                additionalProperties: false,
+                properties: { kind: { enum: [...OPENING_KINDS] }, from: { type: 'string' }, to: { type: 'string', description: 'A space’s key, or "outside".' }, name: { type: 'string' } },
+              },
             },
           },
         },

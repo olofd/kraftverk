@@ -76,6 +76,37 @@ describe('a device you have', () => {
     expect((await t.home.configuration.export({ secrets: 'none' })).text).not.toContain('track:');
   });
 
+  test('stands in a room of a home, moves to another, and keeps where it stood — each said on the timeline', async () => {
+    const lamp = await aLamp();
+    expect((await t.home.devices.get(lamp.id)).placement).toBeNull();
+    const [home] = await t.home.homes.list();
+    const [site] = await t.home.spaces.list(home!.id);
+    expect(site).toMatchObject({ kind: 'site', parentId: null });
+    const house = await t.home.spaces.add({ parentId: site!.id, kind: 'building', name: 'House' });
+    const hall = await t.home.spaces.add({ parentId: house.id, kind: 'room', purpose: 'hallway', name: 'Hall' });
+    const kitchen = await t.home.spaces.add({ parentId: house.id, kind: 'room', purpose: 'kitchen', name: 'Kitchen' });
+    const door = await t.home.openings.add({ fromId: hall.id, toId: null, kind: 'door', name: 'Front door' });
+
+    expect((await t.home.devices.place(lamp.id, { spaceId: hall.id, openingId: door.id })).placement).toMatchObject({ homeId: home!.id, spaceId: hall.id, openingId: door.id });
+    expect((await t.home.devices.place(lamp.id, { spaceId: kitchen.id })).placement).toMatchObject({ spaceId: kitchen.id, openingId: null });
+    expect((await t.home.devices.placements(lamp.id)).map((each) => [each.spaceId, each.until === null])).toEqual([
+      [hall.id, false],
+      [kitchen.id, true],
+    ]);
+    expect((await t.home.timeline()).find((entry) => entry.kind === 'device.placed')?.summary).toBe('"Hall lamp" stands in Kitchen, Home');
+    // The site itself is a place to stand: in the home, room not said.
+    expect((await t.home.devices.place(lamp.id, { spaceId: site!.id })).placement?.spaceId).toBe(site!.id);
+    expect((await refusal(t.home.spaces.update(site!.id, { name: 'Elsewhere' }))).kind).toBe('invalid');
+    // Removing a room: what stands in it moves out to its parent.
+    await t.home.devices.place(lamp.id, { spaceId: kitchen.id });
+    await t.home.spaces.remove(kitchen.id);
+    expect((await t.home.devices.get(lamp.id)).placement?.spaceId).toBe(house.id);
+    expect((await t.home.spaces.list(home!.id)).map((space) => space.name)).toEqual(['The site', 'House', 'Hall']);
+    // Nowhere said: its history kept.
+    expect((await t.home.devices.place(lamp.id, null)).placement).toBeNull();
+    expect((await t.home.devices.placements(lamp.id)).length).toBeGreaterThan(2);
+  });
+
   test('one that is not there is not found', async () => {
     expect((await refusal(t.home.devices.get(savedDeviceId('abc%def')))).kind).toBe('not-found');
     expect((await refusal(t.home.devices.history(savedDeviceId('abc%def'), { key: 'soc' }))).kind).toBe('not-found');

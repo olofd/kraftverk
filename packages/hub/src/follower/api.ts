@@ -95,6 +95,8 @@ export function followerApi(h: Follower): KraftverkApi {
       setPicture: (id, picture) => viewed(home.devices.setPicture(id, picture)),
       setPaused: (id, paused) => viewed(home.devices.setPaused(id, paused)),
       setTrack: (id, days) => viewed(home.devices.setTrack(id, days)),
+      place: (id, placement) => viewed(home.devices.place(id, placement)),
+      placements: (id) => home.devices.placements(id),
       track: (id, since) => home.devices.track(id, since),
       async remove(id) {
         await home.devices.remove(id);
@@ -341,6 +343,19 @@ export function followerApi(h: Follower): KraftverkApi {
     },
 
     family: async () => (await h.kept(HEARD.family, () => home.family())).answer,
+    /** A home's spaces and openings are the master's: asked of it, as it says them. */
+    spaces: {
+      list: (homeId, options) => home.spaces.list(homeId, options),
+      add: (input) => home.spaces.add(input),
+      update: (id, changes) => home.spaces.update(id, changes),
+      remove: (id) => home.spaces.remove(id),
+    },
+    openings: {
+      list: (homeId) => home.openings.list(homeId),
+      add: (input) => home.openings.add(input),
+      update: (id, changes) => home.openings.update(id, changes),
+      remove: (id) => home.openings.remove(id),
+    },
     /** Pictures are the master's: kept there, and fetched from there. */
     media: {
       add: (picture) => home.media.add(picture),

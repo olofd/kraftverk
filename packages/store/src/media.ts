@@ -73,6 +73,7 @@ export class MediaStore {
       .query(
         `DELETE FROM media WHERE id NOT IN (SELECT picture_id FROM home WHERE picture_id IS NOT NULL)
            AND id NOT IN (SELECT picture_id FROM device WHERE picture_id IS NOT NULL)
+           AND id NOT IN (SELECT picture_id FROM space WHERE picture_id IS NOT NULL)
            AND added_at < ?`
       )
       .run(new Date(Date.now() - 24 * 3_600_000).toISOString()).changes;

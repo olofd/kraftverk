@@ -152,6 +152,60 @@ automations:
     expect(wrong('{ lat: 51, lon: 0 }')).toEqual(['"location" is its latitude and longitude, in degrees, and a radius in metres: { latitude: 59.3, longitude: 18.1, radius: 150 }']);
   });
 
+  test('a home’s spaces, its openings, and where a device stands: read, written back the same, and held to the home', () => {
+    const text = [
+      'kraftverk: 10',
+      'homes:',
+      '  home:',
+      '    name: Home',
+      '    time zone: Europe/Stockholm',
+      '    spaces:',
+      '      house:',
+      '        kind: building',
+      '        name: House',
+      '        spaces:',
+      '          ground:',
+      '            kind: floor',
+      '            name: Ground floor',
+      '            level: 0',
+      '            spaces:',
+      '              kitchen: { kind: room, name: Kitchen, purpose: kitchen, height: 2.4 }',
+      '              hall: { kind: room, name: Hall }',
+      '      garden: { kind: outdoor, name: Garden }',
+      '    openings:',
+      '      front-door: { kind: door, from: hall, to: outside, name: Front door }',
+      '      kitchen-door: { kind: opening, from: hall, to: kitchen }',
+      'devices:',
+      '  lamp:',
+      '    type: acme.lamp',
+      '    name: Lamp',
+      '    place: { home: home, space: kitchen }',
+      '  car:',
+      '    type: acme.car',
+      '    name: Car',
+      '    based: { home: home, space: garden }',
+      '',
+    ].join('\n');
+    const read = readConfig(text);
+    expect(read.problems).toEqual([]);
+    const home = read.document!.homes.home!;
+    expect(home.spaces.map((space) => [space.key, space.kind, space.spaces.map((inner) => inner.key)])).toEqual([
+      ['house', 'building', ['ground']],
+      ['garden', 'outdoor', []],
+    ]);
+    expect(home.spaces[0]!.spaces[0]!.spaces[0]).toEqual({ key: 'kitchen', kind: 'room', name: 'Kitchen', purpose: 'kitchen', level: null, elevation: null, height: 2.4, spaces: [] });
+    expect(home.openings).toEqual({ 'front-door': { kind: 'door', from: 'hall', to: null, name: 'Front door' }, 'kitchen-door': { kind: 'opening', from: 'hall', to: 'kitchen', name: null } });
+    expect(read.document!.devices.lamp!.place).toEqual({ home: 'home', space: 'kitchen', opening: null, role: 'stands' });
+    expect(read.document!.devices.car!.place).toEqual({ home: 'home', space: 'garden', opening: null, role: 'based' });
+    expect(readConfig(writeConfig(read.document!)).document).toEqual(read.document);
+
+    const wrong = (from: string, to: string) => readConfig(text.replace(from, to)).problems.map((problem) => problem.message);
+    expect(wrong('kitchen-door: { kind: opening, from: hall', 'kitchen-door: { kind: opening, from: cellar')).toEqual(['"from" is the key of a space of this home']);
+    expect(wrong('garden: { kind: outdoor', 'kitchen: { kind: outdoor')[0]).toBe('"kitchen" is another space\'s key in this home already');
+    expect(wrong('{ kind: room, name: Kitchen', '{ kind: room, level: 1, name: Kitchen')).toEqual(['Only a floor has a level and an elevation']);
+    expect(wrong('    based: { home: home', '    place: { home: home, space: hall }\n    based: { home: home')).toEqual(['A device stands somewhere, or is based somewhere: one of "place" and "based"']);
+  });
+
   test('YAML that is not YAML, a missing version, and one written by a newer kraftverk', () => {
     expect(readConfig('devices: [').problems[0]).toMatchObject({ line: 1 });
     expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 10" at its top');

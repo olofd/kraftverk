@@ -4,12 +4,16 @@ import {
   emptyDocument,
   vocabularyOf,
   type ConfigDocument,
+  type OpeningEntry,
+  type PlaceEntry,
+  type SpaceEntry,
   type SecretValue,
   type Vocabulary,
   type WaySource,
 } from '@kraftverk/home-file';
 import { methodsOf, partsOf, type NodeId, type PolicyValueName, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
-import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, FamilyStore, LinkStore, MediaStore, PlaceStore, SecretsAtRest } from '@kraftverk/store';
+import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, FamilyStore, LinkStore, MediaStore, PlaceStore, SecretsAtRest, SpaceStore } from '@kraftverk/store';
+import type { SpaceView } from '@kraftverk/api-contract';
 
 import type { ProtocolRegistry } from '../installed/protocols.ts';
 import type { DeviceTypeRegistry } from '../installed/types.ts';
@@ -36,6 +40,8 @@ export type ConfigDeps = {
   family: FamilyStore;
   /** Its homes: where each is, its clock. */
   places: PlaceStore;
+  /** Their spaces and openings, and where each device stands. */
+  spaces: SpaceStore;
   /** Pictures, by their content: what a home or a device in a file names. */
   media: MediaStore;
   /** A home's own values: how much is a load, the reserve. */
@@ -85,6 +91,52 @@ export function homeVocabulary(deps: Pick<ConfigDeps, 'catalog' | 'automations' 
   });
 }
 
+/** A home's spaces as a file has them: the tree under its site, each by its key. */
+function spaceTree(spaces: readonly SpaceView[]): SpaceEntry[] {
+  const under = (parent: string): SpaceEntry[] =>
+    spaces
+      .filter((space) => space.parentId === parent)
+      .map((space) => ({
+        key: space.key,
+        kind: space.kind as SpaceEntry['kind'],
+        name: space.name,
+        purpose: space.purpose,
+        level: space.level,
+        elevation: space.elevation,
+        height: space.height,
+        spaces: under(space.id),
+      }));
+  const site = spaces.find((space) => space.kind === 'site');
+  return site ? under(site.id) : [];
+}
+
+/** A home's openings as a file has them: each by its key, its spaces by theirs. One from the site itself has no space to name, and is left out. */
+function openingsOf(spaces: SpaceStore, homeId: string): Record<string, OpeningEntry> {
+  const keys = new Map(spaces.spaces(homeId).map((space) => [space.id, space.kind === 'site' ? null : space.key]));
+  return Object.fromEntries(
+    spaces.openings(homeId).flatMap((opening) => {
+      const from = keys.get(opening.fromId) ?? null;
+      const to = opening.toId === null ? null : (keys.get(opening.toId) ?? undefined);
+      return from && to !== undefined ? [[opening.key, { kind: opening.kind, from, to, name: opening.name }]] : [];
+    })
+  );
+}
+
+/** Where a device stands, by keys: its home, its space — none for the site — perhaps an opening. */
+export function placeOf(deps: Pick<ConfigDeps, 'places' | 'spaces'>, deviceId: SavedDeviceId): PlaceEntry | null {
+  const placed = deps.spaces.placement(deviceId);
+  if (!placed) return null;
+  const home = deps.places.home(placed.homeId);
+  const space = deps.spaces.space(placed.spaceId);
+  if (!home || home.removedAt || !space) return null;
+  return {
+    home: home.key,
+    space: space.kind === 'site' ? null : space.key,
+    opening: placed.openingId ? (deps.spaces.opening(placed.openingId)?.key ?? null) : null,
+    role: placed.role,
+  };
+}
+
 /** The configuration, as asked. */
 export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Promise<Exported> {
   if (options.secrets === 'sealed' && !options.passphrase) throw new Error('Sealing secrets needs a passphrase');
@@ -110,6 +162,8 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
         address: home.address,
         country: home.country,
         policy: { ...deps.policyOf(home.id).values() },
+        spaces: spaceTree(deps.spaces.spaces(home.id)),
+        openings: openingsOf(deps.spaces, home.id),
       };
     }
   }
@@ -163,7 +217,7 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
       }
       ways.push({ method: connection.method, through: bridge?.key ?? null, address: connection.address, config: connection.config, secrets, exportable: connection.secretsExportable, fixedAddress: Boolean(method?.address) });
     }
-    document.devices[device.key] = deviceEntryFrom(device, ways);
+    document.devices[device.key] = deviceEntryFrom({ ...device, place: placeOf(deps, device.id) }, ways);
   }
 
   // Links between the devices it carries.

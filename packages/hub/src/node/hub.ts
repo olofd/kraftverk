@@ -12,6 +12,7 @@ import {
   NodeSettings,
   PlaceStore,
   MediaStore,
+  SpaceStore,
   FamilyStore,
   NodeStore,
   ConnectionStore,
@@ -120,6 +121,8 @@ export class Hub {
   readonly places: PlaceStore;
   /** Pictures, by their content. */
   readonly media: MediaStore;
+  /** The homes' spaces, the openings between them, and where each device stands. */
+  readonly spaces: SpaceStore;
   /** The family this database is, and its master. */
   readonly family: FamilyStore;
   /** This node: what its database is, and what holds the ways it holds. */
@@ -236,6 +239,7 @@ export class Hub {
     this.places = new PlaceStore(db);
     ensureFirstHome(this.places);
     this.media = new MediaStore(db);
+    this.spaces = new SpaceStore(db);
     // The policy is a home's: the first one's, until devices stand in homes.
     const policyHome = new HomeSettings(db, () => ensureFirstHome(this.places).id);
     this.policy = { values: () => policyValues(policyHome), set: (name, value) => setPolicyValue(policyHome, name, value) };
@@ -249,7 +253,7 @@ export class Hub {
     this.drafts = drafts({ history: this.history, events, catalog, sessions, library: this.library, engine: this.engine, automations });
 
     this.heldReadings = new HeldReadings(this.history);
-    this.views = new DeviceViews({ catalog, types, sessions, connections, links, nodes, transports, heldReadings: this.heldReadings, self: self.id, master: () => this.family.get()!.masterId, readOnly: options.readOnly });
+    this.views = new DeviceViews({ catalog, types, sessions, connections, links, nodes, transports, heldReadings: this.heldReadings, self: self.id, master: () => this.family.get()!.masterId, readOnly: options.readOnly, placement: (id) => this.spaces.placement(id) });
     this.ignored = new IgnoredSightings(this.db);
     this.nearby = new Nearby({ types, protocols, transports, connections, catalog, sessions, ignored: this.ignored });
     this.sampler = new Sampler({ history: this.history, audit: this.audit, events, tracks: this.tracks }, this.views);
@@ -272,6 +276,7 @@ export class Hub {
       checked: this.drafts.checked,
       family: this.family,
       places: this.places,
+      spaces: this.spaces,
       media: this.media,
       policyOf: policyOf(db),
       sealing: options.sealing,

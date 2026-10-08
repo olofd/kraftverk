@@ -1,6 +1,6 @@
 import type { AutomationMode, Rule } from '@kraftverk/automation';
 
-import type { AutomationEntry, DeviceEntry, Scalar, SecretValue } from './document.ts';
+import type { AutomationEntry, DeviceEntry, PlaceEntry, Scalar, SecretValue } from './document.ts';
 import type { Use } from '@kraftverk/automation';
 
 /*
@@ -115,7 +115,17 @@ export function fillsFrom(
 }
 
 /** A device as it lives: what the server keeps, and the app is shown. */
-export type DeviceSource = { typeId: string; name: string; identity: string | null; picture: string | null; pausedAt: string | null; trackDays: number | null; config: Readonly<Record<string, unknown>> };
+export type DeviceSource = {
+  typeId: string;
+  name: string;
+  identity: string | null;
+  picture: string | null;
+  pausedAt: string | null;
+  trackDays: number | null;
+  config: Readonly<Record<string, unknown>>;
+  /** Where it stands, by keys, when whoever writes it knows the home's: the server's export does; one device's YAML in the app leaves it out. */
+  place?: PlaceEntry | null;
+};
 
 /** One way a device is reached, as an entry is written from it: its secrets as asked for — by name, sealed, or plain — and whether its method fixes the address. */
 export type WaySource = {
@@ -148,6 +158,7 @@ export function deviceEntryFrom(device: DeviceSource, ways: readonly WaySource[]
     picture: device.picture,
     paused: device.pausedAt !== null,
     track: device.trackDays,
+    place: device.place ?? null,
     settings: scalars(device.config),
     connect: ways.map((way) => ({ via: way.method, through: way.through, address: way.fixedAddress ? null : way.address, settings: scalars(way.config), secrets: way.secrets, exportable: way.exportable })),
   };

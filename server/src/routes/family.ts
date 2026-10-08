@@ -36,6 +36,42 @@ export function familyRoutes(deps: AppDeps): Hono {
   api.patch('/homes/:id', async (c) => c.json(await familyFor(deps, c).homes.update(c.req.param('id'), await body(c, HOME.partial()))));
   api.delete('/homes/:id', async (c) => c.json(await familyFor(deps, c).homes.remove(c.req.param('id'))));
 
+  /** A home's spaces: a tree from its site — the family checks what each says. */
+  const SPACE = z
+    .object({
+      parentId: z.string().min(1).max(40),
+      key: z.string().regex(KEY),
+      kind: z.enum(['building', 'floor', 'room', 'area', 'stairs', 'outdoor']),
+      purpose: z.enum(['kitchen', 'living', 'dining', 'bedroom', 'children', 'guest', 'bathroom', 'toilet', 'hallway', 'office', 'laundry', 'storage', 'utility', 'garage', 'gym', 'sauna', 'other']).nullable(),
+      name: z.string().trim().min(1).max(60),
+      icon: z.string().max(40).nullable(),
+      pictureId: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
+      position: z.number().int().min(0).max(10_000),
+      level: z.number().int().min(-200).max(200).nullable(),
+      elevation: z.number().finite().min(-1000).max(1000).nullable(),
+      height: z.number().finite().positive().max(100).nullable(),
+    })
+    .strict();
+  api.get('/homes/:id/spaces', async (c) => c.json({ spaces: await familyFor(deps, c).spaces.list(c.req.param('id'), { removed: c.req.query('removed') === 'true' }) }));
+  api.post('/spaces', async (c) => c.json(await familyFor(deps, c).spaces.add(await body(c, SPACE.partial({ key: true, purpose: true, icon: true, pictureId: true, position: true, level: true, elevation: true, height: true })))));
+  api.patch('/spaces/:id', async (c) => c.json(await familyFor(deps, c).spaces.update(c.req.param('id'), await body(c, SPACE.partial()))));
+  api.delete('/spaces/:id', async (c) => c.json(await familyFor(deps, c).spaces.remove(c.req.param('id'))));
+
+  /** Where its spaces meet, or meet the outside. */
+  const OPENING = z
+    .object({
+      key: z.string().regex(KEY),
+      fromId: z.string().min(1).max(40),
+      toId: z.string().min(1).max(40).nullable(),
+      kind: z.enum(['door', 'opening', 'stairs', 'window', 'gate', 'garage-door', 'elevator']),
+      name: z.string().trim().max(60).nullable(),
+    })
+    .strict();
+  api.get('/homes/:id/openings', async (c) => c.json({ openings: await familyFor(deps, c).openings.list(c.req.param('id')) }));
+  api.post('/openings', async (c) => c.json(await familyFor(deps, c).openings.add(await body(c, OPENING.partial({ key: true, name: true })))));
+  api.patch('/openings/:id', async (c) => c.json(await familyFor(deps, c).openings.update(c.req.param('id'), await body(c, OPENING.partial()))));
+  api.delete('/openings/:id', async (c) => c.json(await familyFor(deps, c).openings.remove(c.req.param('id'))));
+
   /**
    * A node joins the home, saying who it is — by its own id — and what it can
    * reach devices over. It does so at every start, so "held by Olof's iPhone"

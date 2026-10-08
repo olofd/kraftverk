@@ -7,7 +7,7 @@ import type { Rule } from '@kraftverk/automation';
 import { ApiError } from '@kraftverk/api-contract';
 import { AutomationLibrary } from '@kraftverk/automation-engine';
 import type { AuditRecord } from '@kraftverk/device-sdk';
-import { FamilyStore, MediaStore, PlaceStore, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
+import { FamilyStore, MediaStore, PlaceStore, SpaceStore, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
 import { policyOf } from '../src/homes/homes.ts';
 
 import { drafts } from '../src/automations/drafts.ts';
@@ -88,6 +88,7 @@ beforeEach(() => {
     pending: new PendingPlans(),
     family: new FamilyStore(db),
     places,
+    spaces: new SpaceStore(db),
     media: new MediaStore(db),
     policyOf: policyOf(db),
     sealing: testSealing,
@@ -151,6 +152,54 @@ describe('a server’s own export, into a database wiped', () => {
     const again = await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') });
     expect([...again.devices, ...again.automations].map((item) => item.action)).toEqual(['same', 'same', 'same']);
     expect(again.needs.confirm).toEqual([]);
+  });
+
+  test('its homes’ spaces and openings, and where each device stands, by key', async () => {
+    const { hall, porch } = aHome();
+    const home = deps.places.homeByKey('home')!;
+    const site = deps.spaces.site(home.id);
+    const house = deps.spaces.addSpace({ parentId: site.id, key: 'house', kind: 'building', name: 'House' });
+    const ground = deps.spaces.addSpace({ parentId: house.id, key: 'ground', kind: 'floor', name: 'Ground floor', level: 0, elevation: 0 });
+    const kitchen = deps.spaces.addSpace({ parentId: ground.id, key: 'kitchen', kind: 'room', name: 'Kitchen', purpose: 'kitchen', height: 2.4 });
+    const hallway = deps.spaces.addSpace({ parentId: ground.id, key: 'hall', kind: 'room', name: 'Hall', purpose: 'hallway' });
+    const door = deps.spaces.addOpening({ key: 'front-door', fromId: hallway.id, toId: null, kind: 'door', name: 'Front door' });
+    deps.spaces.addOpening({ key: 'kitchen-door', fromId: hallway.id, toId: kitchen.id, kind: 'opening' });
+    deps.spaces.place(hall.id, { spaceId: kitchen.id }, actor('person', 'olof'));
+    deps.spaces.place(porch.id, { spaceId: hallway.id, openingId: door.id, role: 'based' }, actor('person', 'olof'));
+    const text = await exported();
+    expect(text).toContain('kitchen-door:');
+    expect(text).toContain('based:');
+
+    db.exec("DELETE FROM placement; DELETE FROM opening; DELETE FROM space WHERE kind != 'site'; DELETE FROM automation; DELETE FROM device;");
+    const plan = await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') });
+    expect(plan.problems).toEqual([]);
+    expect(plan.homes).toEqual([
+      { key: 'home', name: 'Home', action: 'change', changes: ['spaces added: House, Ground floor, Kitchen, Hall', 'openings added: Front door, kitchen-door'] },
+    ]);
+    await applyImport(deps, plan.id!, actor('person', 'olof'), {});
+    expect(deps.spaces.spaces(home.id).map((space) => [space.key, space.kind, space.parentId && deps.spaces.space(space.parentId)!.key])).toEqual([
+      ['site', 'site', null],
+      ['house', 'building', 'site'],
+      ['ground', 'floor', 'house'],
+      ['kitchen', 'room', 'ground'],
+      ['hall', 'room', 'ground'],
+    ]);
+    expect(deps.spaces.spaceByKey(home.id, 'kitchen')).toMatchObject({ purpose: 'kitchen', height: 2.4 });
+    expect(deps.spaces.openingByKey(home.id, 'front-door')).toMatchObject({ kind: 'door', toId: null, name: 'Front door' });
+    const lamp = deps.catalog.byKey('hall-lamp')!;
+    expect(deps.spaces.placement(lamp.id)).toMatchObject({ spaceId: deps.spaces.spaceByKey(home.id, 'kitchen')!.id, role: 'stands', openingId: null });
+    expect(deps.spaces.placement(deps.catalog.byKey('porch-lamp')!.id)).toMatchObject({ role: 'based', openingId: deps.spaces.openingByKey(home.id, 'front-door')!.id });
+
+    // Read again over what it made: nothing to do.
+    const again = await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') });
+    expect([...again.homes, ...again.devices].map((item) => item.action)).toEqual(['same', 'same', 'same']);
+
+    // Moved in the file: a change, said.
+    const moved = await planImport(deps, text.replace('space: kitchen', 'space: hall'), { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') });
+    expect(moved.devices[0]).toMatchObject({ key: 'hall-lamp', action: 'change', changes: ['where it stands: hall, home'] });
+    // Nowhere: a problem at its line.
+    const nowhere = await planImport(deps, text.replace('space: kitchen', 'space: cellar'), { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') });
+    expect(nowhere.problems.map((problem) => [problem.message, problem.path])).toEqual([['Home has no space "cellar"', ['devices', 'hall-lamp', 'place']]]);
   });
 
   test('a plan is used once, and only by whoever read it', async () => {

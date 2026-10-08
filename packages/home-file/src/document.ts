@@ -59,6 +59,8 @@ export type DeviceEntry = {
    * it is kept, and for how long.
    */
   track: number | null;
+  /** Where it stands, or is based; null: nowhere said. */
+  place: PlaceEntry | null;
   /** Its type's settings. */
   settings: Record<string, Scalar>;
   /** The ways it is reached, preferred first. */
@@ -110,7 +112,34 @@ export type HomeEntry = {
   country: string | null;
   /** Its values: how much is a load, the reserve. */
   policy: Record<string, number>;
+  /** Its spaces by key — unique within the home — as a tree under its site: buildings, floors, rooms. */
+  spaces: SpaceEntry[];
+  /** Where its spaces meet, or meet the outside, by key. */
+  openings: Record<string, OpeningEntry>;
 };
+
+export const SPACE_KINDS = ['building', 'floor', 'room', 'area', 'stairs', 'outdoor'] as const;
+export const SPACE_PURPOSES = ['kitchen', 'living', 'dining', 'bedroom', 'children', 'guest', 'bathroom', 'toilet', 'hallway', 'office', 'laundry', 'storage', 'utility', 'garage', 'gym', 'sauna', 'other'] as const;
+export const OPENING_KINDS = ['door', 'opening', 'stairs', 'window', 'gate', 'garage-door', 'elevator'] as const;
+
+/** A space of a home, and the spaces inside it, in their order. */
+export type SpaceEntry = {
+  key: string;
+  kind: (typeof SPACE_KINDS)[number];
+  name: string;
+  purpose: (typeof SPACE_PURPOSES)[number] | null;
+  /** A floor's: 0 the ground floor. */
+  level: number | null;
+  elevation: number | null;
+  height: number | null;
+  spaces: SpaceEntry[];
+};
+
+/** Where two spaces meet — by their keys — or a space meets the outside (`to` null). */
+export type OpeningEntry = { kind: (typeof OPENING_KINDS)[number]; from: string; to: string | null; name: string | null };
+
+/** Where a device stands, or is based: a home by its key, a space of it (none: the home itself), perhaps an opening. */
+export type PlaceEntry = { home: string; space: string | null; opening: string | null; role: 'stands' | 'based' };
 
 export type ConfigDocument = {
   version: number;
@@ -186,7 +215,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         problem('Expected a home: its name, type, where it is and its time zone', path);
         continue;
       }
-      for (const field of Object.keys(entry)) if (!['name', 'type', 'picture', 'location', 'time zone', 'address', 'country', 'policy'].includes(field)) problem(`"${field}" is not part of a home: it has name, type, picture, location, time zone, address, country and policy`, [...path, field]);
+      for (const field of Object.keys(entry)) if (!['name', 'type', 'picture', 'location', 'time zone', 'address', 'country', 'policy', 'spaces', 'openings'].includes(field)) problem(`"${field}" is not part of a home: it has name, type, picture, location, time zone, address, country, policy, spaces and openings`, [...path, field]);
       const picture = entry.picture === undefined || entry.picture === null ? null : typeof entry.picture === 'string' && /^[0-9a-f]{64}$/.test(entry.picture) ? entry.picture : (problem('"picture" is a picture\'s id: the SHA-256 of its bytes, in hex', [...path, 'picture']), null);
       const name = text(entry.name, [...path, 'name'], 'its name');
       const type = entry.type === undefined ? 'house' : HOME_TYPES.includes(entry.type as HomeTypeEntry) ? (entry.type as HomeTypeEntry) : (problem(`"type" is one of ${HOME_TYPES.join(', ')}`, [...path, 'type']), 'house');
@@ -218,7 +247,52 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         if (!isRecord(entry.policy)) problem('"policy" is a map of the home\'s values', [...path, 'policy']);
         else for (const [value, each] of Object.entries(entry.policy)) typeof each === 'number' ? (policy[value] = each) : problem('A policy value is a number', [...path, 'policy', value]);
       }
-      if (name && timeZone) homes[key] = { name, type, picture, location, timeZone, address, country, policy };
+      // Its spaces, a tree: each by a key no other space of this home has.
+      const seen = new Set<string>();
+      const spacesOf = (data: unknown, at: Path): SpaceEntry[] => {
+        if (data === undefined || data === null) return [];
+        if (!isRecord(data)) return (problem('"spaces" is a map: each space by its key', at), []);
+        return Object.entries(data).flatMap(([spaceKey, space]): SpaceEntry[] => {
+          const here = [...at, spaceKey];
+          if (!KEY.test(spaceKey) || spaceKey === 'site') problem(`"${spaceKey}" is not a key: lowercase letters, digits and dashes — and not "site", which is the home itself`, here);
+          if (seen.has(spaceKey)) problem(`"${spaceKey}" is another space's key in this home already`, here);
+          seen.add(spaceKey);
+          if (!isRecord(space)) return (problem('Expected a space: its kind and name', here), []);
+          for (const field of Object.keys(space)) if (!['kind', 'name', 'purpose', 'level', 'elevation', 'height', 'spaces'].includes(field)) problem(`"${field}" is not part of a space: it has kind, name, purpose, level, elevation, height and spaces`, [...here, field]);
+          const kind = SPACE_KINDS.includes(space.kind as SpaceEntry['kind']) ? (space.kind as SpaceEntry['kind']) : (problem(`"kind" is one of ${SPACE_KINDS.join(', ')}`, [...here, 'kind']), null);
+          const spaceName = space.name === undefined ? spaceKey : text(space.name, [...here, 'name'], 'its name');
+          const purpose = space.purpose === undefined || space.purpose === null ? null : SPACE_PURPOSES.includes(space.purpose as never) ? (space.purpose as SpaceEntry['purpose']) : (problem(`"purpose" is one of ${SPACE_PURPOSES.join(', ')}`, [...here, 'purpose']), null);
+          const number = (field: string, whole: boolean): number | null =>
+            space[field] === undefined || space[field] === null ? null : typeof space[field] === 'number' && Number.isFinite(space[field]) && (!whole || Number.isInteger(space[field])) ? (space[field] as number) : (problem(`"${field}" is a number`, [...here, field]), null);
+          const level = number('level', true);
+          const elevation = number('elevation', false);
+          const height = number('height', false);
+          if (kind !== 'floor' && (level !== null || elevation !== null)) problem('Only a floor has a level and an elevation', here);
+          const inner = spacesOf(space.spaces, [...here, 'spaces']);
+          return kind && spaceName ? [{ key: spaceKey, kind, name: spaceName, purpose, level: kind === 'floor' ? (level ?? 0) : null, elevation, height, spaces: inner }] : [];
+        });
+      };
+      const spaces = spacesOf(entry.spaces, [...path, 'spaces']);
+      const openings: Record<string, OpeningEntry> = {};
+      if (entry.openings !== undefined && entry.openings !== null) {
+        if (!isRecord(entry.openings)) problem('"openings" is a map: each opening by its key', [...path, 'openings']);
+        else
+          for (const [openingKey, opening] of Object.entries(entry.openings)) {
+            const here = [...path, 'openings', openingKey];
+            if (!KEY.test(openingKey)) problem(`"${openingKey}" is not a key: lowercase letters, digits and dashes`, here);
+            if (!isRecord(opening)) {
+              problem('Expected an opening: its kind, from, and to', here);
+              continue;
+            }
+            for (const field of Object.keys(opening)) if (!['kind', 'from', 'to', 'name'].includes(field)) problem(`"${field}" is not part of an opening: it has kind, from, to and name`, [...here, field]);
+            const kind = OPENING_KINDS.includes(opening.kind as OpeningEntry['kind']) ? (opening.kind as OpeningEntry['kind']) : (problem(`"kind" is one of ${OPENING_KINDS.join(', ')}`, [...here, 'kind']), null);
+            const from = typeof opening.from === 'string' && seen.has(opening.from) ? opening.from : (problem('"from" is the key of a space of this home', [...here, 'from']), null);
+            const to = opening.to === undefined || opening.to === null || opening.to === 'outside' ? null : typeof opening.to === 'string' && seen.has(opening.to) ? opening.to : (problem('"to" is the key of a space of this home, or "outside"', [...here, 'to']), undefined);
+            const openingName = opening.name === undefined || opening.name === null ? null : text(opening.name, [...here, 'name'], 'its name');
+            if (kind && from && to !== undefined) openings[openingKey] = { kind, from, to, name: openingName };
+          }
+      }
+      if (name && timeZone) homes[key] = { name, type, picture, location, timeZone, address, country, policy, spaces, openings };
     }
 
   // The devices.
@@ -233,7 +307,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         problem('Expected a device: its type, name and how it is reached', path);
         continue;
       }
-      for (const field of Object.keys(entry)) if (!['type', 'name', 'identity', 'picture', 'paused', 'track', 'settings', 'connect'].includes(field)) problem(`"${field}" is not part of a device: it has type, name, identity, picture, paused, track, settings and connect`, [...path, field]);
+      for (const field of Object.keys(entry)) if (!['type', 'name', 'identity', 'picture', 'paused', 'track', 'place', 'based', 'settings', 'connect'].includes(field)) problem(`"${field}" is not part of a device: it has type, name, identity, picture, paused, track, place, based, settings and connect`, [...path, field]);
       const type = text(entry.type, [...path, 'type'], 'its type ("type: acme.plug")');
       const name = text(entry.name, [...path, 'name'], 'its name');
       const connect: ConnectEntry[] = [];
@@ -267,7 +341,23 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
       if (entry.paused !== undefined && typeof entry.paused !== 'boolean') problem('"paused" is true or false', [...path, 'paused']);
       const track = entry.track === undefined || entry.track === null ? null : trackDays(entry.track);
       if (track === undefined) problem('"track" is how long where it has been is kept: "30 days", from 1 day to 366', [...path, 'track']);
-      if (type && name) devices[key] = { type, name, identity: optional('identity'), picture: optional('picture'), paused: entry.paused === true, track: track ?? null, settings: scalars(entry.settings, [...path, 'settings']), connect };
+      // Where it stands — or, for one that moves, where it is based: a home, a space of it, perhaps an opening.
+      if (entry.place !== undefined && entry.based !== undefined) problem('A device stands somewhere, or is based somewhere: one of "place" and "based"', path);
+      const placeData = entry.place ?? entry.based;
+      const role = entry.based !== undefined ? 'based' : 'stands';
+      let place: PlaceEntry | null = null;
+      if (placeData !== undefined && placeData !== null) {
+        const at = [...path, entry.based !== undefined ? 'based' : 'place'];
+        if (!isRecord(placeData)) problem('Expected where it is: { home: home, space: kitchen }', at);
+        else {
+          for (const field of Object.keys(placeData)) if (!['home', 'space', 'opening'].includes(field)) problem(`"${field}" is not part of where it is: it has home, space and opening`, [...at, field]);
+          const homeKey = typeof placeData.home === 'string' && KEY.test(placeData.home) ? placeData.home : (problem('"home" is the key of a home', [...at, 'home']), null);
+          const spaceKey = placeData.space === undefined || placeData.space === null ? null : typeof placeData.space === 'string' && KEY.test(placeData.space) ? placeData.space : (problem('"space" is the key of a space of that home', [...at, 'space']), null);
+          const openingKey = placeData.opening === undefined || placeData.opening === null ? null : typeof placeData.opening === 'string' && KEY.test(placeData.opening) ? placeData.opening : (problem('"opening" is the key of an opening of that home', [...at, 'opening']), null);
+          if (homeKey) place = { home: homeKey, space: spaceKey, opening: openingKey, role };
+        }
+      }
+      if (type && name) devices[key] = { type, name, identity: optional('identity'), picture: optional('picture'), paused: entry.paused === true, track: track ?? null, place, settings: scalars(entry.settings, [...path, 'settings']), connect };
     }
 
   // The links.
@@ -340,6 +430,24 @@ function trackDays(data: unknown): number | undefined {
   return days >= 1 && days <= 366 ? days : undefined;
 }
 
+/** A home's spaces as data: each by its key, what it is, and the spaces inside it. */
+function spacesData(spaces: readonly SpaceEntry[]): Record<string, unknown> {
+  return Object.fromEntries(
+    spaces.map((space) => [
+      space.key,
+      {
+        kind: space.kind,
+        ...(space.name !== space.key ? { name: space.name } : {}),
+        ...(space.purpose !== null ? { purpose: space.purpose } : {}),
+        ...(space.level !== null ? { level: space.level } : {}),
+        ...(space.elevation !== null ? { elevation: space.elevation } : {}),
+        ...(space.height !== null ? { height: space.height } : {}),
+        ...(space.spaces.length ? { spaces: spacesData(space.spaces) } : {}),
+      },
+    ])
+  );
+}
+
 /** A document as data, in the order a person reads it: what a YAML file is written from. */
 export function documentToData(document: ConfigDocument): Record<string, unknown> {
   const devices = Object.fromEntries(
@@ -352,6 +460,15 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
         ...(device.picture !== null ? { picture: device.picture } : {}),
         ...(device.paused ? { paused: true } : {}),
         ...(device.track !== null ? { track: device.track === 1 ? '1 day' : `${device.track} days` } : {}),
+        ...(device.place !== null
+          ? {
+              [device.place.role === 'based' ? 'based' : 'place']: {
+                home: device.place.home,
+                ...(device.place.space !== null ? { space: device.place.space } : {}),
+                ...(device.place.opening !== null ? { opening: device.place.opening } : {}),
+              },
+            }
+          : {}),
         ...(Object.keys(device.settings).length ? { settings: device.settings } : {}),
         ...(device.connect.length
           ? {
@@ -412,6 +529,14 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
                   ...(address.length ? { address: Object.fromEntries(address) } : {}),
                   ...(home.country !== null ? { country: home.country } : {}),
                   ...(Object.keys(home.policy).length ? { policy: home.policy } : {}),
+                  ...(home.spaces.length ? { spaces: spacesData(home.spaces) } : {}),
+                  ...(Object.keys(home.openings).length
+                    ? {
+                        openings: Object.fromEntries(
+                          Object.entries(home.openings).map(([key, opening]) => [key, { kind: opening.kind, from: opening.from, to: opening.to ?? 'outside', ...(opening.name !== null ? { name: opening.name } : {}) }])
+                        ),
+                      }
+                    : {}),
                 },
               ];
             })

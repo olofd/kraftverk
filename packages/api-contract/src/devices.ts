@@ -1,4 +1,5 @@
 import type { Availability, CapabilityId, CategorySpec, ConnectionHealth, ConnectionId, DescriptionSource, DeviceKind, DeviceDescription, DeviceInfo, DeviceTypeMeta, DeviceTypeView, IntegrationInfo, LinkEnd, LinkId, LinkKind, NodeId, Placement, Reading, SavedDeviceId, ToolSpec, TransportDefinition, TypeSource, Value } from '@kraftverk/device-sdk';
+import type { PlacementView } from './homes.ts';
 
 /*
   The devices you have, as a home answers for them: a device with its
@@ -72,6 +73,8 @@ export type DeviceView = {
   pausedAt: string | null;
   /** How many days where it has been is kept, its owner's choice: 1 to 366. Null: none of it is. */
   trackDays: number | null;
+  /** Where it stands now — its main part — in which space of which home; null: nowhere said. */
+  placement: PlacementView | null;
   kind: DeviceKind;
   /** The integration its type is on: where its accounts are managed, and its own screens. Null for a type not installed. */
   integration: IntegrationInfo | null;

@@ -1,4 +1,4 @@
-import { ApiError, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-contract';
+import { ApiError, type ImportApplied, type ImportItem, type ImportPlan, type PlacementInput } from '@kraftverk/api-contract';
 import { checkBinding, checkRule, isAutomationRole, isGroupRole, keepsSo, useOf, useText, type AutomationDraft, type BoundPart, type GroupRole, type PartRole, type PartUse } from '@kraftverk/automation';
 import type { AutomationEngine, AutomationLibrary, AutomationRecord } from '@kraftverk/automation-engine';
 import {
@@ -31,7 +31,10 @@ import {
   type ConfigDocument,
   type ConnectEntry,
   type DeviceEntry,
+  type HomeEntry,
+  type PlaceEntry,
   type SecretValue,
+  type SpaceEntry,
   isSealed,
 } from '@kraftverk/home-file';
 import { HOME_RADIUS, isConstraintError, type ConnectionRecord, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
@@ -40,7 +43,7 @@ import type { Checked } from '../automations/drafts.ts';
 import { bySource, secretFieldsOf } from '../installed/connection-schema.ts';
 import type { TransportHost } from '../installed/transports.ts';
 import { unref } from '../timers.ts';
-import { homeVocabulary, type ConfigDeps } from './export.ts';
+import { homeVocabulary, placeOf, type ConfigDeps } from './export.ts';
 import { isKept, openKept } from './seal.ts';
 
 /*
@@ -186,6 +189,8 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
   // One device's or automation's own YAML, as its page shows it: read under a key made from its name, which an import matches by.
   if (read.holds) notes.push(`Read as one ${read.holds.kind === 'devices' ? 'device' : 'automation'}, known by "${read.holds.key}"${(read.holds.kind === 'devices' ? deps.catalog.byKey(read.holds.key) : deps.automations.byKey(read.holds.key)) ? ': the one you have by that key is changed to it' : ''}`);
   const secrets = new Map<string, string>();
+  /** Devices whose place, restoring, is left as it is. */
+  const placesLeft = new Set<string>();
 
   // Secrets: opened now — those sealed with a passphrase first, as sealing takes its time — or said to be needed.
   const unsealed = new Map<string, string | null>();
@@ -241,9 +246,13 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
         else if (!isSessionKept(spec) && (given || spec.required)) needs.secrets.push({ device: key, deviceName: entry.name, field, title: spec.title });
       }
     });
+    // Where it stands: a home, a space and an opening the file brings or you have. Restoring, one that is not is left as it is, and said.
+    const misplaced = entry.place ? placeProblem(deps, document, entry.place) : null;
+    if (misplaced && options.lenient) (notes.push(`${key}: where it stands is left as it is: ${misplaced}`), placesLeft.add(key));
+    else if (misplaced) problem(misplaced, ['devices', key, entry.place!.role === 'based' ? 'based' : 'place']);
     if (leftOut.has(key)) continue;
     const back = existing ? null : removedMatch(deps, key, entry);
-    devices.push(existing ? { key, name: entry.name, ...deviceChanges(deps, existing, entry, secrets, key) } : { key, name: entry.name, action: back ? 'restore' : 'add', changes: back ? [`brought back, with its history (removed ${back.removedAt!.slice(0, 10)})`] : [] });
+    devices.push(existing ? { key, name: entry.name, ...deviceChanges(deps, existing, placesLeft.has(key) ? { ...entry, place: null } : entry, secrets, key) } : { key, name: entry.name, action: back ? 'restore' : 'add', changes: back ? [`brought back, with its history (removed ${back.removedAt!.slice(0, 10)})`] : [] });
   }
   if (needs.passphrase) notes.push(needs.passphrase === 'missing' ? 'It carries secrets sealed with a passphrase: give it to open them' : 'The passphrase given does not open its secrets');
 
@@ -302,7 +311,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
   // Its homes, by key: added, or changed where the file says otherwise. What a file does not say — where one is, its address — is left as it is.
   const homes: ImportItem[] = Object.entries(document.homes).map(([key, entry]) => {
     const existing = deps.places.homeByKey(key);
-    if (!existing) return { key, name: entry.name, action: 'add', changes: [] };
+    if (!existing) return { key, name: entry.name, action: 'add', changes: spaceChanges(deps, null, entry) };
     const changes: string[] = [];
     if (existing.name !== entry.name) changes.push(`name: ${existing.name} → ${entry.name}`);
     if (existing.type !== entry.type) changes.push(`a ${entry.type}, not a ${existing.type}`);
@@ -314,6 +323,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     if ((Object.keys(address) as (keyof typeof address)[]).some((part) => address[part] !== null && address[part] !== existing.address[part])) changes.push('its address');
     if (entry.country !== null && entry.country !== existing.country) changes.push(`its country: ${entry.country}`);
     if (entry.picture !== null && entry.picture !== existing.pictureId) changes.push('its picture');
+    changes.push(...spaceChanges(deps, existing.id, entry));
     return changes.length ? { key, name: entry.name, action: 'change', changes } : { key, name: entry.name, action: 'same', changes };
   });
 
@@ -466,6 +476,7 @@ function deviceChanges(deps: ImportDeps, existing: DeviceRecord, entry: DeviceEn
   if (entry.picture !== existing.picture && entry.picture !== null) changes.push('its picture');
   if (entry.paused !== (existing.pausedAt !== null)) changes.push(entry.paused ? 'paused' : 'resumed');
   if (entry.track !== existing.trackDays) changes.push(entry.track === null ? 'where it has been: no longer kept, and forgotten' : `where it has been: kept ${entry.track === 1 ? '1 day' : `${entry.track} days`}`);
+  if (entry.place && !samePlace(placeOf(deps, existing.id), entry.place)) changes.push(`where it ${entry.place.role === 'based' ? 'is based' : 'stands'}: ${[entry.place.opening, entry.place.space, entry.place.home].filter(Boolean).join(', ')}`);
   const settings = [...new Set([...Object.keys(existing.config), ...Object.keys(entry.settings)])].filter((name) => existing.config[name] !== entry.settings[name] && entry.settings[name] !== undefined);
   if (settings.length) changes.push(`settings: ${settings.join(', ')}`);
   const ways = governed(deps, existing.id);
@@ -586,6 +597,7 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
         const given = { name: entry.name, type: entry.type, timeZone: entry.timeZone, address: address as typeof entry.address, ...picture, ...(location ? { location } : {}), ...(entry.country !== null ? { country: entry.country } : {}) };
         if (existing) (deps.places.updateHome(existing.id, given), applied.homes.changed.push(item.key));
         else (deps.places.addHome({ ...given, key: item.key }), applied.homes.added.push(item.key));
+        writeSpaces(deps, deps.places.homeByKey(item.key)!.id, entry);
       }
       // Devices: added, changed, removed — a bridge before what is reached through it.
       for (const item of bridgesFirst(view.devices, document)) {
@@ -598,7 +610,7 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
         if (item.action === 'same') continue;
         const entry = document.devices[item.key]!;
         each(entry.name, () => {
-          writeDevice(deps, item.key, entry, kept.secrets, choices.secrets ?? {});
+          writeDevice(deps, item.key, entry, kept.secrets, choices.secrets ?? {}, kept.by);
           (item.action === 'add' ? applied.devices.added : item.action === 'restore' ? applied.devices.restored : applied.devices.changed).push(item.key);
         });
       }
@@ -705,8 +717,79 @@ export async function startWritten(deps: ImportDeps, written: Written): Promise<
   for (const automation of written.touched) deps.engine.poke(automation);
 }
 
+/** A home's spaces in the order a file has them: each with its parent's key — none for the site — and its place among its siblings. */
+function flatSpaces(spaces: readonly SpaceEntry[], parent: string | null = null): { space: SpaceEntry; parent: string | null; position: number }[] {
+  return spaces.flatMap((space, position) => [{ space, parent, position }, ...flatSpaces(space.spaces, space.key)]);
+}
+
+/** How a home's spaces and openings would change, by key, in words. What the file does not have is left as it is. */
+function spaceChanges(deps: ImportDeps, homeId: string | null, entry: HomeEntry): string[] {
+  const keyOf = (id: string | null) => (id ? (deps.spaces.space(id)?.key ?? null) : null);
+  const [added, changed, opened, reopened] = [[], [], [], []] as string[][];
+  for (const { space, parent, position } of flatSpaces(entry.spaces)) {
+    const had = homeId ? deps.spaces.spaceByKey(homeId, space.key) : null;
+    if (!had) added!.push(space.name);
+    else if (had.name !== space.name || had.kind !== space.kind || had.purpose !== space.purpose || had.level !== space.level || had.elevation !== space.elevation || had.height !== space.height || had.position !== position || keyOf(had.parentId) !== (parent ?? 'site'))
+      changed!.push(space.name);
+  }
+  for (const [key, opening] of Object.entries(entry.openings)) {
+    const had = homeId ? deps.spaces.openingByKey(homeId, key) : null;
+    if (!had) opened!.push(opening.name ?? key);
+    else if (had.kind !== opening.kind || had.name !== opening.name || keyOf(had.fromId) !== opening.from || keyOf(had.toId) !== opening.to) reopened!.push(opening.name ?? key);
+  }
+  const said = (what: string, names: string[]) => (names.length ? [`${what}: ${names.join(', ')}`] : []);
+  return [...said('spaces added', added!), ...said('spaces changed', changed!), ...said('openings added', opened!), ...said('openings changed', reopened!)];
+}
+
+/** A home's spaces and openings written as its entry has them, by key: parents before what is inside them. */
+function writeSpaces(deps: ImportDeps, homeId: string, entry: HomeEntry): void {
+  const site = deps.spaces.site(homeId);
+  for (const { space, parent, position } of flatSpaces(entry.spaces)) {
+    const parentId = parent === null ? site.id : deps.spaces.spaceByKey(homeId, parent)!.id;
+    const given = { parentId, kind: space.kind, name: space.name, purpose: space.purpose, level: space.level, elevation: space.elevation, height: space.height, position };
+    const had = deps.spaces.spaceByKey(homeId, space.key);
+    if (had) deps.spaces.updateSpace(had.id, given);
+    else deps.spaces.addSpace({ ...given, key: space.key });
+  }
+  for (const [key, opening] of Object.entries(entry.openings)) {
+    const from = deps.spaces.spaceByKey(homeId, opening.from);
+    const to = opening.to === null ? null : deps.spaces.spaceByKey(homeId, opening.to);
+    if (!from || (opening.to !== null && !to)) continue;
+    const given = { fromId: from.id, toId: to?.id ?? null, kind: opening.kind, name: opening.name };
+    const had = deps.spaces.openingByKey(homeId, key);
+    if (had) deps.spaces.updateOpening(had.id, given);
+    else deps.spaces.addOpening({ ...given, key });
+  }
+}
+
+/** Whether a device stands where a file says: by keys. */
+function samePlace(now: PlaceEntry | null, said: PlaceEntry): boolean {
+  return now !== null && now.home === said.home && now.space === said.space && now.opening === said.opening && now.role === said.role;
+}
+
+/** Why where a file says a device stands is nowhere — no home, space or opening by those keys, in the file or here — or null. */
+function placeProblem(deps: ImportDeps, document: ConfigDocument, place: PlaceEntry): string | null {
+  const brought = document.homes[place.home];
+  const here = deps.places.homeByKey(place.home);
+  if (!brought && !here) return `There is no home "${place.home}", in the file or here`;
+  if (place.space !== null && !(brought && flatSpaces(brought.spaces).some((each) => each.space.key === place.space)) && !(here && deps.spaces.spaceByKey(here.id, place.space)))
+    return `${brought?.name ?? here!.name} has no space "${place.space}"`;
+  if (place.opening !== null && !brought?.openings[place.opening] && !(here && deps.spaces.openingByKey(here.id, place.opening))) return `${brought?.name ?? here!.name} has no opening "${place.opening}"`;
+  return null;
+}
+
+/** Where a file says a device stands, as a placement here: null when its home, space or opening is not here. */
+function spotOf(deps: ImportDeps, place: PlaceEntry): PlacementInput | null {
+  const home = deps.places.homeByKey(place.home);
+  if (!home) return null;
+  const space = place.space === null ? deps.spaces.site(home.id) : deps.spaces.spaceByKey(home.id, place.space);
+  const opening = place.opening === null ? null : deps.spaces.openingByKey(home.id, place.opening);
+  if (!space || (place.opening !== null && !opening)) return null;
+  return { spaceId: space.id, openingId: opening?.id ?? null, role: place.role };
+}
+
 /** A device added or changed as its entry says: what it is, how it is reached, its secrets, kept or given. */
-function writeDevice(deps: ImportDeps, key: string, entry: DeviceEntry, opened: Map<string, string>, given: Record<string, string>): void {
+function writeDevice(deps: ImportDeps, key: string, entry: DeviceEntry, opened: Map<string, string>, given: Record<string, string>, by: Actor): void {
   // Loaded when its plan was made: what it is, with its settings, is its code's to say.
   const type = deps.types.loaded(entry.type)!;
   const settings = validateConfig(type.config ?? { fields: {} }, entry.settings);
@@ -723,6 +806,9 @@ function writeDevice(deps: ImportDeps, key: string, entry: DeviceEntry, opened: 
   if (entry.picture !== null && entry.picture !== device.picture && kept) deps.catalog.setPicture(device.id, entry.picture);
   if (entry.paused !== (device.pausedAt !== null)) deps.catalog.setPaused(device.id, entry.paused);
   if (entry.track !== device.trackDays) deps.catalog.setTrack(device.id, entry.track);
+  // Where it stands, where the file says so and it is somewhere here: what it does not say leaves it where it is.
+  const spot = entry.place && !samePlace(placeOf(deps, device.id), entry.place) ? spotOf(deps, entry.place) : null;
+  if (spot) deps.spaces.place(device.id, spot, by);
 
   const ways = governed(deps, device.id);
   entry.connect.forEach((way, index) => {

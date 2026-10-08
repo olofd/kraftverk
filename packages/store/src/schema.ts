@@ -139,6 +139,108 @@ export const SCHEMA = `
   );
 
   /*
+    A home's spaces (docs/PLAN-WORLD-MODEL.md §8.5): a tree, its root the
+    home's site — where "in the cabin, room not said" stands — its parent
+    always in the same home, which the composite key makes so. A space may
+    have a frame of its own: an origin and a turn within its parent's, in
+    metres. Archived when it goes, since what stood there is history.
+  */
+  CREATE TABLE space (
+    id          TEXT PRIMARY KEY,
+    home_id     TEXT NOT NULL REFERENCES home (id),
+    parent_id   TEXT,
+    /* Its name in configuration: one space of a home to a key. The site has none in a file: it is the home. */
+    key         TEXT NOT NULL CHECK (key GLOB '[a-z0-9]*' AND key NOT GLOB '*[^a-z0-9-]*' AND length(key) <= 63),
+    kind        TEXT NOT NULL CHECK (kind IN ('site', 'building', 'floor', 'room', 'area', 'stairs', 'outdoor')),
+    /* What a room is for: icons, defaults, "every bathroom". NULL: not said. */
+    purpose     TEXT CHECK (purpose IN ('kitchen', 'living', 'dining', 'bedroom', 'children', 'guest', 'bathroom', 'toilet', 'hallway', 'office', 'laundry', 'storage', 'utility', 'garage', 'gym', 'sauna', 'other')),
+    name        TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 60),
+    icon        TEXT,
+    picture_id  TEXT REFERENCES media (id),
+    /* Its order among its siblings. */
+    position    INTEGER NOT NULL DEFAULT 0 CHECK (position >= 0),
+    /* A floor's: 0 the ground floor, -1 below it; and metres above the site's ground. */
+    level       INTEGER,
+    elevation   REAL,
+    /* Metres floor to ceiling. */
+    height      REAL CHECK (height > 0),
+    /* Its frame within its parent's: origin in metres, turn in degrees. NULL: its parent's. */
+    frame_x     REAL,
+    frame_y     REAL,
+    frame_turn  REAL CHECK (frame_turn >= 0 AND frame_turn < 360),
+    /* A GeoJSON Polygon in metres, in its own frame: not WGS 84. */
+    outline     TEXT,
+    created_at  TEXT NOT NULL,
+    removed_at  TEXT,
+    UNIQUE (home_id, id),
+    FOREIGN KEY (home_id, parent_id) REFERENCES space (home_id, id),
+    CHECK ((kind = 'site') = (parent_id IS NULL)),
+    CHECK ((kind = 'floor') = (level IS NOT NULL)),
+    CHECK (kind = 'floor' OR elevation IS NULL),
+    CHECK ((frame_x IS NULL) = (frame_y IS NULL) AND (frame_x IS NULL) = (frame_turn IS NULL))
+  );
+  CREATE UNIQUE INDEX space_site ON space (home_id) WHERE kind = 'site';
+  CREATE UNIQUE INDEX space_key ON space (home_id, key) WHERE removed_at IS NULL;
+  CREATE INDEX space_parent ON space (parent_id);
+
+  /*
+    Where two spaces meet, or a space meets the outside: a door, the stairs,
+    a window — what presence moves along. A device on one (a contact sensor,
+    a lock) is placed at it. Two between the same spaces are allowed: a room
+    may have two doors.
+  */
+  CREATE TABLE opening (
+    id          TEXT PRIMARY KEY,
+    home_id     TEXT NOT NULL,
+    key         TEXT NOT NULL CHECK (key GLOB '[a-z0-9]*' AND key NOT GLOB '*[^a-z0-9-]*' AND length(key) <= 63),
+    from_id     TEXT NOT NULL,
+    /* NULL: outside. */
+    to_id       TEXT,
+    kind        TEXT NOT NULL CHECK (kind IN ('door', 'opening', 'stairs', 'window', 'gate', 'garage-door', 'elevator')),
+    name        TEXT CHECK (length(name) <= 60),
+    /* A GeoJSON LineString in metres, in from_id's frame: where in the wall. */
+    shape       TEXT,
+    created_at  TEXT NOT NULL,
+    removed_at  TEXT,
+    FOREIGN KEY (home_id, from_id) REFERENCES space (home_id, id),
+    FOREIGN KEY (home_id, to_id) REFERENCES space (home_id, id),
+    CHECK (to_id IS NULL OR to_id <> from_id)
+  );
+  CREATE UNIQUE INDEX opening_key ON opening (home_id, key) WHERE removed_at IS NULL;
+
+  /*
+    Where a device stands (docs/PLAN-WORLD-MODEL.md §8.7), as an interval:
+    moving it closes one and opens the next, so a reading is the room's it
+    stood in when it was read. In a space — the site when no room is said —
+    perhaps at an opening, perhaps at coordinates in the space's frame.
+    "based": where something that moves belongs, a car's garage.
+  */
+  CREATE TABLE placement (
+    id          TEXT PRIMARY KEY,
+    device_id   TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+    part        TEXT NOT NULL DEFAULT 'main',
+    space_id    TEXT NOT NULL REFERENCES space (id),
+    opening_id  TEXT REFERENCES opening (id),
+    /* Metres in the space's frame; z above the floor. */
+    x           REAL,
+    y           REAL,
+    z           REAL,
+    /* Degrees in the space's frame: a radar's, a camera's. */
+    facing      REAL CHECK (facing >= 0 AND facing < 360),
+    role        TEXT NOT NULL DEFAULT 'stands' CHECK (role IN ('stands', 'based')),
+    since       TEXT NOT NULL,
+    until       TEXT,
+    actor_kind  TEXT NOT NULL CHECK (actor_kind IN ('person', 'agent', 'automation', 'node', 'integration', 'system')),
+    actor_id    TEXT,
+    actor_name  TEXT NOT NULL,
+    CHECK ((x IS NULL) = (y IS NULL)),
+    CHECK (z IS NULL OR x IS NOT NULL),
+    CHECK (until IS NULL OR until > since)
+  );
+  CREATE UNIQUE INDEX placement_now ON placement (device_id, part) WHERE until IS NULL;
+  CREATE INDEX placement_space ON placement (space_id, since);
+
+  /*
     The devices you added, and they stay added: removing one keeps its history
     until that is deleted too. A device keeps what it is — its description:
     parts, attributes, events — and what it has said about itself, so a device

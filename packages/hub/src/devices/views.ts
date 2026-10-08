@@ -1,4 +1,4 @@
-import type { ConnectionView, DeviceView, LinkView, PictureRef } from '@kraftverk/api-contract';
+import type { ConnectionView, DeviceView, LinkView, PictureRef, PlacementView } from '@kraftverk/api-contract';
 import { deviceCapabilities, MAIN_PART, methodOf, partsOf, type DeviceDescription, type DeviceSession, type NodeId, type SavedDeviceId } from '@kraftverk/device-sdk';
 import { activeConnection, toolsOf } from '@kraftverk/holder';
 
@@ -55,6 +55,8 @@ export class DeviceViews {
       master: () => NodeId;
       /** Every write to hardware refused, now. */
       readOnly: () => boolean;
+      /** Where a device stands now, its main part: in which space of which home. */
+      placement: (id: SavedDeviceId) => PlacementView | null;
     }
   ) {}
 
@@ -192,6 +194,7 @@ export class DeviceViews {
       removedAt: record.removedAt,
       pausedAt: record.pausedAt,
       trackDays: record.trackDays,
+      placement: record.removedAt ? null : this.deps.placement(record.id),
       kind: type?.kind ?? 'hardware',
       integration: this.deps.types.sourceOf(record.typeId)?.integration ?? null,
       meta: type
