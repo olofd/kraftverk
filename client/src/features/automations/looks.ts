@@ -50,6 +50,8 @@ export const KIND: Readonly<Record<StepKind, IconName>> = Object.fromEntries(STE
 export function useNow(on: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
+    // The time when it is switched on, not when the screen was first drawn: a countdown opened late starts where it is.
+    setNow(Date.now());
     if (!on) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);

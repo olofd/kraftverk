@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Platform } from 'react-native';
 import { Input, Text, XStack, YStack } from 'tamagui';
 
 /**
@@ -60,11 +61,13 @@ export function CodeInput({
         opacity={0}
         borderWidth={0}
         aria-label={label}
-        disabled={disabled}
+        // Read-only while it is sent, never disabled: disabled, it loses the focus and a phone's keyboard closes.
+        readOnly={disabled}
         value={digits}
         inputMode="numeric"
         keyboardType="number-pad"
-        autoComplete="one-time-code"
+        // What fills it from the message the code came in: a browser's and iOS's word, and Android's.
+        autoComplete={Platform.OS === 'android' ? 'sms-otp' : 'one-time-code'}
         textContentType="oneTimeCode"
         autoCorrect={false}
         onFocus={() => setFocused(true)}

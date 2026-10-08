@@ -1,4 +1,4 @@
-import { NeedsSignIn, needsSignIn, NotReachable, randomHex } from '@kraftverk/device-sdk';
+import { NeedsSignIn, NotReachable, randomHex } from '@kraftverk/device-sdk';
 
 import { cookieHeader, cookiesSet, keep, type Cookie } from './cookies.ts';
 import { authOptionsOf, type AuthOptions, type TrustedPhone } from './options.ts';
@@ -195,7 +195,8 @@ export class IcloudAuth {
       this.trace(`${init.method ?? 'GET'} ${new URL(url).pathname} → ${response.status}${id ? ` (Apple’s request ${id})` : ''}`);
     }
     if (signingIn && response.status === 503) throw new AppleBusy(Date.now() + BUSY_MS);
-    if (response.status >= 500) throw new NotReachable(`Apple answered ${response.status}: try again in a while`, 60_000);
+    // A 500 from an iCloud service is its "sign in again" (pyicloud, iCloud3): handed back, for whoever asked to say so.
+    if (response.status >= 500 && !(response.status === 500 && !signingIn)) throw new NotReachable(`Apple answered ${response.status}: try again in a while`, 60_000);
     return response;
   }
 
@@ -372,14 +373,25 @@ export class IcloudAuth {
    * the password and the trust token. A second factor asked for again is
    * `NeedsSignIn`: a person signs in on the account's page.
    */
-  async resume(accountName: string, password: string, now = Date.now()): Promise<IcloudAccount> {
-    const held = await this.validate();
+  /**
+   * Carries the session on with no person: what was kept, or a sign-in with
+   * the password and the trust token — `fresh`, without first asking whether
+   * what was kept still holds, when an iCloud service has just said it does
+   * not. A second factor asked for again is `NeedsSignIn`: a person signs in
+   * on the account's page.
+   */
+  async resume(accountName: string, password: string, now = Date.now(), options: { fresh?: boolean } = {}): Promise<IcloudAccount> {
+    const held = options.fresh ? null : await this.validate();
     if (held && held.trusted && !held.challenged) {
       if (!renewalDue(this.kept, now)) return held;
-      // Renewed while the trust still holds: a sign-in with it, no code. Put off, not failed, when Apple will not now.
+      /*
+        Renewed while the trust still holds: a sign-in with it, no code. A
+        renewal that fails — Apple refusing for now, or even asking for a code
+        — is put off, never the end of a session that still works: it is
+        tried again later, and the trust's end is warned of a week before.
+      */
       this.trace('renewing the sign-in, past half its trust');
       return this.#signInAgain(accountName, password, now).catch((error: unknown) => {
-        if (needsSignIn(error)) throw error;
         this.trace(`renewal put off: ${(error as Error).message}`);
         return held;
       });
@@ -396,7 +408,11 @@ export class IcloudAuth {
    */
   async #signInAgain(accountName: string, password: string, now: number): Promise<IcloudAccount> {
     const after = this.kept.signInAfter ?? 0;
-    if (after > now) throw new AppleBusy(after);
+    if (after > now) {
+      // Apple refused lately: waited out. Or only signed in a moment ago: not asked again so soon, and said so plainly.
+      if ((this.kept.failures ?? 0) > 0) throw new AppleBusy(after);
+      throw new NotReachable(`Signed in to iCloud only a moment ago: tried again in about ${Math.max(1, Math.round((after - now) / 60_000))} minutes`, after - now);
+    }
     this.kept.signInAfter = now + SIGN_IN_EVERY_MS;
     this.onChange(this.kept);
     try {

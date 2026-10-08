@@ -209,6 +209,31 @@ describe('signing in, as setup does', () => {
     expect(lines.join('\n')).not.toContain(PASSWORD);
   });
 
+  test('Apple’s "not now" is kept for the Apple ID: a sign-in pressed again before then asks Apple nothing', async () => {
+    const apple = playedApple();
+    apple.control.busy = true;
+    const ctx = contextFor(apple.fetch);
+    await signInAction.run(ctx, {});
+    const asked = apple.asked.length;
+    apple.control.busy = false;
+    const again = await signInAction.run(ctx, {});
+    expect(again).toMatchObject({ ok: false, retryAt: expect.any(String) });
+    expect(apple.asked.length).toBe(asked);
+  });
+
+  test('a code turn Apple fails to answer for a moment keeps its question; an answer whose sign-in is lost ends, asking Apple nothing', async () => {
+    const apple = playedApple();
+    const ctx = contextFor(apple.fetch);
+    const first = await signInAction.run(ctx, {});
+    const carry = { ...first.ask!.carry };
+    apple.control.busy = true;
+    const hiccup = await signInAction.run(ctx, { ...carry, code: DEVICE_CODE });
+    expect(hiccup).toMatchObject({ ok: false, ask: { schema: { fields: { code: {} } } } });
+    const asked = apple.asked.length;
+    expect(await signInAction.run(ctx, { code: DEVICE_CODE })).toEqual({ ok: false, detail: 'That sign-in has ended: sign in again' });
+    expect(apple.asked.length).toBe(asked);
+  });
+
   test('terms Apple asks to be accepted are the person’s to accept: said so, never accepted here', async () => {
     const apple = playedApple();
     apple.control.terms = true;
@@ -308,6 +333,14 @@ describe('a session carried on', () => {
     await auth.resume(APPLE_ID, PASSWORD, later);
     expect(signIns()).toBe(before + 1);
     expect(renewalDue(auth.state, later)).toBe(false);
+  });
+
+  test('a renewal Apple answers with a code is put off, never the end of a session that still works', async () => {
+    const { apple, state } = await trustedSession();
+    apple.control.distrust = true;
+    const auth = new IcloudAuth(apple.fetch, state);
+    const later = Date.now() + 46 * 86_400_000;
+    expect(await auth.resume(APPLE_ID, PASSWORD, later)).toMatchObject({ dsid: DSID, trusted: true });
   });
 
   test('Apple refusing a silent sign-in is waited out, twice as long each time, and the wait outlives a restart', async () => {

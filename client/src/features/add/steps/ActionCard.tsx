@@ -123,6 +123,10 @@ export function Asked({ result, busy, onAnswer, onRestart }: { result: SetupActi
   const schema = result.ask!.schema;
   // What it already knows — a code remembered — filled in, to be kept or changed. Kept when it is asked again: a code mistyped by one digit is corrected, not typed anew.
   const [answers, setAnswers] = useState<ConfigValues>(() => configDefaults(schema));
+  // A new code on its way (asked afresh, not refused): the old one's digits are cleared.
+  useEffect(() => {
+    if (result.ok) setAnswers(configDefaults(result.ask!.schema));
+  }, [result]);
   const ready = isComplete(schema, answers);
   return (
     <YStack gap="$3">

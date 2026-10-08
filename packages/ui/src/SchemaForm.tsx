@@ -101,6 +101,8 @@ function Field({
   const submit = useRef(onSubmit);
   submit.current = onSubmit;
   const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The code last sent: the same digits are never sent twice by themselves — a vendor counts wrong ones.
+  const sent = useRef<string | null>(null);
   useEffect(() => () => void (pending.current && clearTimeout(pending.current)), []);
 
   if (field.type === 'string' && presentationOf(field) === 'code') {
@@ -117,7 +119,12 @@ function Field({
             onChange(name, digits);
             if (pending.current) clearTimeout(pending.current);
             // Seen whole for a breath, then sent: a mistyped last digit can still be caught.
-            if (digits.length === length) pending.current = setTimeout(() => submit.current?.(), 300);
+            if (digits.length === length && digits !== sent.current) {
+              pending.current = setTimeout(() => {
+                sent.current = digits;
+                submit.current?.();
+              }, 300);
+            }
           }}
         />
       </YStack>
@@ -242,6 +249,8 @@ function Field({
         // `type`, not `secureTextEntry`: Tamagui's web Input discards the latter,
         // which left every secret field — a device's local key — readable on screen.
         type={secret && !shown ? 'password' : 'text'}
+        // On a phone the mask is this, not `type`: Tamagui's native Input drops `type` once a keyboard is named.
+        secureTextEntry={secret && !shown}
         multiline={multiline}
         numberOfLines={multiline ? 4 : undefined}
         onSubmitEditing={multiline ? undefined : onSubmit}
@@ -250,7 +259,7 @@ function Field({
         autoComplete={field.type === 'string' && field.autocomplete ? field.autocomplete : secret ? 'off' : undefined}
         autoCapitalize="none"
         autoCorrect={false}
-        keyboardType={numeric ? 'numeric' : 'default'}
+        keyboardType={numeric ? 'numeric' : undefined}
         placeholder={
           secret
             ? hasSecret

@@ -62,12 +62,13 @@ const TOOLS: Readonly<Record<string, ToolSpec>> = {
 
 /** What Find My said of it, as readings: each as of when Find My located it. */
 function readingsOf(device: FoundDevice, answeredAt: string): Reading[] {
-  const at = device.location?.at ?? answeredAt;
-  const position = device.location ? { latitude: device.location.latitude, longitude: device.location.longitude, accuracy: device.location.accuracy ?? null } : null;
+  const location = device.location;
   return [
-    { key: 'position', value: position, at },
+    // Where it is — and when Find My knows nowhere (off, no signal), nothing said: where it last was stands, as of when.
+    ...(location ? [{ key: 'position', value: { latitude: location.latitude, longitude: location.longitude, accuracy: location.accuracy ?? null }, at: location.at }] : []),
     { key: 'charge', value: device.battery, at: answeredAt },
-    { key: 'charging', value: device.batteryStatus === null || device.batteryStatus === 'Unknown' ? null : device.batteryStatus === 'Charging', at: answeredAt },
+    // On the charger: charging, or full on it ("Charged").
+    { key: 'charging', value: device.batteryStatus === null || device.batteryStatus === 'Unknown' ? null : device.batteryStatus === 'Charging' || device.batteryStatus === 'Charged', at: answeredAt },
     { key: 'owner', value: device.owner, at: answeredAt },
   ];
 }

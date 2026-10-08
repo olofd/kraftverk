@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { isPosition, type DeviceSession, type HttpChannel, type OpenConnection, type SetupContext } from '@kraftverk/device-sdk';
+import { isPosition, memoryKept, type DeviceSession, type HttpChannel, type OpenConnection, type SetupContext } from '@kraftverk/device-sdk';
 import { bridgedConnection, checkDeviceTypeContract, fakeConnection, simulatorContext } from '@kraftverk/device-sdk/testing';
 
 import account, { Family, MOVING_EVERY_MS, STILL_EVERY_MS } from '../src/account.ts';
@@ -40,6 +40,7 @@ async function signedInAccount(control: { trustDays?: number } = {}) {
     secrets: { get: (field: string) => (field === 'password' ? PASSWORD : null) },
     http: (url: string, init?: RequestInit) => apple.fetch(url, init),
     log: { info: () => {}, warn: () => {}, error: () => {} },
+    kept: memoryKept(),
   } as unknown as SetupContext;
   const first = await action.run(setup, {});
   const done = await action.run(setup, { ...first.ask!.carry, code: DEVICE_CODE });
@@ -145,6 +146,21 @@ describe('how often Find My is asked', () => {
     family.took([phone(59.318, 20)]);
     expect(family.interval()).toBe(MOVING_EVERY_MS * 2);
     link.close();
+  });
+
+  test('a device opened before its account first heard from Find My — a restart — waits for that answer; asks at once are one ask', async () => {
+    let asked = 0;
+    let answer: (devices: FoundDevice[]) => void = () => {};
+    const family = new Family({ devices: () => (asked++, new Promise((resolve) => (answer = resolve))), playSound: async () => {}, lostMode: async () => {} });
+    const ticking = family.poll();
+    const linking = family.link('p', () => {});
+    answer([phone(59.3)]);
+    await ticking;
+    expect((await linking).device()?.name).toBe('Phone');
+    expect(asked).toBe(1);
+
+    // Heard, and not there: gone, said so.
+    expect(await family.link('gone', () => {}).catch((error: Error) => error.message)).toBe('That device is no longer in this account’s Find My');
   });
 
   test('a device nobody added moving asks nothing more of anyone’s battery', () => {

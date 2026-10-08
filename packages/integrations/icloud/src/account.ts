@@ -6,6 +6,7 @@ import {
   identityOf,
   MAIN_PART,
   needsSignIn,
+  NotReachable,
   type Bridge,
   type DeviceContext,
   type DeviceSession,
@@ -46,6 +47,8 @@ const MOVED_METRES = 200;
 const LOW_BATTERY = 33;
 /** How often the account looks at what is due. */
 const TICK_MS = 30_000;
+/** How soon an ask that failed is tried again, when Apple says nothing of when. */
+const RETRY_MS = 60_000;
 
 /** What Find My says, from wherever it is said: Apple, or a simulation. */
 export type FindMySource = {
@@ -67,6 +70,8 @@ export class Family implements Bridge<FindMyLink> {
   #fetchedAt = 0;
   #error: string | null = null;
   #movingUntil = 0;
+  /** The ask out now, when one is. */
+  #asking: Promise<void> | null = null;
 
   constructor(private readonly source: FindMySource) {}
 
@@ -84,16 +89,29 @@ export class Family implements Bridge<FindMyLink> {
     return low ? MOVING_EVERY_MS * 2 : MOVING_EVERY_MS;
   }
 
-  /** Asks Find My when it is due, or now. One that fails says why to every device, and is tried at its next turn. */
+  /**
+   * Asks Find My when it is due, or now. One ask at a time: asked again while
+   * one is out, the answer to that one is waited for. One that fails says why
+   * to every device, and is tried at its next turn.
+   */
   async poll(now = Date.now(), force = false): Promise<void> {
+    if (this.#asking) return this.#asking;
     if (!force && now - this.#fetchedAt < this.interval()) return;
     this.#fetchedAt = now;
-    try {
-      this.took(await this.source.devices(), now);
-    } catch (thrown) {
-      this.failed(errorOf(thrown));
-      throw thrown;
-    }
+    this.#asking = (async () => {
+      try {
+        this.took(await this.source.devices(), now);
+      } catch (thrown) {
+        this.failed(errorOf(thrown));
+        // Asked again when it says it may be — Apple busy for half an hour — or in a minute, not at the next quarter's turn.
+        const retryMs = thrown instanceof NotReachable && thrown.retryAfterMs !== null ? thrown.retryAfterMs : RETRY_MS;
+        this.#fetchedAt = now + retryMs - this.interval();
+        throw thrown;
+      }
+    })().finally(() => {
+      this.#asking = null;
+    });
+    return this.#asking;
   }
 
   /** Find My's list, as it answered: each device kept, whether one someone added moved noted, and each told. */
@@ -123,6 +141,9 @@ export class Family implements Bridge<FindMyLink> {
   }
 
   async link(id: string, changed: () => void): Promise<FindMyLink> {
+    // Opened before the account's first answer — a restart opens every device at once: that answer is waited for, not taken as "gone".
+    if (this.#answeredAt === null) await this.poll(Date.now(), true).catch(() => undefined);
+    if (this.#answeredAt === null) throw new Error(`Its account has not heard from Find My yet${this.#error ? `: ${this.#error}` : ''}`);
     if (!this.#devices.has(id)) throw new Error('That device is no longer in this account’s Find My');
     const told = this.#linked.get(id) ?? new Set();
     told.add(changed);
@@ -189,20 +210,33 @@ function findMyOver(auth: IcloudAuth, appleId: string, password: string): { sour
   let account: IcloudAccount | null = null;
   let findMy: FindMy | null = null;
   let checkedAt = 0;
-  const signedIn = async (again = false): Promise<FindMy> => {
+  const signedIn = async (again: false | 'check' | 'fresh' = false): Promise<FindMy> => {
     if (findMy && !again && Date.now() - checkedAt < SIGN_IN_CHECK_MS) return findMy;
-    account = await auth.resume(appleId, password);
+    try {
+      account = await auth.resume(appleId, password, Date.now(), { fresh: again === 'fresh' });
+    } catch (error) {
+      // The six-hourly look failing for a moment — Apple not answering — is no reason to drop a session that works.
+      if (findMy && !again && error instanceof NotReachable) {
+        checkedAt = Date.now();
+        return findMy;
+      }
+      throw error;
+    }
     checkedAt = Date.now();
     findMy = new FindMy(auth, account);
     return findMy;
   };
-  // Once more when iCloud says the session is gone: signed in again with the password and the trust token.
+  /*
+    Once more when iCloud says the session is gone: looked at again (401,
+    421), or — when Find My itself turned it away (450, 500) — signed in
+    afresh with the password and the trust token, bound by the same waits.
+  */
   const withSession = async <T>(call: (findMy: FindMy) => Promise<T>): Promise<T> => {
     try {
       return await call(await signedIn());
     } catch (error) {
-      if (!(error instanceof AppleRefused) || ![401, 421, 450].includes(error.status)) throw error;
-      return call(await signedIn(true));
+      if (!(error instanceof AppleRefused) || ![401, 421, 450, 500].includes(error.status)) throw error;
+      return call(await signedIn(error.status === 450 || error.status === 500 ? 'fresh' : 'check'));
     }
   };
   return {

@@ -146,7 +146,8 @@ export function FormStep({ flow, step, onNext, onBack, onNamed }: StepProps & { 
             secretsSet={flow.secrets}
             disabled={busy}
             onChange={(name, value) => setValues((before) => ({ ...before, [name]: value }))}
-            onSubmit={() => (canContinue ? (primary ? signIn() : proceed()) : undefined)}
+            // Enter is the button: held while the vendor says "not now", as the button is.
+            onSubmit={() => (canContinue && !waiting ? (primary ? signIn() : proceed()) : undefined)}
           />
         </Card>
       ) : null}

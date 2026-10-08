@@ -69,7 +69,8 @@ export function deviceOf(raw: RawDevice, members: Readonly<Record<string, string
           longitude: location.longitude as number,
           accuracy: typeof location.horizontalAccuracy === 'number' ? location.horizontalAccuracy : null,
           at: new Date(typeof location.timeStamp === 'number' ? location.timeStamp : Date.now()).toISOString(),
-          old: location.isOld === true,
+          // A place Find My gives no time for is not taken as fresh: when it was is not known.
+          old: location.isOld === true || typeof location.timeStamp !== 'number',
         }
       : null,
     owner: typeof raw.prsId === 'string' ? (members[raw.prsId] ?? null) : null,
@@ -93,7 +94,7 @@ export class FindMy {
 
   async #post(call: string, body: object): Promise<unknown> {
     const response = await this.auth.request(this.#url(call), { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) });
-    if (response.status === 421 || response.status === 450 || response.status === 401) throw new AppleRefused(response.status, 'iCloud no longer takes this session: sign in again');
+    if ([401, 421, 450, 500].includes(response.status)) throw new AppleRefused(response.status, 'iCloud no longer takes this session: sign in again');
     if (!response.ok) throw new AppleRefused(response.status, `Find My refused (${response.status})`);
     return response.json();
   }

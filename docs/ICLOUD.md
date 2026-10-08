@@ -136,7 +136,8 @@ password only when it is gone, and usually needs only the code.
   - `renewedAt`;
   - `nextSignInAt` and `attempts`: the backoff, which so outlives a restart.
 - **Keep-alive.**
-  - `validate` every 30 minutes, between Find My's polls.
+  - The sign-in looked at every six hours (`validate`), between Find My's
+    polls, which keep its cookies rolling themselves.
   - Every answer's cookies are kept, as they are today, through `onChange`
     into the session secret.
 - **Renewal.** Past half the trust's life, sign in once with the password, the

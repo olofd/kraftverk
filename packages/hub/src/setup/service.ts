@@ -380,8 +380,8 @@ export class SetupService {
     const result = await withTimeout(action.run(this.#setupContext(draft, signal, held), { ...input, ...(answering ? last.carry : {}) }), action.label, ACTION_TIMEOUT_MS).catch(
       (error: unknown) => ({ ok: false, detail: (error as Error).message }) as SetupActionResult
     );
-    // Which way it went, in the setup's trail: what it said, never what it was given.
-    console.info(`[setup] ${draft.type.id} ${actionId}${answering ? ' (answered)' : ''}: ${result.ok ? 'ok' : 'refused'}${result.ask ? ', asks again' : ''}${result.waiting ? ', waits' : ''} — ${result.detail}`);
+    // Which way it went, in the setup's trail — never what it was given, and why only when refused: what it found (names, a family's devices) stays out of logs.
+    console.info(`[setup] ${draft.type.id} ${actionId}${answering ? ' (answered)' : ''}: ${result.ok ? 'ok' : 'refused'}${result.ask ? ', asks again' : ''}${result.waiting ? ', waits' : ''}${result.ok ? '' : ` — ${result.detail}`}`);
     // Kept here for its next turn, never sent: the app sees what to ask, not what was carried.
     if (result.ask) {
       // Answered by its fields, or by one of its other ways.

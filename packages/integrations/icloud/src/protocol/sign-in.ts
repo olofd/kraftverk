@@ -1,4 +1,4 @@
-import type { ConfigValues, SetupAction, SetupActionResult, SetupContext } from '@kraftverk/device-sdk';
+import { NotReachable, type ConfigValues, type SetupAction, type SetupActionResult, type SetupContext } from '@kraftverk/device-sdk';
 
 import { AppleBusy, AppleRefused, IcloudAuth, stateOf, type IcloudAccount, type IcloudFetch } from './auth.ts';
 import { FindMy } from './findmy.ts';
@@ -86,12 +86,12 @@ const optionsLine = (options: AuthOptions) =>
 /** Signed in: who is in its Find My — or why nothing can be. */
 async function signedIn(ctx: SetupContext, auth: IcloudAuth, account: IcloudAccount): Promise<SetupActionResult> {
   const session = { session: JSON.stringify(auth.state) };
+  // An account with no Find My is nothing to add: said so, here, rather than as an empty account later.
   if (!account.findMe) {
     ctx.log.info('iCloud: signed in, but Find My is not offered on the web');
     return {
-      ok: true,
+      ok: false,
       detail: 'Signed in, but Apple offers no Find My for this Apple ID on the web: turn Find My on on your iPhone (Settings › your name › Find My) — and, if Advanced Data Protection is on, Access iCloud Data on the Web — then sign in again.',
-      suggestedConfig: session,
     };
   }
   const devices = await new FindMy(auth, account).devices().catch(() => null);
@@ -117,8 +117,13 @@ export const signIn: SetupAction = {
     const appleId = typed || (typeof ctx.connection.appleId === 'string' ? ctx.connection.appleId.trim() : '');
     const password = (typeof input.password === 'string' && input.password ? input.password : null) ?? ctx.secrets.get('password');
     const fetcher: IcloudFetch = (url, init) => ctx.http(url, init);
-    const auth = new IcloudAuth(fetcher, stateOf(typeof input.state === 'string' ? input.state : null), undefined, (line) => ctx.log.info(`iCloud: ${line}`));
+    // A later turn carries its sign-in half made; a first starts from what the way kept — its trust token, so signing in again may need no code.
+    const auth = new IcloudAuth(fetcher, stateOf(typeof input.state === 'string' ? input.state : ctx.secrets.get('session')), undefined, (line) => ctx.log.info(`iCloud: ${line}`));
     const talk = talkIn(input.talk);
+    // Apple's "not now" for this Apple ID, kept here, not only on a screen: no sign-in asks it sooner, however it is pressed.
+    const busyKey = `sign-in-after:${appleId.toLowerCase()}`;
+    // An answer with nothing it answers — what began it lost — ends here, rather than beginning a new sign-in and a new code.
+    if (typeof input.state !== 'string' && (input.code !== undefined || input.again !== undefined || input.sendTo !== undefined)) return { ok: false, detail: 'That sign-in has ended: sign in again' };
     try {
       // A later turn: the code — or another way to have one.
       if (typeof input.state === 'string') {
@@ -139,6 +144,11 @@ export const signIn: SetupAction = {
 
       // The first turn: the password, then a second factor if Apple asks for one.
       if (!appleId || !password) return { ok: false, detail: 'Type your Apple ID and its password' };
+      const notBefore = Number(ctx.kept.get(busyKey) ?? 0);
+      if (notBefore > Date.now()) {
+        const busy = new AppleBusy(notBefore);
+        return { ok: false, detail: busy.message, retryAt: new Date(notBefore).toISOString() };
+      }
       // Kept in the setup as soon as they are typed: a code asked for next is given with them in hand.
       const given = { appleId, password };
       if ((await auth.signIn(appleId, password)) === 'signed-in') {
@@ -166,10 +176,14 @@ export const signIn: SetupAction = {
       return { ...question(auth, { ...first, devices: false, sentTo: phone }, phone.mode === 'voice' ? `Apple is calling ${phone.number}` : `Apple sent a code to ${phone.number}`), suggestedConfig: given };
     } catch (error) {
       ctx.log.warn(`iCloud: ${(error as Error).message}`);
-      // Apple refusing for a while: said with when, and the button held until then.
-      if (error instanceof AppleBusy) return { ok: false, detail: error.message, retryAt: new Date(error.until).toISOString() };
-      // A code not taken: the question stays, to be answered again or another way.
-      if (error instanceof AppleRefused && talk && [400, 401, 409].includes(error.status)) return question(auth, talk, error.message, false);
+      // Apple refusing for a while: said with when, kept, and the button held until then.
+      if (error instanceof AppleBusy) {
+        ctx.kept.set(busyKey, String(error.until));
+        const retryAt = new Date(error.until).toISOString();
+        return talk ? { ...question(auth, talk, error.message, false), retryAt } : { ok: false, detail: error.message, retryAt };
+      }
+      // A code not taken, or Apple not answering for a moment: the question stays, to be answered again or another way.
+      if (talk && ((error instanceof AppleRefused && [400, 401, 409].includes(error.status)) || error instanceof NotReachable)) return question(auth, talk, error.message, false);
       return { ok: false, detail: (error as Error).message };
     }
   },
