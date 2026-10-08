@@ -27,6 +27,7 @@ export type * from './setup.ts';
 export type * from './live.ts';
 export type * from './nodes.ts';
 export type * from './homes.ts';
+export type * from './media.ts';
 export type * from './automations.ts';
 export type * from './configuration.ts';
 export type * from './assistant.ts';

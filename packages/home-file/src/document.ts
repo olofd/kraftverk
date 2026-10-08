@@ -100,6 +100,8 @@ export type HomeTypeEntry = (typeof HOME_TYPES)[number];
 export type HomeEntry = {
   name: string;
   type: HomeTypeEntry;
+  /** A photo of it, by its picture's id: the SHA-256 of its bytes, kept beside the file. Null: none. */
+  picture: string | null;
   /** Where it is, and its geofence in metres; the radius null when the file does not say. Null: not said. */
   location: (Coordinates & { radius: number | null }) | null;
   /** IANA: what its clocks keep, and what an automation for it keeps time in unless it says its own. */
@@ -184,7 +186,8 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         problem('Expected a home: its name, type, where it is and its time zone', path);
         continue;
       }
-      for (const field of Object.keys(entry)) if (!['name', 'type', 'location', 'time zone', 'address', 'country', 'policy'].includes(field)) problem(`"${field}" is not part of a home: it has name, type, location, time zone, address, country and policy`, [...path, field]);
+      for (const field of Object.keys(entry)) if (!['name', 'type', 'picture', 'location', 'time zone', 'address', 'country', 'policy'].includes(field)) problem(`"${field}" is not part of a home: it has name, type, picture, location, time zone, address, country and policy`, [...path, field]);
+      const picture = entry.picture === undefined || entry.picture === null ? null : typeof entry.picture === 'string' && /^[0-9a-f]{64}$/.test(entry.picture) ? entry.picture : (problem('"picture" is a picture\'s id: the SHA-256 of its bytes, in hex', [...path, 'picture']), null);
       const name = text(entry.name, [...path, 'name'], 'its name');
       const type = entry.type === undefined ? 'house' : HOME_TYPES.includes(entry.type as HomeTypeEntry) ? (entry.type as HomeTypeEntry) : (problem(`"type" is one of ${HOME_TYPES.join(', ')}`, [...path, 'type']), 'house');
       const timeZone = text(entry['time zone'], [...path, 'time zone'], 'its time zone: "Europe/Stockholm"');
@@ -215,7 +218,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         if (!isRecord(entry.policy)) problem('"policy" is a map of the home\'s values', [...path, 'policy']);
         else for (const [value, each] of Object.entries(entry.policy)) typeof each === 'number' ? (policy[value] = each) : problem('A policy value is a number', [...path, 'policy', value]);
       }
-      if (name && timeZone) homes[key] = { name, type, location, timeZone, address, country, policy };
+      if (name && timeZone) homes[key] = { name, type, picture, location, timeZone, address, country, policy };
     }
 
   // The devices.
@@ -403,6 +406,7 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
                 {
                   name: home.name,
                   type: home.type,
+                  ...(home.picture !== null ? { picture: home.picture } : {}),
                   ...(home.location ? { location: { latitude: home.location.latitude, longitude: home.location.longitude, ...(home.location.radius !== null ? { radius: home.location.radius } : {}) } } : {}),
                   'time zone': home.timeZone,
                   ...(address.length ? { address: Object.fromEntries(address) } : {}),

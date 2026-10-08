@@ -7,7 +7,7 @@ import type { Rule } from '@kraftverk/automation';
 import { ApiError } from '@kraftverk/api-contract';
 import { AutomationLibrary } from '@kraftverk/automation-engine';
 import type { AuditRecord } from '@kraftverk/device-sdk';
-import { FamilyStore, PlaceStore, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
+import { FamilyStore, MediaStore, PlaceStore, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
 import { policyOf } from '../src/homes/homes.ts';
 
 import { drafts } from '../src/automations/drafts.ts';
@@ -88,6 +88,7 @@ beforeEach(() => {
     pending: new PendingPlans(),
     family: new FamilyStore(db),
     places,
+    media: new MediaStore(db),
     policyOf: policyOf(db),
     sealing: testSealing,
     kept: plainSecrets,

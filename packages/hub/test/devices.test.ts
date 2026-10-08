@@ -34,7 +34,7 @@ describe('a device you have', () => {
     expect((await t.home.timeline()).find((entry) => entry.kind === 'device.renamed')?.summary).toBe('Renamed "Hall lamp" to "Shed"');
   });
 
-  test('shows the picture its owner picks, for every app: one of its type’s; a photo of its own is not yet', async () => {
+  test('shows the picture its owner picks, for every app: one of its type’s, or a photo of its own once it is kept', async () => {
     const lamp = await aLamp();
     expect((await t.home.devices.get(lamp.id)).picture).toBe('type:0');
     expect((await t.home.devices.setPicture(lamp.id, 'type:2')).picture).toBe('type:2');
@@ -42,8 +42,19 @@ describe('a device you have', () => {
     // Kept for the device, and in the list as well.
     expect((await t.home.devices.list()).find((device) => device.id === lamp.id)?.picture).toBe('type:2');
     expect((await refusal(t.home.devices.setPicture(lamp.id, 'type:x' as never))).kind).toBe('invalid');
-    const own = await refusal(t.home.devices.setPicture(lamp.id, 'own:front-door'));
-    expect([own.kind, own.message]).toEqual(['invalid', 'A picture of its own cannot be added yet']);
+    const id = 'ab'.repeat(32);
+    const own = await refusal(t.home.devices.setPicture(lamp.id, `own:${id}`));
+    expect([own.kind, own.message]).toEqual(['invalid', 'That picture is not kept here: add it first']);
+    // A picture is kept by its content, checked for what it says it is: these are a PNG's first bytes, and some.
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    expect((await refusal(t.home.media.add({ type: 'image/jpeg', width: 4, height: 3, data: png }))).message).toBe('Those bytes are not image/jpeg');
+    const photo = await t.home.media.add({ type: 'image/png', width: 4, height: 3, data: png });
+    expect(photo).toMatchObject({ type: 'image/png', bytes: 11, width: 4, height: 3 });
+    expect(photo.id).toMatch(/^[0-9a-f]{64}$/);
+    // Kept once, however often it is added.
+    expect((await t.home.media.add({ type: 'image/png', width: 4, height: 3, data: png })).id).toBe(photo.id);
+    expect((await t.home.devices.setPicture(lamp.id, `own:${photo.id}`)).picture).toBe(`own:${photo.id}`);
+    expect((await t.home.media.get(photo.id))?.data).toEqual(png);
     // Back to the first: nothing kept.
     expect((await t.home.devices.setPicture(lamp.id, 'type:0')).picture).toBe('type:0');
   });

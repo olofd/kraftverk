@@ -1,8 +1,9 @@
-import { ApiError, type ConfigExported, type ConfigExportRequest, type ImportAnswers, type ImportApplied, type ImportPlan } from '@kraftverk/api-contract';
+import { ApiError, type MediaType, type ConfigExported, type ConfigExportRequest, type ImportAnswers, type ImportApplied, type ImportPlan } from '@kraftverk/api-contract';
 import type { Actor, AuditRecord } from '@kraftverk/device-sdk';
 import { Confirmations, subjectOf } from '@kraftverk/gateway';
 import type { LiveBus } from '@kraftverk/holder';
 import { checkDocument, configJsonSchema, PASSPHRASE_MIN, readConfig, writeConfig, type Vocabulary } from '@kraftverk/home-file';
+import { looksLike, mediaIdOf } from '@kraftverk/store';
 
 import { exportConfig, homeVocabulary } from './export.ts';
 import { keptPlan, PendingPlans, planImport, startWritten, writeImport, type ImportDeps, type ImportMode } from './import.ts';
@@ -181,6 +182,26 @@ export class Configuration {
     const issues = checkDocument(document, this.vocabulary(), { hasSecret: () => true });
     if (issues.length) throw new Error(`What the home holds does not check, so the copy kept before is left as it is: ${issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ')}`);
     return writeConfig(document, { heading: KEPT_HEADING });
+  }
+
+  /**
+   * Every picture a home or a device names, with its bytes: what is kept
+   * beside the file, so a reset keeps them as it keeps the file.
+   */
+  pictures(): { id: string; type: MediaType; width: number; height: number; data: Uint8Array }[] {
+    const named = new Set<string>();
+    for (const home of this.#deps.places.homes()) if (home.pictureId) named.add(home.pictureId);
+    for (const device of this.#deps.catalog.list()) if (device.picture?.startsWith('own:')) named.add(device.picture.slice(4));
+    return [...named].flatMap((id) => {
+      const kept = this.#deps.media.get(id);
+      const data = kept ? this.#deps.media.data(id) : null;
+      return kept && data ? [{ id, type: kept.type, width: kept.width, height: kept.height, data }] : [];
+    });
+  }
+
+  /** Pictures kept beside the file, put back before a restore names them: each by the id its bytes make. */
+  keepPictures(pictures: readonly { type: MediaType; width: number; height: number; data: Uint8Array }[]): void {
+    for (const picture of pictures) if (looksLike(picture.type, picture.data)) this.#deps.media.put(mediaIdOf(picture.data), picture);
   }
 
   /** Forgets every plan made and not applied, with the secrets each opened: the home is stopping. */

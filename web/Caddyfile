@@ -74,6 +74,16 @@
 }
 
 (api) {
+	# A picture is two at most; nothing else comes near one.
+	handle /api/media {
+		request_body {
+			max_size 2MB
+		}
+		reverse_proxy {$KRAFTVERK_API:kraftverk:3333} {
+			header_up X-Kraftverk-Exposure {args[0]}
+			header_up X-Kraftverk-Client-Ip {client_ip}
+		}
+	}
 	handle /api/* {
 		request_body {
 			max_size 1MB

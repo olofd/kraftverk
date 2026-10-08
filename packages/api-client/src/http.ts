@@ -59,7 +59,17 @@ const KIND_OF = new Map<number, ApiErrorKind>(
 
 type Body = { error?: string; problems?: string[]; needsConfirmation?: string; loginRequired?: boolean; setupRequired?: boolean };
 
-type How = { query?: Record<string, unknown>; verdict?: boolean; text?: boolean; signal?: AbortSignal; within?: number };
+type How = {
+  query?: Record<string, unknown>;
+  verdict?: boolean;
+  text?: boolean;
+  signal?: AbortSignal;
+  within?: number;
+  /** A body of bytes, not JSON: a picture. */
+  raw?: { type: string; data: Uint8Array };
+  /** An answer of bytes, with its type: a picture; null when there is none (404). */
+  bytes?: boolean;
+};
 
 /** One request to a server's API: JSON in and out, the session cookie, the app's header, a refusal as the hub's `ApiError`. */
 function requests(options: HttpApiOptions) {
@@ -94,8 +104,13 @@ function requests(options: HttpApiOptions) {
     try {
       response = await send(url, {
         method,
-        headers: { Accept: 'application/json', [CLIENT_HEADER]: 'app', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...options.headers },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        headers: {
+          Accept: how.bytes ? '*/*' : 'application/json',
+          [CLIENT_HEADER]: 'app',
+          ...(how.raw ? { 'Content-Type': how.raw.type } : body === undefined ? {} : { 'Content-Type': 'application/json' }),
+          ...options.headers,
+        },
+        ...(how.raw ? { body: how.raw.data } : body === undefined ? {} : { body: JSON.stringify(body) }),
         ...(signal ? { signal } : {}),
         // The session is a cookie; it only travels if asked to.
         credentials: 'include',
@@ -109,6 +124,8 @@ function requests(options: HttpApiOptions) {
       if (timeout) clearTimeout(timeout);
     }
     options.onReach?.(true);
+    if (how.bytes && response.ok) return { type: response.headers.get('Content-Type') ?? 'application/octet-stream', data: new Uint8Array(await response.arrayBuffer()) } as T;
+    if (how.bytes && response.status === 404) return null as T;
     const text = await response.text();
     const parsed = text ? (() => { try { return JSON.parse(text) as unknown; } catch { return null; } })() : null;
     if (response.ok) return (how.text ? text : parsed) as T;
@@ -228,6 +245,10 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
     world: () => get('/world'),
     vocabulary: () => get('/vocabulary'),
     family: () => get('/family'),
+    media: {
+      add: (picture) => call('POST', '/media', undefined, { query: { width: picture.width, height: picture.height }, raw: { type: picture.type, data: picture.data } }),
+      get: (id) => call('GET', `/media/${encodeURIComponent(id)}`, undefined, { bytes: true }),
+    },
     homes: {
       list: async (options = {}) => (await get<{ homes: HomeView[] }>('/homes', options.removed ? { removed: 'true' } : undefined)).homes,
       add: (input) => call('POST', '/homes', input),

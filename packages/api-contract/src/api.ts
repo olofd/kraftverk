@@ -11,6 +11,7 @@ import type { MapRegionAsk, MapRegionsView } from './map.ts';
 import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, FamilyElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
 import type { HomeInput, HomeView } from './homes.ts';
+import type { MediaData, MediaView, NewMedia } from './media.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, FamilyView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
 import type { CheckOutcome, DraftView, FoundAt, FoundView, HeldSetupInput, KeptView, SaveInput, SightingView } from './setup.ts';
 
@@ -248,6 +249,12 @@ export interface KraftverkApi {
     update(id: string, changes: Partial<HomeInput>): Promise<HomeView>;
     /** Left, or moved from: archived, what was recorded there kept. Never its last. */
     remove(id: string): Promise<HomeView>;
+  };
+  /** Pictures, by their content (docs/PLAN-WORLD-MODEL.md §8.12): kept, then named by a home or a device. */
+  media: {
+    add(picture: NewMedia): Promise<MediaView>;
+    /** Its bytes; null when it is not kept. */
+    get(id: string): Promise<MediaData | null>;
   };
   /** The nodes of the home: its master, and every node that follows it. */
   nodes: {

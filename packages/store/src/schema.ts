@@ -68,6 +68,25 @@ export const SCHEMA = `
   );
 
   /*
+    Pictures (docs/PLAN-WORLD-MODEL.md §8.12) — of homes and devices — kept by
+    their content: the id is the SHA-256 of their bytes, so one is kept once.
+    No SVG: a picture never runs script. Collected when nothing shows one.
+  */
+  CREATE TABLE media (
+    id       TEXT PRIMARY KEY CHECK (length(id) = 64),
+    type     TEXT NOT NULL CHECK (type IN ('image/webp', 'image/jpeg', 'image/png')),
+    bytes    INTEGER NOT NULL CHECK (bytes BETWEEN 1 AND 2097152),
+    width    INTEGER NOT NULL CHECK (width > 0),
+    height   INTEGER NOT NULL CHECK (height > 0),
+    added_at TEXT NOT NULL
+  );
+  /* The bytes apart, so listing pictures never reads them. */
+  CREATE TABLE media_data (
+    media_id TEXT PRIMARY KEY REFERENCES media (id) ON DELETE CASCADE,
+    data     BLOB NOT NULL
+  );
+
+  /*
     Places on the globe the family names (docs/PLAN-WORLD-MODEL.md §8.4): its
     homes, and the zones it knows — school, work. Presence asks both the same
     way, so the geofence lives here once; a home has more, beside it in home.
@@ -111,6 +130,7 @@ export const SCHEMA = `
     id          TEXT PRIMARY KEY,
     kind        TEXT NOT NULL DEFAULT 'home' CHECK (kind = 'home'),
     type        TEXT NOT NULL CHECK (type IN ('house', 'apartment', 'cabin', 'boat', 'caravan', 'office', 'other')),
+    picture_id  TEXT REFERENCES media (id),
     /* Degrees from north to the home's y axis: where its floor plans sit on the globe. */
     bearing     REAL NOT NULL DEFAULT 0 CHECK (bearing >= 0 AND bearing < 360),
     /* Its order among the family's homes. */
@@ -137,16 +157,19 @@ export const SCHEMA = `
     description_source TEXT NOT NULL DEFAULT 'type' CHECK (description_source IN ('type', 'device')),
     info        TEXT,
     /*
-      Which picture it shows, its owner's pick: one of its type's (type:N), or
-      — not built yet — a photo of its own (own:<id>). NULL: its type's first.
+      Which picture it shows, its owner's pick: one of its type's (its Nth,
+      picture_type), or a photo of its own (picture_id). Both NULL: its type's
+      first.
     */
-    picture     TEXT CHECK (picture IS NULL OR picture GLOB 'type:[0-9]*' OR picture GLOB 'own:?*'),
+    picture_type INTEGER CHECK (picture_type >= 0),
+    picture_id  TEXT REFERENCES media (id),
     added_at    TEXT NOT NULL,
     /* When its owner paused it: kept, and not reached, until resumed. NULL: it is not paused. */
     paused_at   TEXT,
     /* How many days where it has been is kept (the track table), its owner's choice. NULL: none of it is kept. */
     track_days  INTEGER CHECK (track_days IS NULL OR track_days BETWEEN 1 AND 366),
-    removed_at  TEXT
+    removed_at  TEXT,
+    CHECK (picture_type IS NULL OR picture_id IS NULL)
   );
   CREATE UNIQUE INDEX device_identity ON device (identity) WHERE identity IS NOT NULL AND removed_at IS NULL;
   CREATE UNIQUE INDEX device_key ON device (key) WHERE removed_at IS NULL;

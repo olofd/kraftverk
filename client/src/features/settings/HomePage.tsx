@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
+import { Image } from 'react-native';
 import { Button, Input, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import { describeError, PATHS, type HomeView } from '@kraftverk/api-client';
@@ -9,6 +10,7 @@ import { Card, Chips, haptic, Row, SectionLabel } from '@kraftverk/ui';
 import { ErrorText } from '../../components/ErrorText';
 import { Screen } from '../../components/Screen';
 import { confirmAction } from '../../platform/confirm';
+import { pickPicture, usePicture } from '../../platform/picture';
 import { useFamily } from '../../state/FamilyProvider';
 import { HomeLocation } from './HomeLocation';
 import { HOME_TYPES, homeLine } from './Homes';
@@ -63,6 +65,21 @@ export function HomePage() {
     }
   };
 
+  const picture = usePicture(api, home?.pictureId ?? null);
+  const [adding, setAdding] = useState(false);
+  const addPicture = async () => {
+    setProblem(null);
+    setAdding(true);
+    try {
+      const picked = await pickPicture();
+      if (picked) await change({ pictureId: (await api.media.add(picked)).id });
+    } catch (err) {
+      setProblem(describeError(err) || 'The picture could not be added');
+    } finally {
+      setAdding(false);
+    }
+  };
+
   const zoneValid = isTimeZone(zone.trim());
   return (
     <Screen back="Homes" backTo={PATHS.settings.homes} title={home?.name ?? 'A home'} subtitle={home ? homeLine(home) : undefined}>
@@ -70,6 +87,20 @@ export function HomePage() {
       {!home && !problem ? <Spinner color="$accent" /> : null}
       {home ? (
         <>
+          <YStack gap="$2">
+            {picture ? <Image source={{ uri: picture }} accessibilityLabel={`A picture of ${home.name}`} style={{ width: '100%', height: 200, borderRadius: 16 }} resizeMode="cover" /> : null}
+            <XStack gap="$2" flexWrap="wrap">
+              <Button size="$3" minHeight={44} disabled={adding} onPress={() => void addPicture()}>
+                {adding ? <Spinner size="small" /> : home.pictureId ? 'Another picture' : 'Add a picture'}
+              </Button>
+              {home.pictureId ? (
+                <Button size="$3" minHeight={44} chromeless color="$muted" onPress={() => void change({ pictureId: null })}>
+                  Take it away
+                </Button>
+              ) : null}
+            </XStack>
+          </YStack>
+
           <YStack gap="$2">
             <SectionLabel>What it is</SectionLabel>
             <Card gap="$3">

@@ -341,6 +341,11 @@ export function followerApi(h: Follower): KraftverkApi {
     },
 
     family: async () => (await h.kept(HEARD.family, () => home.family())).answer,
+    /** Pictures are the master's: kept there, and fetched from there. */
+    media: {
+      add: (picture) => home.media.add(picture),
+      get: (id) => home.media.get(id),
+    },
     /** The family's homes, as the master last said them; changed on the master, and its list kept here again. */
     homes: {
       list: async (options = {}) => (await h.kept(HEARD.homes(Boolean(options.removed)), () => home.homes.list(options))).answer,

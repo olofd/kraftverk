@@ -141,10 +141,11 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
        */
       async setPicture(id, picture) {
         const device = deviceOf(id);
-        if (!PICTURE_REF.test(picture)) throw new ApiError('invalid', 'type:0, type:1… (or, one day, own:<id>)');
-        if (picture.startsWith('own:')) throw new ApiError('invalid', 'A picture of its own cannot be added yet');
+        if (!PICTURE_REF.test(picture)) throw new ApiError('invalid', 'type:0, type:1…, or own:<the id of a picture added>');
+        if (picture.startsWith('own:') && !hub.media.get(picture.slice(4))) throw new ApiError('invalid', 'That picture is not kept here: add it first');
         // Its type's first is what it shows with no pick: kept as none.
         catalog.setPicture(device.id, picture === FIRST_PICTURE ? null : picture);
+        if (device.picture?.startsWith('own:')) hub.media.collect();
         record('device.picture', 'device', device.id, `Showed picture ${Number(picture.slice(5)) + 1} of "${device.name}"`, { picture });
         changed();
         return viewOf(device.id);

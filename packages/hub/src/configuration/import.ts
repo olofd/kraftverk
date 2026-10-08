@@ -313,6 +313,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     const address = entry.address;
     if ((Object.keys(address) as (keyof typeof address)[]).some((part) => address[part] !== null && address[part] !== existing.address[part])) changes.push('its address');
     if (entry.country !== null && entry.country !== existing.country) changes.push(`its country: ${entry.country}`);
+    if (entry.picture !== null && entry.picture !== existing.pictureId) changes.push('its picture');
     return changes.length ? { key, name: entry.name, action: 'change', changes } : { key, name: entry.name, action: 'same', changes };
   });
 
@@ -579,7 +580,10 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
         const existing = deps.places.homeByKey(item.key);
         const location = entry.location ? { latitude: entry.location.latitude, longitude: entry.location.longitude, radius: entry.location.radius ?? existing?.location?.radius ?? HOME_RADIUS } : undefined;
         const address = existing ? Object.fromEntries(Object.entries(entry.address).map(([part, value]) => [part, value ?? existing.address[part as keyof typeof entry.address]])) : entry.address;
-        const given = { name: entry.name, type: entry.type, timeZone: entry.timeZone, address: address as typeof entry.address, ...(location ? { location } : {}), ...(entry.country !== null ? { country: entry.country } : {}) };
+        // A picture is set only when it is kept here: one the file names but did not bring is said, and left.
+        const picture = entry.picture !== null && deps.media.get(entry.picture) ? { pictureId: entry.picture } : {};
+        if (entry.picture !== null && !('pictureId' in picture)) applied.notes.push(`${entry.name}'s picture did not come with the file: add it again on its page`);
+        const given = { name: entry.name, type: entry.type, timeZone: entry.timeZone, address: address as typeof entry.address, ...picture, ...(location ? { location } : {}), ...(entry.country !== null ? { country: entry.country } : {}) };
         if (existing) (deps.places.updateHome(existing.id, given), applied.homes.changed.push(item.key));
         else (deps.places.addHome({ ...given, key: item.key }), applied.homes.added.push(item.key));
       }
@@ -714,7 +718,9 @@ function writeDevice(deps: ImportDeps, key: string, entry: DeviceEntry, opened: 
   if (back) device = deps.catalog.update(deps.catalog.restore(back.id)!.id, { key, name: entry.name, config, ...(entry.identity !== null ? { identity: entry.identity } : {}) })!;
   else if (!device) device = deps.catalog.add({ typeId: entry.type, name: entry.name, identity: entry.identity, config, description: type.describe(config as never), key });
   else device = deps.catalog.update(device.id, { name: entry.name, config, ...(entry.identity !== null ? { identity: entry.identity } : {}) })!;
-  if (entry.picture !== null && entry.picture !== device.picture) deps.catalog.setPicture(device.id, entry.picture);
+  // A photo of its own is set only when it is kept here; one the file did not bring is left as it is.
+  const kept = entry.picture === null || !entry.picture.startsWith('own:') || deps.media.get(entry.picture.slice(4)) !== null;
+  if (entry.picture !== null && entry.picture !== device.picture && kept) deps.catalog.setPicture(device.id, entry.picture);
   if (entry.paused !== (device.pausedAt !== null)) deps.catalog.setPaused(device.id, entry.paused);
   if (entry.track !== device.trackDays) deps.catalog.setTrack(device.id, entry.track);
 

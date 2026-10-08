@@ -11,6 +11,7 @@ import {
   HomeSettings,
   NodeSettings,
   PlaceStore,
+  MediaStore,
   FamilyStore,
   NodeStore,
   ConnectionStore,
@@ -117,6 +118,8 @@ export class Hub {
   readonly settings: NodeSettings;
   /** The family's homes and zones. */
   readonly places: PlaceStore;
+  /** Pictures, by their content. */
+  readonly media: MediaStore;
   /** The family this database is, and its master. */
   readonly family: FamilyStore;
   /** This node: what its database is, and what holds the ways it holds. */
@@ -232,6 +235,7 @@ export class Hub {
     // And its first home, made with it: a family has a home from the start.
     this.places = new PlaceStore(db);
     ensureFirstHome(this.places);
+    this.media = new MediaStore(db);
     // The policy is a home's: the first one's, until devices stand in homes.
     const policyHome = new HomeSettings(db, () => ensureFirstHome(this.places).id);
     this.policy = { values: () => policyValues(policyHome), set: (name, value) => setPolicyValue(policyHome, name, value) };
@@ -268,6 +272,7 @@ export class Hub {
       checked: this.drafts.checked,
       family: this.family,
       places: this.places,
+      media: this.media,
       policyOf: policyOf(db),
       sealing: options.sealing,
       kept: options.secrets,

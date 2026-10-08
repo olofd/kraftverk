@@ -40,6 +40,7 @@ export function homesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'homes'> 
 
       async add(input) {
         checked(input);
+        if (input.pictureId && !hub.media.get(input.pictureId)) throw new ApiError('invalid', 'That picture is not kept here: add it first');
         if (input.key !== undefined && (!KEY.test(input.key) || hub.places.homeKeyTaken(input.key))) throw new ApiError('conflict', `"${input.key}" is not a free key: lowercase letters, digits and dashes, and not another home's`);
         const home = hub.places.addHome({ ...input, name: input.name.trim(), location: input.location ?? null });
         record('home.added', home, `Added the home "${home.name}"`);
@@ -49,6 +50,7 @@ export function homesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'homes'> 
       async update(id, changes) {
         const was = homeOf(id);
         checked(changes);
+        if (changes.pictureId && !hub.media.get(changes.pictureId)) throw new ApiError('invalid', 'That picture is not kept here: add it first');
         if (changes.key !== undefined && changes.key !== was.key && (!KEY.test(changes.key) || hub.places.homeKeyTaken(changes.key, was.id))) throw new ApiError('conflict', `"${changes.key}" is not a free key: lowercase letters, digits and dashes, and not another home's`);
         const location = changes.location === undefined ? undefined : changes.location ? { ...changes.location, radius: changes.location.radius ?? HOME_RADIUS } : null;
         const home = hub.places.updateHome(was.id, { ...changes, ...(changes.name !== undefined ? { name: changes.name.trim() } : {}), ...(location !== undefined ? { location } : {}) })!;
@@ -56,6 +58,8 @@ export function homesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'homes'> 
         const said = location === undefined ? [] : [location ? 'where it is' : 'forgot where it is'];
         const others = Object.keys(changes).filter((key) => key !== 'location');
         record('home.changed', home, `Changed the home "${home.name}": ${[...others, ...said].join(', ') || 'nothing'}`);
+        // A picture taken away, or another put in its place: one nothing shows is let go.
+        if (changes.pictureId !== undefined && was.pictureId !== home.pictureId) hub.media.collect();
         return homeView(home);
       },
 

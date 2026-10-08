@@ -1,9 +1,12 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 
-import { ApiError, type ImportPlan } from '@kraftverk/api-contract';
+import { ApiError, type ImportPlan, type MediaType } from '@kraftverk/api-contract';
 import type { Actor } from '@kraftverk/device-sdk';
 import type { Configuration, ImportMode, Restored } from '@kraftverk/hub';
+
+/** How a picture's file ends, by what it is. */
+const EXTENSION: Record<MediaType, string> = { 'image/webp': 'webp', 'image/jpeg': 'jpg', 'image/png': 'png' };
 
 import { asideName } from './aside.ts';
 
@@ -34,7 +37,7 @@ export class ConfigSnapshot {
   restored: Restored | null = null;
 
   constructor(
-    private configuration: Pick<Configuration, 'kept' | 'restore' | 'plan'>,
+    private configuration: Pick<Configuration, 'kept' | 'restore' | 'plan' | 'pictures' | 'keepPictures'>,
     /** Where it is kept: `config/kraftverk.yaml` beside the database (`besideDatabase`). */
     private file: string
   ) {}
@@ -143,8 +146,37 @@ export class ConfigSnapshot {
       copyFileSync(this.file, `${this.file}.1`);
     }
     renameSync(writing, this.file);
+    this.#keepPictures();
     this.#writtenAt = new Date().toISOString();
     return true;
+  }
+
+  /** Where the pictures it names are kept: `media/` beside it, each as `<id>.<width>x<height>.<ext>`. */
+  get #media(): string {
+    return join(dirname(this.file), 'media');
+  }
+
+  /** Every picture the configuration names, written beside it once; one it no longer names, let go. */
+  #keepPictures(): void {
+    const pictures = this.configuration.pictures();
+    mkdirSync(this.#media, { recursive: true });
+    const named = new Set(pictures.map((picture) => `${picture.id}.${picture.width}x${picture.height}.${EXTENSION[picture.type]}`));
+    for (const picture of pictures) {
+      const file = join(this.#media, `${picture.id}.${picture.width}x${picture.height}.${EXTENSION[picture.type]}`);
+      if (!existsSync(file)) writeFileSync(file, picture.data, { mode: 0o600 });
+    }
+    for (const name of readdirSync(this.#media)) if (!named.has(name)) rmSync(join(this.#media, name), { force: true });
+  }
+
+  /** The pictures kept beside it, read back: what a restore puts in place before the file names them. */
+  #picturesKept(): { type: MediaType; width: number; height: number; data: Uint8Array }[] {
+    if (!existsSync(this.#media)) return [];
+    return readdirSync(this.#media).flatMap((name) => {
+      const found = /^[0-9a-f]{64}\.(\d+)x(\d+)\.(webp|jpg|png)$/.exec(name);
+      if (!found) return [];
+      const type = (Object.entries(EXTENSION).find(([, extension]) => extension === found[3])?.[0] ?? 'image/png') as MediaType;
+      return [{ type, width: Number(found[1]), height: Number(found[2]), data: new Uint8Array(readFileSync(join(this.#media, name))) }];
+    });
   }
 
   /**
@@ -157,6 +189,8 @@ export class ConfigSnapshot {
     const copy = asideName(`${this.file.replace(/\.yaml$/, '')}.before-`, '.yaml');
     copyFileSync(this.file, copy);
     this.#forgetOldCopies();
+    // The pictures first: the file names them by their content.
+    this.configuration.keepPictures(this.#picturesKept());
     this.restored = await this.configuration.restore(readFileSync(copy, 'utf8'), copy);
     return this.restored;
   }

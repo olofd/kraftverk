@@ -322,6 +322,7 @@ export function configJsonSchema(vocabulary: Vocabulary): Schema {
           properties: {
             name: { type: 'string', minLength: 1, maxLength: 60 },
             type: { enum: ['house', 'apartment', 'cabin', 'boat', 'caravan', 'office', 'other'], default: 'house' },
+            picture: { type: 'string', pattern: '^[0-9a-f]{64}$', description: 'A photo of it: its picture’s id, the SHA-256 of its bytes.' },
             location: {
               type: 'object',
               description: 'Where it is, in degrees: what sunrise and sunset are told by. And its geofence, in metres.',

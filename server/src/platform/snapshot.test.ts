@@ -96,6 +96,38 @@ describe('the configuration kept beside the database', () => {
     hub.catalog.remove(attic.id);
   });
 
+  test('the pictures it names are kept beside it, let go when it no longer names them, and put back before a restore', async () => {
+    const folder = join(dir, 'pictures');
+    mkdirSync(folder, { recursive: true });
+    const kept = join(folder, 'kraftverk.yaml');
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7]);
+    let named = [{ id: 'cd'.repeat(32), type: 'image/png' as const, width: 4, height: 3, data: png }];
+    let text = 'kraftverk: 10\n# one\n';
+    const put: { type: string; width: number; height: number; data: Uint8Array }[][] = [];
+    const snapshot = new ConfigSnapshot(
+      {
+        kept: async () => text,
+        pictures: () => named,
+        keepPictures: (pictures) => void put.push([...pictures]),
+        restore: async (_, from) => ({ at: new Date().toISOString(), from, applied: null, problems: [] }),
+        plan: async () => {
+          throw new Error('not asked');
+        },
+      },
+      kept
+    );
+    await snapshot.write();
+    expect(readdirSync(join(folder, 'media'))).toEqual([`${'cd'.repeat(32)}.4x3.png`]);
+    // Put back, as it was, before a restore reads the file that names it.
+    await snapshot.restore();
+    expect(put).toEqual([[{ type: 'image/png', width: 4, height: 3, data: png }]]);
+    // Named no more: let go.
+    named = [];
+    text = 'kraftverk: 10\n# two\n';
+    await snapshot.write();
+    expect(readdirSync(join(folder, 'media'))).toEqual([]);
+  });
+
   test('a restore is made from a copy set aside first, of which the last five are kept', async () => {
     const folder = join(dir, 'copies');
     mkdirSync(folder, { recursive: true });
@@ -107,6 +139,8 @@ describe('the configuration kept beside the database', () => {
     const restoring = new ConfigSnapshot(
       {
         kept: async () => '',
+        pictures: () => [],
+        keepPictures: () => {},
         restore: async (text, from) => {
           heard.push(text);
           return { at: new Date().toISOString(), from, applied: null, problems: [] };
@@ -144,6 +178,8 @@ describe('the configuration kept beside the database', () => {
             writes += 1;
             return 'kraftverk: 4\n# an empty home\n';
           },
+          pictures: () => [],
+          keepPictures: () => {},
           restore: async (_, from) => {
             if (fails) throw new Error('A value this version does not know');
             return { at: new Date().toISOString(), from, applied: { devices: { added: ['lamp'], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, family: false, homes: { added: [], changed: [] }, policy: [], notes: [] }, problems: [] };

@@ -25,6 +25,8 @@ export type HomeRecord = {
   name: string;
   type: HomeType;
   icon: string | null;
+  /** A photo of it, by its media id; null: none. */
+  pictureId: string | null;
   /** Null: its people have not said where it is. */
   location: PlaceLocation | null;
   /** IANA: what its clocks keep. */
@@ -60,11 +62,12 @@ type Row = {
   created_at: string;
   removed_at: string | null;
   type: HomeType;
+  picture_id: string | null;
   bearing: number;
   position: number;
 };
 
-const HOME_SELECT = 'SELECT p.*, h.type, h.bearing, h.position FROM place p JOIN home h ON h.id = p.id';
+const HOME_SELECT = 'SELECT p.*, h.type, h.picture_id, h.bearing, h.position FROM place p JOIN home h ON h.id = p.id';
 
 /** How big a geofence is when nobody said: a house and its garden. */
 export const HOME_RADIUS = 150;
@@ -75,6 +78,7 @@ const toRecord = (row: Row): HomeRecord => ({
   name: row.name,
   type: row.type,
   icon: row.icon,
+  pictureId: row.picture_id,
   location: row.latitude !== null && row.longitude !== null ? { latitude: row.latitude, longitude: row.longitude, radius: row.radius ?? HOME_RADIUS } : null,
   timeZone: row.time_zone,
   address: { street: row.street, postalCode: row.postal_code, locality: row.locality, region: row.region },
@@ -131,7 +135,7 @@ export class PlaceStore {
     const position = this.#db.query<{ next: number }, []>('SELECT coalesce(max(position) + 1, 0) AS next FROM home').get()!.next;
     this.#db.transaction(() => {
       this.#writePlace(id, { ...input, key }, new Date().toISOString(), null);
-      this.#db.query('INSERT INTO home (id, type, bearing, position) VALUES (?, ?, ?, ?)').run(id, input.type, input.bearing ?? 0, position);
+      this.#db.query('INSERT INTO home (id, type, picture_id, bearing, position) VALUES (?, ?, ?, ?, ?)').run(id, input.type, input.pictureId ?? null, input.bearing ?? 0, position);
     })();
     return this.home(id)!;
   }
@@ -163,7 +167,7 @@ export class PlaceStore {
           next.country,
           id
         );
-      this.#db.query('UPDATE home SET type = ?, bearing = ? WHERE id = ?').run(next.type, next.bearing, id);
+      this.#db.query('UPDATE home SET type = ?, picture_id = ?, bearing = ? WHERE id = ?').run(next.type, next.pictureId, next.bearing, id);
     })();
     return this.home(id);
   }
@@ -181,7 +185,7 @@ export class PlaceStore {
         if (this.home(home.id)) this.updateHome(home.id, home);
         else {
           this.#writePlace(home.id, home, home.createdAt, home.removedAt);
-          this.#db.query('INSERT INTO home (id, type, bearing, position) VALUES (?, ?, ?, ?)').run(home.id, home.type, home.bearing, home.position);
+          this.#db.query('INSERT INTO home (id, type, picture_id, bearing, position) VALUES (?, ?, ?, ?, ?)').run(home.id, home.type, home.pictureId, home.bearing, home.position);
         }
         this.#db.query('UPDATE home SET position = ? WHERE id = ?').run(home.position, home.id);
         this.#db.query('UPDATE place SET removed_at = ? WHERE id = ?').run(home.removedAt, home.id);

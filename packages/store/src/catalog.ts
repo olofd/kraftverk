@@ -43,7 +43,7 @@ export type DeviceRecord = {
   descriptionSource: DescriptionSource;
   /** What it has said about itself. Null until it has. */
   info: DeviceInfo | null;
-  /** Which picture it shows, its owner's pick: `type:N`, one day `own:<id>`. Null: its type's first. */
+  /** Which picture it shows, its owner's pick: `type:N`, or a photo of its own, `own:<media id>`. Null: its type's first. */
   picture: string | null;
 };
 
@@ -57,12 +57,17 @@ type Row = {
   description: string;
   description_source: DescriptionSource;
   info: string | null;
-  picture: string | null;
+  picture_type: number | null;
+  picture_id: string | null;
   added_at: string;
   paused_at: string | null;
   track_days: number | null;
   removed_at: string | null;
 };
+
+/** A picture as its columns: one of its type's by number, or a photo of its own by its media id. */
+const pictureColumns = (picture: string | null): [number | null, string | null] =>
+  picture?.startsWith('type:') ? [Number(picture.slice(5)), null] : picture?.startsWith('own:') ? [null, picture.slice(4)] : [null, null];
 
 const toRecord = (row: Row): DeviceRecord => ({
   // The database row is a boundary: this is where a string becomes an identity.
@@ -79,7 +84,7 @@ const toRecord = (row: Row): DeviceRecord => ({
   description: JSON.parse(row.description) as DeviceDescription,
   descriptionSource: row.description_source,
   info: row.info === null ? null : (JSON.parse(row.info) as DeviceInfo),
-  picture: row.picture,
+  picture: row.picture_type !== null ? `type:${row.picture_type}` : row.picture_id !== null ? `own:${row.picture_id}` : null,
 });
 
 export class DeviceCatalog {
@@ -199,11 +204,11 @@ export class DeviceCatalog {
     this.#db.transaction(() => {
       this.#db
         .query(
-          `INSERT INTO device (id, key, type_id, identity, name, config, description, description_source, info, picture, added_at, paused_at, track_days, removed_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO device (id, key, type_id, identity, name, config, description, description_source, info, picture_type, picture_id, added_at, paused_at, track_days, removed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (id) DO UPDATE SET key = excluded.key, identity = excluded.identity, name = excluded.name, config = excluded.config,
              description = excluded.description, description_source = excluded.description_source, info = excluded.info,
-             picture = excluded.picture, paused_at = excluded.paused_at, track_days = excluded.track_days, removed_at = excluded.removed_at`
+             picture_type = excluded.picture_type, picture_id = excluded.picture_id, paused_at = excluded.paused_at, track_days = excluded.track_days, removed_at = excluded.removed_at`
         )
         .run(
           record.id,
@@ -215,7 +220,7 @@ export class DeviceCatalog {
           JSON.stringify(record.description),
           record.descriptionSource,
           record.info === null ? null : JSON.stringify(record.info),
-          record.picture,
+          ...pictureColumns(record.picture),
           record.addedAt,
           record.pausedAt,
           record.trackDays,
@@ -286,7 +291,7 @@ export class DeviceCatalog {
 
   /** Which picture it shows: its owner's pick, or null for its type's first. */
   setPicture(id: SavedDeviceId, picture: string | null): DeviceRecord | null {
-    this.#db.query('UPDATE device SET picture = ? WHERE id = ?').run(picture, id);
+    this.#db.query('UPDATE device SET picture_type = ?, picture_id = ? WHERE id = ?').run(...pictureColumns(picture), id);
     return this.get(id);
   }
 

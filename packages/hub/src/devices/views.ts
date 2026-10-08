@@ -232,7 +232,7 @@ export const joinsOf = (session: DeviceSession | null | undefined): DeviceView['
   session?.bridge?.join ? { until: session.bridge.join.until(), maxSeconds: session.bridge.join.maxSeconds } : null;
 
 /** What a picture reference may be: one of its type's, or (not built yet) its owner's own. */
-export const PICTURE_REF = /^(type:(0|[1-9]\d?)|own:[a-z0-9-]{1,40})$/;
+export const PICTURE_REF = /^(type:(0|[1-9]\d?)|own:[0-9a-f]{64})$/;
 
 /** Its type's first picture: what a device shows with no pick, kept as none. */
 export const FIRST_PICTURE = 'type:0' satisfies PictureRef;

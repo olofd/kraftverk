@@ -22,6 +22,7 @@ import { familyRoutes } from './routes/family.ts';
 import { linkRoutes } from './routes/links.ts';
 import { liveRoutes } from './routes/live.ts';
 import { MAP_CACHED, mapRoutes } from './routes/map.ts';
+import { MEDIA_CACHED, mediaRoutes } from './routes/media.ts';
 import { invalid } from './routes/parse.ts';
 import { serverRoutes } from './routes/server.ts';
 import { setupRoutes } from './routes/setup.ts';
@@ -104,14 +105,18 @@ export function createApp(deps: AppDeps) {
   // not even get a preflight answer. See `auth/host.ts`.
   app.use('/api/*', hostGuard(config.allowedHosts));
 
-  // No body a client of this API sends comes near this.
-  app.use('/api/*', bodyLimit({ maxSize: 1024 * 1024, onError: (c) => c.json({ error: 'That request body is too large' }, 413) }));
+  // No body a client of this API sends comes near this — but a picture, which is two at most.
+  const tooLarge = (c: Context) => c.json({ error: 'That request body is too large' }, 413);
+  const bodies = bodyLimit({ maxSize: 1024 * 1024, onError: tooLarge });
+  const pictures = bodyLimit({ maxSize: 2 * 1024 * 1024, onError: tooLarge });
+  app.use('/api/*', (c, next) => (c.req.path === '/api/media' ? pictures(c, next) : bodies(c, next)));
 
   // API answers are about one person's house: never cached, sniffed or framed.
   app.use('/api/*', async (c, next) => {
     await next();
     // Map data — tiles, fonts, icons — is nobody's house: kept by a browser a day, as its route says.
-    if (!(MAP_CACHED.test(c.req.path) && c.res.ok)) c.header('Cache-Control', 'no-store');
+    // A picture is named by its content: kept by the browser that asked, never by anything between.
+    if (!((MAP_CACHED.test(c.req.path) || MEDIA_CACHED.test(c.req.path)) && c.res.ok)) c.header('Cache-Control', 'no-store');
     c.header('X-Content-Type-Options', 'nosniff');
     c.header('X-Frame-Options', 'DENY');
     c.header('Referrer-Policy', 'no-referrer');
@@ -141,6 +146,7 @@ export function createApp(deps: AppDeps) {
 
   api.route('/', serverRoutes(deps, auth));
   api.route('/', familyRoutes(deps));
+  api.route('/', mediaRoutes(deps));
   api.route('/setup', setupRoutes(deps));
   api.route('/', followerRoutes(deps));
   api.route('/', deviceRoutes(deps, auth.confirm));

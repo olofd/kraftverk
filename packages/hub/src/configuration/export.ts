@@ -9,7 +9,7 @@ import {
   type WaySource,
 } from '@kraftverk/home-file';
 import { methodsOf, partsOf, type NodeId, type PolicyValueName, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
-import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, FamilyStore, LinkStore, PlaceStore, SecretsAtRest } from '@kraftverk/store';
+import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, FamilyStore, LinkStore, MediaStore, PlaceStore, SecretsAtRest } from '@kraftverk/store';
 
 import type { ProtocolRegistry } from '../installed/protocols.ts';
 import type { DeviceTypeRegistry } from '../installed/types.ts';
@@ -36,6 +36,8 @@ export type ConfigDeps = {
   family: FamilyStore;
   /** Its homes: where each is, its clock. */
   places: PlaceStore;
+  /** Pictures, by their content: what a home or a device in a file names. */
+  media: MediaStore;
   /** A home's own values: how much is a load, the reserve. */
   policyOf(homeId: string): { values(): PolicyValues; set(name: PolicyValueName, value: number | null): PolicyValues };
   /** How a passphrase seals a secret, and opens it: the place's. */
@@ -102,6 +104,7 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
       document.homes[home.key] = {
         name: home.name,
         type: home.type,
+        picture: home.pictureId,
         location: home.location,
         timeZone: home.timeZone,
         address: home.address,

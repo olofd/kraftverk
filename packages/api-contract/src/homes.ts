@@ -20,6 +20,8 @@ export type HomeView = {
   name: string;
   type: HomeType;
   icon: string | null;
+  /** A photo of it, by its media id (`GET /media/:id`); null: none. */
+  pictureId: string | null;
   /** Null: its people have not said where it is. */
   location: HomeLocation | null;
   /** IANA: what its clocks keep. */
@@ -44,6 +46,8 @@ export type HomeInput = {
   type: HomeType;
   timeZone: string;
   icon?: string | null;
+  /** A picture already added (`media.add`), by its id; null takes it away. */
+  pictureId?: string | null;
   location?: HomeLocation | null;
   address?: HomeAddress;
   country?: string | null;
