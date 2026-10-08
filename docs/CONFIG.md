@@ -19,7 +19,7 @@ and check a file with the same code.
 
 ```yaml
 # yaml-language-server: $schema=http://<your server>/api/config/schema.json
-kraftverk: 12                     # the document's version: required
+kraftverk: 13                     # the document's version: required
 
 family: { name: The Examples, kind: family, locale: en-GB }
 
@@ -50,7 +50,17 @@ homes:                            # each by its key, in their order
         kind: building
         name: House
         spaces:
-          ground: { kind: floor, name: Ground floor, level: 0 }
+          ground:
+            kind: floor
+            name: Ground floor
+            level: 0
+            plan: { picture: 3f9a…, scale: 0.02, x: -1, y: 12 }   # its drawing: metres a pixel, its top-left corner
+            spaces:
+              kitchen:
+                kind: room
+                name: Kitchen
+                outline: [[0, 0], [4.2, 0], [4.2, 3.5], [0, 3.5]]   # its corners, metres
+                frame: { x: 4, y: 0, turn: 0 }                    # its own frame within the floor's
           first:
             kind: floor
             name: First floor
@@ -60,7 +70,7 @@ homes:                            # each by its key, in their order
               bedroom: { kind: room, name: Bedroom, purpose: bedroom }
       garage: { kind: room, name: Garage, purpose: garage }
     openings:                     # where spaces meet, or meet the outside
-      front-door: { kind: door, from: garage, to: outside, name: Front door }
+      front-door: { kind: door, from: garage, to: outside, name: Front door, shape: [[0, 1], [0, 1.9]] }
   cabin:
     name: Lake cabin
     type: cabin
@@ -73,7 +83,7 @@ devices:
   garage-station:                 # its key: what everything else names it by
     type: acme.station
     name: Garage station
-    place: { home: home, space: garage }   # where it stands; "based:" for one that moves
+    place: { home: home, space: garage, at: [1.5, 2] }   # where it stands; "based:" for one that moves
     labels: [heating]
     connect:                      # the ways it is reached, preferred first
       - via: bluetooth
@@ -151,8 +161,14 @@ rooms, areas, stairs, the outdoors — each by a key no other space of that
 home has (`site` is the home itself, and taken); only a floor has a `level`
 and an `elevation`. `openings:` join two spaces, or one and `outside`. A
 device's `place:` names a home, perhaps a space of it — none: the home
-itself — perhaps an `opening` it is at; one that moves says `based:`
-instead. `labels:` are the family's, each by key, and a device, a space or
+itself — perhaps an `opening` it is at, and where in the space: `at`,
+metres in its frame, a `height` above the floor and a `facing`; one that
+moves says `based:` instead. A space may be drawn: its `outline`, its
+corners in metres in its own `frame` — an origin and a turn within its
+parent's, its parent's when it says none — and a floor its `plan`, a
+drawing placed in the floor's frame. The site's frame is the home's: its
+location and `bearing`. An opening's `shape` is where in the wall it is.
+A drawing is a picture kept beside the file, as a home's is. `labels:` are the family's, each by key, and a device, a space or
 an automation names the ones it has. An import writes spaces before the
 devices standing in them, and adds or changes by key, never removing: a
 space, an opening or a label the file does not have is left. A device
@@ -461,6 +477,7 @@ nothing wrong — and write back the same.
 | 10 | A family and its homes (docs/PLAN-WORLD-MODEL.md): `family:` (name, kind, locale) and `homes:`, each by key with its name, type, location and geofence, time zone, address, country and policy. An automation may say the `home:` it is for, and `clock:` only for a clock of its own. Version 9's `home:` becomes the first home, `home`; an automation that said no clock keeps the home's. Added since, with nothing to migrate — every version-10 file reads as it did: a home's `spaces:` and `openings:`, a device's `place:` or `based:`, and `labels:`; `people:` |
 | 11 | Shortcuts are each person's own: `shortcuts:` under a person, automations by key in order. An automation has no `home page:`; version 10's become every person's shortcuts, in their places — a file with no people keeps none |
 | 12 | The family's zones (`zones:`, each by key with its name and location), who a device is with (a device's `people:` — carries, drives, owns, uses — by the people's keys) and what a person shares (`sharing: { level, keep }`). Nothing older says them, so nothing changes |
+| 13 | Geometry: a space's `frame`, `outline` and — a floor's — `plan`; an opening's `shape`; where in a space a device stands (`at`, `height`, `facing`). Nothing older says them, so nothing changes |
 
 **An integration's own entries.** A change to what a type is reached by —
 a way it no longer has — is not the document's shape, but a home kept

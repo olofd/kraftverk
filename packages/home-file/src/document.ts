@@ -136,6 +136,12 @@ export type SpaceEntry = {
   level: number | null;
   elevation: number | null;
   height: number | null;
+  /** Its own frame within its parent's: an origin in metres, a turn in degrees. Null: its parent's. */
+  frame: { x: number; y: number; turn: number } | null;
+  /** Its outline in its own frame: its corners, metres, in order. Null: not drawn. */
+  outline: [number, number][] | null;
+  /** A floor's drawing: its picture's id, the metres a pixel is, where its top-left corner falls and its turn. */
+  plan: { picture: string; scale: number; x: number; y: number; turn: number } | null;
   /** Its labels, by key: on what stands in it too. */
   labels: string[];
   spaces: SpaceEntry[];
@@ -172,10 +178,21 @@ export type LabelEntry = { name: string; color: string | null; icon: string | nu
 export type ZoneEntry = { name: string; icon: string | null; location: Coordinates & { radius: number | null } };
 
 /** Where two spaces meet — by their keys — or a space meets the outside (`to` null). */
-export type OpeningEntry = { kind: (typeof OPENING_KINDS)[number]; from: string; to: string | null; name: string | null };
+export type OpeningEntry = { kind: (typeof OPENING_KINDS)[number]; from: string; to: string | null; name: string | null; shape: [number, number][] | null };
 
 /** Where a device stands, or is based: a home by its key, a space of it (none: the home itself), perhaps an opening. */
-export type PlaceEntry = { home: string; space: string | null; opening: string | null; role: 'stands' | 'based' };
+export type PlaceEntry = {
+  home: string;
+  space: string | null;
+  opening: string | null;
+  role: 'stands' | 'based';
+  /** Where in the space, metres in its frame; null: not said. */
+  at: [number, number] | null;
+  /** Metres above the floor. */
+  height: number | null;
+  /** Degrees in the space's frame: which way a radar or a camera looks. */
+  facing: number | null;
+};
 
 export type ConfigDocument = {
   version: number;
@@ -215,6 +232,25 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
   if (!isRecord(data)) return { document: null, issues: [{ message: 'A configuration is a map: kraftverk, family, homes, devices, links, automations', path: [] }] };
   for (const key of Object.keys(data)) if (!['kraftverk', 'family', 'people', 'labels', 'homes', 'zones', 'devices', 'links', 'automations', 'secrets'].includes(key)) problem(`"${key}" is not part of a configuration: it has kraftverk, family, people, labels, homes, zones, devices, links, automations and secrets`, [key]);
 
+  /** A record of numbers, each of `fields`. */
+  const numbersOf = (value: unknown, fields: readonly string[], path: Path, what: string): Record<string, number> | null => {
+    if (!isRecord(value) || Object.keys(value).some((field) => !fields.includes(field)) || !fields.every((field) => typeof value[field] === 'number' && Number.isFinite(value[field]))) return (problem(what, path), null);
+    return Object.fromEntries(fields.map((field) => [field, value[field] as number]));
+  };
+  /** Points in a frame, metres: at least `least`. */
+  const pointsOf = (value: unknown, least: number, path: Path, what: string): [number, number][] | null => {
+    const fine = Array.isArray(value) && value.length >= least && value.every((point) => Array.isArray(point) && point.length === 2 && point.every((each) => typeof each === 'number' && Number.isFinite(each)));
+    return fine ? (value as [number, number][]).map(([x, y]) => [x, y]) : (problem(what, path), null);
+  };
+  /** A floor's drawing. */
+  const planOf = (value: unknown, path: Path): SpaceEntry['plan'] => {
+    const what = 'A drawing is { picture, scale, x, y, turn }: its picture\'s id, the metres a pixel is, where its top-left corner falls, and its turn';
+    if (!isRecord(value) || typeof value.picture !== 'string' || !/^[0-9a-f]{64}$/.test(value.picture)) return (problem(what, path), null);
+    const { picture, ...rest } = value;
+    const numbers = numbersOf({ turn: 0, ...rest }, ['scale', 'x', 'y', 'turn'], path, what);
+    if (numbers && !(numbers.scale! > 0)) return (problem('A drawing\'s scale is the metres a pixel is: above 0', [...path, 'scale']), null);
+    return numbers ? { picture, scale: numbers.scale!, x: numbers.x!, y: numbers.y!, turn: numbers.turn! } : null;
+  };
   const text = (value: unknown, path: Path, what: string): string | null => {
     if (typeof value === 'string' && value.trim()) return value.trim();
     problem(`Expected ${what}`, path);
@@ -374,7 +410,9 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
           if (seen.has(spaceKey)) problem(`"${spaceKey}" is another space's key in this home already`, here);
           seen.add(spaceKey);
           if (!isRecord(space)) return (problem('Expected a space: its kind and name', here), []);
-          for (const field of Object.keys(space)) if (!['kind', 'name', 'purpose', 'level', 'elevation', 'height', 'labels', 'spaces'].includes(field)) problem(`"${field}" is not part of a space: it has kind, name, purpose, level, elevation, height, labels and spaces`, [...here, field]);
+          for (const field of Object.keys(space))
+            if (!['kind', 'name', 'purpose', 'level', 'elevation', 'height', 'frame', 'outline', 'plan', 'labels', 'spaces'].includes(field))
+              problem(`"${field}" is not part of a space: it has kind, name, purpose, level, elevation, height, frame, outline, plan, labels and spaces`, [...here, field]);
           const kind = SPACE_KINDS.includes(space.kind as SpaceEntry['kind']) ? (space.kind as SpaceEntry['kind']) : (problem(`"kind" is one of ${SPACE_KINDS.join(', ')}`, [...here, 'kind']), null);
           const spaceName = space.name === undefined ? spaceKey : text(space.name, [...here, 'name'], 'its name');
           const purpose = space.purpose === undefined || space.purpose === null ? null : SPACE_PURPOSES.includes(space.purpose as never) ? (space.purpose as SpaceEntry['purpose']) : (problem(`"purpose" is one of ${SPACE_PURPOSES.join(', ')}`, [...here, 'purpose']), null);
@@ -384,9 +422,15 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
           const elevation = number('elevation', false);
           const height = number('height', false);
           if (kind !== 'floor' && (level !== null || elevation !== null)) problem('Only a floor has a level and an elevation', here);
+          const frame = space.frame === undefined || space.frame === null ? null : numbersOf(space.frame, ['x', 'y', 'turn'], [...here, 'frame'], 'A frame is { x, y, turn }: its origin in metres, its turn in degrees');
+          const outline = space.outline === undefined || space.outline === null ? null : pointsOf(space.outline, 3, [...here, 'outline'], 'An outline is its corners, at least three: [[0, 0], [4, 0], [4, 3]]');
+          const plan = space.plan === undefined || space.plan === null ? null : planOf(space.plan, [...here, 'plan']);
+          if (plan && kind !== 'floor') problem('Only a floor has a drawing', [...here, 'plan']);
           const inner = spacesOf(space.spaces, [...here, 'spaces']);
           const spaceLabels = labelKeys(space.labels, [...here, 'labels']);
-          return kind && spaceName ? [{ key: spaceKey, kind, name: spaceName, purpose, level: kind === 'floor' ? (level ?? 0) : null, elevation, height, labels: spaceLabels, spaces: inner }] : [];
+          return kind && spaceName
+            ? [{ key: spaceKey, kind, name: spaceName, purpose, level: kind === 'floor' ? (level ?? 0) : null, elevation, height, frame: frame as SpaceEntry['frame'], outline, plan: kind === 'floor' ? plan : null, labels: spaceLabels, spaces: inner }]
+            : [];
         });
       };
       const spaces = spacesOf(entry.spaces, [...path, 'spaces']);
@@ -401,12 +445,13 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
               problem('Expected an opening: its kind, from, and to', here);
               continue;
             }
-            for (const field of Object.keys(opening)) if (!['kind', 'from', 'to', 'name'].includes(field)) problem(`"${field}" is not part of an opening: it has kind, from, to and name`, [...here, field]);
+            for (const field of Object.keys(opening)) if (!['kind', 'from', 'to', 'name', 'shape'].includes(field)) problem(`"${field}" is not part of an opening: it has kind, from, to, name and shape`, [...here, field]);
             const kind = OPENING_KINDS.includes(opening.kind as OpeningEntry['kind']) ? (opening.kind as OpeningEntry['kind']) : (problem(`"kind" is one of ${OPENING_KINDS.join(', ')}`, [...here, 'kind']), null);
             const from = typeof opening.from === 'string' && seen.has(opening.from) ? opening.from : (problem('"from" is the key of a space of this home', [...here, 'from']), null);
             const to = opening.to === undefined || opening.to === null || opening.to === 'outside' ? null : typeof opening.to === 'string' && seen.has(opening.to) ? opening.to : (problem('"to" is the key of a space of this home, or "outside"', [...here, 'to']), undefined);
             const openingName = opening.name === undefined || opening.name === null ? null : text(opening.name, [...here, 'name'], 'its name');
-            if (kind && from && to !== undefined) openings[openingKey] = { kind, from, to, name: openingName };
+            const shape = opening.shape === undefined || opening.shape === null ? null : pointsOf(opening.shape, 2, [...here, 'shape'], 'A shape is where in the wall it is, a line of points: [[4, 1], [4, 1.9]]');
+            if (kind && from && to !== undefined) openings[openingKey] = { kind, from, to, name: openingName, shape };
           }
       }
       if (name && timeZone) homes[key] = { name, type, picture, location, timeZone, address, country, policy, spaces, openings };
@@ -487,11 +532,17 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         const at = [...path, entry.based !== undefined ? 'based' : 'place'];
         if (!isRecord(placeData)) problem('Expected where it is: { home: home, space: kitchen }', at);
         else {
-          for (const field of Object.keys(placeData)) if (!['home', 'space', 'opening'].includes(field)) problem(`"${field}" is not part of where it is: it has home, space and opening`, [...at, field]);
+          for (const field of Object.keys(placeData)) if (!['home', 'space', 'opening', 'at', 'height', 'facing'].includes(field)) problem(`"${field}" is not part of where it is: it has home, space, opening, at, height and facing`, [...at, field]);
           const homeKey = typeof placeData.home === 'string' && KEY.test(placeData.home) ? placeData.home : (problem('"home" is the key of a home', [...at, 'home']), null);
           const spaceKey = placeData.space === undefined || placeData.space === null ? null : typeof placeData.space === 'string' && KEY.test(placeData.space) ? placeData.space : (problem('"space" is the key of a space of that home', [...at, 'space']), null);
           const openingKey = placeData.opening === undefined || placeData.opening === null ? null : typeof placeData.opening === 'string' && KEY.test(placeData.opening) ? placeData.opening : (problem('"opening" is the key of an opening of that home', [...at, 'opening']), null);
-          if (homeKey) place = { home: homeKey, space: spaceKey, opening: openingKey, role };
+          const point = placeData.at === undefined || placeData.at === null ? null : (pointsOf([placeData.at], 1, [...at, 'at'], '"at" is where in the space, metres in its frame: [1.5, 2]')?.[0] ?? null);
+          const metres = (field: 'height' | 'facing', what: string): number | null =>
+            placeData[field] === undefined || placeData[field] === null ? null : typeof placeData[field] === 'number' && Number.isFinite(placeData[field]) ? (placeData[field] as number) : (problem(what, [...at, field]), null);
+          const height = metres('height', '"height" is metres above the floor');
+          const facing = metres('facing', '"facing" is degrees in the space\'s frame');
+          if ((height !== null || facing !== null) && !point) problem('A height or a facing is of a point: say "at" too', at);
+          if (homeKey) place = { home: homeKey, space: spaceKey, opening: openingKey, role, at: point, height, facing };
         }
       }
       // Who it is with: each by a person's key in this file.
@@ -606,6 +657,9 @@ function spacesData(spaces: readonly SpaceEntry[]): Record<string, unknown> {
         ...(space.level !== null ? { level: space.level } : {}),
         ...(space.elevation !== null ? { elevation: space.elevation } : {}),
         ...(space.height !== null ? { height: space.height } : {}),
+        ...(space.frame !== null ? { frame: space.frame } : {}),
+        ...(space.outline !== null ? { outline: space.outline } : {}),
+        ...(space.plan !== null ? { plan: space.plan } : {}),
         ...(space.labels.length ? { labels: space.labels } : {}),
         ...(space.spaces.length ? { spaces: spacesData(space.spaces) } : {}),
       },
@@ -631,6 +685,9 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
                 home: device.place.home,
                 ...(device.place.space !== null ? { space: device.place.space } : {}),
                 ...(device.place.opening !== null ? { opening: device.place.opening } : {}),
+                ...(device.place.at !== null ? { at: device.place.at } : {}),
+                ...(device.place.height !== null ? { height: device.place.height } : {}),
+                ...(device.place.facing !== null ? { facing: device.place.facing } : {}),
               },
             }
           : {}),
@@ -722,7 +779,7 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
                   ...(Object.keys(home.openings).length
                     ? {
                         openings: Object.fromEntries(
-                          Object.entries(home.openings).map(([key, opening]) => [key, { kind: opening.kind, from: opening.from, to: opening.to ?? 'outside', ...(opening.name !== null ? { name: opening.name } : {}) }])
+                          Object.entries(home.openings).map(([key, opening]) => [key, { kind: opening.kind, from: opening.from, to: opening.to ?? 'outside', ...(opening.name !== null ? { name: opening.name } : {}), ...(opening.shape !== null ? { shape: opening.shape } : {}) }])
                         ),
                       }
                     : {}),

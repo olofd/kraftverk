@@ -1,0 +1,211 @@
+kraftverk: 13
+family:
+  name: The Examples
+  kind: family
+  locale: en-GB
+homes:
+  home:
+    name: Home
+    type: house
+    location:
+      latitude: 59.33
+      longitude: 18.07
+      radius: 150
+    time zone: Europe/Stockholm
+    address:
+      locality: Stockholm
+    country: SE
+    policy:
+      loadWatts: 50
+      reserveSoc: 20
+    spaces:
+      house:
+        kind: building
+        name: House
+        spaces:
+          ground:
+            kind: floor
+            name: Ground floor
+            level: 0
+            plan:
+              picture: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+              scale: 0.02
+              x: -1
+              y: 12
+              turn: 0
+            spaces:
+              kitchen:
+                kind: room
+                name: Kitchen
+                purpose: kitchen
+                frame: { x: 4, y: 0, turn: 0 }
+                outline: [[0, 0], [4.2, 0], [4.2, 3.5], [0, 3.5]]
+              hall:
+                kind: room
+                name: Hall
+                outline: [[0, 0], [4, 0], [4, 3.5], [0, 3.5]]
+    openings:
+      front-door:
+        kind: door
+        from: hall
+        to: outside
+        name: Front door
+        shape: [[0, 1], [0, 1.9]]
+  cabin:
+    name: Lake cabin
+    type: cabin
+    time zone: Europe/Stockholm
+zones:
+  school:
+    name: School
+    location:
+      latitude: 59.34
+      longitude: 18.06
+      radius: 200
+devices:
+  garage-station:
+    type: acme.station
+    name: Garage station
+    identity: acme:station-0001
+    picture: type:1
+    connect:
+      - via: ble
+        address: AA:BB:CC:DD:EE:01
+  smart-plug:
+    type: acme.plug
+    name: Smart plug
+    settings:
+      profile: b
+    connect:
+      - via: lan
+        address: 192.0.2.10
+        settings:
+          deviceId: made-up-device-id
+          protocolVersion: "3.4"
+        secrets:
+          localKey: !secret smart-plug.localKey
+        exportable: true
+  ac-in-meter:
+    type: acme.meter
+    name: AC-IN meter
+    paused: true
+    connect:
+      - via: lan
+        address: 192.0.2.11
+  family-account:
+    type: acme.account
+    name: Family account
+    identity: acme:account-0001
+    connect:
+      - via: cloud
+        settings:
+          account: someone@example.com
+        secrets:
+          password: !secret family-account.password
+  hall-lamp:
+    type: acme.lamp
+    name: Hall lamp
+    place:
+      home: home
+      space: hall
+      at: [2, 1.5]
+      height: 2.3
+    connect:
+      - via: account
+        through: family-account
+        address: lamp-0001
+  pocket-phone:
+    type: acme.phone
+    name: Pocket phone
+    track: 30 days
+    connect:
+      - via: account
+        through: family-account
+        address: phone-0001
+links:
+  - feeds:
+      from: ac-in-meter
+      to: garage-station.input.ac
+automations:
+  start-charging:
+    name: Start charging the scooter
+    mode: act
+    home: home
+    made from: standard.start-charging
+    uses:
+      supply: garage-station.outlet.ac
+      charger: smart-plug
+    do:
+      - turn on: supply
+      - wait until: charger reachable
+        at most: 2 min
+      - turn on: charger
+      - make sure: charger.power > 50 W
+        within: 20 s
+        tries: 5
+        each time:
+          - turn off: charger
+          - wait: 5 s
+          - turn on: charger
+    if a step fails:
+      - turn off: charger
+      - turn off: supply
+  stop-charging:
+    name: Stop charging the scooter
+    mode: watch
+    home: home
+    uses:
+      supply: garage-station.outlet.ac
+      charger: smart-plug
+    do:
+      - turn off: charger
+      - watch: supply.power < 10 W
+        for: 5 s
+        if it stays so:
+          - turn off: supply
+  charge-window:
+    name: Charge window
+    mode: watch
+    home: home
+    recheck: 10 min
+    uses:
+      battery: garage-station
+      charger:
+        part: smart-plug
+        label: What charges it
+    when:
+      - becomes: battery.charge < 15 %
+        for: 2 min
+      - becomes: battery.charge >= 50 %
+    do:
+      - switch: charger
+        on: battery.charge < 50 %
+  morning:
+    name: Morning
+    mode: off
+    home: home
+    uses:
+      station: garage-station
+      mains: garage-station.input.ac
+      plug: smart-plug
+      charging:
+        automation: start-charging
+    when:
+      - at: "07:00"
+        days: weekdays
+      - every: 30 min
+      - event: mains.lost
+        from: mains
+    only if: station.charge < 80 % and time between 05:00 and 09:00
+    do:
+      - set: station
+        meaning: chargeLimit
+        to: 90
+      - if: station.charge < 20 %
+        then:
+          - start: charging
+            and wait: 10 min
+        else:
+          - turn on: plug
+secrets:
+  smart-plug.localKey: sealed:v1:c2FsdA:aXY:ZGF0YQ

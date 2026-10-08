@@ -18,12 +18,15 @@ const space = (id: string, parentId: string | null, kind: SpaceView['kind'], nam
   level: kind === 'floor' ? 0 : null,
   elevation: null,
   height: null,
+  frame: null,
+  outline: null,
+  plan: null,
   createdAt: '2026-10-08T00:00:00.000Z',
   removedAt: null,
 });
 
 const SPACES = [space('site', null, 'site', 'The site'), space('house', 'site', 'building', 'House'), space('ground', 'house', 'floor', 'Ground floor'), space('kitchen', 'ground', 'room', 'Kitchen', 'kitchen'), space('hall', 'ground', 'room', 'Hall', 'hallway')];
-const DOOR: OpeningView = { id: 'o-1', homeId: 'h-1', key: 'front-door', fromId: 'hall', toId: null, kind: 'door', name: 'Front door', removedAt: null };
+const DOOR: OpeningView = { id: 'o-1', homeId: 'h-1', key: 'front-door', fromId: 'hall', toId: null, kind: 'door', name: 'Front door', shape: null, removedAt: null };
 const HOME = { id: 'h-1', name: 'Home' } as HomeView;
 const HOMES: HomeSpaces[] = [{ home: HOME, spaces: SPACES, openings: [DOOR] }];
 const at = (spaceId: string, more: Partial<PlacementView> = {}): PlacementView => ({ part: 'main', homeId: 'h-1', spaceId, openingId: null, x: null, y: null, z: null, facing: null, role: 'stands', since: '2026-10-08T00:00:00.000Z', until: null, ...more });

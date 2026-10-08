@@ -1,5 +1,5 @@
 import type { Actor, SavedDeviceId } from '@kraftverk/device-sdk';
-import type { OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceInput, SpaceView } from '@kraftverk/api-contract';
+import type { FloorPlanInput, FramePoint, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceFrame, SpaceInput, SpaceView } from '@kraftverk/api-contract';
 import { KEY, keyFrom, newId } from '@kraftverk/device-sdk';
 
 import type { SqlDatabase } from './database.ts';
@@ -27,9 +27,40 @@ type SpaceRow = {
   level: number | null;
   elevation: number | null;
   height: number | null;
+  frame_x: number | null;
+  frame_y: number | null;
+  frame_turn: number | null;
+  outline: string | null;
   created_at: string;
   removed_at: string | null;
+  plan_media: string | null;
+  plan_scale: number | null;
+  plan_x: number | null;
+  plan_y: number | null;
+  plan_turn: number | null;
+  plan_width: number | null;
+  plan_height: number | null;
 };
+
+/** A space with its floor's drawing, when it has one. */
+const SPACE_SELECT =
+  'SELECT s.*, f.media_id AS plan_media, f.scale AS plan_scale, f.x AS plan_x, f.y AS plan_y, f.turn AS plan_turn, m.width AS plan_width, m.height AS plan_height FROM space s LEFT JOIN floor_plan f ON f.space_id = s.id LEFT JOIN media m ON m.id = f.media_id';
+
+/** A GeoJSON Polygon's outer ring, in metres, as the corners it joins: its closing point left off. */
+const ringOf = (text: string | null): FramePoint[] | null => {
+  if (!text) return null;
+  const ring = (JSON.parse(text) as { coordinates: [number, number][][] }).coordinates[0] ?? [];
+  return ring.slice(0, -1).map(([x, y]) => [x, y] as const);
+};
+
+/** Corners as a GeoJSON Polygon, its ring closed. */
+const polygonOf = (corners: readonly FramePoint[] | null | undefined): string | null =>
+  corners && corners.length >= 3 ? JSON.stringify({ type: 'Polygon', coordinates: [[...corners.map(([x, y]) => [x, y]), [corners[0]![0], corners[0]![1]]]] }) : null;
+
+/** A line's points as a GeoJSON LineString. */
+const lineOf = (points: readonly FramePoint[] | null | undefined): string | null => (points && points.length >= 2 ? JSON.stringify({ type: 'LineString', coordinates: points.map(([x, y]) => [x, y]) }) : null);
+
+const pointsOf = (text: string | null): FramePoint[] | null => (text ? (JSON.parse(text) as { coordinates: [number, number][] }).coordinates.map(([x, y]) => [x, y] as const) : null);
 
 const spaceOf = (row: SpaceRow): SpaceView => ({
   id: row.id,
@@ -45,13 +76,21 @@ const spaceOf = (row: SpaceRow): SpaceView => ({
   level: row.level,
   elevation: row.elevation,
   height: row.height,
+  frame: row.frame_x !== null && row.frame_y !== null && row.frame_turn !== null ? { x: row.frame_x, y: row.frame_y, turn: row.frame_turn } : null,
+  outline: ringOf(row.outline),
+  plan: row.plan_media !== null ? { pictureId: row.plan_media, scale: row.plan_scale!, x: row.plan_x!, y: row.plan_y!, turn: row.plan_turn!, width: row.plan_width ?? 0, height: row.plan_height ?? 0 } : null,
   createdAt: row.created_at,
   removedAt: row.removed_at,
 });
 
-type OpeningRow = { id: string; home_id: string; key: string; from_id: string; to_id: string | null; kind: OpeningView['kind']; name: string | null; removed_at: string | null };
+/** A turn in degrees as the database keeps it: from 0 up to, not at, 360. */
+const turnOf = (degrees: number): number => ((degrees % 360) + 360) % 360;
 
-const openingOf = (row: OpeningRow): OpeningView => ({ id: row.id, homeId: row.home_id, key: row.key, fromId: row.from_id, toId: row.to_id, kind: row.kind, name: row.name, removedAt: row.removed_at });
+const frameColumns = (frame: SpaceFrame | null | undefined): [number | null, number | null, number | null] => (frame ? [frame.x, frame.y, turnOf(frame.turn)] : [null, null, null]);
+
+type OpeningRow = { id: string; home_id: string; key: string; from_id: string; to_id: string | null; kind: OpeningView['kind']; name: string | null; shape: string | null; removed_at: string | null };
+
+const openingOf = (row: OpeningRow): OpeningView => ({ id: row.id, homeId: row.home_id, key: row.key, fromId: row.from_id, toId: row.to_id, kind: row.kind, name: row.name, shape: pointsOf(row.shape), removedAt: row.removed_at });
 
 type PlacementRow = {
   part: string;
@@ -95,7 +134,7 @@ export class SpaceStore {
   /** A home's spaces, its site first, each after its parent, in their order; with those archived, `removed`. */
   spaces(homeId: string, options: { removed?: boolean } = {}): SpaceView[] {
     const rows = this.#db
-      .query<SpaceRow, [string]>(`SELECT * FROM space WHERE home_id = ? ${options.removed ? '' : 'AND removed_at IS NULL'} ORDER BY position, created_at`)
+      .query<SpaceRow, [string]>(`${SPACE_SELECT} WHERE s.home_id = ? ${options.removed ? '' : 'AND s.removed_at IS NULL'} ORDER BY s.position, s.created_at`)
       .all(homeId)
       .map(spaceOf);
     // Each after its parent: the tree, read top down.
@@ -111,13 +150,13 @@ export class SpaceStore {
   }
 
   space(id: string): SpaceView | null {
-    const row = this.#db.query<SpaceRow, [string]>('SELECT * FROM space WHERE id = ?').get(id);
+    const row = this.#db.query<SpaceRow, [string]>(`${SPACE_SELECT} WHERE s.id = ?`).get(id);
     return row ? spaceOf(row) : null;
   }
 
   /** A home's site: the root of its spaces, made with it. */
   site(homeId: string): SpaceView {
-    const row = this.#db.query<SpaceRow, [string]>("SELECT * FROM space WHERE home_id = ? AND kind = 'site'").get(homeId);
+    const row = this.#db.query<SpaceRow, [string]>(`${SPACE_SELECT} WHERE s.home_id = ? AND s.kind = 'site'`).get(homeId);
     if (row) return spaceOf(row);
     const id = newId('s');
     this.#db.query("INSERT INTO space (id, home_id, parent_id, key, kind, name, created_at) VALUES (?, ?, NULL, 'site', 'site', 'The site', ?)").run(id, homeId, new Date().toISOString());
@@ -126,7 +165,7 @@ export class SpaceStore {
 
   /** A space a home has, by its key. */
   spaceByKey(homeId: string, key: string): SpaceView | null {
-    const row = this.#db.query<SpaceRow, [string, string]>('SELECT * FROM space WHERE home_id = ? AND key = ? AND removed_at IS NULL').get(homeId, key);
+    const row = this.#db.query<SpaceRow, [string, string]>(`${SPACE_SELECT} WHERE s.home_id = ? AND s.key = ? AND s.removed_at IS NULL`).get(homeId, key);
     return row ? spaceOf(row) : null;
   }
 
@@ -144,8 +183,8 @@ export class SpaceStore {
     const id = newId('s');
     this.#db
       .query(
-        `INSERT INTO space (id, home_id, parent_id, key, kind, purpose, name, icon, picture_id, position, level, elevation, height, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO space (id, home_id, parent_id, key, kind, purpose, name, icon, picture_id, position, level, elevation, height, frame_x, frame_y, frame_turn, outline, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -161,8 +200,11 @@ export class SpaceStore {
         input.kind === 'floor' ? (input.level ?? 0) : null,
         input.kind === 'floor' ? (input.elevation ?? null) : null,
         input.height ?? null,
+        ...frameColumns(input.frame),
+        polygonOf(input.outline),
         new Date().toISOString()
       );
+    if (input.plan && input.kind === 'floor') this.#setPlan(id, input.plan);
     return this.space(id)!;
   }
 
@@ -172,9 +214,11 @@ export class SpaceStore {
     if (!was || was.kind === 'site') return was;
     if (changes.key !== undefined && changes.key !== was.key && (!KEY.test(changes.key) || changes.key === 'site' || this.spaceKeyTaken(was.homeId, changes.key, id))) throw new Error(`"${changes.key}" is not a free key in this home`);
     if (changes.parentId !== undefined && changes.parentId !== was.parentId && this.#within(changes.parentId, id)) throw new Error('A space cannot be put inside itself');
-    const next = { ...was, ...changes } as SpaceView & Partial<SpaceInput>;
+    const next = { ...was, ...changes } as Omit<SpaceView, 'plan'> & Partial<SpaceInput>;
+    if (next.plan && next.kind !== 'floor') throw new Error('Only a floor has a drawing');
+    this.#db.transaction(() => {
     this.#db
-      .query('UPDATE space SET parent_id = ?, key = ?, kind = ?, purpose = ?, name = ?, icon = ?, picture_id = ?, position = ?, level = ?, elevation = ?, height = ? WHERE id = ?')
+      .query('UPDATE space SET parent_id = ?, key = ?, kind = ?, purpose = ?, name = ?, icon = ?, picture_id = ?, position = ?, level = ?, elevation = ?, height = ?, frame_x = ?, frame_y = ?, frame_turn = ?, outline = ? WHERE id = ?')
       .run(
         next.parentId,
         next.key,
@@ -187,9 +231,24 @@ export class SpaceStore {
         next.kind === 'floor' ? (next.level ?? 0) : null,
         next.kind === 'floor' ? next.elevation : null,
         next.height,
+        ...frameColumns(next.frame),
+        polygonOf(next.outline),
         id
       );
+    if (changes.plan !== undefined) this.#setPlan(id, changes.plan);
+    })();
     return this.space(id);
+  }
+
+  /** A floor's drawing set, or taken away. */
+  #setPlan(spaceId: string, plan: FloorPlanInput | null): void {
+    if (!plan) {
+      this.#db.query('DELETE FROM floor_plan WHERE space_id = ?').run(spaceId);
+      return;
+    }
+    this.#db
+      .query('INSERT INTO floor_plan (space_id, media_id, scale, x, y, turn) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (space_id) DO UPDATE SET media_id = excluded.media_id, scale = excluded.scale, x = excluded.x, y = excluded.y, turn = excluded.turn')
+      .run(spaceId, plan.pictureId, plan.scale, plan.x, plan.y, turnOf(plan.turn));
   }
 
   /** Whether `candidate` is `id` or inside it. */
@@ -250,8 +309,8 @@ export class SpaceStore {
     const key = input.key ?? keyFrom(input.name ?? `${from.name} ${input.kind}`, (taken) => this.openingKeyTaken(from.homeId, taken), 'opening');
     const id = newId('o');
     this.#db
-      .query('INSERT INTO opening (id, home_id, key, from_id, to_id, kind, name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, from.homeId, key, input.fromId, input.toId, input.kind, input.name ?? null, new Date().toISOString());
+      .query('INSERT INTO opening (id, home_id, key, from_id, to_id, kind, name, shape, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, from.homeId, key, input.fromId, input.toId, input.kind, input.name ?? null, lineOf(input.shape), new Date().toISOString());
     return this.opening(id)!;
   }
 
@@ -260,7 +319,7 @@ export class SpaceStore {
     if (!was) return null;
     if (changes.key !== undefined && changes.key !== was.key && (!KEY.test(changes.key) || this.openingKeyTaken(was.homeId, changes.key, id))) throw new Error(`"${changes.key}" is not a free key in this home`);
     const next = { ...was, ...changes };
-    this.#db.query('UPDATE opening SET key = ?, from_id = ?, to_id = ?, kind = ?, name = ? WHERE id = ?').run(next.key, next.fromId, next.toId, next.kind, next.name ?? null, id);
+    this.#db.query('UPDATE opening SET key = ?, from_id = ?, to_id = ?, kind = ?, name = ?, shape = ? WHERE id = ?').run(next.key, next.fromId, next.toId, next.kind, next.name ?? null, lineOf(next.shape), id);
     return this.opening(id);
   }
 

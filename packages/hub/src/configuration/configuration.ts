@@ -198,7 +198,11 @@ export class Configuration {
    */
   pictures(): { id: string; type: MediaType; width: number; height: number; data: Uint8Array }[] {
     const named = new Set<string>();
-    for (const home of this.#deps.places.homes()) if (home.pictureId) named.add(home.pictureId);
+    for (const home of this.#deps.places.homes()) {
+      if (home.pictureId) named.add(home.pictureId);
+      // A floor's drawing travels as a home's picture does.
+      for (const space of this.#deps.spaces.spaces(home.id)) if (space.plan) named.add(space.plan.pictureId);
+    }
     for (const device of this.#deps.catalog.list()) if (device.picture?.startsWith('own:')) named.add(device.picture.slice(4));
     return [...named].flatMap((id) => {
       const kept = this.#deps.media.get(id);

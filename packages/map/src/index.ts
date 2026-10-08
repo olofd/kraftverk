@@ -2,6 +2,7 @@ export { COUNTRIES, type Country } from './countries.ts';
 export { countryAt, countryOf, regionOf, WORLD_ZOOM, type RegionAsk, type RegionSpec } from './regions.ts';
 export {
   accuracyGeoJSON,
+  areasGeoJSON,
   boundsOf,
   circleRing,
   markersGeoJSON,
@@ -12,8 +13,30 @@ export {
   zonesGeoJSON,
   type Bounds,
   type LngLat,
+  type MapArea,
   type MapMarker,
   type MapTrail,
   type MapZone,
 } from './shapes.ts';
+export {
+  between,
+  drawingCorners,
+  fromGlobe,
+  fromSite,
+  globeToSite,
+  inside,
+  intoParent,
+  outlineOnGlobe,
+  outOfParent,
+  siteToGlobe,
+  spaceAt,
+  toGlobe,
+  toSite,
+  turned,
+  type Anchor,
+  type Frame,
+  type FramedSpace,
+  type PlacedDrawing,
+  type Point,
+} from './frames.ts';
 export { DETAIL_ZOOM, MAP_CREDIT, mapPaths, mapStyle, type MapTheme } from './style.ts';

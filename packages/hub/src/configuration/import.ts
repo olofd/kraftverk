@@ -827,13 +827,26 @@ function spaceChanges(deps: ImportDeps, homeId: string | null, entry: HomeEntry)
   for (const { space, parent, position } of flatSpaces(entry.spaces)) {
     const had = homeId ? deps.spaces.spaceByKey(homeId, space.key) : null;
     if (!had) added!.push(space.name);
-    else if (had.name !== space.name || had.kind !== space.kind || had.purpose !== space.purpose || had.level !== space.level || had.elevation !== space.elevation || had.height !== space.height || had.position !== position || keyOf(had.parentId) !== (parent ?? 'site') || labelsDiffer(deps, { space: had.id }, space.labels))
+    else if (
+      had.name !== space.name ||
+      had.kind !== space.kind ||
+      had.purpose !== space.purpose ||
+      had.level !== space.level ||
+      had.elevation !== space.elevation ||
+      had.height !== space.height ||
+      had.position !== position ||
+      keyOf(had.parentId) !== (parent ?? 'site') ||
+      JSON.stringify(had.frame) !== JSON.stringify(space.frame) ||
+      JSON.stringify(had.outline) !== JSON.stringify(space.outline) ||
+      JSON.stringify(had.plan ? { picture: had.plan.pictureId, scale: had.plan.scale, x: had.plan.x, y: had.plan.y, turn: had.plan.turn } : null) !== JSON.stringify(space.plan) ||
+      labelsDiffer(deps, { space: had.id }, space.labels)
+    )
       changed!.push(space.name);
   }
   for (const [key, opening] of Object.entries(entry.openings)) {
     const had = homeId ? deps.spaces.openingByKey(homeId, key) : null;
     if (!had) opened!.push(opening.name ?? key);
-    else if (had.kind !== opening.kind || had.name !== opening.name || keyOf(had.fromId) !== opening.from || keyOf(had.toId) !== opening.to) reopened!.push(opening.name ?? key);
+    else if (had.kind !== opening.kind || had.name !== opening.name || keyOf(had.fromId) !== opening.from || keyOf(had.toId) !== opening.to || JSON.stringify(had.shape) !== JSON.stringify(opening.shape)) reopened!.push(opening.name ?? key);
   }
   const said = (what: string, names: string[]) => (names.length ? [`${what}: ${names.join(', ')}`] : []);
   return [...said('spaces added', added!), ...said('spaces changed', changed!), ...said('openings added', opened!), ...said('openings changed', reopened!)];
@@ -844,7 +857,9 @@ function writeSpaces(deps: ImportDeps, homeId: string, entry: HomeEntry): void {
   const site = deps.spaces.site(homeId);
   for (const { space, parent, position } of flatSpaces(entry.spaces)) {
     const parentId = parent === null ? site.id : deps.spaces.spaceByKey(homeId, parent)!.id;
-    const given = { parentId, kind: space.kind, name: space.name, purpose: space.purpose, level: space.level, elevation: space.elevation, height: space.height, position };
+    // A drawing is set only when its picture is kept here: one the file names but did not bring is left as it is.
+    const plan = space.plan && deps.media.get(space.plan.picture) ? { plan: { pictureId: space.plan.picture, scale: space.plan.scale, x: space.plan.x, y: space.plan.y, turn: space.plan.turn } } : space.plan ? {} : { plan: null };
+    const given = { parentId, kind: space.kind, name: space.name, purpose: space.purpose, level: space.level, elevation: space.elevation, height: space.height, frame: space.frame, outline: space.outline, ...plan, position };
     const had = deps.spaces.spaceByKey(homeId, space.key);
     const written = had ? deps.spaces.updateSpace(had.id, given)! : deps.spaces.addSpace({ ...given, key: space.key });
     writeLabels(deps, { space: written.id }, space.labels);
@@ -853,7 +868,7 @@ function writeSpaces(deps: ImportDeps, homeId: string, entry: HomeEntry): void {
     const from = deps.spaces.spaceByKey(homeId, opening.from);
     const to = opening.to === null ? null : deps.spaces.spaceByKey(homeId, opening.to);
     if (!from || (opening.to !== null && !to)) continue;
-    const given = { fromId: from.id, toId: to?.id ?? null, kind: opening.kind, name: opening.name };
+    const given = { fromId: from.id, toId: to?.id ?? null, kind: opening.kind, name: opening.name, shape: opening.shape };
     const had = deps.spaces.openingByKey(homeId, key);
     if (had) deps.spaces.updateOpening(had.id, given);
     else deps.spaces.addOpening({ ...given, key });
@@ -886,7 +901,16 @@ function writeLabels(deps: ImportDeps, target: LabelTarget, said: readonly strin
 
 /** Whether a device stands where a file says: by keys. */
 function samePlace(now: PlaceEntry | null, said: PlaceEntry): boolean {
-  return now !== null && now.home === said.home && now.space === said.space && now.opening === said.opening && now.role === said.role;
+  return (
+    now !== null &&
+    now.home === said.home &&
+    now.space === said.space &&
+    now.opening === said.opening &&
+    now.role === said.role &&
+    JSON.stringify(now.at) === JSON.stringify(said.at) &&
+    now.height === said.height &&
+    now.facing === said.facing
+  );
 }
 
 /** Why where a file says a device stands is nowhere — no home, space or opening by those keys, in the file or here — or null. */
@@ -907,7 +931,7 @@ function spotOf(deps: ImportDeps, place: PlaceEntry): PlacementInput | null {
   const space = place.space === null ? deps.spaces.site(home.id) : deps.spaces.spaceByKey(home.id, place.space);
   const opening = place.opening === null ? null : deps.spaces.openingByKey(home.id, place.opening);
   if (!space || (place.opening !== null && !opening)) return null;
-  return { spaceId: space.id, openingId: opening?.id ?? null, role: place.role };
+  return { spaceId: space.id, openingId: opening?.id ?? null, role: place.role, x: place.at?.[0] ?? null, y: place.at?.[1] ?? null, z: place.height, facing: place.facing };
 }
 
 /** A device added or changed as its entry says: what it is, how it is reached, its secrets, kept or given. */

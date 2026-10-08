@@ -113,6 +113,9 @@ function spaceTree(spaces: readonly SpaceView[], labelsOf: (spaceId: string) => 
         level: space.level,
         elevation: space.elevation,
         height: space.height,
+        frame: space.frame,
+        outline: space.outline ? space.outline.map(([x, y]) => [x, y] as [number, number]) : null,
+        plan: space.plan ? { picture: space.plan.pictureId, scale: space.plan.scale, x: space.plan.x, y: space.plan.y, turn: space.plan.turn } : null,
         labels: labelsOf(space.id),
         spaces: under(space.id),
       }));
@@ -127,7 +130,7 @@ function openingsOf(spaces: SpaceStore, homeId: string): Record<string, OpeningE
     spaces.openings(homeId).flatMap((opening) => {
       const from = keys.get(opening.fromId) ?? null;
       const to = opening.toId === null ? null : (keys.get(opening.toId) ?? undefined);
-      return from && to !== undefined ? [[opening.key, { kind: opening.kind, from, to, name: opening.name }]] : [];
+      return from && to !== undefined ? [[opening.key, { kind: opening.kind, from, to, name: opening.name, shape: opening.shape ? opening.shape.map(([x, y]) => [x, y] as [number, number]) : null }]] : [];
     })
   );
 }
@@ -144,6 +147,9 @@ export function placeOf(deps: Pick<ConfigDeps, 'places' | 'spaces'>, deviceId: S
     space: space.kind === 'site' ? null : space.key,
     opening: placed.openingId ? (deps.spaces.opening(placed.openingId)?.key ?? null) : null,
     role: placed.role,
+    at: placed.x !== null && placed.y !== null ? [placed.x, placed.y] : null,
+    height: placed.z,
+    facing: placed.facing,
   };
 }
 

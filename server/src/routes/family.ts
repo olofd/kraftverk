@@ -73,6 +73,8 @@ export function familyRoutes(deps: AppDeps): Hono {
   api.patch('/zones/:id', async (c) => c.json(await familyFor(deps, c).zones.update(c.req.param('id'), await body(c, ZONE.partial()))));
   api.delete('/zones/:id', async (c) => c.json(await familyFor(deps, c).zones.remove(c.req.param('id'))));
 
+  /** A point in a frame: metres east and north of its origin, as the frame is turned. */
+  const POINT = z.tuple([z.number().finite(), z.number().finite()]);
   /** A home's spaces: a tree from its site — the family checks what each says. */
   const SPACE = z
     .object({
@@ -87,10 +89,13 @@ export function familyRoutes(deps: AppDeps): Hono {
       level: z.number().int().min(-200).max(200).nullable(),
       elevation: z.number().finite().min(-1000).max(1000).nullable(),
       height: z.number().finite().positive().max(100).nullable(),
+      frame: z.object({ x: z.number().finite(), y: z.number().finite(), turn: z.number().finite() }).strict().nullable(),
+      outline: z.array(POINT).min(3).max(200).nullable(),
+      plan: z.object({ pictureId: z.string().regex(/^[0-9a-f]{64}$/), scale: z.number().finite().positive(), x: z.number().finite(), y: z.number().finite(), turn: z.number().finite() }).strict().nullable(),
     })
     .strict();
   api.get('/homes/:id/spaces', async (c) => c.json({ spaces: await familyFor(deps, c).spaces.list(c.req.param('id'), { removed: c.req.query('removed') === 'true' }) }));
-  api.post('/spaces', async (c) => c.json(await familyFor(deps, c).spaces.add(await body(c, SPACE.partial({ key: true, purpose: true, icon: true, pictureId: true, position: true, level: true, elevation: true, height: true })))));
+  api.post('/spaces', async (c) => c.json(await familyFor(deps, c).spaces.add(await body(c, SPACE.partial({ key: true, purpose: true, icon: true, pictureId: true, position: true, level: true, elevation: true, height: true, frame: true, outline: true, plan: true })))));
   api.patch('/spaces/:id', async (c) => c.json(await familyFor(deps, c).spaces.update(c.req.param('id'), await body(c, SPACE.partial()))));
   api.delete('/spaces/:id', async (c) => c.json(await familyFor(deps, c).spaces.remove(c.req.param('id'))));
   api.get('/spaces/:id/history', async (c) => {
@@ -106,10 +111,11 @@ export function familyRoutes(deps: AppDeps): Hono {
       toId: z.string().min(1).max(40).nullable(),
       kind: z.enum(['door', 'opening', 'stairs', 'window', 'gate', 'garage-door', 'elevator']),
       name: z.string().trim().max(60).nullable(),
+      shape: z.array(POINT).min(2).max(200).nullable(),
     })
     .strict();
   api.get('/homes/:id/openings', async (c) => c.json({ openings: await familyFor(deps, c).openings.list(c.req.param('id')) }));
-  api.post('/openings', async (c) => c.json(await familyFor(deps, c).openings.add(await body(c, OPENING.partial({ key: true, name: true })))));
+  api.post('/openings', async (c) => c.json(await familyFor(deps, c).openings.add(await body(c, OPENING.partial({ key: true, name: true, shape: true })))));
   api.patch('/openings/:id', async (c) => c.json(await familyFor(deps, c).openings.update(c.req.param('id'), await body(c, OPENING.partial()))));
   api.delete('/openings/:id', async (c) => c.json(await familyFor(deps, c).openings.remove(c.req.param('id'))));
 

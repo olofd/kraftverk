@@ -13,7 +13,11 @@ home may hold the map of; and the arithmetic of tiles and boxes. The plan:
 - **Does:** build the style both renderers draw — MapLibre on the web and on
   a phone — with every URL the home's own (`/api/map/tiles`, `/fonts`,
   `/sprites`), credited to OpenStreetMap; turn markers, accuracies, trails and
-  zones into GeoJSON; find the box around what is shown, the tile a place is
+  zones — and a home's drawn rooms — into GeoJSON; turn a point in a home's
+  frames (`frames.ts`: metres in a space's frame, up the tree of spaces to
+  the site, onto the Earth by the home's place and bearing) into latitude
+  and longitude and back, place a floor's drawing by its corners, and find
+  the innermost drawn room a point is in; find the box around what is shown, the tile a place is
   in and what a tile covers; know every country by its code, name and box
   (`countries.ts`, generated from Natural Earth by
   `scripts/gen-countries.mjs`), the country a place is in, and the box of

@@ -334,6 +334,7 @@ erDiagram
   home ||--|{ space : "is a tree of"
   space |o--o{ space : "holds"
   space ||--o{ opening : "meets another at"
+  space ||--o| floor_plan : "is drawn by"
   space ||--o{ placement : "is where stood"
   opening |o--o{ placement : "is watched by"
   device ||--o{ placement : "has stood"
@@ -454,8 +455,17 @@ erDiagram
     int level "0 · a floor's: 0 the ground floor · null for any other"
     real elevation "0 · a floor's: metres above the ground"
     real height "2.4 · metres floor to ceiling"
-    real frame_x "null · where its frame sits in its parent's: for coordinates (W6)"
+    real frame_x "null · its frame's origin in its parent's, metres, with frame_y and frame_turn"
+    real frame_turn "null · degrees clockwise from its parent's frame"
+    text outline "null · a GeoJSON Polygon in metres, in its own frame"
     text removed_at "null · set when removed: what stood there is history"
+  }
+  floor_plan {
+    text space_id PK "s-… · a floor"
+    text media_id FK "the drawing: a media id"
+    real scale "0.02 · metres a pixel"
+    real x "where its top-left corner falls in the floor's frame, with y"
+    real turn "0 · degrees about that corner"
   }
   opening {
     text id PK "o-…"
@@ -465,6 +475,7 @@ erDiagram
     text to_id FK "s-… · null: the outside"
     text kind "door · opening · stairs · window · gate · garage-door · elevator"
     text name "Front door · null: its kind"
+    text shape "null · a GeoJSON LineString in metres, in from's frame: where in the wall"
     text removed_at "null · set when removed, or with a space it joins"
   }
   placement {
@@ -845,7 +856,7 @@ each one's master is: this device, or a server by its address.
 | `connection_secret` | Credentials belong to a way of reaching the device (the Tuya local key is part of *tuya-local over lan*), not to the device. | step 6 |
 | `family` | The family this database is — one: the people who share its devices, nodes and homes, and its master (docs/PLAN-WORLD-MODEL.md). | when the database is made |
 | `place`, `home` | The family's homes — each a place with its geofence, its clock and its address, and what a home has more: its type, its picture, its order. The first is made with the family; one left is archived. Zones come with presence. | with the family; then in App settings › Homes |
-| `space`, `opening` | A home's buildings, floors, rooms, areas, stairs and outdoors, as a tree from its site — the home itself, made with it — and the doors, stairs and windows where they meet, or meet the outside. Removed, a space is archived with what is inside it and its openings; what stood in it moves out to its parent. | on a home's page; from a file |
+| `space`, `opening` | A home's buildings, floors, rooms, areas, stairs and outdoors, as a tree from its site — the home itself, made with it — and the doors, stairs and windows where they meet, or meet the outside. Removed, a space is archived with what is inside it and its openings; what stood in it moves out to its parent. A space may be drawn — an outline in a frame of its own, an opening's place in the wall — and a floor have a drawing (`floor_plan`) rooms are traced over: the home's map in its frame. | on a home's page and its map; from a file |
 | `placement` | Where a device stands — or, one that moves, where it is based — as intervals: placing it closes the open row and opens the next in one transaction, so a reading is the room's it was read in, and a space's history is what stood there while it stood there. | a device's *Where it is*; from a file |
 | `person`, `person_key`, `person_identity` | A person as their own chain says: their profile, the keys they sign with — each device's, and the recovery key their twelve words make — and the sign-in providers they linked. Kept by every family they are in, a newer copy replacing an older; checked statement by statement. Erased, only the id stays. | founding a family, taking an invitation, showing a newer copy |
 | `member` | Being in this family: a role, what it calls them, their colour. Left, the row stays for the history that names them. | founding, an invitation taken or let in; the People page |

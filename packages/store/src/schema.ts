@@ -311,6 +311,21 @@ export const SCHEMA = `
   CREATE INDEX space_parent ON space (parent_id);
 
   /*
+    A floor's drawing, placed in its frame: what rooms are traced over
+    (docs/PLAN-WORLD-MODEL.md §8.5). The picture's top-left corner falls at
+    x, y; a pixel is scale metres; turned turn degrees about that corner.
+    Only a floor has one: the store's rule.
+  */
+  CREATE TABLE floor_plan (
+    space_id   TEXT PRIMARY KEY REFERENCES space (id),
+    media_id   TEXT NOT NULL REFERENCES media (id),
+    scale      REAL NOT NULL CHECK (scale > 0),
+    x          REAL NOT NULL,
+    y          REAL NOT NULL,
+    turn       REAL NOT NULL DEFAULT 0 CHECK (turn >= 0 AND turn < 360)
+  );
+
+  /*
     Where two spaces meet, or a space meets the outside: a door, the stairs,
     a window — what presence moves along. A device on one (a contact sensor,
     a lock) is placed at it. Two between the same spaces are allowed: a room

@@ -87,6 +87,26 @@ export type HomeInput = {
   (docs/PLAN-WORLD-MODEL.md §8.5, §8.7).
 */
 
+/** A point in a frame: metres along its x axis and its y axis. */
+export type FramePoint = readonly [x: number, y: number];
+
+/**
+ * A space's own frame (§8.7): where its origin is in its parent's frame, and
+ * how far it is turned from it, in degrees clockwise. A room drawn square to
+ * its own walls stays square however the house sits.
+ */
+export type SpaceFrame = { x: number; y: number; turn: number };
+
+/**
+ * A floor's drawing, placed in its frame: what rooms are traced over. The
+ * picture's top-left corner falls at x, y; each of its pixels is `scale`
+ * metres; it is turned `turn` degrees clockwise about that corner.
+ */
+export type FloorPlanInput = { pictureId: string; scale: number; x: number; y: number; turn: number };
+
+/** A floor's drawing as it is kept: placed, and how many pixels it is across and down. */
+export type FloorPlanView = FloorPlanInput & { width: number; height: number };
+
 export type SpaceKind = 'site' | 'building' | 'floor' | 'room' | 'area' | 'stairs' | 'outdoor';
 export type SpacePurpose = 'kitchen' | 'living' | 'dining' | 'bedroom' | 'children' | 'guest' | 'bathroom' | 'toilet' | 'hallway' | 'office' | 'laundry' | 'storage' | 'utility' | 'garage' | 'gym' | 'sauna' | 'other';
 
@@ -111,6 +131,12 @@ export type SpaceView = {
   elevation: number | null;
   /** Metres floor to ceiling. */
   height: number | null;
+  /** Its own frame within its parent's; null: its parent's. */
+  frame: SpaceFrame | null;
+  /** Its outline, in its own frame: the corners in order, at least three, the last joined to the first. Null: not drawn. */
+  outline: FramePoint[] | null;
+  /** A floor's drawing, when it has one. */
+  plan: FloorPlanView | null;
   createdAt: string;
   removedAt: string | null;
 };
@@ -128,15 +154,30 @@ export type SpaceInput = {
   level?: number | null;
   elevation?: number | null;
   height?: number | null;
+  frame?: SpaceFrame | null;
+  outline?: FramePoint[] | null;
+  /** A floor's drawing: a picture already added (`media.add`), by its id. Only a floor has one. */
+  plan?: FloorPlanInput | null;
 };
 
 export type OpeningKind = 'door' | 'opening' | 'stairs' | 'window' | 'gate' | 'garage-door' | 'elevator';
 
 /** Where two spaces meet, or a space meets the outside. */
-export type OpeningView = { id: string; homeId: string; key: string; fromId: string; toId: string | null; kind: OpeningKind; name: string | null; removedAt: string | null };
+export type OpeningView = {
+  id: string;
+  homeId: string;
+  key: string;
+  fromId: string;
+  toId: string | null;
+  kind: OpeningKind;
+  name: string | null;
+  /** Where in the wall it is: a line in its `from` space's frame. Null: not drawn. */
+  shape: FramePoint[] | null;
+  removedAt: string | null;
+};
 
 /** An opening made: from one space, to another or to the outside. */
-export type OpeningInput = { key?: string; fromId: string; toId: string | null; kind: OpeningKind; name?: string | null };
+export type OpeningInput = { key?: string; fromId: string; toId: string | null; kind: OpeningKind; name?: string | null; shape?: FramePoint[] | null };
 
 /** Where a device stands, or is based: since when, in which space of which home, perhaps at an opening, perhaps at coordinates. */
 export type PlacementView = {

@@ -64,6 +64,17 @@ export const trailsGeoJSON = (trails: readonly MapTrail[]): Collection => ({
     .map((trail) => ({ type: 'Feature', id: trail.id, properties: { id: trail.id, color: trail.color ?? '' }, geometry: { type: 'LineString', coordinates: trail.points.map((point) => [point.longitude, point.latitude]) } })),
 });
 
+/** An area drawn as it is: a room's outline on the Earth, its ring closed — filled when it is occupied. */
+export type MapArea = { id: string; ring: readonly LngLat[]; label?: string; color?: string; filled?: boolean };
+
+/** Areas as polygons, each with whether it is filled. */
+export const areasGeoJSON = (areas: readonly MapArea[]): Collection => ({
+  type: 'FeatureCollection',
+  features: areas
+    .filter((area) => area.ring.length >= 4)
+    .map((area) => ({ type: 'Feature', id: area.id, properties: { id: area.id, label: area.label ?? '', color: area.color ?? '', filled: area.filled === true }, geometry: { type: 'Polygon', coordinates: [area.ring] } })),
+});
+
 /** Zones as circles. */
 export const zonesGeoJSON = (zones: readonly MapZone[]): Collection => ({
   type: 'FeatureCollection',
@@ -74,8 +85,9 @@ export const zonesGeoJSON = (zones: readonly MapZone[]): Collection => ({
  * The box around what a map shows — markers with their accuracy, trails,
  * zones — west, south, east, north. Null when it shows nothing.
  */
-export function boundsOf(shown: { markers?: readonly MapMarker[]; trails?: readonly MapTrail[]; zones?: readonly MapZone[] }): Bounds | null {
+export function boundsOf(shown: { markers?: readonly MapMarker[]; trails?: readonly MapTrail[]; zones?: readonly MapZone[]; areas?: readonly MapArea[] }): Bounds | null {
   const points: { latitude: number; longitude: number; metres: number }[] = [
+    ...(shown.areas ?? []).flatMap((area) => area.ring.map(([longitude, latitude]) => ({ latitude, longitude, metres: 0 }))),
     ...(shown.markers ?? []).map((marker) => ({ latitude: marker.latitude, longitude: marker.longitude, metres: marker.accuracy ?? 0 })),
     ...(shown.trails ?? []).flatMap((trail) => trail.points.map((point) => ({ ...point, metres: 0 }))),
     ...(shown.zones ?? []).map((zone) => ({ latitude: zone.latitude, longitude: zone.longitude, metres: zone.radius })),

@@ -83,12 +83,22 @@ function methodSchema(method: VocabularyMethod): Schema {
   };
 }
 
+/** A point in a frame: metres along its x and y axes. */
+const POINT: Schema = { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2, description: 'Metres in its frame: [x, y].' };
+
 /** Where a device is, by keys. */
 const PLACE: Schema = {
   type: 'object',
   required: ['home'],
   additionalProperties: false,
-  properties: { home: { type: 'string' }, space: { type: 'string' }, opening: { type: 'string' } },
+  properties: {
+    home: { type: 'string' },
+    space: { type: 'string' },
+    opening: { type: 'string' },
+    at: { ...POINT, description: 'Where in the space: metres in its frame, [x, y].' },
+    height: { type: 'number', description: 'Metres above the floor.' },
+    facing: { type: 'number', minimum: 0, exclusiveMaximum: 360, description: 'Which way it looks: degrees in the space’s frame.' },
+  },
 };
 
 /** Labels, by key. */
@@ -107,6 +117,27 @@ const SPACE: Schema = {
     level: { type: 'integer', description: 'A floor’s: 0 the ground floor, -1 the cellar.' },
     elevation: { type: 'number', description: 'A floor’s: metres above the ground.' },
     height: { type: 'number', exclusiveMinimum: 0, description: 'Metres from floor to ceiling.' },
+    frame: {
+      type: 'object',
+      required: ['x', 'y', 'turn'],
+      additionalProperties: false,
+      properties: { x: { type: 'number' }, y: { type: 'number' }, turn: { type: 'number', minimum: 0, exclusiveMaximum: 360 } },
+      description: 'Its own frame: where its origin is in its parent’s, in metres, and its turn in degrees.',
+    },
+    outline: { type: 'array', items: POINT, minItems: 3, description: 'Its corners in its own frame, in order: [[0, 0], [4, 0], [4, 3], [0, 3]].' },
+    plan: {
+      type: 'object',
+      required: ['picture', 'scale', 'x', 'y'],
+      additionalProperties: false,
+      properties: {
+        picture: { type: 'string', pattern: '^[0-9a-f]{64}$', description: 'The drawing: its picture’s id.' },
+        scale: { type: 'number', exclusiveMinimum: 0, description: 'The metres a pixel is.' },
+        x: { type: 'number', description: 'Where its top-left corner falls: metres in the floor’s frame.' },
+        y: { type: 'number' },
+        turn: { type: 'number', minimum: 0, exclusiveMaximum: 360, description: 'Degrees it is turned about that corner.' },
+      },
+      description: 'A floor’s drawing, placed in its frame: what rooms are traced over.',
+    },
     labels: { ...LABELS, description: 'Its labels, by key: on what stands in it too.' },
     spaces: { type: 'object', propertyNames: { pattern: KEY.source }, additionalProperties: { $ref: '#/$defs/space' }, description: 'The spaces inside it, by key.' },
   },
@@ -455,7 +486,7 @@ export function configJsonSchema(vocabulary: Vocabulary): Schema {
                 type: 'object',
                 required: ['kind', 'from', 'to'],
                 additionalProperties: false,
-                properties: { kind: { enum: [...OPENING_KINDS] }, from: { type: 'string' }, to: { type: 'string', description: 'A space’s key, or "outside".' }, name: { type: 'string' } },
+                properties: { kind: { enum: [...OPENING_KINDS] }, from: { type: 'string' }, to: { type: 'string', description: 'A space’s key, or "outside".' }, name: { type: 'string' }, shape: { type: 'array', items: POINT, minItems: 2, description: 'Where in the wall it is: a line in its from space’s frame.' } },
               },
             },
           },
