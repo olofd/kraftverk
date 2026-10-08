@@ -327,7 +327,13 @@ erDiagram
   device_connection ||--o{ connection_secret : "needs"
   node ||--o{ device_connection : "holds"
   device ||--o{ device_connection : "is the bridge of"
-  node |o--|| home : "is the master of"
+  node |o--|| family : "is the master of"
+  family ||--o{ place : "names"
+  place ||--o| home : "is"
+  home ||--o{ home_setting : "keeps"
+  home }o--o| media : "is pictured by"
+  device }o--o| media : "is pictured by"
+  home ||--o{ automation : "is the clock of"
   device ||--o{ device_kv : "remembers"
   device ||--o{ device_reading : "last said"
   device ||--o{ sample : "recorded"
@@ -365,7 +371,8 @@ erDiagram
     json description "{parts: [...], attributes: [...], events: [...]} · the latest, the type's or its own"
     text description_source "type · device · whose word the description is"
     json info "{manufacturer: AFERIY, model: P280, firmware: {...}} · null until it has said"
-    text picture "type:1 · own:<id> one day · null: its type's first"
+    int picture_type "1 · one of its type's pictures, by number"
+    text picture_id FK "a media id · a photo of its own · both null: its type's first"
     text added_at "2026-09-27T19:40:00Z"
     text paused_at "null · set by Pause · kept, not reached"
     int track_days "null · 30 · how long where it has been is kept · its owner's choice"
@@ -391,11 +398,39 @@ erDiagram
     text value "encrypted with KRAFTVERK_SECRET_KEY"
     int encrypted "1"
   }
-  home {
-    text id PK "h-7c2e90a14d3b7c2e · made once, with its database"
-    text name "Our house · what the people in it call it"
-    text master_id FK "n-0e4a7c91b2d50e4a · the node whose database is the home's: the one writer"
+  family {
+    text id PK "f-01JA8ZK3Q4R7T9V2W5X6Y8Z0AB · made once, with its database"
+    text name "The Examples · what the people in it call it"
+    text kind "family · household · friends · other: only the words on screen"
+    text locale "en-GB · what is said to all of it"
+    text master_id FK "n-… · the node whose database is the family's: the one writer"
     text created_at "2026-10-02T08:00:00Z"
+  }
+  place {
+    text id PK "h-… a home · z-… a zone"
+    text kind "home · zone"
+    text key "home · lake-cabin · its name in configuration"
+    text name "Home · Lake cabin"
+    real latitude "59.33 · null: a home that has not said"
+    real longitude "18.07"
+    real radius "150 · metres: its geofence"
+    text time_zone "Europe/Stockholm · a home's always"
+    text country "SE"
+    text removed_at "null · set when left: history kept"
+  }
+  home {
+    text id PK FK "the place it is"
+    text type "house · apartment · cabin · boat · caravan · office · other"
+    text picture_id FK "a media id · null: none"
+    real bearing "0 · degrees: where its floor plans sit on the globe"
+    int position "0 · its order among the family's homes"
+  }
+  media {
+    text id PK "the SHA-256 of its bytes: one picture kept once"
+    text type "image/webp · image/jpeg · image/png"
+    int bytes "184 320"
+    int width "2048"
+    int height "1536"
   }
   node {
     text id PK "n-51d0e7a2c9f351d0 · made by the node itself, once: every home's database knows it by it"
@@ -526,7 +561,9 @@ erDiagram
     text started_at "2026-10-16T17:02:00Z"
     text ended_at "2026-10-16T17:03:41Z · null: running now, one at a time"
     text outcome "acted · failed · stopped · interrupted · running · …"
-    text started_by "olof · null: its own triggers"
+    text started_by_kind "person · agent · null: its own triggers"
+    text started_by_id "null until people have ids"
+    text started_by_name "olof · as they were called then"
     text started_by_run FK "r-9a8b7c6d5e4f3a2b · the run whose step started it · null: none"
     text why "Started by olof"
     text summary "Scooter plug: Power 238 W, after 2 tries"
@@ -575,28 +612,40 @@ erDiagram
     text device_id PK "d-5b2e90c4a1d35b2e"
     text part PK "main · outlet.ac"
     text switched_at "2026-10-16T17:02:10Z · what the dwell counts from"
-    text switched_by "olof · automation:a-71c2d0e5f9a371c2 · who, as the intent said it"
+    text by_kind "person · agent · automation · who switched it"
+    text by_id "a-71c2… · the automation's id; null for a person until W3"
+    text by_name "olof · Morning · as they were called then"
   }
   device_write {
     text device_id PK "d-5b2e90c4a1d35b2e"
     text attribute PK "afterPowerCut"
     text written_at "2026-10-16T17:05:00Z"
-    text written_by "automation:a-71c2d0e5f9a371c2"
+    text by_kind "automation"
+    text by_id "a-71c2…"
+    text by_name "Morning"
   }
   audit {
     int id PK "4812"
     text at "2026-09-27T19:51:12Z"
     text kind "device.control"
-    text actor "olofdahlbom · automation:a-71c2d0e5f9a371c2 · node:n-51d0e7a2c9f351d0"
+    text actor_kind "person · agent · automation · node · integration · system"
+    text actor_id "a-… · n-… · null where there is no id"
+    text actor_name "olof · Morning · Garage NAS · as it was called then: no reference, so history is never rewritten"
     text resource_kind "device · node · automation · account · transport · null with resource"
     text resource "d-3f9a2c61b0e43f9a · not a foreign key: it outlives the device"
     text summary "Switched the AC outlets off"
     json detail "{part: outlet.ac, capability: switch, command: set, args: {on: false}}"
   }
   home_setting {
-    text key PK "policy.values · home.moved · home.kept · only these: what this node has settled for the home, nothing about one device or automation"
+    text home_id PK FK "the home whose values these are"
+    text key PK "policy.values · only these: nothing about one device or automation"
     text value "{loadWatts: 10, reserveSoc: 20}"
     text updated_at "2026-09-01T10:00:00Z"
+  }
+  node_setting {
+    text key PK "family.moved · family.kept · what this node settled about the family it keeps"
+    text value "2026-10-02T08:00:00Z"
+    text updated_at "2026-10-02T08:00:00Z"
   }
   sighting_ignored {
     text transport "lan · ble · bridge"
@@ -661,7 +710,10 @@ joined; elsewhere it is plain text, null.
 | `device.track_days`, `track` | Where a device that says where it is has been — a phone, a scooter — kept only when its owner turns it on, for a day to a year (docs/PLAN-MAPS.md). A point when it has moved, or each hour it stays; let go after its days. Turning it off, or removing the device, forgets it at once; it is never in an export, only that it is kept and for how long. | its settings, or its own screen; then by the sampler, as it is located |
 | `device_connection` | A device can be reached more than one way, from more than one place. Your station over Wi-Fi from the server *and* over Bluetooth from your phone is one device with two connections. A way is held by a node, or goes **through** a bridge — another device, such as an account its scooters are reached through — and is then held wherever that device is, its address the member's key within it (PLAN-INTEGRATIONS.md §4.3). Never both. | step 10, or *Add another way to reach it* |
 | `connection_secret` | Credentials belong to a way of reaching the device (the Tuya local key is part of *tuya-local over lan*), not to the device. | step 6 |
-| `home` | The home this database keeps — one: what every node and device here is part of, and what its people call it. | when the database is made |
+| `family` | The family this database is — one: the people who share its devices, nodes and homes, and its master (docs/PLAN-WORLD-MODEL.md). | when the database is made |
+| `place`, `home` | The family's homes — each a place with its geofence, its clock and its address, and what a home has more: its type, its picture, its order. The first is made with the family; one left is archived. Zones come with presence. | with the family; then in App settings › Homes |
+| `home_setting`, `node_setting` | A home's values (its policy), by home; and what this node settled about the family it keeps — moved to a server, a server's copy brought in. | when set |
+| `media`, `media_data` | Pictures, kept by their content: a home's, a device's own photo. Let go when nothing names one. | when one is added |
 | `node` | Every kraftverk node of the home — the hub running somewhere: the one this database belongs to (`self`), the home's master, and the nodes that follow it, the always-on machine among them. Each declares what it is — always on, reachable, trusted — which is how the master is chosen, and what a connection's holder names: "Bluetooth, from Olof's iPhone". | when the database is made (its own); when another joins |
 | `device_link` | Facts about the house, between parts — which plug feeds which station's mains input, which station's outlet feeds another — that the gateway, the energy view and automations all read. | step 9, or later on the device's page |
 | `device_kv` | What a session keeps between runs: a simulator's settings, a plug's detected protocol version. | by the session |
@@ -673,7 +725,6 @@ joined; elsewhere it is plain text, null.
 | `sample_change` | Every change of an on/off or an enum, when it happened: what a timeline draws ("AC outlets off 14:02–14:19"), where minute samples would blur a switch flicked between them. Two years, and each key's latest beyond. | as readings move, from the server's sessions and from apps' uplinks |
 | `last_heard` | In an app with a server: what the server last said, by what was asked — its devices, its automations, the home's values — with when. What the app shows, read only and saying so, while the server cannot be reached. Empty on a server. | as the server answers |
 | `send_queue` | In an app holding ways for a server: what it owes the server — readings, events, timeline entries, what a session kept — in order, kept across a restart and gone once the server has it. Empty on a server. | as the app's sessions and gateway work |
-| `home_setting` | What this node has settled for the home it keeps, by a name the schema lists: the policy values, and in an app whether its own home moved to a server or a server's copy was brought in. | when set |
 | `sighting_ignored` | What a person said not to offer again: something a transport sees, or a member behind a bridge. Named as a connection names a device — transport, bridge, address — and listed apart, where it can be offered again. | *Not mine* on something found |
 | `transport_kv` | What a transport keeps between runs — a Bluetooth bond, a Matter fabric — its own and no other's. | by the transport |
 | `meta` | What the database is: the schema it was made with, when, and by which version — what the set-aside message reports. | when the database is made |
@@ -837,10 +888,12 @@ staying with the server (docs/PLAN-SHARED-CORE.md, phase 6h).
 
 ---
 
-## 7. Later: homes
+## 7. Families, homes, and what comes next
 
-[`ACCOUNTS.md`](ACCOUNTS.md) plans accounts as members of **homes**. The
-`home` row is there already: one per database, naming its master node. When a
-database keeps more than one home, `device` and `node` gain a `home_id`. Everything that hangs off a device — its connections and their
-secrets, its store, its history, its links — belongs to that home through the
-device, so nothing else changes shape. A link never joins devices in two homes.
+A database is one **family** (docs/PLAN-WORLD-MODEL.md): the people who share
+its devices, nodes and homes, its master the one writer. A family has
+**homes** — each a place with its own clock — and every automation is for one
+of them, or the family's. What comes next — rooms and where devices stand,
+people and their keys, who carries what — is planned table by table in
+[PLAN-WORLD-MODEL.md](PLAN-WORLD-MODEL.md), and built in the order of
+[PLAN-WORLD-MODEL-WORK.md](PLAN-WORLD-MODEL-WORK.md).

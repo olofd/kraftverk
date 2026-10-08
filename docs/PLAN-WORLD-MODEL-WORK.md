@@ -51,6 +51,25 @@ A different answer to 1 or 2 changes W1's rename. To 5, it changes W1.1.
 
 ## W1. The foundation
 
+**Built, 2026-10-08** (commits W1.1 to W1.7). What building it changed:
+
+- **The device SDK's port** for a device's home moves to W2, where devices
+  stand in homes. Until then the first home is the family's place, policy
+  and clock.
+- **`for_person` and `via_node`** on the timeline move to W3, when there are
+  people to point at. A nullable column waiting for its first use would
+  break strict version 1.
+- **Sign-ins:** `node.db` keeps the server's schema in `server/src/auth`, not
+  `packages/store`. Only a node with an HTTP entrance has sign-ins
+  (PLAN-WORLD-MODEL.md §7).
+- **Homes have keys** (`place.key`), as devices and automations have. An
+  import plans homes like devices, and never leaves one: leaving a home is a
+  person's decision.
+- **Adding a picture on a phone** is not there yet. It needs a reviewed image
+  dependency. The web re-encodes through a canvas.
+- **Exporting pictures** in a downloaded file (a zip) is not there yet. The
+  snapshot beside the database keeps them.
+
 Nothing a person sees changes much. What changes is what everything after
 it is built on: the ids, who did what, where sign-ins live, the root's
 name, and homes.

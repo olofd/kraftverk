@@ -59,6 +59,10 @@ match.
 
 ### Home
 
+*(Since 2026-10-08 this is the **family**: the root of one database, which
+has homes — properties — inside it. See [PLAN-WORLD-MODEL.md](PLAN-WORLD-MODEL.md).
+What follows says "home" as it was written.)*
+
 What you create, and then add devices to. A home owns equipment and
 everything about it: devices, how each is reached and its secrets, their
 recorded history, the links between them, the audit timeline. How that looks in

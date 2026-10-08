@@ -19,12 +19,21 @@ and check a file with the same code.
 
 ```yaml
 # yaml-language-server: $schema=http://<your server>/api/config/schema.json
-kraftverk: 9                      # the document's version: required
+kraftverk: 10                     # the document's version: required
 
-home:
-  clock: Europe/Stockholm          # what an automation that says no clock keeps time in
-  location: { latitude: 51.48, longitude: 0 }   # where it is: what sunrise and sunset are told by
-  policy: { loadWatts: 50, reserveSoc: 20 }
+family: { name: The Examples, kind: family, locale: en-GB }
+
+homes:                            # each by its key, in their order
+  home:
+    name: Home
+    type: house
+    location: { latitude: 51.48, longitude: 0, radius: 150 }   # where it is, and its geofence in metres
+    time zone: Europe/London      # what its automations keep time in, unless one says its own
+    policy: { loadWatts: 50, reserveSoc: 20 }
+  cabin:
+    name: Lake cabin
+    type: cabin
+    time zone: Europe/London
 
 devices:
   garage-station:                 # its key: what everything else names it by
@@ -71,7 +80,7 @@ automations:
   start-charging-the-scooter:
     name: Start charging the scooter
     mode: watch                   # off · watch · act
-    clock: Europe/Stockholm
+    home: home                    # the home it is for: its clock, and its "home"; none, the family's
     uses:
       supply: garage-station.outlet.ac   # a device's key, and one of its parts
       charger: smart-plug                # a device alone is its main part

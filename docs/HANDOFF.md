@@ -29,6 +29,18 @@ the owner's Forgejo checks it and deploys it onto the server it runs on
 **Broker** workflow, which drops the station for about a minute. The architecture baseline is
 empty: the core names no product, and every device is found, not listed.
 
+- **The world model** ([PLAN-WORLD-MODEL.md](PLAN-WORLD-MODEL.md), the work
+  in [PLAN-WORLD-MODEL-WORK.md](PLAN-WORLD-MODEL-WORK.md)): **W1 is built**.
+  - Every id is a prefix and a ULID.
+  - Who did something is one actor shape everywhere.
+  - A server's sign-ins live in `node.db`, apart from the family's database.
+  - The root is the **family**, with **homes** inside it, each a place with
+    its own clock, and an automation for one of them.
+  - Configuration version 10 holds the family and its homes.
+  - Pictures are kept by their content.
+
+  Next is W2: rooms, and where devices stand.
+
 - **The shared core** ([PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md)): the
   home is one hub (`@kraftverk/hub`) behind one interface (`KraftverkApi`),
   run by the server and by the app alike — in a browser's worker or a
