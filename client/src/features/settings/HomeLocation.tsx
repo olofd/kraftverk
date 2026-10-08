@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
 import { describeError, type HomeView } from '@kraftverk/api-client';
@@ -9,16 +9,13 @@ import { Card, formatCoordinates, haptic, Row, SectionLabel } from '@kraftverk/u
 import { ErrorText } from '../../components/ErrorText';
 import { useFamily } from '../../state/FamilyProvider';
 
-/** The time zone this app keeps time in: what today's sunrise and sunset are shown on. */
-const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-/** Today's sunrise and sunset where the home is, as this app's clock says them: "06:12 and 18:40" — or why there are none. */
-function todaysSun(location: Coordinates): string {
+/** Today's sunrise and sunset where the home is, on its own clock: "06:12 and 18:40" — or why there are none. */
+function todaysSun(location: Coordinates, zone: string): string {
   const now = new Date();
-  const today = localTime(now, ZONE);
+  const today = localTime(now, zone);
   const { sunrise, sunset } = sunTimes({ year: today.year, month: today.month, day: today.day }, location);
   if (sunrise === null || sunset === null) return 'The sun neither rises nor sets there today.';
-  return `Today the sun rises at ${clockTime(new Date(sunrise), ZONE)} and sets at ${clockTime(new Date(sunset), ZONE)}.`;
+  return `Today the sun rises at ${clockTime(new Date(sunrise), zone)} and sets at ${clockTime(new Date(sunset), zone)}, on its clock.`;
 }
 
 /** A number typed as a person types it — "59,33" too — within ± `most`; null when it is not one. */
@@ -27,32 +24,27 @@ const degrees = (typed: string, most: number): number | null => {
   return typed.trim() !== '' && Number.isFinite(value) && Math.abs(value) <= most ? value : null;
 };
 
+/** How big a geofence is when nobody said: a house and its garden. */
+const RADIUS = 150;
+
 /**
- * Where the home is: what an automation's `sunrise` and `sunset` are told by.
- * Typed in degrees, as a map gives them; today's sunrise and sunset said as
- * soon as it is, so a mistake shows.
+ * Where a home is: what an automation's `sunrise` and `sunset` are told by,
+ * and what "at home" is measured from. Typed in degrees, as a map gives
+ * them; today's sunrise and sunset said as soon as it is, so a mistake shows.
  */
-export function HomeLocation() {
+export function HomeLocation({ home, onChanged }: { home: HomeView; onChanged: (home: HomeView) => void }) {
   const { api } = useFamily();
-  const [home, setHome] = useState<HomeView | null>(null);
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
-  useEffect(() => {
-    void api.homes
-      .list()
-      .then(([first]) => setHome(first ?? null))
-      .catch(() => undefined);
-  }, [api]);
 
-  const location = home?.location ?? null;
+  const location = home.location;
   const typed = { latitude: degrees(latitude, 90), longitude: degrees(longitude, 180) };
   const save = async (next: Coordinates | null) => {
     haptic();
     setProblem(null);
     try {
-      if (!home) return;
-      setHome(await api.homes.update(home.id, { location: next ? { ...next, radius: home.location?.radius ?? 150 } : null }));
+      onChanged(await api.homes.update(home.id, { location: next ? { ...next, radius: home.location?.radius ?? RADIUS } : null }));
       setLatitude('');
       setLongitude('');
     } catch (err) {
@@ -62,9 +54,12 @@ export function HomeLocation() {
 
   return (
     <YStack gap="$2">
-      <SectionLabel>Where the home is</SectionLabel>
+      <SectionLabel>Where it is</SectionLabel>
       <Card gap="$3">
-        <Row title={location ? formatCoordinates(location) : 'Not said yet'} subtitle={location ? todaysSun(location) : 'Say it, and automations can turn things on at sunset, or keep to the night: "time between sunset and sunrise".'} />
+        <Row
+          title={location ? formatCoordinates(location) : 'Not said yet'}
+          subtitle={location ? todaysSun(location, home.timeZone) : 'Say it, and automations can turn things on at sunset, or keep to the night: "time between sunset and sunrise".'}
+        />
         <XStack gap="$2" alignItems="center" flexWrap="wrap">
           <Input aria-label="Latitude" placeholder="Latitude, 59.33" flex={1} minWidth={120} size="$4" keyboardType="numbers-and-punctuation" value={latitude} onChangeText={setLatitude} />
           <Input aria-label="Longitude" placeholder="Longitude, 18.07" flex={1} minWidth={120} size="$4" keyboardType="numbers-and-punctuation" value={longitude} onChangeText={setLongitude} />

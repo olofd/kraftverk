@@ -10,7 +10,6 @@ import { useAuth } from '../../state/AuthProvider';
 import { useDevices } from '../../state/DevicesProvider';
 import { useFamily } from '../../state/FamilyProvider';
 import { useServers } from '../../state/ServersProvider';
-import { HomeLocation } from './HomeLocation';
 import { HomePolicy } from './HomePolicy';
 import { ResetEverything } from './ResetEverything';
 import { Servers } from './Servers';
@@ -46,6 +45,10 @@ export function AppSettings() {
               <RowSeparator />
             </>
           ) : null}
+          <Pressable onPress={() => router.push(PATHS.settings.homes)}>
+            <Row title="Homes" subtitle="Where your family lives, or spends time: each with its own place and clock" accessory={chevron} />
+          </Pressable>
+          <RowSeparator />
           <Pressable onPress={() => router.push(PATHS.settings.connectivity)}>
             <Row
               title="Connectivity"
@@ -97,7 +100,6 @@ export function AppSettings() {
 
       <HomePolicy />
 
-      <HomeLocation />
 
       <Servers />
 
