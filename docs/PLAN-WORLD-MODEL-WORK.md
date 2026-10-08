@@ -491,6 +491,28 @@ see the same devices.
 - *Done when* a home's map shows which rooms are occupied, from real
   sensors.
 
+Steps:
+
+1. **W6.1 What says someone is there.** Standard meanings `motion`,
+   `occupied` (a presence radar's), `open` (a contact's) and `people` (a
+   count); Zigbee2MQTT's `occupancy`, `presence` and `contact` claim them,
+   and the played network gains a motion sensor, a radar and a contact.
+2. **W6.2 Geometry.** A space's outline and frame, an opening's shape, and
+   `floor_plan` (a floor's drawing, in `media`) through the store, the
+   contract, the API and the file (version 13). Frames walked to the globe
+   in `packages/map` (`frames.ts`), pure.
+3. **W6.3 Occupancy.** `occupancy` and `occupancy_evidence`; pure rules in
+   `packages/hub/src/occupancy` — a radar while it says so, motion for a
+   while after, a closed room with motion seen in it until a door opens,
+   a person's room stay; a floor, a building and the site occupied when a
+   space within is. Kept 30 days; on the bus for automations; an API.
+4. **W6.4 The home's map.** The MapLibre view draws a home in its frame:
+   rooms traced by tapping their corners, filled when occupied; the floor's
+   drawing under them; devices placed by tapping where they stand.
+5. **W6.5 Positions in a frame.** A standard `spot` meaning — metres on a
+   device's own map — anchored by its placement; a carried one places its
+   person in a room (a room stay), a robot cleaner is drawn where it is.
+
 ## W7. Automating people and places
 
 - Modes on two axes, set by people, automations and presence.
@@ -500,6 +522,26 @@ see the same devices.
   - triggers: arrives, leaves, the first arrives, the last leaves, a room
     empty, a mode changes.
 - *Done when* "when the last person leaves, set away" is a recipe.
+
+Steps:
+
+1. **W7.1 Modes.** `mode` (built in, and a family's own by key) and
+   `home_mode` (intervals, some ahead: a vacation from Saturday); a hub
+   service that says on the bus when a home's mode changes; the API; the
+   file's `modes:`; on the home screen, and a page of the family's own.
+2. **W7.2 Roles for people and places.** A role filled by a person, by
+   people (some, or everyone), or by a place (a home, a zone, a space):
+   the rule, the fills, `automation_role`, `uses:` in the file, the
+   checker, the hub's drafts and import, and the editor's role pickers.
+3. **W7.3 Reading people and places, and their triggers.** `who at place`;
+   a place's `people`, `occupied`, `presence` and `day`; `home` the
+   automation's own. Triggers `arrives`, `leaves`, `first arrives`,
+   `last leaves`, `empties`, `occupied`, `mode becomes`, `mode changes`,
+   from the bus's presence, occupancy and mode messages.
+4. **W7.4 Steps, and the recipe.** `set mode` and `notify` (a title and
+   text with `{…}` values in them, to a person, people or everyone);
+   recipes "away when the last one leaves, home when one comes back" and
+   "the day's modes by the sun".
 
 ## W8. Several homes, several nodes
 

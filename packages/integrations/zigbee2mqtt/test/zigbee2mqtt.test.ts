@@ -6,7 +6,7 @@ import { checkDeviceTypeContract, fakeMessageChannel, simulatorContext } from '@
 import bridge from '../src/bridge.ts';
 import type { ZigbeeLink } from '../src/link.ts';
 import { groupKey, ZigbeeNetwork } from '../src/network.ts';
-import { BUTTON_EXPOSES, LIGHT_EXPOSES, PLUG_EXPOSES, SENSOR_EXPOSES, SWITCH_EXPOSES, playedZigbee2Mqtt, type PlayedZigbee2Mqtt } from '../src/played.ts';
+import { BUTTON_EXPOSES, LIGHT_EXPOSES, MOTION_EXPOSES, RADAR_EXPOSES, PLUG_EXPOSES, SENSOR_EXPOSES, SWITCH_EXPOSES, playedZigbee2Mqtt, type PlayedZigbee2Mqtt } from '../src/played.ts';
 import protocol, { actionOf, brokerPolicy, groupExposes, parseTopic, readingsOf, setPayload, shapeOf, type Expose } from '../src/protocol/index.ts';
 import * as types from '../src/types.ts';
 import sonoff from './fixtures/sonoff-exposes.json';
@@ -126,10 +126,17 @@ describe('what exposes become', () => {
     expect(key(sensor, 'temperature_calibration')).toMatchObject({ access: 'write', category: 'config' });
   });
 
+  test('what says someone is there claims its meaning: motion, someone there, open', () => {
+    const shape = shapeOf([...MOTION_EXPOSES, ...RADAR_EXPOSES]);
+    expect(shape.description.attributes.find((each) => each.key === 'occupancy')).toMatchObject({ means: 'motion' });
+    expect(shape.description.attributes.find((each) => each.key === 'presence')).toMatchObject({ means: 'occupied' });
+    expect(shape.description.attributes.find((each) => each.key === 'battery')?.means).toBeUndefined();
+  });
+
   test('a binary is read by its own on and off: a contact’s on is open', () => {
     const contact: Expose = { type: 'binary', name: 'contact', property: 'contact', access: 1, value_on: false, value_off: true };
     const shape = shapeOf([contact]);
-    expect(shape.description.attributes[0]).toMatchObject({ key: 'contact', label: 'Open' });
+    expect(shape.description.attributes[0]).toMatchObject({ key: 'contact', label: 'Open', means: 'open' });
     expect(readingsOf(shape, { contact: false }, 'x')[0]?.value).toBe(true);
     expect(readingsOf(shape, { contact: true }, 'x')[0]?.value).toBe(false);
     const lock = shapeOf(PLUG_EXPOSES);

@@ -52,6 +52,7 @@ export const MATTER_CLUSTERS = {
   IlluminanceMeasurement: 0x0400,
   TemperatureMeasurement: 0x0402,
   RelativeHumidityMeasurement: 0x0405,
+  OccupancySensing: 0x0406,
   MediaPlayback: 0x0506,
   KeypadInput: 0x0509,
   ApplicationLauncher: 0x050c,
@@ -175,6 +176,22 @@ export const MEANING_PROJECTIONS: Readonly<Record<StandardMeaningId, MeaningProj
     homeAssistant: { platform: 'number', deviceClass: null },
     // 0 to 254 for 0 to 100 %.
     matter: { cluster: 'LevelControl', attribute: 'CurrentLevel', scale: 2.54 },
+  },
+  'motion': {
+    homeAssistant: { platform: 'binary_sensor', deviceClass: 'motion' },
+    matter: { cluster: 'OccupancySensing', attribute: 'Occupancy', scale: 1 },
+  },
+  'occupied': {
+    homeAssistant: { platform: 'binary_sensor', deviceClass: 'occupancy' },
+    matter: { cluster: 'OccupancySensing', attribute: 'Occupancy', scale: 1 },
+  },
+  'open': {
+    homeAssistant: { platform: 'binary_sensor', deviceClass: 'opening' },
+    matter: { none: 'Matter says whether a contact is closed (BooleanState StateValue), the other way round' },
+  },
+  'people': {
+    homeAssistant: { platform: 'sensor', deviceClass: null },
+    matter: { none: 'Matter does not count the people in a room' },
   },
 };
 

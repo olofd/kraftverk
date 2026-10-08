@@ -98,6 +98,27 @@ export const BUTTON_EXPOSES: readonly Expose[] = [
   { type: 'numeric', name: 'battery', property: 'battery', label: 'Battery', access: 1, unit: '%', category: 'diagnostic' },
 ];
 
+/** A motion sensor on a battery: someone moving, as its `occupancy`, and how light it is. */
+export const MOTION_EXPOSES: readonly Expose[] = [
+  { type: 'binary', name: 'occupancy', property: 'occupancy', label: 'Occupancy', access: 1, value_on: true, value_off: false, description: 'Indicates whether the device detected occupancy' },
+  { type: 'numeric', name: 'illuminance', property: 'illuminance', label: 'Illuminance', access: 1, unit: 'lx' },
+  { type: 'numeric', name: 'battery', property: 'battery', label: 'Battery', access: 1, unit: '%', value_min: 0, value_max: 100, category: 'diagnostic' },
+  { type: 'numeric', name: 'linkquality', property: 'linkquality', label: 'Linkquality', access: 1, unit: 'lqi', category: 'diagnostic' },
+];
+
+/** A presence radar on mains: someone there, moving or still, as its `presence`. */
+export const RADAR_EXPOSES: readonly Expose[] = [
+  { type: 'binary', name: 'presence', property: 'presence', label: 'Presence', access: 1, value_on: true, value_off: false, description: 'Indicates whether the device detected presence' },
+  { type: 'numeric', name: 'linkquality', property: 'linkquality', label: 'Linkquality', access: 1, unit: 'lqi', category: 'diagnostic' },
+];
+
+/** A door's contact sensor: its `contact` is closed (§5.6). */
+export const CONTACT_EXPOSES: readonly Expose[] = [
+  { type: 'binary', name: 'contact', property: 'contact', label: 'Contact', access: 1, value_on: false, value_off: true, description: 'Indicates if the contact is closed (= true) or open (= false)' },
+  { type: 'numeric', name: 'battery', property: 'battery', label: 'Battery', access: 1, unit: '%', value_min: 0, value_max: 100, category: 'diagnostic' },
+  { type: 'numeric', name: 'linkquality', property: 'linkquality', label: 'Linkquality', access: 1, unit: 'lqi', category: 'diagnostic' },
+];
+
 const device = (n: number, model: string, description: string, exposes: readonly Expose[], type: BridgeDevice['type'] = 'EndDevice'): BridgeDevice => {
   const ieee = `0x00124b00000000${(0xa0 + n).toString(16)}`;
   return { ieee_address: ieee, type, friendly_name: ieee, supported: true, interview_state: 'SUCCESSFUL', definition: { model, vendor: 'Simulated', description, source: 'native', exposes } };
@@ -106,7 +127,13 @@ const device = (n: number, model: string, description: string, exposes: readonly
 /** What a played network starts with: a plug that meters, a wall switch and a sensor; each joining device after them a light, then a button. */
 const PLAYED_DEVICES = (): BridgeDevice[] => [plug(1), device(2, 'WS-2G', 'Wall switch, two gangs', SWITCH_EXPOSES, 'Router'), device(3, 'TH-1', 'Temperature and humidity sensor', SENSOR_EXPOSES)];
 
-const JOINERS = [() => device(8, 'BULB-CT', 'Colour bulb', LIGHT_EXPOSES, 'Router'), () => device(9, 'BTN-1', 'Wireless button', BUTTON_EXPOSES)];
+const JOINERS = [
+  () => device(8, 'BULB-CT', 'Colour bulb', LIGHT_EXPOSES, 'Router'),
+  () => device(9, 'BTN-1', 'Wireless button', BUTTON_EXPOSES),
+  () => device(10, 'PIR-1', 'Motion sensor', MOTION_EXPOSES),
+  () => device(11, 'RADAR-1', 'Presence radar', RADAR_EXPOSES, 'Router'),
+  () => device(12, 'DOOR-1', 'Door contact', CONTACT_EXPOSES),
+];
 
 type State = Record<string, unknown>;
 
@@ -260,6 +287,10 @@ export function playedZigbee2Mqtt(options: PlayedOptions = {}): PlayedZigbee2Mqt
     if (has('brightness')) Object.assign(state, { brightness: 200, color_temp: 370, color: { x: 0.46, y: 0.41 } });
     if (has('local_temperature')) Object.assign(state, { local_temperature: 20.5, occupied_heating_setpoint: 21 });
     if (has('battery')) state.battery = 92;
+    // Nobody there yet, the door shut.
+    if (has('occupancy')) Object.assign(state, { occupancy: false, illuminance: 120 });
+    if (has('presence')) state.presence = false;
+    if (has('contact')) state.contact = true;
     // A newer firmware offered, as Zigbee2MQTT's own daily check would have found it.
     if (d.definition?.supports_ota) state.update = { ...OFFERED, state: 'available' };
     return state;

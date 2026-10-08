@@ -73,6 +73,8 @@ export const QUANTITY_SPECS = {
   price: { label: 'Price', value: number(['EUR/kWh', 'SEK/kWh', 'NOK/kWh', 'DKK/kWh']), precision: 2, axis: 'data', homeAssistant: 'monetary' },
   /** A place in an order, 1 first: the cheapest hour of the day. No unit. */
   rank: { label: 'Rank', value: number([]), precision: 0, axis: 'data', homeAssistant: null },
+  /** How many of something there are: the people a sensor counts in a room. No unit. */
+  count: { label: 'Count', value: number([]), precision: 0, axis: 'zero', homeAssistant: null },
   /** Where something is: a phone, a scooter, a tag (`POSITION_SHAPE`). Home Assistant tracks one as a device tracker, not a sensor. */
   position: { label: 'Position', value: { type: 'object', shape: POSITION_SHAPE }, precision: 5, axis: null, homeAssistant: null },
 } as const satisfies Record<string, QuantitySpec>;

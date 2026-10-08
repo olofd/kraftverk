@@ -86,6 +86,10 @@ const MEANING_BY_NAME: Readonly<Record<string, string>> = {
   local_temperature: 'temperature',
   frequency: 'frequency',
   ac_frequency: 'frequency',
+  // What says someone is there: a motion sensor's occupancy is motion, a radar's presence someone there, a contact open.
+  occupancy: 'motion',
+  presence: 'occupied',
+  contact: 'open',
 };
 
 /** Quantities by the expose's name, for what has no standard meaning of its own. */
@@ -314,7 +318,9 @@ export function shapeOf(exposes: readonly Expose[], options: { /** Zigbee2MQTT c
     const unit = value.type === 'number' ? (value.unit ?? null) : null;
     const meaning = MEANING_BY_NAME[name];
     const standard = meaning ? standardMeaning(meaning) : null;
-    const meansIt = Boolean(standard && standard.type === 'number' && 'unit' in standard && standard.unit === unit && !diagnostic && !writable);
+    const meansIt = Boolean(
+      standard && !diagnostic && !writable && ((standard.type === 'number' && 'unit' in standard && standard.unit === unit) || (standard.type === 'boolean' && value.type === 'boolean'))
+    );
     const quantity = !meansIt ? QUANTITY_BY_NAME[name] : undefined;
     const spec: AttributeSpec = {
       // A composite by its property — a light's `color` — which is what its state says it under.

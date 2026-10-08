@@ -101,6 +101,14 @@ export const STANDARD_MEANINGS = {
   playing: { label: 'Playing', type: 'boolean' },
   /** How loud, of all it can be. */
   volume: { label: 'Volume', type: 'number', unit: '%', quantity: 'percent' },
+  /** Someone moving where it is, now: a motion sensor's — quiet again once nobody has moved for its own while. */
+  motion: { label: 'Motion', type: 'boolean' },
+  /** Someone there, moving or still: a presence radar's. */
+  occupied: { label: 'Someone there', type: 'boolean' },
+  /** Open: a door, a window, a gate — a contact sensor's. */
+  open: { label: 'Open', type: 'boolean' },
+  /** How many people are where it is, when a sensor counts them. */
+  people: { label: 'People', type: 'number', quantity: 'count' },
 } as const satisfies Record<string, StandardMeaning>;
 
 export type StandardMeaningId = keyof typeof STANDARD_MEANINGS;
