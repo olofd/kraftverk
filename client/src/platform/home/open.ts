@@ -3,28 +3,33 @@ import { getRandomValues } from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import { openDatabaseSync } from 'expo-sqlite';
 
-import { fromExpoSqlite, schemaFingerprint, sealedWithKey } from '@kraftverk/store';
+import { personalApi, type DeviceKeys } from '@kraftverk/hub';
+import { newSecret, softwareKey } from '@kraftverk/identity';
+import { fromExpoSqlite, PERSONAL_SCHEMA, PersonalStore, schemaFingerprint, sealedWithKey } from '@kraftverk/store';
 
 import { TRANSPORT_ENTRIES } from '../../generated/transports';
 import { appFollower, appHub, readyDatabase } from './hub';
-import { databaseFile, OWNER, type OpenHome, type OpenOptions } from './home';
+import { callerOf, databaseFile, personalFile, type OpenDevice, type OpenHome, type OpenOptions } from './home';
 
 /*
-  A phone's home (docs/PLAN-SHARED-CORE.md, phase 6): in the app's own
+  A phone's kraftverk (docs/PLAN-SHARED-CORE.md, phase 6): in the app's own
   process, beside its screens, as the server runs one beside its routes —
-  no worker, no messages, nothing a browser needs. Without a server, the
-  hub on expo-sqlite; with one, what this app holds for it, kept in a file
-  of its own for that server. Either way its transports are the phone's
-  own (`transports.ts`), and the key its secrets are sealed with is kept in
-  the phone's secure storage. A browser's is `open.web.ts`.
+  no worker, no messages, nothing a browser needs. The device first: its
+  accounts in the personal store, each one's key in the phone's secure
+  storage (docs/PLAN-WORLD-MODEL.md §10.7). Then a family: an account's
+  own on expo-sqlite, or what this app holds for a server, in a file of its
+  own for that server. Its transports are the phone's own
+  (`transports.ts`), and the key its secrets are sealed with is kept in the
+  secure storage too. A browser's is `open.web.ts`.
 */
 
-// A phone has no `crypto.getRandomValues` of its own: expo-crypto's, for ids and the cipher.
+// A phone has no `crypto.getRandomValues` of its own: expo-crypto's, for ids, keys and the cipher.
 if (typeof globalThis.crypto?.getRandomValues !== 'function') {
   Object.defineProperty(globalThis, 'crypto', { value: { ...globalThis.crypto, getRandomValues }, configurable: true });
 }
 
 const SECRETS_KEY = 'kraftverk.secrets-key';
+const MADE_BY = Constants.expoConfig?.version ?? 'app';
 
 const hex = (bytes: Uint8Array) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 const bytesOf = (text: string) => Uint8Array.from(text.match(/../g) ?? [], (pair) => parseInt(pair, 16));
@@ -38,10 +43,41 @@ async function secretsKey(): Promise<Uint8Array> {
   return key;
 }
 
-/** Opens the phone's home — its own, or what it holds for a server — and starts it. */
-export async function openHome(options: OpenOptions): Promise<OpenHome> {
+/**
+ * The accounts' keys, in the phone's secure storage (the Keychain; Android's
+ * Keystore-encrypted storage), each read into memory only to sign. The
+ * platform's own keystore module is the upgrade behind this port
+ * (docs/PLAN-WORLD-MODEL.md §10.7).
+ */
+const secureStoreKeys: DeviceKeys = {
+  make: async (personId) => {
+    const secret = newSecret();
+    await SecureStore.setItemAsync(`kraftverk.person-key.${personId}`, hex(secret));
+    return softwareKey(secret);
+  },
+  get: async (personId) => {
+    const kept = await SecureStore.getItemAsync(`kraftverk.person-key.${personId}`);
+    return kept?.length === 64 ? softwareKey(bytesOf(kept)) : null;
+  },
+  forget: async (personId) => SecureStore.deleteItemAsync(`kraftverk.person-key.${personId}`),
+};
+
+/** Another file this app keeps, opened only if it is there and of this schema: a home brought in from it is offered, never written over. */
+function beside(file: string) {
+  const opened = fromExpoSqlite(openDatabaseSync(file));
+  try {
+    return readyDatabase(opened, MADE_BY);
+  } catch {
+    opened.close();
+    return null;
+  }
+}
+
+/** A family, opened as one of this phone's accounts — its own, or what it holds for a server — and started. */
+async function openFamily(options: OpenOptions): Promise<OpenHome> {
   // A new schema is a new file: the one before is left as it was (strict version 1).
-  const database = readyDatabase(fromExpoSqlite(openDatabaseSync(databaseFile(schemaFingerprint(), options.server?.key))), Constants.expoConfig?.version ?? 'app');
+  const fingerprint = schemaFingerprint();
+  const database = readyDatabase(fromExpoSqlite(openDatabaseSync(databaseFile(fingerprint, options.server?.key ?? options.family!.id))), MADE_BY);
   let writes = false;
   const place = {
     node: options.node,
@@ -51,23 +87,10 @@ export async function openHome(options: OpenOptions): Promise<OpenHome> {
     transport: (definition: { id: string }) => TRANSPORT_ENTRIES[definition.id] ?? null,
     readOnly: () => !writes,
   };
-  // One app, one home: nothing on a phone asks for it.
-  const ended = new Promise<'handed-over'>(() => {});
-
-  /** Another file this app keeps, opened only if it is there and of this schema: a home brought in from it is offered, never written over. */
-  const beside = (file: string) => {
-    const opened = fromExpoSqlite(openDatabaseSync(file));
-    try {
-      return readyDatabase(opened, Constants.expoConfig?.version ?? 'app');
-    } catch {
-      opened.close();
-      return null;
-    }
-  };
 
   if (options.server) {
-    // The home this app kept itself before it had a server: offered to it.
-    const own = beside(databaseFile(schemaFingerprint()));
+    // The account's own family, kept on this phone: offered to the server.
+    const own = options.own ? beside(databaseFile(fingerprint, options.own.id)) : null;
     const follower = appFollower({ ...place, home: options.server.api, ...(own ? { own } : {}) });
     await follower.start();
     return {
@@ -82,16 +105,15 @@ export async function openHome(options: OpenOptions): Promise<OpenHome> {
         database.close();
         own?.close();
       },
-      ended,
     };
   }
 
   // The copy this app kept of the server it used last: offered to keep.
-  const copy = options.copyOf ? beside(databaseFile(schemaFingerprint(), options.copyOf)) : null;
-  const hub = appHub({ ...place, ...(copy ? { copy } : {}) });
+  const copy = options.copyOf ? beside(databaseFile(fingerprint, options.copyOf)) : null;
+  const hub = appHub({ ...place, familyId: options.family!.id, ...(copy ? { copy } : {}) });
   await hub.start();
   return {
-    api: hub.as(OWNER),
+    api: hub.as(callerOf(options.person)),
     nodeId: hub.self.id,
     allowWrites: async (allowed) => {
       writes = allowed;
@@ -103,6 +125,27 @@ export async function openHome(options: OpenOptions): Promise<OpenHome> {
       database.close();
       copy?.close();
     },
-    ended,
+  };
+}
+
+/** Opens this phone: its accounts, and the families it opens for them, one at a time. Nothing else on a phone holds it: there is nothing to take over. */
+export async function openDevice(_options: { takeOver?: boolean } = {}): Promise<OpenDevice> {
+  const personalDb = readyDatabase(fromExpoSqlite(openDatabaseSync(personalFile(schemaFingerprint(PERSONAL_SCHEMA)))), MADE_BY, PERSONAL_SCHEMA);
+  let family: OpenHome | null = null;
+  return {
+    personal: personalApi({ store: new PersonalStore(personalDb), keys: secureStoreKeys }),
+    async openHome(options) {
+      await family?.close();
+      family = null;
+      family = await openFamily(options);
+      return family;
+    },
+    async close() {
+      await family?.close();
+      family = null;
+      personalDb.close();
+    },
+    // One app, one device: nothing on a phone asks for it.
+    ended: new Promise<'handed-over'>(() => {}),
   };
 }

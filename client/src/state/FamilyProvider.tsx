@@ -2,12 +2,15 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 
 import { httpApi } from '@kraftverk/api-client/http';
 import type { KraftverkApi } from '@kraftverk/api-contract';
+import { newId } from '@kraftverk/device-sdk';
 
-import { NotOpen, Waiting } from '../components/FamilyOpening';
-import { HomeOpenElsewhere, type OpenHome, type OpenOptions } from '../platform/home/home';
-import { openHome } from '../platform/home/open';
+import { Waiting } from '../components/FamilyOpening';
+import { FoundFamily } from '../features/account/FoundFamily';
+import { FamilyFailed } from '../features/account/FamilyFailed';
+import type { OpenHome, OpenOptions } from '../platform/home/home';
 import { keepNodeId, thisNode } from '../platform/node';
 import { readLastServerId } from '../platform/servers';
+import { useAccount } from './AccountProvider';
 import { useAuth } from './AuthProvider';
 import { useServers } from './ServersProvider';
 
@@ -48,42 +51,34 @@ type FamilyValue = {
 
 const HomeContext = createContext<FamilyValue | null>(null);
 
-export type Opening =
-  | { status: 'opening' }
-  | { status: 'open'; home: OpenHome }
-  | { status: 'elsewhere' }
-  | { status: 'handed-over' }
-  | { status: 'failed'; message: string };
+type Opening = { status: 'opening' } | { status: 'open'; home: OpenHome } | { status: 'failed'; message: string };
 
-/** Opens the home where the app runs, and keeps what became of it: open, held by another tab, handed over, or why it failed. */
-function useOpened(server: OpenOptions['server'], copyOf: string | null = null): { state: Opening; open: (takeOver: boolean) => () => void } {
+/** Opens a family in this device, as the account opened as, and keeps what became of it: open, or why it failed. */
+function useOpened(options: Omit<OpenOptions, 'person' | 'node'> | null): { state: Opening; open: () => () => void } {
+  const { device, account } = useAccount();
   const [state, setState] = useState<Opening>({ status: 'opening' });
-  // Only the latest opening counts: one asked again — "use it here" — or let go of, outruns any before it.
+  // Only the latest opening counts: one asked again, or let go of, outruns any before it.
   const latest = useRef(0);
-  const open = useCallback(
-    (takeOver: boolean) => {
-      const mine = ++latest.current;
-      const live = () => latest.current === mine;
-      setState({ status: 'opening' });
-      openHome({ takeOver, server, node: thisNode(), copyOf }).then(
-        (home) => {
-          if (!live()) return void home.close();
-          keepNodeId(home.nodeId);
-          setState({ status: 'open', home });
-          void home.ended.then(() => live() && setState({ status: 'handed-over' }));
-        },
-        (error: unknown) => {
-          if (!live()) return;
-          setState(error instanceof HomeOpenElsewhere ? { status: 'elsewhere' } : { status: 'failed', message: (error as Error).message });
-        }
-      );
-      return () => {
-        if (live()) latest.current += 1;
-      };
-    },
-    [copyOf, server]
-  );
-  useEffect(() => open(false), [open]);
+  const open = useCallback(() => {
+    const mine = ++latest.current;
+    const live = () => latest.current === mine;
+    setState({ status: 'opening' });
+    if (!options) return () => undefined;
+    device.openHome({ ...options, person: { id: account.personId, name: account.name }, node: thisNode() }).then(
+      (home) => {
+        if (!live()) return void home.close();
+        keepNodeId(home.nodeId);
+        setState({ status: 'open', home });
+      },
+      (error: unknown) => {
+        if (live()) setState({ status: 'failed', message: (error as Error).message });
+      }
+    );
+    return () => {
+      if (live()) latest.current += 1;
+    };
+  }, [account.name, account.personId, device, options]);
+  useEffect(() => open(), [open]);
   const home = state.status === 'open' ? state.home : null;
   useEffect(() => () => void home?.close(), [home]);
   return { state, open };
@@ -117,25 +112,24 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
 /** A server's home, over HTTP — with what this app holds for it wrapped in, once that is open here. */
 function ServerHome({ serverKey, url, children }: { serverKey: string; url: string; children: ReactNode }) {
   const { refresh } = useAuth();
+  const { account } = useAccount();
+  // The account's own family, kept here: offered to the server.
+  const ownId = account.families.find((family) => family.master === 'here')?.familyId ?? null;
   // Whether the server answered the last time it was asked: said by every request, whoever made it.
   const [away, setAway] = useState(false);
   const server = useMemo(
     () => ({ key: serverKey, api: httpApi({ baseUrl: url, onLoginRequired: () => void refresh(), onReach: (reached) => setAway(!reached) }) }),
     [refresh, serverKey, url]
   );
-  const { state, open } = useOpened(server);
+  const options = useMemo(() => ({ server, own: ownId ? { id: ownId } : null }), [ownId, server]);
+  const { state, open } = useOpened(options);
   const home = state.status === 'open' ? state.home : null;
   const [writesAllowed, setWritesAllowed] = useWritesFor(home);
 
   const value = useMemo<FamilyValue | null>(() => {
     if (state.status === 'opening') return null;
-    // Not held here: the server's home alone, and why — its own ways can be taken back from the tab that has them.
-    const holding =
-      state.status === 'open'
-        ? null
-        : state.status === 'failed'
-          ? { problem: `This app’s own ways could not open here: ${state.message}`, takeOver: () => open(false) }
-          : { problem: 'Another tab of this browser holds this app’s own ways, such as its Bluetooth', takeOver: () => open(true) };
+    // Not held here: the server's home alone, and why — and trying again.
+    const holding = state.status === 'open' ? null : { problem: `This app’s own ways could not open here: ${state.status === 'failed' ? state.message : 'they are opening'}`, takeOver: () => void open() };
     return {
       api: home?.api ?? server.api,
       role: 'follower',
@@ -155,11 +149,31 @@ function ServerHome({ serverKey, url, children }: { serverKey: string; url: stri
   return <HomeContext.Provider value={value}>{children}</HomeContext.Provider>;
 }
 
-/** The app's own home: opened where the app runs, and shown once it is — with the copy it kept of the server it used last beside it. */
+/**
+ * The account's own family: opened where the app runs, and shown once it is
+ * — with the copy it kept of the server it used last beside it. An account
+ * with none has one made here, named in its personal store at once; one
+ * with nobody in it yet is founded first.
+ */
 function OwnHome({ children }: { children: ReactNode }) {
-  const { state, open } = useOpened(undefined, readLastServerId());
+  const { personal, account, reload } = useAccount();
+  const own = account.families.find((family) => family.master === 'here') ?? null;
+  useEffect(() => {
+    if (own) return;
+    void personal.keepFamily(account.personId, { familyId: newId('f'), name: 'Family', master: 'here', serverUrl: null, joinedAt: new Date().toISOString() }).then(reload);
+  }, [account.personId, own, personal, reload]);
+  const ownId = own?.familyId ?? null;
+  // Opened again only for another family: its name changing is not a reason.
+  const options = useMemo(() => (ownId ? { family: { id: ownId }, copyOf: readLastServerId() } : null), [ownId]);
+  const { state, open } = useOpened(options);
   const home = state.status === 'open' ? state.home : null;
   const [writesAllowed, setWritesAllowed] = useWritesFor(home);
+  // Whether anyone is in it yet: a family made here is founded by its first person.
+  const [founded, setFounded] = useState<boolean | null>(null);
+  useEffect(() => {
+    setFounded(null);
+    if (home) void home.api.people.list().then((people) => setFounded(people.length > 0));
+  }, [home]);
 
   const value = useMemo<FamilyValue | null>(
     () =>
@@ -181,9 +195,14 @@ function OwnHome({ children }: { children: ReactNode }) {
     [home, writesAllowed]
   );
 
-  if (!value) return <NotOpen state={state} onTakeOver={() => open(true)} onRetry={() => open(false)} />;
+  if (state.status === 'failed') return <FamilyFailed message={state.message} onRetry={() => void open()} />;
+  if (!value || founded === null) return <Waiting />;
+  if (!founded) return <FoundFamily api={value.api} onFounded={() => setFounded(true)} />;
   return <HomeContext.Provider value={value}>{children}</HomeContext.Provider>;
 }
+
+/** The family's interface, where one is open: none while one is being founded. */
+export const useFamilyApi = (): KraftverkApi | null => useContext(HomeContext)?.api ?? null;
 
 /** The home the app shows, and what goes with it. */
 export function useFamily(): FamilyValue {

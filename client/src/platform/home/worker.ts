@@ -1,36 +1,41 @@
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 
+import { personalApi, type DeviceKeys } from '@kraftverk/hub';
+import { newWebCryptoPair, webCryptoKey, type WebCryptoPair } from '@kraftverk/identity';
 import { apiOver, hear, serveApi, transportOver, type MessageEnd } from '@kraftverk/message-port';
-import { fromSqliteWasm, schemaFingerprint, sealedWithKey, type SqliteWasmDatabase } from '@kraftverk/store';
+import { fromSqliteWasm, PERSONAL_SCHEMA, PersonalStore, schemaFingerprint, sealedWithKey, type SqlDatabase, type SqliteWasmDatabase } from '@kraftverk/store';
 
 import { appFollower, appHub, readyDatabase } from './hub';
-import { databaseFile, OWNER } from './home';
+import { callerOf, databaseFile, personalFile } from './home';
 import type { ToPage, ToWorker } from './worker-messages';
 
 /*
-  A browser's home, in its worker (docs/PLAN-SHARED-CORE.md, "SQLite in the
-  app" and phase 6): without a server, the hub on SQLite's own WebAssembly
-  build; with one, what this browser holds for it — the server's interface
-  served by the page, this browser's own ways wrapped in. Its file is in
-  the origin's private file system; it is served to the page over
-  `@kraftverk/message-port` — the screens ask it as `KraftverkApi` — and it
-  reaches the transports the page runs as if they were its own. One worker
-  for both, so this browser's radio has one owner.
+  A browser's kraftverk, in its worker (docs/PLAN-SHARED-CORE.md, "SQLite in
+  the app" and phase 6). The device first: this browser's files, its
+  accounts and their keys (docs/PLAN-WORLD-MODEL.md §10.6). Then a family
+  inside it, as one of those accounts: its own, the hub on SQLite's own
+  WebAssembly build; or a server's, with what this browser holds for it —
+  the server's interface served by the page, this browser's own ways
+  wrapped in. Its files are in the origin's private file system; it is
+  served to the page over `@kraftverk/message-port` — the accounts as
+  `personal`, the family as `api` — and it reaches the transports the page
+  runs as if they were its own. One worker for all of it, so this
+  browser's radio has one owner.
 
   Bundled on its own, beside `sqlite3.wasm` (scripts/build-home-worker.mjs):
   nothing here is the page's, and nothing of the page is here.
 
-  One tab holds a home at a time: the holder has the Web Lock, and lets go
-  only when another tab asks for it (a BroadcastChannel), closing its
-  database first. The pool is never opened while another may hold it —
-  `opfs-sahpool` deletes a pool it fails to open — and every one of its
-  files is found free before it is.
+  One tab holds this browser's files at a time: the holder has the Web
+  Lock, and lets go only when another tab asks for it (a BroadcastChannel),
+  closing its databases first. The pool is never opened while another may
+  hold it — `opfs-sahpool` deletes a pool it fails to open — and every one
+  of its files is found free before it is.
 */
 
 const LOCK = 'kraftverk.home';
 const HAND_OVER = 'kraftverk.home';
 const POOL = { name: 'kraftverk-home', directory: '.kraftverk-home' } as const;
-/** How long a home being let go of by another tab is waited for. */
+/** How long a device being let go of by another tab is waited for. */
 const FREE_WITHIN_MS = 15_000;
 
 const scope = globalThis as unknown as MessageEnd;
@@ -68,25 +73,34 @@ const request = <T>(req: IDBRequest<T>) =>
     req.onerror = () => reject(req.error);
   });
 
+/** This browser's keys, in IndexedDB: the secrets' sealing key, and each account's — Web Crypto keys whose private halves can never be read out. */
+async function keyring() {
+  const opening = indexedDB.open('kraftverk-home', 2);
+  opening.onupgradeneeded = () => {
+    for (const store of ['keys', 'person-keys']) if (!opening.result.objectStoreNames.contains(store)) opening.result.createObjectStore(store);
+  };
+  const db = await request(opening);
+  return {
+    get: (store: string, name: string) => request(db.transaction(store, 'readonly').objectStore(store).get(name)) as Promise<unknown>,
+    put: (store: string, name: string, value: unknown) => request(db.transaction(store, 'readwrite').objectStore(store).put(value, name)),
+    delete: (store: string, name: string) => request(db.transaction(store, 'readwrite').objectStore(store).delete(name)),
+  };
+}
+type Keyring = Awaited<ReturnType<typeof keyring>>;
+
 /**
  * The key this browser's secrets are sealed with: made once, kept sealed by
  * a key the browser made and will not let anything read out, in IndexedDB.
  * What the database holds is sealed; a copy of the profile read as text
  * opens none of it.
  */
-async function secretsKey(): Promise<Uint8Array> {
-  const opening = indexedDB.open('kraftverk-home', 1);
-  opening.onupgradeneeded = () => opening.result.createObjectStore('keys');
-  const db = await request(opening);
-  const kept = (name: string) => request(db.transaction('keys', 'readonly').objectStore('keys').get(name));
-  const keep = (name: string, value: unknown) => request(db.transaction('keys', 'readwrite').objectStore('keys').put(value, name));
-
-  let wrapping = (await kept('wrapping')) as CryptoKey | undefined;
+async function secretsKey(keys: Keyring): Promise<Uint8Array> {
+  let wrapping = (await keys.get('keys', 'wrapping')) as CryptoKey | undefined;
   if (!wrapping) {
     wrapping = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
-    await keep('wrapping', wrapping);
+    await keys.put('keys', 'wrapping', wrapping);
   }
-  const sealed = (await kept('secrets')) as { iv: Uint8Array<ArrayBuffer>; data: ArrayBuffer } | undefined;
+  const sealed = (await keys.get('keys', 'secrets')) as { iv: Uint8Array<ArrayBuffer>; data: ArrayBuffer } | undefined;
   if (sealed) {
     try {
       return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: sealed.iv }, wrapping, sealed.data));
@@ -96,26 +110,76 @@ async function secretsKey(): Promise<Uint8Array> {
   }
   const key = crypto.getRandomValues(new Uint8Array(32));
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  await keep('secrets', { iv, data: await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, wrapping, key) });
+  await keys.put('keys', 'secrets', { iv, data: await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, wrapping, key) });
   return key;
 }
 
-/** The home, opened under the lock: its database, its hub, served. */
-async function start(open: Extract<ToWorker, { kind: 'open' }>) {
+/** The accounts' keys: a Web Crypto pair each, not extractable, kept in IndexedDB as the objects they are. */
+const accountKeys = (keys: Keyring): DeviceKeys => ({
+  make: async (personId) => {
+    const pair = await newWebCryptoPair();
+    await keys.put('person-keys', personId, pair);
+    return webCryptoKey(pair);
+  },
+  get: async (personId) => {
+    const pair = (await keys.get('person-keys', personId)) as WebCryptoPair | undefined;
+    return pair ? webCryptoKey(pair) : null;
+  },
+  forget: async (personId) => void (await keys.delete('person-keys', personId)),
+});
+
+type Pool = Awaited<ReturnType<Awaited<ReturnType<typeof sqlite3InitModule>>['installOpfsSAHPoolVfs']>>;
+type Family = { nodeId: string; allowWrites(allowed: boolean): Promise<void>; stop(): Promise<void> };
+
+/** The device, held: its pool, its accounts served, and the family open in it, if any. */
+let device: { pool: Pool; keys: Keyring; family: Family | null; letGo(): Promise<void> } | null = null;
+
+/** This browser's files, opened under the lock: the pool, the accounts, served. */
+async function startDevice() {
   const since = Date.now();
   while (!(await poolIsFree())) {
-    if (Date.now() - since > FREE_WITHIN_MS) throw new Error('Another tab is still letting go of this home: try again in a moment');
+    if (Date.now() - since > FREE_WITHIN_MS) throw new Error('Another tab is still letting go of kraftverk: try again in a moment');
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   const sqlite3 = await sqlite3InitModule();
   const pool = await sqlite3.installOpfsSAHPoolVfs(POOL);
-  // Room for this schema's file and its journal, beside any an older schema left.
-  if (Number(pool.getCapacity()) - pool.getFileCount() < 4) await pool.addCapacity(4);
+  // Room for the accounts', a family's and a server's files, and their journals, beside any an older schema left.
+  if (Number(pool.getCapacity()) - pool.getFileCount() < 8) await pool.addCapacity(8);
+  const keys = await keyring();
+  const personal = readyDatabase(fromSqliteWasm(new pool.OpfsSAHPoolDb(`/${personalFile(schemaFingerprint(PERSONAL_SCHEMA))}`) as unknown as SqliteWasmDatabase), 'web', PERSONAL_SCHEMA);
+  const stopServing = serveApi(personalApi({ store: new PersonalStore(personal), keys: accountKeys(keys) }), scope, 'personal');
+  device = {
+    pool,
+    keys,
+    family: null,
+    letGo: async () => {
+      await closeFamily();
+      stopServing();
+      personal.close();
+      pool.pauseVfs();
+    },
+  };
+}
+
+/** The family open now, let go of. */
+async function closeFamily() {
+  const family = device?.family;
+  if (!family || !device) return;
+  device.family = null;
+  await family.stop();
+}
+
+/** A family, opened in this device as one of its accounts: its database, its hub or its follower, served. */
+async function openFamily(open: Extract<ToWorker, { kind: 'open' }>): Promise<Family> {
+  if (!device) throw new Error('This browser’s kraftverk is not open');
+  await closeFamily();
+  const { pool, keys } = device;
   const opened = (file: string) => readyDatabase(fromSqliteWasm(new pool.OpfsSAHPoolDb(`/${file}`) as unknown as SqliteWasmDatabase), 'web');
-  // A new schema is a new file: the one before is left as it was (strict version 1). With a server, one of its own.
-  const database = opened(databaseFile(schemaFingerprint(), open.server?.key));
-  /** Another file this browser keeps, opened only if it is there and of this schema: a home brought in from it is offered, never written over. */
-  const beside = (file: string) => {
+  const fingerprint = schemaFingerprint();
+  // A new schema is a new file: the one before is left as it was (strict version 1). One per family, and one per server.
+  const database = opened(databaseFile(fingerprint, open.server?.key ?? open.family!.id));
+  /** Another file this browser keeps, opened only if it is there and of this schema: a family brought in from it is offered, never written over. */
+  const beside = (file: string): SqlDatabase | null => {
     if (!pool.getFileNames().includes(`/${file}`)) return null;
     try {
       return opened(file);
@@ -123,27 +187,23 @@ async function start(open: Extract<ToWorker, { kind: 'open' }>) {
       return null;
     }
   };
-  // With a server, the home this browser kept itself before, offered to it; without, the copy it kept of the server it used last.
-  const other = open.server ? beside(databaseFile(schemaFingerprint())) : open.copyOf ? beside(databaseFile(schemaFingerprint(), open.copyOf)) : null;
+  // With a server, the account's own family, offered to it; without, the copy it kept of the server it used last.
+  const other = open.server ? (open.own ? beside(databaseFile(fingerprint, open.own.id)) : null) : open.copyOf ? beside(databaseFile(fingerprint, open.copyOf)) : null;
 
   let writes = open.writes;
   const served = new Set(open.serves);
   const place = {
     node: open.node,
     database,
-    secrets: sealedWithKey(await secretsKey()),
+    secrets: sealedWithKey(await secretsKey(keys)),
     platform: 'web' as const,
     // Every transport runs on the page, where the browser's own are; here, each is reached over the port.
     transport: (definition: Parameters<typeof transportOver>[0]) => (served.has(definition.id) ? transportOver(definition, scope, `transport:${definition.id}`) : null),
     readOnly: () => !writes,
   };
-  /** Everything let go, in order: nothing served, the home stopped, the database closed, the pool's files released. */
-  const letGo = async (stopServing: () => void, stopHome: () => Promise<void>) => {
-    stopServing();
-    await stopHome();
+  const closeFiles = () => {
     database.close();
     other?.close();
-    pool.pauseVfs();
   };
 
   if (open.server) {
@@ -153,47 +213,48 @@ async function start(open: Extract<ToWorker, { kind: 'open' }>) {
     const stopServing = serveApi(follower.api, scope, 'api');
     return {
       nodeId: follower.nodeId,
-      allowWrites: async (allowed: boolean) => {
+      allowWrites: async (allowed) => {
         writes = allowed;
         await follower.reopen();
       },
-      stop: () => letGo(stopServing, () => follower.stop()),
+      stop: async () => {
+        stopServing();
+        await follower.stop();
+        closeFiles();
+      },
     };
   }
 
-  const hub = appHub({ ...place, ...(other ? { copy: other } : {}) });
+  const hub = appHub({ ...place, familyId: open.family!.id, ...(other ? { copy: other } : {}) });
   await hub.start();
-  const stopServing = serveApi(hub.as(OWNER), scope, 'api');
+  const stopServing = serveApi(hub.as(callerOf(open.person)), scope, 'api');
   return {
     nodeId: hub.self.id,
-    allowWrites: async (allowed: boolean) => {
+    allowWrites: async (allowed) => {
       writes = allowed;
       await hub.sessions.sync(hub.catalog.list());
     },
-    stop: () => letGo(stopServing, () => hub.stop()),
+    stop: async () => {
+      stopServing();
+      await hub.stop();
+      closeFiles();
+    },
   };
 }
 
-/** How long a home asks again for its lock before it says another tab has it. */
+/** How long the device asks again for its lock before it says another tab has it. */
 const LOCK_PATIENCE_MS = 3_000;
 
-let home: Awaited<ReturnType<typeof start>> | null = null;
-let closing: ((why: 'asked') => void) | null = null;
-
-async function open(message: Extract<ToWorker, { kind: 'open' }>) {
+async function start(message: Extract<ToWorker, { kind: 'start' }>) {
   if (!navigator.locks || !navigator.storage?.getDirectory || !globalThis.crypto?.subtle) {
-    say({ via: 'home', kind: 'failed', message: 'This browser cannot keep a home of its own here: it needs a secure page — HTTPS, or this computer itself — and a recent browser' });
+    say({ via: 'home', kind: 'failed', message: 'This browser cannot keep kraftverk here: it needs a secure page — HTTPS, or this computer itself — and a recent browser' });
     return;
   }
   const handOver = new BroadcastChannel(HAND_OVER);
   if (message.takeOver) handOver.postMessage({ ask: 'hand-over' });
-  /*
-    Held already: maybe by another tab — or by the home this tab is closing
-    as it opens this one, another server's, which lets go within a moment.
-    Asked again for a while before it is said to be another tab's.
-  */
+  // Held already: maybe by another tab, which lets go within a moment when asked. Asked again for a while before it is said to be another tab's.
   const deadline = Date.now() + LOCK_PATIENCE_MS;
-  while ((await holdHome(message, handOver)) === 'busy') {
+  while ((await holdDevice(message, handOver)) === 'busy') {
     if (Date.now() >= deadline) {
       say({ via: 'home', kind: 'busy' });
       break;
@@ -203,33 +264,40 @@ async function open(message: Extract<ToWorker, { kind: 'open' }>) {
   handOver.close();
 }
 
-/** Holds the home's lock, and the home, until it is closed or handed over; 'busy' when another holds the lock. */
-function holdHome(message: Extract<ToWorker, { kind: 'open' }>, handOver: BroadcastChannel): Promise<'busy' | 'held'> {
+/** Holds the lock, and the device, until another tab asks for it; 'busy' when another holds the lock. */
+function holdDevice(message: Extract<ToWorker, { kind: 'start' }>, handOver: BroadcastChannel): Promise<'busy' | 'held'> {
   return navigator.locks.request(LOCK, message.takeOver ? {} : { ifAvailable: true }, async (lock): Promise<'busy' | 'held'> => {
     if (!lock) return 'busy';
-    const released = new Promise<'handed-over' | 'asked'>((resolve) => {
+    const released = new Promise<void>((resolve) => {
       handOver.onmessage = (event) => {
-        if ((event.data as { ask?: string } | null)?.ask === 'hand-over') resolve('handed-over');
+        if ((event.data as { ask?: string } | null)?.ask === 'hand-over') resolve();
       };
-      closing = resolve;
     });
     try {
-      home = await start(message);
+      await startDevice();
     } catch (error) {
       say({ via: 'home', kind: 'failed', message: (error as Error).message });
       return 'held';
     }
-    say({ via: 'home', kind: 'ready', nodeId: home.nodeId });
-    const why = await released;
-    await home.stop();
-    home = null;
-    say({ via: 'home', kind: 'closed', why });
+    say({ via: 'home', kind: 'started' });
+    await released;
+    await device?.letGo();
+    device = null;
+    say({ via: 'home', kind: 'ended' });
     return 'held';
   });
 }
 
 hear<ToWorker>(scope, 'home', (message) => {
-  if (message.kind === 'open') void open(message);
-  else if (message.kind === 'writes') void home?.allowWrites(message.allowed);
-  else if (message.kind === 'close') closing?.('asked');
+  if (message.kind === 'start') void start(message);
+  else if (message.kind === 'open')
+    void openFamily(message).then(
+      (family) => {
+        if (device) device.family = family;
+        say({ via: 'home', kind: 'ready', nodeId: family.nodeId as never });
+      },
+      (error: unknown) => say({ via: 'home', kind: 'failed', message: (error as Error).message })
+    );
+  else if (message.kind === 'writes') void device?.family?.allowWrites(message.allowed);
+  else if (message.kind === 'close') void closeFamily().then(() => say({ via: 'home', kind: 'closed' }));
 });

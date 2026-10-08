@@ -51,10 +51,10 @@ export class FamilyStore {
   }
 
   /** The family, made the first time — its master the node that made it — and as it is after. */
-  ensure(made: { name: string; masterId: NodeId; kind?: FamilyKind; locale?: string }): FamilyRecord {
+  ensure(made: { name: string; masterId: NodeId; kind?: FamilyKind; locale?: string; id?: string }): FamilyRecord {
     const had = this.get();
     if (had) return had;
-    const id = newId('f');
+    const id = made.id ?? newId('f');
     this.#db.query('INSERT INTO family (id, name, kind, locale, master_id, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(id, made.name, made.kind ?? 'family', made.locale ?? 'en', made.masterId, new Date().toISOString());
     return this.get()!;
   }

@@ -7,6 +7,7 @@ import { TamaguiProvider, Theme } from "tamagui";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ConfirmHost } from "../src/components/ConfirmHost";
+import { AccountProvider } from "../src/state/AccountProvider";
 import { AuthGate } from "../src/features/auth/AuthGate";
 import { AuthProvider } from "../src/state/AuthProvider";
 import { DevicesProvider } from "../src/state/DevicesProvider";
@@ -33,6 +34,11 @@ export default function RootLayout() {
           <ServersProvider>
             <StatusBar style={scheme === "dark" ? "light" : "dark"} />
             {/*
+              Who uses this device comes first: an account, made here with no
+              server, or one this device keeps. Everything after is theirs.
+            */}
+            <AccountProvider>
+            {/*
               Who you are to the chosen server comes before anything that asks
               it for data. Behind the gate, the device list never starts polling
               a server that will only answer "log in first".
@@ -56,6 +62,7 @@ export default function RootLayout() {
                 </FamilyProvider>
               </AuthGate>
             </AuthProvider>
+            </AccountProvider>
             {/* Where the app asks for a yes, on the web: above every screen, signed in or not. */}
             <ConfirmHost />
           </ServersProvider>

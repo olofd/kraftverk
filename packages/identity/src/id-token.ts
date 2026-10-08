@@ -25,6 +25,27 @@ export type IdentityProvider = {
   keysUrl: string;
 };
 
+/** What a person's sign-in with a provider gives the app: the provider's token, and what it says of them. */
+export type ProviderAnswer = {
+  token: string;
+  /** Who they are there, for this app: the same every time. */
+  subject: string;
+  email: string | null;
+  /** Their name, when the provider gives it — some only the first time. */
+  name: string | null;
+};
+
+/** A provider as its package offers it to the app: whether this place can sign in with it, and asking. */
+export type ProviderSignIn = {
+  provider: IdentityProvider;
+  /** Its button's words: "Continue with …". */
+  label: string;
+  /** Whether this place can: the platform's own sheet, or the provider's page where this app is registered with it. */
+  available(): Promise<boolean>;
+  /** Asks the person, with a nonce the token carries back; null when they cancelled. */
+  signIn(nonce: string): Promise<ProviderAnswer | null>;
+};
+
 /** What a token says of the person. */
 export type IdClaims = {
   subject: string;

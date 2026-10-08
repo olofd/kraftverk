@@ -5,6 +5,7 @@ import { Card, haptic, Icon, Row, RowSeparator, SectionLabel, ToggleRow } from '
 import { PATHS } from '@kraftverk/api-client';
 
 import { Pressable } from '../../components/Pressable';
+import { YourAccount } from '../account/YourAccount';
 import { Screen } from '../../components/Screen';
 import { useAuth } from '../../state/AuthProvider';
 import { useDevices } from '../../state/DevicesProvider';
@@ -29,7 +30,8 @@ export function AppSettings() {
   const chevron = <Icon name="chevron-right" size={16} color={theme.muted?.val} />;
 
   return (
-    <Screen back="Your devices" title="App settings" subtitle="Servers, connectivity and this app">
+    <Screen back="Your devices" title="App settings" subtitle="You, servers, connectivity and this app">
+      <YourAccount />
       <YStack gap="$2">
         <SectionLabel>Infrastructure</SectionLabel>
         <Card inset>

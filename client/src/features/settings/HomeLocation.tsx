@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, type HomeView } from '@kraftverk/api-client';
+import { describeError, type HomeView, type KraftverkApi } from '@kraftverk/api-client';
 import { sunTimes, type Coordinates } from '@kraftverk/automation';
 import { clockTime, localTime } from '@kraftverk/device-sdk';
 import { Card, formatCoordinates, haptic, Row, SectionLabel } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
-import { useFamily } from '../../state/FamilyProvider';
+import { useFamilyApi } from '../../state/FamilyProvider';
 
 /** Today's sunrise and sunset where the home is, on its own clock: "06:12 and 18:40" — or why there are none. */
 function todaysSun(location: Coordinates, zone: string): string {
@@ -32,8 +32,10 @@ const RADIUS = 150;
  * and what "at home" is measured from. Typed in degrees, as a map gives
  * them; today's sunrise and sunset said as soon as it is, so a mistake shows.
  */
-export function HomeLocation({ home, onChanged }: { home: HomeView; onChanged: (home: HomeView) => void }) {
-  const { api } = useFamily();
+export function HomeLocation({ home, onChanged, api: given }: { home: HomeView; onChanged: (home: HomeView) => void; api?: KraftverkApi }) {
+  // The family's, or one given: a family being founded is not the app's yet.
+  const family = useFamilyApi();
+  const api = (given ?? family)!;
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
   const [problem, setProblem] = useState<string | null>(null);

@@ -1,13 +1,12 @@
 import type { TransportDefinition, TransportFactory } from '@kraftverk/device-sdk';
 import type { KraftverkApi } from '@kraftverk/api-contract';
 import { createFollower, createHub, installedFrom, passphraseSealing, type Follower, type Hub, type Installed } from '@kraftverk/hub';
-import { AuditLog, createSchema, NodeStore, prepareDatabase, schemaStateOf, transportStore, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { AuditLog, createSchema, NodeStore, prepareDatabase, SCHEMA, schemaStateOf, transportStore, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import { INTEGRATIONS, TRANSPORTS } from '../../generated/installed';
 import { appHttp } from '../http';
 import type { ThisNode } from '../node';
 
-export { OWNER } from './home';
 
 /*
   The app's home (docs/PLAN-SHARED-CORE.md, phase 6): the hub the server
@@ -18,11 +17,11 @@ export { OWNER } from './home';
   pieces in (`open.ts`, `open.web.ts`).
 */
 
-/** A database ready to keep a home in: one with this schema, or a new one given it. Another schema is never written over. */
-export function readyDatabase(database: SqlDatabase, madeBy: string): SqlDatabase {
+/** A database ready to keep a family in — or, given its schema, the device's accounts: one with this schema, or a new one given it. Another schema is never written over. */
+export function readyDatabase(database: SqlDatabase, madeBy: string, schema = SCHEMA): SqlDatabase {
   prepareDatabase(database);
-  const state = schemaStateOf(database);
-  if (state === 'empty') createSchema(database, madeBy);
+  const state = schemaStateOf(database, schema);
+  if (state === 'empty') createSchema(database, madeBy, schema);
   else if (state === 'other') throw new Error('This database was made by another kraftverk: it is kept as it is, and a home is not opened in it');
   return database;
 }
@@ -62,8 +61,8 @@ function nodeFor(place: AppPlace): ThisNode {
   return own ? { ...place.node, id: own.id } : place.node;
 }
 
-/** The app's home in this place: not started; `start()` it. `copy`: the copy it kept of the server it used last, to keep as its own. */
-export function appHub(place: AppPlace & { copy?: SqlDatabase }): Hub {
+/** An account's own family in this place, by its id: not started; `start()` it. `copy`: the copy it kept of the server it used last, to keep as this family. */
+export function appHub(place: AppPlace & { familyId: string; copy?: SqlDatabase }): Hub {
   // Its timeline, made here so what a transport records goes on it too.
   const audit = new AuditLog(place.database);
   const installed = appInstalled(place, (entry) => audit.record(entry));
@@ -80,6 +79,7 @@ export function appHub(place: AppPlace & { copy?: SqlDatabase }): Hub {
     http: appHttp,
     node: nodeFor(place),
     log,
+    familyId: place.familyId,
     ...(place.copy ? { copy: place.copy } : {}),
   });
 }

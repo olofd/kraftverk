@@ -18,8 +18,8 @@ export type AccountView = {
   pictureId: string | null;
   /** What this device is called in their keys: "Anna's iPhone". */
   deviceName: string;
-  /** The sign-in providers they linked: a way back in. */
-  linked: { provider: string; email: string | null }[];
+  /** The sign-in providers they linked: a way back in — signing in with one again opens this account. */
+  linked: { provider: string; subject: string; email: string | null }[];
   /** Whether they showed they wrote their recovery words down. */
   recoveryConfirmed: boolean;
   /** The account this device opens as now. */
@@ -37,7 +37,7 @@ export type AccountMade = { account: AccountView; recoveryWords: string[] };
 /** What one device answers of the accounts on it: the personal store, and the keys the platform keeps for them. */
 export interface PersonalApi {
   accounts(): Promise<AccountView[]>;
-  /** A person made, on this device: their key, their recovery key, and the chain's first statements, signed. Opened as, from now. */
+  /** A person made, on this device: their key, their recovery key, and the chain's first statements, signed. Opened as once they confirm their recovery words were written down (`activate`). */
   create(input: NewAccount): Promise<AccountMade>;
   /** They showed they wrote their recovery words down. */
   confirmRecovery(personId: string): Promise<AccountView>;

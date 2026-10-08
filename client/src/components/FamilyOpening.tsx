@@ -2,7 +2,7 @@ import { Button, Spinner, Text, YStack } from 'tamagui';
 
 import { Card, haptic, Row } from '@kraftverk/ui';
 
-import type { Opening } from '../state/FamilyProvider';
+import type { Opening } from '../state/AccountProvider';
 import { useServers } from '../state/ServersProvider';
 import { Pressable } from './Pressable';
 
@@ -21,10 +21,10 @@ export function NotOpen({ state, onTakeOver, onRetry }: { state: Opening; onTake
   if (state.status === 'opening' || state.status === 'open') return <Waiting />;
   const [title, detail, action] =
     state.status === 'elsewhere'
-      ? (['Open in another tab', 'This browser keeps its home in one tab at a time, and another tab has it open now.', 'Use it here'] as const)
+      ? (['Open in another tab', 'This browser keeps kraftverk in one tab at a time, and another tab has it open now.', 'Use it here'] as const)
       : state.status === 'handed-over'
-        ? (['Open in another tab now', 'Another tab of this browser asked for this home, and has it now.', 'Use it here again'] as const)
-        : (['This home could not open', state.message, 'Try again'] as const);
+        ? (['Open in another tab now', 'Another tab of this browser asked for kraftverk, and has it now.', 'Use it here again'] as const)
+        : (['kraftverk could not open here', state.message, 'Try again'] as const);
   return (
     <YStack flex={1} backgroundColor="$background" alignItems="center" justifyContent="center" padding="$4">
       <YStack width="100%" maxWidth={420} gap="$4">

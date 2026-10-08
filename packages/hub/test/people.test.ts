@@ -41,7 +41,7 @@ describe('an account on a device, with no server', () => {
   test('made as a local account: a person, this device’s key, twelve recovery words that are their recovery key — opened as', async () => {
     const { keys, personal } = aDevice();
     const { account, recoveryWords } = await personal.create({ name: ' Anna Example ', deviceName: 'Anna’s iPhone' });
-    expect(account).toMatchObject({ name: 'Anna Example', deviceName: 'Anna’s iPhone', active: true, recoveryConfirmed: false, linked: [], families: [] });
+    expect(account).toMatchObject({ name: 'Anna Example', deviceName: 'Anna’s iPhone', active: false, recoveryConfirmed: false, linked: [], families: [] });
     expect(recoveryWords).toHaveLength(12);
     const checked = checkChain(await personal.chain(account.personId));
     if (!checked.ok) throw new Error(checked.problem);
@@ -52,13 +52,15 @@ describe('an account on a device, with no server', () => {
   test('made with a sign-in provider: the identity there linked in their chain', async () => {
     const { personal } = aDevice();
     const { account } = await personal.create({ name: 'Anna', deviceName: 'Phone', linked: { provider: 'example-id', subject: '001234.abc', email: 'anna@example.com' } });
-    expect(account.linked).toEqual([{ provider: 'example-id', email: 'anna@example.com' }]);
+    expect(account.linked).toEqual([{ provider: 'example-id', subject: '001234.abc', email: 'anna@example.com' }]);
   });
 
   test('two on one device: one opened as at a time; signed out, the key kept; removed, it is gone', async () => {
     const { keys, personal } = aDevice();
     const anna = (await personal.create({ name: 'Anna', deviceName: 'Tablet' })).account;
     const bo = (await personal.create({ name: 'Bo', deviceName: 'Tablet' })).account;
+    await personal.activate(anna.personId);
+    await personal.activate(bo.personId);
     expect((await personal.accounts()).map((each) => [each.name, each.active])).toEqual([
       ['Anna', false],
       ['Bo', true],

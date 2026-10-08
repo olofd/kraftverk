@@ -1,20 +1,23 @@
+import type { PersonalApi } from '@kraftverk/api-contract';
 import { apiOver, hear, serveApi, serveTransport, type MessageEnd } from '@kraftverk/message-port';
 
 import { TRANSPORT_ENTRIES } from '../../generated/transports';
 import { clearPreference, readPreference, writePreference } from '../preferences';
-import { HomeOpenElsewhere, type OpenHome, type OpenOptions } from './home';
+import { HomeOpenElsewhere, type OpenDevice, type OpenHome, type OpenOptions } from './home';
 import type { ToPage, ToWorker } from './worker-messages';
 
 /*
-  A browser's home (docs/PLAN-SHARED-CORE.md, phase 6): it runs in a worker
-  of its own (`worker.ts`, bundled apart, beside SQLite's WebAssembly),
-  because a lasting SQLite in a browser needs one — the browser's own home,
-  or, with a server, what this browser holds for it. The page keeps the
+  A browser's kraftverk (docs/PLAN-SHARED-CORE.md, phase 6): it runs in a
+  worker of its own (`worker.ts`, bundled apart, beside SQLite's
+  WebAssembly), because a lasting SQLite in a browser needs one — this
+  browser's accounts first, then a family inside it, the account's own or,
+  with a server, what this browser holds for it. The page keeps the
   screens and the transports — Web Bluetooth and its chooser are the
   window's — and serves each to the worker, and with a server, the
   server's interface too: the page is signed in, and knows its address.
-  The screens ask the home as `KraftverkApi`, over the worker's port. A
-  phone's is `open.ts`, and has none of this.
+  The screens ask the accounts as `PersonalApi` and the family as
+  `KraftverkApi`, over the worker's port. A phone's is `open.ts`, and has
+  none of this.
 */
 
 /** Where the worker is served: built beside the app (`npm run build:home-worker`), with `sqlite3.wasm` next to it. */
@@ -26,67 +29,97 @@ const storeOf = (transport: string) => {
   return { get: (name: string) => readPreference(key(name)), set: (name: string, value: string) => writePreference(key(name), value), delete: (name: string) => clearPreference(key(name)) };
 };
 
-/** Opens this browser's home in its worker — its own, or what it holds for a server — and starts it; or says another tab holds it. */
-export async function openHome(options: OpenOptions): Promise<OpenHome> {
-  const worker = new Worker(WORKER, { type: 'module', name: 'kraftverk home' });
+/** Opens this browser's kraftverk in its worker — its accounts, served — or says another tab holds it. */
+export async function openDevice(options: { takeOver?: boolean } = {}): Promise<OpenDevice> {
+  const worker = new Worker(WORKER, { type: 'module', name: 'kraftverk' });
   const end = worker as unknown as MessageEnd;
-  const stops = [
-    ...Object.entries(TRANSPORT_ENTRIES).map(([id, factory]) => serveTransport(end, factory, { store: storeOf(id) }, `transport:${id}`)),
-    ...(options.server ? [serveApi(options.server.api, end, 'server')] : []),
-  ];
+  const transports = Object.entries(TRANSPORT_ENTRIES).map(([id, factory]) => serveTransport(end, factory, { store: storeOf(id) }, `transport:${id}`));
   const send = (message: ToWorker) => worker.postMessage(message);
+  let stopServer: (() => void) | null = null;
   const finish = () => {
-    for (const stop of stops) stop();
+    for (const stop of transports) stop();
+    stopServer?.();
     worker.terminate();
   };
 
+  /** What the worker says next is the answer to what is waited for now: the device starting, a family opening, closing. */
+  let waiting: { resolve: (message: ToPage) => void; reject: (error: Error) => void } | null = null;
+  const next = () => new Promise<ToPage>((resolve, reject) => (waiting = { resolve, reject }));
   let ended: (why: 'handed-over') => void = () => {};
-  let nodeId = options.node.id;
-  let closed: () => void = () => {};
-  const opened = new Promise<void>((resolve, reject) => {
-    hear<ToPage>(end, 'home', (message) => {
-      switch (message.kind) {
-        case 'ready':
-          nodeId = message.nodeId;
-          return resolve();
-        case 'busy':
-          finish();
-          return reject(new HomeOpenElsewhere());
-        case 'failed':
-          finish();
-          return reject(new Error(message.message));
-        case 'closed':
-          finish();
-          if (message.why === 'handed-over') ended('handed-over');
-          return closed();
-      }
-    });
-    worker.addEventListener('error', (event) => {
+  hear<ToPage>(end, 'home', (message) => {
+    if (message.kind === 'ended') {
       finish();
-      reject(new Error(`This browser's home could not start: ${event.message || 'its worker failed to load'}`));
-    });
+      ended('handed-over');
+      return;
+    }
+    const answer = waiting;
+    waiting = null;
+    if (!answer) return;
+    if (message.kind === 'busy') answer.reject(new HomeOpenElsewhere());
+    else if (message.kind === 'failed') answer.reject(new Error(message.message));
+    else answer.resolve(message);
   });
-  send({
-    via: 'home',
-    kind: 'open',
-    serves: Object.keys(TRANSPORT_ENTRIES),
-    takeOver: Boolean(options.takeOver),
-    writes: false,
-    node: options.node,
-    server: options.server ? { key: options.server.key } : null,
-    copyOf: options.server ? null : (options.copyOf ?? null),
+  worker.addEventListener('error', (event) => {
+    finish();
+    waiting?.reject(new Error(`kraftverk could not start in this browser: ${event.message || 'its worker failed to load'}`));
   });
-  await opened;
+
+  const started = next();
+  send({ via: 'home', kind: 'start', takeOver: Boolean(options.takeOver) });
+  try {
+    await started;
+  } catch (error) {
+    finish();
+    throw error;
+  }
+
+  /** The family open now: closed before another opens, and before the device lets go. */
+  let current: OpenHome | null = null;
+  const closeFamily = async () => {
+    if (!current) return;
+    current = null;
+    const closed = next();
+    send({ via: 'home', kind: 'close' });
+    await closed.catch(() => undefined);
+    stopServer?.();
+    stopServer = null;
+  };
 
   return {
-    api: apiOver(end, 'api'),
-    nodeId,
-    allowWrites: async (allowed) => send({ via: 'home', kind: 'writes', allowed }),
-    close: () =>
-      new Promise<void>((resolve) => {
-        closed = resolve;
-        send({ via: 'home', kind: 'close' });
-      }),
+    personal: apiOver<PersonalApi>(end, 'personal'),
+    async openHome(open: OpenOptions) {
+      await closeFamily();
+      if (open.server) stopServer = serveApi(open.server.api, end, 'server');
+      const ready = next();
+      send({
+        via: 'home',
+        kind: 'open',
+        serves: Object.keys(TRANSPORT_ENTRIES),
+        writes: false,
+        node: open.node,
+        person: open.person,
+        server: open.server ? { key: open.server.key } : null,
+        family: open.server ? null : (open.family ?? null),
+        copyOf: open.server ? null : (open.copyOf ?? null),
+        own: open.server ? (open.own ?? null) : null,
+      });
+      const answer = await ready;
+      const nodeId = answer.kind === 'ready' ? answer.nodeId : open.node.id;
+      const home: OpenHome = {
+        api: apiOver(end, 'api'),
+        nodeId,
+        allowWrites: async (allowed) => send({ via: 'home', kind: 'writes', allowed }),
+        close: async () => {
+          if (current === home) await closeFamily();
+        },
+      };
+      current = home;
+      return home;
+    },
+    async close() {
+      await closeFamily();
+      finish();
+    },
     ended: new Promise((resolve) => {
       ended = resolve;
     }),

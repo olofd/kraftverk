@@ -36,9 +36,10 @@ const NOT_CALLS = new Set(['__proto__', 'constructor', 'prototype']);
 /**
  * Serves `api` on `end`: every call that arrives is made on it, and its
  * answer sent back. Returns how to stop, which closes every live stream it
- * opened.
+ * opened. A family's `KraftverkApi`, or another interface of calls — a
+ * device's accounts — by the same paths.
  */
-export function serveApi(api: KraftverkApi, end: MessageEnd, via = 'api'): () => void {
+export function serveApi<Api extends object = KraftverkApi>(api: Api, end: MessageEnd, via = 'api'): () => void {
   const streams = new Map<number, LiveStream>();
   const aborts = new Map<number, AbortController>();
   const send = (message: ToClient) => end.postMessage(message);
@@ -84,7 +85,7 @@ export function serveApi(api: KraftverkApi, end: MessageEnd, via = 'api'): () =>
         aborts.get(message.signal)?.abort();
         return;
       case 'live':
-        streams.set(message.stream, api.live((update) => send({ via, kind: 'update', stream: message.stream, update })));
+        streams.set(message.stream, (api as unknown as KraftverkApi).live((update) => send({ via, kind: 'update', stream: message.stream, update })));
         return;
       case 'say':
         streams.get(message.stream)?.say(message.view);
@@ -116,9 +117,10 @@ export function thrownAgain(failure: Failure): Error {
 
 /**
  * The home served on the other end of `end`, as `KraftverkApi`: the same
- * interface the hub answers in the process and `httpApi` over HTTP.
+ * interface the hub answers in the process and `httpApi` over HTTP — or the
+ * other interface served there, named.
  */
-export function apiOver(end: MessageEnd, via = 'api'): KraftverkApi {
+export function apiOver<Api extends object = KraftverkApi>(end: MessageEnd, via = 'api'): Api {
   const nextCall = counter();
   const nextSignal = counter();
   const nextStream = counter();
@@ -205,5 +207,5 @@ export function apiOver(end: MessageEnd, via = 'api'): KraftverkApi {
       apply: (_target, _this, args: unknown[]) => call(path, args),
     });
 
-  return node([]) as KraftverkApi;
+  return node([]) as Api;
 }

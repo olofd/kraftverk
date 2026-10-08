@@ -5,13 +5,18 @@ import { nodeId, SIMULATED_METHOD_ID } from '@kraftverk/device-sdk';
 import type { Hub } from '@kraftverk/hub';
 import { fromSqliteWasm, sealedWithKey, type SqliteWasmDatabase } from '@kraftverk/store';
 
-import { appHub, OWNER, readyDatabase } from './hub';
+import { callerOf } from './home';
+import { appHub, readyDatabase } from './hub';
+
+/** The account this family is opened as. */
+const ANNA = { id: 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0AB', name: 'Anna' };
 
 /*
   The app's own home as both places make it — every installed package from
   the generated registry, SQLite's WebAssembly build, the app's cipher —
   in memory here: a simulated plug added through setup, switched through
-  the gateway, its automation made and run, and its timeline its owner's.
+  the gateway, its automation made and run, and its timeline the account's
+  it is opened as.
 */
 
 let hub: Hub | null = null;
@@ -23,9 +28,9 @@ afterEach(async () => {
 async function open() {
   const sqlite3 = await sqlite3InitModule();
   const database = readyDatabase(fromSqliteWasm(new sqlite3.oo1.DB(':memory:') as unknown as SqliteWasmDatabase), 'test');
-  hub = appHub({ node: { id: nodeId('n-000000000000000000000000B2'), name: 'A test browser', alwaysOn: false, reachable: false, trusted: false }, database, secrets: sealedWithKey(crypto.getRandomValues(new Uint8Array(32))), platform: 'web', transport: () => null, readOnly: () => true });
+  hub = appHub({ node: { id: nodeId('n-000000000000000000000000B2'), name: 'A test browser', alwaysOn: false, reachable: false, trusted: false }, database, secrets: sealedWithKey(crypto.getRandomValues(new Uint8Array(32))), platform: 'web', transport: () => null, readOnly: () => true, familyId: 'f-01JA8ZK3Q4R7T9V2W5X6Y8Z0FF' });
   await hub.start();
-  return hub.as(OWNER);
+  return hub.as(callerOf(ANNA));
 }
 
 test('every installed type can be added, and a simulated plug is added, switched and automated — writes refused only to hardware', async () => {
@@ -61,7 +66,7 @@ test('every installed type can be added, and a simulated plug is added, switched
     await new Promise((resolve) => setTimeout(resolve, 20));
     runs = await home.automations.runs(automation.id);
   }
-  expect(runs[0]).toMatchObject({ startedBy: { name: 'you' } });
+  expect(runs[0]).toMatchObject({ startedBy: { name: 'Anna' } });
   expect(runs[0]!.outcome).not.toBe('interrupted');
-  expect((await home.timeline({ limit: 20 })).some((entry) => entry.actor.name === 'you')).toBe(true);
+  expect((await home.timeline({ limit: 20 })).some((entry) => entry.actor.name === 'Anna' && entry.actor.id === ANNA.id)).toBe(true);
 });

@@ -36,7 +36,7 @@ export function personalApi(deps: PersonalDeps): PersonalApi {
       shortName: profile.shortName,
       pictureId: profile.pictureId,
       deviceName: account.deviceName,
-      linked: linked.map((each) => ({ provider: each.provider, email: each.email })),
+      linked: linked.map((each) => ({ provider: each.provider, subject: each.subject, email: each.email })),
       recoveryConfirmed: account.recoveryConfirmedAt !== null,
       active: account.active,
       addedAt: account.addedAt,
@@ -77,8 +77,7 @@ export function personalApi(deps: PersonalDeps): PersonalApi {
         chain = await addKey(chain, { signer: key, key: recoveryKey(recoveryWords), keyKind: 'recovery', deviceName: null, at });
         if (input.linked) chain = await say(chain, { signer: key, at, said: { kind: 'linked', linked: input.linked } });
         const account = store.add({ personId, chain, keyId: keyId(key.publicJwk), deviceName, addedAt: at });
-        store.activate(personId);
-        return { account: viewOf({ ...account, active: true }), recoveryWords };
+        return { account: viewOf(account), recoveryWords };
       } catch (error) {
         // Nothing half made: the key goes with the account it was for.
         await keys.forget(personId);

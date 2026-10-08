@@ -91,6 +91,8 @@ export type HubOptions = {
    * own home: offered to keep (`configuration.plan({ from: 'copy' })`).
    */
   copy?: SqlDatabase;
+  /** The family's id, when the place chose it before the database was made: an account's own, named in its personal store and its file. */
+  familyId?: string;
   /** The gateway's own limits, where they differ from its defaults: a test's shorter wait to verify. */
   gateway?: Partial<GatewayPolicy>;
   /** Where it says what happened: a line for a person reading a log. */
@@ -239,7 +241,7 @@ export class Hub {
     ({ settings: this.settings, catalog: this.catalog, connections: this.connections, links: this.links, nodes: this.nodes, bus: this.bus, sessions: this.sessions, gateway: this.gateway, setup: this.setup } = parts);
     const { self } = parts;
     // The family, made the first time, its master this node. A hub is the master of what its database keeps: never a copy another node is the master of.
-    const family = this.family.ensure({ name: 'Family', masterId: self.id });
+    const family = this.family.ensure({ name: 'Family', masterId: self.id, ...(options.familyId ? { id: options.familyId } : {}) });
     if (family.masterId !== self.id) throw new Error(`This database is kept for another master (${family.masterId}): it is not opened as a family of its own`);
     // And its first home, made with it: a family has a home from the start.
     this.places = new PlaceStore(db);
