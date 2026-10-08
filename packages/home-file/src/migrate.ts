@@ -68,9 +68,12 @@ function shortcutsPerPerson(document: Record<string, unknown>): Record<string, u
  * is, its values — becomes the family's first, `home`. An automation that
  * said no clock kept the home's, and keeps it: it is its home's clock now.
  * Where the file said no clock, the first automation's is the home's, or UTC.
+ * A file with no `home:` — one device, one automation — makes no home.
  */
 function homesFromHome(document: Record<string, unknown>): Record<string, unknown> {
   const { home, ...rest } = document;
+  // A file that says no home is about its devices or automations alone: a home it never named is not made, nor any home's clock changed by importing it.
+  if (home === undefined || home === null) return rest;
   const was = (home && typeof home === 'object' ? home : {}) as { clock?: unknown; location?: unknown; policy?: unknown };
   const automations = (document.automations && typeof document.automations === 'object' ? Object.values(document.automations) : []) as { clock?: unknown }[];
   const clock = typeof was.clock === 'string' ? was.clock : (automations.find((automation) => typeof automation.clock === 'string')?.clock as string | undefined) ?? 'UTC';

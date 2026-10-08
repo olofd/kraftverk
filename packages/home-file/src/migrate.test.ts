@@ -50,11 +50,16 @@ describe('every version of the document', () => {
     expect(document.homes.home!.timeZone).toBe('Europe/Stockholm');
     // It said none: it keeps its home's.
     expect(document.automations['stop-charging']!.clock).toBeNull();
-    // With no home's clock said, the first automation's is the home's.
-    const own = readConfig('kraftverk: 4\nautomations:\n  a:\n    name: A\n    clock: Europe/London\n    do: []\n');
+    // With a home but no clock said, the first automation's is the home's.
+    const own = readConfig('kraftverk: 4\nhome:\n  policy: { loadWatts: 50 }\nautomations:\n  a:\n    name: A\n    clock: Europe/London\n    do: []\n');
     expect(own.problems).toEqual([]);
     expect(own.document!.homes.home!.timeZone).toBe('Europe/London');
     expect(own.document!.automations.a!.clock).toBe('Europe/London');
+    // A file with no home at all — one automation, as its page shows it — makes none: importing it changes no home's clock.
+    const alone = readConfig('kraftverk: 4\nautomations:\n  a:\n    name: A\n    clock: Europe/London\n    do: []\n');
+    expect(alone.problems).toEqual([]);
+    expect(alone.document!.homes).toEqual({});
+    expect(alone.document!.automations.a!.clock).toBe('Europe/London');
     // And an automation says the home it is for, by its key.
     const cabin = readConfig(readFileSync(fixture(10), 'utf8')).document!;
     expect(cabin.homes.cabin!.type).toBe('cabin');

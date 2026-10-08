@@ -90,6 +90,8 @@ export default defineConfig({
         KRAFTVERK_DB: join(serverDir('server'), 'kraftverk.db'),
         KRAFTVERK_LOG_DIR: join(serverDir('server'), 'logs'),
         READ_ONLY: '1',
+        // One clock everywhere: a home made here keeps UTC on every machine, as on the pipeline's.
+        TZ: 'UTC',
         BROKER_SPAWN: '0',
         ALLOWED_ORIGINS: `http://127.0.0.1:${WEB_PORT}`,
       },
@@ -105,6 +107,8 @@ export default defineConfig({
         KRAFTVERK_DB: join(serverDir('fast'), 'kraftverk.db'),
         KRAFTVERK_LOG_DIR: join(serverDir('fast'), 'logs'),
         READ_ONLY: '1',
+        // One clock everywhere: a home made here keeps UTC on every machine, as on the pipeline's.
+        TZ: 'UTC',
         BROKER_SPAWN: '0',
         KRAFTVERK_CLOCK_RATE: String(FAST_CLOCK_RATE),
       },
