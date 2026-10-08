@@ -11,3 +11,4 @@ export * from './challenge.ts';
 export * from './id-token.ts';
 export * from './keys.ts';
 export * from './recovery.ts';
+export type { WebCryptoKey, WebCryptoPair } from './web-crypto.ts';

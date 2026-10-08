@@ -14,6 +14,7 @@ import {
   MediaStore,
   SpaceStore,
   LabelStore,
+  PeopleStore,
   FamilyStore,
   NodeStore,
   ConnectionStore,
@@ -125,6 +126,7 @@ export class Hub {
   /** The homes' spaces, the openings between them, and where each device stands. */
   readonly spaces: SpaceStore;
   readonly labels: LabelStore;
+  readonly people: PeopleStore;
   /** The family this database is, and its master. */
   readonly family: FamilyStore;
   /** This node: what its database is, and what holds the ways it holds. */
@@ -245,6 +247,7 @@ export class Hub {
     this.media = new MediaStore(db);
     this.spaces = new SpaceStore(db);
     this.labels = new LabelStore(db);
+    this.people = new PeopleStore(db);
     // The family's values, as its API sets them: its first home's. The gateway asks each device's own home (`policyValues`).
     const policyHome = new HomeSettings(db, () => ensureFirstHome(this.places).id);
     this.policy = { values: () => policyValues(policyHome), set: (name, value) => setPolicyValue(policyHome, name, value) };
@@ -341,8 +344,11 @@ export class Hub {
   }
 
   /** Everything this family answers (`KraftverkApi`), for one caller: a person, or an assistant acting for one. */
+  /** The family, as one caller asks it: a person known here by their id is called what the family calls them. */
   as(caller: Caller): KraftverkApi {
-    return familyApi(this, caller);
+    if (caller.kind !== 'person' || !caller.id) return familyApi(this, caller);
+    const known = this.people.get(caller.id);
+    return familyApi(this, known ? { ...caller, name: known.shownAs } : caller);
   }
 
   /** Stops everything it started, together, and lets go of what it opened. The database is the place's to close. */

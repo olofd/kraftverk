@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
+import type { KraftverkApi } from '@kraftverk/api-contract';
 import { KEY, NODE_ID, nodeId, type PolicyValueName } from '@kraftverk/device-sdk';
 
 import { familyFor, RESOURCE_KIND, type AppDeps } from './context.ts';
@@ -86,6 +87,33 @@ export function familyRoutes(deps: AppDeps): Hono {
     })
     .strict();
   const TARGET = z.union([z.object({ device: z.string().min(1).max(40) }).strict(), z.object({ space: z.string().min(1).max(40) }).strict(), z.object({ automation: z.string().min(1).max(40) }).strict()]);
+  /** Its people: each as their own chain says — the hub checks every statement — and what the family calls them. */
+  const CHAIN = z.array(z.record(z.string(), z.unknown())).min(1).max(1000);
+  api.get('/people', async (c) => c.json({ people: await familyFor(deps, c).people.list() }));
+  api.get('/people/me', async (c) => c.json({ person: await familyFor(deps, c).people.me() }));
+  api.post('/people/found', async (c) => {
+    const input = await body(
+      c,
+      z
+        .object({
+          chain: CHAIN,
+          name: z.string().max(60),
+          kind: z.enum(['family', 'household', 'friends', 'other']),
+          home: z.object({ name: z.string().max(60), type: z.enum(['house', 'apartment', 'cabin', 'boat', 'caravan', 'office', 'other']), timeZone: z.string().max(60) }).strict(),
+        })
+        .strict()
+    );
+    return c.json(await familyFor(deps, c).people.found(input as unknown as Parameters<KraftverkApi['people']['found']>[0]));
+  });
+  api.post('/people/present', async (c) => {
+    const { chain } = await body(c, z.object({ chain: CHAIN }).strict());
+    return c.json(await familyFor(deps, c).people.present(chain as unknown as Parameters<KraftverkApi['people']['present']>[0]));
+  });
+  api.patch('/people/:id', async (c) => {
+    const changes = await body(c, z.object({ role: z.enum(['admin', 'member', 'child']), nickname: z.string().max(30).nullable(), color: z.string().regex(/^#[0-9a-f]{6}$/) }).partial().strict());
+    return c.json(await familyFor(deps, c).people.update(c.req.param('id'), changes));
+  });
+
   api.get('/labels', async (c) => c.json({ labels: await familyFor(deps, c).labels.list() }));
   api.get('/labels/labelled', async (c) => c.json(await familyFor(deps, c).labels.labelled()));
   api.post('/labels', async (c) => c.json(await familyFor(deps, c).labels.add(await body(c, LABEL.partial({ key: true, color: true, icon: true })))));

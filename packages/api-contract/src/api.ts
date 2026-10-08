@@ -1,4 +1,5 @@
 import type { AutomationDraft, Rule } from '@kraftverk/automation';
+import type { Statement } from '@kraftverk/identity';
 import type { AutomationId, ConfigValues, ConnectionId, LinkId, NodeId, PolicyValueName, ResourceKind, SavedDeviceId, SetupActionResult, Value } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 import type { Vocabulary } from '@kraftverk/home-file';
@@ -10,6 +11,7 @@ import type { ConfigExported, ConfigExportRequest, ConfigSnapshotView, ImportAns
 import type { MapRegionAsk, MapRegionsView } from './map.ts';
 import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, FamilyElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
+import type { FoundFamily, MemberChanges, PersonView } from './people.ts';
 import type { HomeInput, HomeView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView } from './homes.ts';
 import type { MediaData, MediaView, NewMedia } from './media.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, FamilyView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
@@ -40,8 +42,12 @@ export type VersionInfo = {
  * an app with no server, one for its owner.
  */
 export type Caller =
-  /** A person, by the name the timeline knows them by — and, on a server, their account: what the apps they sign in on belong to. */
-  | { kind: 'person'; name: string; account?: string }
+  /**
+   * A person, by the name the timeline knows them by, and their person id —
+   * absent only for a server's account that names no person yet — and, on a
+   * server, their account: what the apps they sign in on belong to.
+   */
+  | { kind: 'person'; id?: string; name: string; account?: string }
   /** An assistant acting for a person: it does what needs no one's yes, and is refused the rest. */
   | { kind: 'agent'; for: string };
 
@@ -271,6 +277,19 @@ export interface KraftverkApi {
     add(input: OpeningInput): Promise<OpeningView>;
     update(id: string, changes: Partial<OpeningInput>): Promise<OpeningView>;
     remove(id: string): Promise<OpeningView>;
+  };
+  /** Its people (docs/PLAN-WORLD-MODEL.md §8.2, §8.3): each as their own signed chain says, and what the family calls them. */
+  people: {
+    /** The members now, in the order they joined. */
+    list(): Promise<PersonView[]>;
+    /** Who asks, as this family knows them; null for one it does not. */
+    me(): Promise<PersonView | null>;
+    /** The first person in an empty family founds it: its admin, its name, its first home. */
+    found(input: FoundFamily): Promise<PersonView>;
+    /** A newer copy of a person — oneself, or anyone by an admin — going on from the one kept. */
+    present(chain: Statement[]): Promise<PersonView>;
+    /** An admin's: a member's role — never the last admin's away — what the family calls them, their colour. */
+    update(personId: string, changes: MemberChanges): Promise<PersonView>;
   };
   /** A family's labels (docs/PLAN-WORLD-MODEL.md §8.13): any grouping it wants, on devices, spaces and automations. */
   labels: {

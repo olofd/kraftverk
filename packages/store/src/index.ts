@@ -27,6 +27,8 @@ export * from './family.ts';
 export * from './places.ts';
 export * from './spaces.ts';
 export * from './labels.ts';
+export * from './people.ts';
+export * from './personal.ts';
 export * from './media.ts';
 export * from './device-store.ts';
 export * from './last-readings.ts';

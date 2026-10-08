@@ -1,4 +1,5 @@
 import { fromBase64url, utf8 } from './bytes.ts';
+import { subtle } from './web-crypto.ts';
 
 /*
   Signing in with a provider (docs/PLAN-WORLD-MODEL.md §10.6): its ID token
@@ -80,8 +81,8 @@ export async function verifyIdToken(token: string, expect: { issuer: string; key
   if (!header || !claims || !signature || header.alg !== 'RS256') return 'That is not a sign-in token from there';
   const key = expect.keys.find((each) => each.kid === header.kid);
   if (!key) return 'It was not signed with a key its provider publishes';
-  const publicKey = await crypto.subtle.importKey('jwk', { kty: 'RSA', n: key.n, e: key.e, alg: 'RS256', ext: true }, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
-  if (!(await crypto.subtle.verify('RSASSA-PKCS1-v1_5', publicKey, signature as Uint8Array<ArrayBuffer>, utf8(`${headerPart}.${claimsPart}`) as Uint8Array<ArrayBuffer>))) return 'Its provider did not sign it';
+  const publicKey = await subtle().importKey('jwk', { kty: 'RSA', n: key.n, e: key.e, alg: 'RS256', ext: true }, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+  if (!(await subtle().verify('RSASSA-PKCS1-v1_5', publicKey, signature as Uint8Array<ArrayBuffer>, utf8(`${headerPart}.${claimsPart}`) as Uint8Array<ArrayBuffer>))) return 'Its provider did not sign it';
   if (!expect.audiences.includes(claims.audience)) return 'That token is for another app';
   if (claims.expiresAt <= expect.now) return 'That token has expired: sign in again';
   if (expect.nonce !== null && claims.nonce !== expect.nonce) return 'That token was not asked for here';

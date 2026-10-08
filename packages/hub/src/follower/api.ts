@@ -357,6 +357,14 @@ export function followerApi(h: Follower): KraftverkApi {
       update: (id, changes) => home.openings.update(id, changes),
       remove: (id) => home.openings.remove(id),
     },
+    /** People are the family's: the master's. */
+    people: {
+      list: () => home.people.list(),
+      me: () => home.people.me(),
+      found: (input) => home.people.found(input),
+      present: (chain) => home.people.present(chain),
+      update: (id, changes) => home.people.update(id, changes),
+    },
     /** Labels are the family's: the master's. */
     labels: {
       list: () => home.labels.list(),

@@ -29,6 +29,7 @@
     "@kraftverk/device-sdk": "*",
     "@kraftverk/home-file": "*",
     "@kraftverk/hub": "*",
+    "@kraftverk/identity": "*",
     "@kraftverk/map": "*",
     "@kraftverk/message-port": "*",
     "@kraftverk/store": "*",

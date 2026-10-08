@@ -12,6 +12,7 @@ import {
   type DeviceEventView,
   type HomeView,
   type LabelView,
+  type PersonView,
   type OpeningView,
   type PlacementView,
   type SpaceView,
@@ -263,6 +264,13 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
       add: (input) => call('POST', '/openings', input),
       update: (id, changes) => call('PATCH', `/openings/${enc(id)}`, changes),
       remove: (id) => call('DELETE', `/openings/${enc(id)}`),
+    },
+    people: {
+      list: async () => (await get<{ people: PersonView[] }>('/people')).people,
+      me: async () => (await get<{ person: PersonView | null }>('/people/me')).person,
+      found: (input) => call('POST', '/people/found', input),
+      present: (chain) => call('POST', '/people/present', { chain }),
+      update: (id, changes) => call('PATCH', `/people/${enc(id)}`, changes),
     },
     labels: {
       list: async () => (await get<{ labels: LabelView[] }>('/labels')).labels,

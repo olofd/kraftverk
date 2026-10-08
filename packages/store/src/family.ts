@@ -59,6 +59,11 @@ export class FamilyStore {
     return this.get()!;
   }
 
+  /** The person who founded it: said once, when the first person comes into a family a node made. */
+  foundedBy(personId: string): void {
+    this.#db.query('UPDATE family SET created_by = ? WHERE created_by IS NULL').run(personId);
+  }
+
   /** What it is called, its kind, its language: what is given, the rest as it was. */
   update(changes: Partial<Pick<FamilyRecord, 'name' | 'kind' | 'locale'>>): FamilyRecord {
     const was = this.get()!;

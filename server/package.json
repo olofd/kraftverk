@@ -20,6 +20,7 @@
     "@kraftverk/automation-engine": "*",
     "@kraftverk/device-sdk": "*",
     "@kraftverk/hub": "*",
+    "@kraftverk/identity": "*",
     "@kraftverk/map": "*",
     "@kraftverk/store": "*",
     "hono": "^4.13.1",

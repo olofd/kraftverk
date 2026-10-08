@@ -2,6 +2,7 @@ import { p256 } from '@noble/curves/nist.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
 import { base64url, canonical, fromBase64url, utf8 } from './bytes.ts';
+import { subtle, type WebCryptoPair } from './web-crypto.ts';
 
 /** A P-256 public key, as a JWK: what a family keeps of a person's key, and a file carries. */
 export type PublicJwk = { kty: 'EC'; crv: 'P-256'; x: string; y: string };
@@ -79,14 +80,14 @@ export function softwareKey(secret: Uint8Array): SigningKey {
 }
 
 /** A key that is a Web Crypto pair: its private half not extractable, kept as the object it is (IndexedDB holds one). */
-export async function webCryptoKey(pair: CryptoKeyPair): Promise<SigningKey> {
-  const exported = (await crypto.subtle.exportKey('jwk', pair.publicKey)) as { x?: string; y?: string };
+export async function webCryptoKey(pair: WebCryptoPair): Promise<SigningKey> {
+  const exported = await subtle().exportKey('jwk', pair.publicKey);
   const publicJwk: PublicJwk = { kty: 'EC', crv: 'P-256', x: exported.x!, y: exported.y! };
   return {
     publicJwk,
-    sign: async (data) => new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, pair.privateKey, data as Uint8Array<ArrayBuffer>)),
+    sign: async (data) => new Uint8Array(await subtle().sign({ name: 'ECDSA', hash: 'SHA-256' }, pair.privateKey, data as Uint8Array<ArrayBuffer>)),
   };
 }
 
 /** A new Web Crypto pair whose private half can never be read: a browser's key. */
-export const newWebCryptoPair = (): Promise<CryptoKeyPair> => crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify']);
+export const newWebCryptoPair = (): Promise<WebCryptoPair> => subtle().generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify']);

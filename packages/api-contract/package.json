@@ -17,6 +17,7 @@
     "@kraftverk/device-sdk": "*",
     "@kraftverk/gateway": "*",
     "@kraftverk/home-file": "*",
+    "@kraftverk/identity": "*",
     "@kraftverk/map": "*"
   },
   "devDependencies": {

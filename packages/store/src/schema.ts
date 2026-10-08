@@ -64,7 +64,9 @@ export const SCHEMA = `
     /* BCP 47: what is said to all of it — an announcement, a speaker. */
     locale     TEXT NOT NULL,
     master_id  TEXT NOT NULL REFERENCES node (id),
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    /* The person who founded it; null: a node made it before anyone was in it — a server, at its first start. */
+    created_by TEXT REFERENCES person (id) DEFERRABLE INITIALLY DEFERRED
   );
 
   /*
@@ -85,6 +87,87 @@ export const SCHEMA = `
     media_id TEXT PRIMARY KEY REFERENCES media (id) ON DELETE CASCADE,
     data     BLOB NOT NULL
   );
+
+  /*
+    People, as this family knows them (docs/PLAN-WORLD-MODEL.md §8.2, §10).
+    A person owns their profile, and proves it: their chain of signed
+    statements (@kraftverk/identity) is kept as it was shown, and what this
+    row says is what it says — a newer chain replaces an older. A person an
+    admin keeps for someone with no device yet, a small child, has no chain,
+    and is managed_by that admin. Never deleted while history names them:
+    erased, they keep their id and lose the rest.
+  */
+  CREATE TABLE person (
+    id         TEXT PRIMARY KEY CHECK (id GLOB 'p-*'),
+    kind       TEXT NOT NULL DEFAULT 'human' CHECK (kind IN ('human')),
+    /* Whole, as they write it. */
+    name       TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 100),
+    /* What screens and speakers call them; null: their name. */
+    short_name TEXT CHECK (length(short_name) BETWEEN 1 AND 30),
+    picture_id TEXT REFERENCES media (id),
+    /* BCP 47: the language they are told things in; null: the family's. */
+    locale     TEXT,
+    /* The admin who keeps them; null: they keep themselves. */
+    managed_by TEXT REFERENCES person (id),
+    /* Their statements, as JSON; null for one with no key yet — an admin keeps them, or a node made them where they signed in with a password. */
+    chain      TEXT,
+    /* Their profile's own time: a newer copy replaces an older. */
+    updated_at TEXT NOT NULL,
+    /* Erased (§11.6): name and picture gone, the row kept for history. */
+    erased_at  TEXT,
+    CHECK (managed_by IS NULL OR chain IS NULL)
+  );
+
+  /*
+    The public keys a person signs with (§10): those their chain adds, and
+    those this family vouched for when they came back without one — by a
+    sign-in provider, or an admin — which no other family takes. The private
+    halves never leave their devices.
+  */
+  CREATE TABLE person_key (
+    id          TEXT PRIMARY KEY CHECK (id GLOB 'k-*'),
+    person_id   TEXT NOT NULL REFERENCES person (id),
+    kind        TEXT NOT NULL CHECK (kind IN ('device', 'recovery')),
+    /* A P-256 JWK: its x and y. */
+    public_key  TEXT NOT NULL,
+    /* Which device holds it: "Anna's phone"; null for a recovery key. */
+    device_name TEXT,
+    added_at    TEXT NOT NULL,
+    /* The key that signed it in; null for their first, and for one vouched for. */
+    added_with  TEXT REFERENCES person_key (id),
+    /* How this family took a key that is not in their chain: provider:<id>, or the admin's person id; null: the chain says it. */
+    vouched     TEXT,
+    revoked_at  TEXT
+  );
+  CREATE INDEX person_key_person ON person_key (person_id) WHERE revoked_at IS NULL;
+
+  /* An identity a person linked to themselves, in their chain: at a sign-in provider, by the subject it gives this app. */
+  CREATE TABLE person_identity (
+    provider  TEXT NOT NULL,
+    subject   TEXT NOT NULL,
+    person_id TEXT NOT NULL REFERENCES person (id) ON DELETE CASCADE,
+    /* Their email there, when they let it be given. */
+    email     TEXT,
+    PRIMARY KEY (provider, subject)
+  );
+
+  /*
+    Being in the family (§8.3): a row, with a role. What this family calls
+    them, and their colour, are the family's. Left, the row stays for the
+    history that names them.
+  */
+  CREATE TABLE member (
+    person_id  TEXT PRIMARY KEY REFERENCES person (id),
+    /* At least one admin, always: the store's rule. */
+    role       TEXT NOT NULL CHECK (role IN ('admin', 'member', 'child')),
+    /* What this family calls them: "Mum". */
+    nickname   TEXT CHECK (length(nickname) BETWEEN 1 AND 30),
+    color      TEXT NOT NULL CHECK (color GLOB '#[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'),
+    joined_at  TEXT NOT NULL,
+    invited_by TEXT REFERENCES person (id),
+    left_at    TEXT
+  );
+  CREATE UNIQUE INDEX member_color ON member (color) WHERE left_at IS NULL;
 
   /*
     Places on the globe the family names (docs/PLAN-WORLD-MODEL.md §8.4): its
@@ -813,7 +896,7 @@ export const SCHEMA = `
     actor_kind    TEXT NOT NULL CHECK (actor_kind IN ('person', 'agent', 'automation', 'node', 'integration', 'system')),
     actor_id      TEXT,
     actor_name    TEXT NOT NULL,
-    resource_kind TEXT CHECK (resource_kind IN ('device', 'node', 'automation', 'account', 'transport', 'family', 'home')),
+    resource_kind TEXT CHECK (resource_kind IN ('device', 'node', 'automation', 'account', 'transport', 'family', 'home', 'person')),
     resource      TEXT,
     summary       TEXT NOT NULL,
     detail        TEXT,
