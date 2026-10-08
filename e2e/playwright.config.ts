@@ -16,8 +16,13 @@ import { defineConfig, devices } from '@playwright/test';
  */
 
 const ROOT = resolve(import.meta.dirname, '..');
-const WEB_PORT = 4398;
-const API_PORT = 3398;
+/**
+ * Which of the shards run side by side this is (e2e/run.mjs --shards): each
+ * its own ports, servers and results. 0 when it runs alone.
+ */
+const SHARD = Number(process.env.E2E_SHARD_INDEX ?? 0);
+const WEB_PORT = 4398 + SHARD * 10;
+const API_PORT = 3398 + SHARD * 10;
 /**
  * A second server, its home's clock 1000 times real time: a home of simulated
  * devices lived through in seconds — a day of a station charging and
@@ -25,7 +30,7 @@ const API_PORT = 3398;
  * Read-only, as a fast clock must be; a database of its own. Its tests reach
  * it through the API alone (`fastServer` in helpers.ts).
  */
-const FAST_API_PORT = 3399;
+const FAST_API_PORT = 3399 + SHARD * 10;
 const FAST_CLOCK_RATE = 1000;
 /** How much longer a test may take on the pipeline's machine than on a developer's. */
 const PACE = process.env.CI ? 1.5 : 1;
@@ -62,7 +67,7 @@ export default defineConfig({
   timeout: 15_000 * PACE,
   expect: { timeout: 5_000 * PACE },
   retries: 0,
-  reporter: process.env.CI ? [['list'], ['html', { open: 'never', outputFolder: join(ROOT, 'e2e-report') }]] : 'list',
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never', outputFolder: join(ROOT, 'e2e-report', SHARD ? `shard-${SHARD}` : '') }]] : 'list',
   globalSetup: './setup.ts',
   use: {
     baseURL: `http://127.0.0.1:${WEB_PORT}`,
@@ -72,7 +77,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  outputDir: join(ROOT, 'e2e-results'),
+  outputDir: join(ROOT, 'e2e-results', SHARD ? `shard-${SHARD}` : ''),
   webServer: [
     {
       command: 'node scripts/run-bun.mjs server/src/index.ts',

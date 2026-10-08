@@ -35,6 +35,7 @@ test('without a server, the app keeps its own home: a simulated plug added, swit
 
   // The same rule as on a server: off while it carries a load is confirmed.
   await power.click();
+  const switched = Date.now();
   expect(await answer(page, true)).toContain('Power is 240 W');
   await expect(power).toHaveAttribute('aria-checked', 'false');
 
@@ -47,8 +48,9 @@ test('without a server, the app keeps its own home: a simulated plug added, swit
   await page.getByRole('button', { name: 'Create' }).click();
   const main = page.getByRole('main');
   await expect(page.getByRole('heading', { level: 1, name: 'Desk plug back on' })).toBeVisible();
-  // The gateway gives a part five seconds between a person's switches, here as on a server: waited out, not got round.
-  await page.waitForTimeout(5_500);
+  // The gateway gives a part five seconds between a person's switches, here as on a server: waited out, not got round —
+  // only what is left of them once the automation is written.
+  await page.waitForTimeout(Math.max(0, 5_500 - (Date.now() - switched)));
   await main.getByRole('button', { name: 'Start Desk plug back on' }).click();
   expect(await answer(page, true)).toContain('started by you it acts');
   await expect(main.getByRole('status').first()).toHaveText(/^Turned Desk plug on · Just now$/, { timeout: 20_000 });

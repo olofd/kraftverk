@@ -22,7 +22,8 @@ env:
 
 jobs:
   # The checks split in parallel jobs, the deploy waiting for all of them:
-  # the end-to-end suite, the longest, in two shards — each with a server and
+  # the end-to-end suite, the longest, in two shards side by side in one job —
+  # one install and one build of the app for both, each shard with servers and
   # a database of its own. Every check job runs in one image, built once.
   checks-image:
     name: The image the checks run in
@@ -67,12 +68,8 @@ jobs:
       - run: npm test
 
   e2e:
-    name: The app end to end, part ${{ matrix.shard }} of 2
+    name: The app end to end
     needs: checks-image
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
     runs-on: docker
     container:
       image: kraftverk-checks:pipeline
@@ -80,16 +77,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: npm ci
-      # Builds the app as it ships, then runs its share of e2e/ against a
-      # read-only server of its own, every device simulated.
-      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/2
+      # Builds the app as it ships, once, then runs e2e/ as two shards side by
+      # side, each against read-only servers of its own, every device simulated.
+      - run: npm run test:e2e -- --shards=2
         env:
           CI: "1"
       - name: Keep the report
         if: failure()
         uses: actions/upload-artifact@v3
         with:
-          name: e2e-report-${{ matrix.shard }}
+          name: e2e-report
           path: |
             e2e-report/
             e2e-results/
