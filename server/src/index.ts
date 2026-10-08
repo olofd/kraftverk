@@ -11,7 +11,7 @@ import { Accounts } from './auth/accounts.ts';
 import { ProxyDirectory } from './auth/trust.ts';
 import { besideDatabase, loadConfig } from './config.ts';
 import { keepConsole } from './log.ts';
-import { openDatabase } from './platform/database.ts';
+import { openDatabase, openNodeDatabase } from './platform/database.ts';
 import { scopedHttp } from './platform/http.ts';
 import { MapRegions } from './platform/map/regions.ts';
 import { TileStore } from './platform/map/tiles.ts';
@@ -40,6 +40,8 @@ const serverLog = keepConsole(config.logDir);
 */
 const { database, fresh } = openDatabase(config.databaseFile);
 const audit = new AuditLog(database);
+// Who may sign in here: the node's own, beside the family's, and never reset with it.
+const nodeDatabase = openNodeDatabase(besideDatabase(config, 'node.db')).database;
 
 /*
   Stopping, when asked to — registered before anything else starts.
@@ -68,6 +70,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
       console.log(`[server] Stopped ${how} in ${Date.now() - started} ms`);
       try {
         database.close();
+        nodeDatabase.close();
       } finally {
         process.exit(0);
       }
@@ -179,7 +182,7 @@ const stopSnapshot = audit.onRecord((entry) => {
   if (changesConfiguration(entry.kind)) snapshot.schedule();
 });
 
-const { app, websocket } = createApp({ hub, accounts: new Accounts(database), snapshot, config, proxies, serverLog, startedAt, map: { tiles, regions } });
+const { app, websocket } = createApp({ hub, accounts: new Accounts(nodeDatabase), snapshot, config, proxies, serverLog, startedAt, map: { tiles, regions } });
 
 // Everything is running: from here on, stopping also closes what was opened.
 onStop(stopSnapshot, () => snapshot.stop(), () => hub.stop(), () => tiles.close());

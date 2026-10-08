@@ -15,7 +15,7 @@ import { Accounts } from './auth/accounts.ts';
 import { CLIENT_IP_HEADER, EXPOSURE_HEADER, ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
 import { busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE, TEST_INTEGRATION, TEST_SOURCE } from '@kraftverk/hub/testing';
-import { openDatabase } from './platform/database.ts';
+import { openDatabase, openNodeDatabase } from './platform/database.ts';
 import { MCP_BATCH_MAX } from './routes/assistant.ts';
 import { originAllowed } from './routes/live.ts';
 import { serverSecrets } from './platform/secrets.ts';
@@ -47,15 +47,18 @@ type Server = {
   attention: Attention;
   sessions: SessionManager;
   bus: FakeBus;
-  /** Its own database, and the accounts in it. */
+  /** Its own database: the family's. */
   database: SqlDatabase;
+  /** The node's, and the accounts in it. */
+  nodeDatabase: SqlDatabase;
   accounts: Accounts;
   close(): Promise<void>;
 };
 
 async function build(options: { readOnly?: boolean; file: string }): Promise<Server> {
   const { database } = openDatabase(options.file);
-  const accounts = new Accounts(database);
+  const nodeDatabase = openNodeDatabase(options.file.replace(/\.db$/, '-node.db')).database;
+  const accounts = new Accounts(nodeDatabase);
   const config = loadConfig({ NODE_ENV: 'test', READ_ONLY: options.readOnly ? '1' : '0', KRAFTVERK_RESET_SECRET_FILE: RESET_SECRET_FILE }, []);
   const bus = new FakeBus();
   const protocols = new ProtocolRegistry();
@@ -89,10 +92,12 @@ async function build(options: { readOnly?: boolean; file: string }): Promise<Ser
     sessions: hub.sessions,
     bus,
     database,
+    nodeDatabase,
     accounts,
     close: async () => {
       await hub.stop();
       database.close();
+      nodeDatabase.close();
     },
   };
 }
@@ -144,7 +149,8 @@ const sessions = new Map<Server, string>();
 const login = async (username: string, on = server) => (await call('/auth/login', { method: 'POST', body: { username, password: PASSWORD }, on })).token!;
 
 beforeEach(async () => {
-  server.database.exec('DELETE FROM device; DELETE FROM sample; DELETE FROM node WHERE self = 0; DELETE FROM users; DELETE FROM login_session; DELETE FROM home_setting; DELETE FROM audit; DELETE FROM automation;');
+  server.database.exec('DELETE FROM device; DELETE FROM sample; DELETE FROM node WHERE self = 0; DELETE FROM home_setting; DELETE FROM audit; DELETE FROM automation;');
+  server.nodeDatabase.exec('DELETE FROM users; DELETE FROM login_session;');
   await server.sessions.sync([]);
   await server.accounts.createFirstUser('olof', PASSWORD);
   session = await login('olof');
@@ -366,7 +372,7 @@ describe('an assistant, over HTTP', () => {
     lampAt('lamp-1');
     const lamp = await added('Hall lamp');
     await mcp({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'command', arguments: { device: lamp.id, part: 'main', capability: 'switch', command: 'set', args: { on: true }, reason: 'asked to' } } });
-    expect(((await as('/audit')).body as { actor: string }[]).some((entry) => entry.actor === 'assistant for olof')).toBe(true);
+    expect(((await as('/audit')).body as { actor: { name: string } }[]).some((entry) => entry.actor.name === 'assistant for olof')).toBe(true);
     // Not JSON: a parse error, as JSON-RPC says.
     expect(await call('/mcp', { method: 'POST', raw: 'nope', cookie: session })).toMatchObject({ status: 400, body: { error: { code: -32700 } } });
     // A batch is bounded, and each of it a message: not a thousand commands at once, nor a crash on a null.

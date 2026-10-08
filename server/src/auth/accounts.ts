@@ -230,7 +230,11 @@ export class Accounts {
     this.#db.query('DELETE FROM login_session WHERE user_id = ? AND token_hash <> ?').run(userId, keep);
   }
 
-  /** Deletes an account and its sessions. The last account cannot be deleted. */
+  /**
+   * Deletes an account and its sessions. The last account cannot be deleted.
+   * The nodes it joined from are the family's database's to forget
+   * (`NodeStore.forgetJoinedFrom`): whoever removes it does both.
+   */
   deleteUser(userId: string): void {
     // One transaction, so two removals at once cannot both pass the count check.
     this.#db.transaction(() => {
@@ -239,8 +243,6 @@ export class Accounts {
         throw new AccountError('The last account cannot be removed: nobody could then log in from outside the home network');
       }
       this.#db.query('DELETE FROM login_session WHERE user_id = ?').run(userId);
-      // The nodes it joined from go with it, and every way they held: no other account may speak for them.
-      this.#db.query('DELETE FROM node WHERE account_id = ? AND self = 0').run(userId);
       this.#db.query('DELETE FROM users WHERE id = ?').run(userId);
     })();
   }

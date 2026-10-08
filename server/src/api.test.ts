@@ -15,7 +15,7 @@ import { SESSION_COOKIE } from './auth/routes.ts';
 import { Accounts } from './auth/accounts.ts';
 import { ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
-import { openDatabase } from './platform/database.ts';
+import { openDatabase, openNodeDatabase } from './platform/database.ts';
 import { serverSecrets } from './platform/secrets.ts';
 import { AuditLog, type SqlDatabase } from '@kraftverk/store';
 
@@ -37,6 +37,7 @@ const PASSWORD = 'correct horse battery staple';
 const HOST = '192.0.2.40:3333';
 
 let database: SqlDatabase;
+let nodeDatabase: SqlDatabase;
 let accounts: Accounts;
 let hub: Hub;
 let app: ReturnType<typeof createApp>['app'];
@@ -46,7 +47,8 @@ let cookie = '';
 
 beforeAll(async () => {
   ({ database } = openDatabase(join(dir, 'test.db')));
-  accounts = new Accounts(database);
+  nodeDatabase = openNodeDatabase(join(dir, 'node.db')).database;
+  accounts = new Accounts(nodeDatabase);
   const protocols = new ProtocolRegistry();
   protocols.install(lampProtocol, 'test');
   const transports = new TransportHost({ platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } });
@@ -77,11 +79,13 @@ afterAll(async () => {
   for (const port of ports) port.close();
   await hub.stop();
   database.close();
+  nodeDatabase.close();
   rmSync(dir, { recursive: true, force: true });
 });
 
 beforeEach(async () => {
-  database.exec('DELETE FROM device; DELETE FROM sample; DELETE FROM node; DELETE FROM users; DELETE FROM login_session; DELETE FROM home_setting; DELETE FROM audit; DELETE FROM automation;');
+  database.exec('DELETE FROM device; DELETE FROM sample; DELETE FROM node; DELETE FROM home_setting; DELETE FROM audit; DELETE FROM automation;');
+  nodeDatabase.exec('DELETE FROM users; DELETE FROM login_session;');
   await hub.sessions.sync([]);
   bus.lamps.clear();
   account = (await accounts.createFirstUser('olof', PASSWORD)).id;

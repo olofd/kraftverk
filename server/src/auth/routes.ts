@@ -72,10 +72,12 @@ type AuthDeps = {
   accounts: Accounts;
   /** The home's timeline: sign-ins, failures and account changes are on it. */
   audit: Pick<AuditLog, 'record'>;
+  /** The nodes an account joined from, forgotten with it, and every way they held: no other account may speak for them. */
+  forgetNodesOf: (accountId: string) => void;
   limiter?: LoginLimiter;
 };
 
-export function createAuth({ proxies, accounts, audit, limiter = new LoginLimiter() }: AuthDeps) {
+export function createAuth({ proxies, accounts, audit, forgetNodesOf, limiter = new LoginLimiter() }: AuthDeps) {
   const socketIp = (c: Context): string | null => {
     const env = c.env as { requestIP?: (request: Request) => { address: string } | null } | undefined;
     return normaliseIp(env?.requestIP?.(c.req.raw)?.address ?? null);
@@ -311,6 +313,7 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
     } catch (error) {
       rethrow(error);
     }
+    forgetNodesOf(target.id);
     if (target.id === signedIn.id) clearCookie(c);
     audit.record({ at: now(), kind: 'user.removed', actor: actor('person', signedIn.username), resourceKind: 'account', resource: target.id, summary: `${signedIn.username} removed ${target.username}` });
     return c.json({ ok: true });

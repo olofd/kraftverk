@@ -5,12 +5,9 @@ import { Database, type Statement } from 'bun:sqlite';
 
 import { createSchema, metaOf, prepareDatabase, SCHEMA, schemaStateOf, type SqlDatabase, type SqlStatement } from '@kraftverk/store';
 
-import { ACCOUNTS_CARRIED, ACCOUNTS_SCHEMA } from '../auth/schema.ts';
+import { ACCOUNTS_CARRIED, NODE_SCHEMA } from '../auth/schema.ts';
 import { DEFAULT_DATABASE_FILE, SERVER } from '../config.ts';
 import { asideName } from './aside.ts';
-
-/** The server's database is the home's, and its own accounts beside it: one definition, one fingerprint. */
-export const SERVER_SCHEMA = SCHEMA + ACCOUNTS_SCHEMA;
 
 /**
  * The server's database: one SQLite file for everything that has to outlive a
@@ -64,23 +61,24 @@ function open(path: string): SqlDatabase {
  * A new file gets the schema. A file whose schema matches is used as it is. A
  * file built from any other schema is not changed: it is set aside beside
  * itself — `kraftverk.db.set-aside.<time>` — and a new one is started, saying
- * so in the log. Nothing is deleted. Its accounts are carried into the new
- * one (`ACCOUNTS_CARRIED`, `carry`) — its sign-ins are not — as the home is
- * restored from the configuration kept beside it (`snapshot.ts`): a new
- * schema is not a server waiting to be claimed again. Exported for tests.
+ * so in the log. Nothing is deleted. The tables named in `carried` are
+ * carried into the new one (`carry`): the node's accounts, so a new schema of
+ * its own is not a server waiting to be claimed again. The family's carries
+ * nothing: it is restored from the configuration kept beside it
+ * (`snapshot.ts`). Exported for tests.
  */
-export function openSchema(path: string, schema = SERVER_SCHEMA): SqlDatabase & { setAside?: string; created?: boolean } {
+export function openSchema(path: string, schema = SCHEMA, carried: readonly string[] = []): SqlDatabase & { setAside?: string; created?: boolean } {
   let handle = open(path);
   const state = schemaStateOf(handle, schema);
   if (state === 'current') return handle;
 
   let setAside: string | undefined;
-  let carried: Carried[] = [];
+  let kept: Carried[] = [];
   if (state === 'other') {
     if (path === ':memory:') throw new Error('An in-memory database with another schema: nothing to set aside');
     const old = metaOf(handle);
     // Read before it is set aside: the file set aside is never opened again, so it stays as it was.
-    carried = ACCOUNTS_CARRIED.map((table) => readTable(handle, table)).filter((rows) => rows !== null);
+    kept = carried.map((table) => readTable(handle, table)).filter((rows) => rows !== null);
     handle.close();
     // A name no file has: two set aside within one moment are both kept.
     setAside = asideName(`${path}.set-aside.`, '', ['-wal', '-shm']);
@@ -90,7 +88,7 @@ export function openSchema(path: string, schema = SERVER_SCHEMA): SqlDatabase & 
     handle = open(path);
   }
   createSchema(handle, SERVER.version, schema);
-  for (const rows of carried) carry(handle, rows);
+  for (const rows of kept) carry(handle, rows);
   return Object.assign(handle, { created: true }, setAside ? { setAside } : {});
 }
 
@@ -145,8 +143,8 @@ function carry(handle: SqlDatabase, { table, columns, rows }: Carried): void {
 export type Opened = { database: SqlDatabase; fresh: boolean; setAside: string | null };
 
 /**
- * Opens the server's database — its folder made if need be — with this
- * schema (`openSchema`), once, at the start.
+ * Opens the family's database — its folder made if need be — with the
+ * store's schema (`openSchema`), once, at the start.
  *
  * A test may never open the real one. This is not a style rule: when tests
  * shared one handle and one environment, a file that cleared its database's
@@ -155,8 +153,21 @@ export type Opened = { database: SqlDatabase; fresh: boolean; setAside: string |
  * runner turns that silent loss into a failure on the line that causes it.
  */
 export function openDatabase(path: string): Opened {
-  if (process.env.NODE_ENV === 'test' && resolve(path) === DEFAULT_DATABASE_FILE) throw new Error('A test tried to open the real database: open one of its own, a temp file or :memory:');
+  return opened(path, SCHEMA, []);
+}
+
+/**
+ * Opens the node's own database (`node.db` beside the family's,
+ * docs/PLAN-WORLD-MODEL.md §7): its sign-ins, set aside — its accounts
+ * carried — only when its own schema changes.
+ */
+export function openNodeDatabase(path: string): Opened {
+  return opened(path, NODE_SCHEMA, ACCOUNTS_CARRIED);
+}
+
+function opened(path: string, schema: string, carried: readonly string[]): Opened {
+  if (process.env.NODE_ENV === 'test' && dirname(resolve(path)) === dirname(DEFAULT_DATABASE_FILE)) throw new Error('A test tried to open a real database: open one of its own, a temp file or :memory:');
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
-  const database = openSchema(path);
+  const database = openSchema(path, schema, carried);
   return { database, fresh: Boolean(database.created), setAside: database.setAside ?? null };
 }

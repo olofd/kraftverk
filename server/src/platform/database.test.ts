@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import { Database } from 'bun:sqlite';
 
 import { Accounts } from '../auth/accounts.ts';
-import { ACCOUNTS_SCHEMA } from '../auth/schema.ts';
-import { openSchema, SERVER_SCHEMA } from './database.ts';
+import { ACCOUNTS_CARRIED, NODE_SCHEMA } from '../auth/schema.ts';
+import { openSchema } from './database.ts';
 import { SCHEMA, schemaFingerprint, type SqlDatabase } from '@kraftverk/store';
 
 /*
@@ -40,11 +40,11 @@ describe('the schema', () => {
     const path = scratch();
     const handle = openSchema(path);
     expect(tables(handle)).toContain('device');
-    expect(handle.query<{ user_version: number }, []>('PRAGMA user_version').get()?.user_version).toBe(schemaFingerprint(SERVER_SCHEMA));
+    expect(handle.query<{ user_version: number }, []>('PRAGMA user_version').get()?.user_version).toBe(schemaFingerprint(SCHEMA));
     expect(handle.setAside).toBeUndefined();
     // What it is, said by itself: the schema, when, and by which version.
     const meta = Object.fromEntries(handle.query<{ key: string; value: string }, []>('SELECT key, value FROM meta').all().map((row) => [row.key, row.value]));
-    expect(meta.schema_hash).toBe(String(schemaFingerprint(SERVER_SCHEMA)));
+    expect(meta.schema_hash).toBe(String(schemaFingerprint(SCHEMA)));
     expect(Date.parse(meta.created_at!)).not.toBeNaN();
     expect(meta.created_by_version).toMatch(/^\d+\.\d+\.\d+/);
     handle.close();
@@ -82,11 +82,11 @@ describe('the schema', () => {
   test('set aside twice in a moment, both are kept', () => {
     const path = scratch();
     const made = (schema: string) => openSchema(path, schema);
-    const first = made(SERVER_SCHEMA + 'CREATE TABLE one (name TEXT);');
+    const first = made(SCHEMA + 'CREATE TABLE one (name TEXT);');
     first.close();
-    const second = made(SERVER_SCHEMA + 'CREATE TABLE two (name TEXT);');
+    const second = made(SCHEMA + 'CREATE TABLE two (name TEXT);');
     second.close();
-    const third = made(SERVER_SCHEMA);
+    const third = made(SCHEMA);
     third.close();
     expect(second.setAside).toBeDefined();
     expect(third.setAside).toBeDefined();
@@ -98,9 +98,9 @@ describe('the schema', () => {
     }
   });
 
-  test('a database set aside hands its accounts to the new one, and not their sign-ins', async () => {
+  test('the node’s database set aside hands its accounts to the new one, and not their sign-ins', async () => {
     const path = scratch();
-    const first = openSchema(path);
+    const first = openSchema(path, NODE_SCHEMA, ACCOUNTS_CARRIED);
     const accounts = new Accounts(first);
     const owner = await accounts.createFirstUser('owner', 'a-long-test-password');
     await accounts.createUser('guest', 'another-test-password', owner.id);
@@ -108,7 +108,7 @@ describe('the schema', () => {
     first.close();
 
     // Any change to the schema: here, a table more.
-    const handle = openSchema(path, SERVER_SCHEMA + 'CREATE TABLE thing (name TEXT);');
+    const handle = openSchema(path, NODE_SCHEMA + 'CREATE TABLE thing (name TEXT);', ACCOUNTS_CARRIED);
     expect(handle.setAside).toContain('.set-aside.');
     const again = new Accounts(handle);
     expect(again.listUsers().map((user) => [user.id, user.username, user.createdBy])).toEqual([
@@ -128,41 +128,55 @@ describe('the schema', () => {
 
   test('an account’s own table changed carries the columns both have — unless the new one requires one the old lacked', async () => {
     const path = scratch();
-    const first = openSchema(path);
+    const first = openSchema(path, NODE_SCHEMA, ACCOUNTS_CARRIED);
     await new Accounts(first).createFirstUser('owner', 'a-long-test-password');
     first.close();
 
     // A column more, which may be empty: carried, the column empty.
-    const nullable = SERVER_SCHEMA.replace('last_login_at       TEXT\n', 'last_login_at       TEXT,\n    nickname            TEXT\n');
-    expect(nullable).not.toBe(SERVER_SCHEMA);
-    const second = openSchema(path, nullable);
+    const nullable = NODE_SCHEMA.replace('last_login_at       TEXT\n', 'last_login_at       TEXT,\n    nickname            TEXT\n');
+    expect(nullable).not.toBe(NODE_SCHEMA);
+    const second = openSchema(path, nullable, ACCOUNTS_CARRIED);
     expect(second.query<{ username: string; nickname: string | null }, []>('SELECT username, nickname FROM users').all()).toEqual([{ username: 'owner', nickname: null }]);
     second.close();
 
     // A column more that is required: nothing carried, and the server starts with no accounts.
-    const required = SERVER_SCHEMA.replace('last_login_at       TEXT\n', 'last_login_at       TEXT,\n    role                TEXT NOT NULL\n');
-    const third = openSchema(path, required);
+    const required = NODE_SCHEMA.replace('last_login_at       TEXT\n', 'last_login_at       TEXT,\n    role                TEXT NOT NULL\n');
+    const third = openSchema(path, required, ACCOUNTS_CARRIED);
     expect(third.query<{ n: number }, []>('SELECT COUNT(*) n FROM users').get()?.n).toBe(0);
     third.close();
   });
 
-  test('a database set aside with no accounts in it starts the new one with none', () => {
+  test('a node’s database set aside with no accounts in it starts the new one with none', () => {
     const path = scratch();
     const old = new Database(path, { create: true });
     old.exec("CREATE TABLE thing (name TEXT); INSERT INTO thing (name) VALUES ('station')");
     old.close();
-    const handle = openSchema(path);
+    const handle = openSchema(path, NODE_SCHEMA, ACCOUNTS_CARRIED);
     expect(new Accounts(handle).countUsers()).toBe(0);
     handle.close();
   });
 
-  test('the server’s is the home’s with the accounts beside it, and its fingerprint covers both', () => {
-    expect(SERVER_SCHEMA).toBe(SCHEMA + ACCOUNTS_SCHEMA);
-    const handle = openSchema(scratch());
-    expect(tables(handle)).toEqual(expect.arrayContaining(['device', 'sample', 'users', 'login_session']));
-    handle.close();
-    // A column of an account changed is a new schema for the server, as a column of the home's is.
-    expect(schemaFingerprint(SERVER_SCHEMA.replace('last_login_at       TEXT', 'last_login_at       TEXT NOT NULL'))).not.toBe(schemaFingerprint(SERVER_SCHEMA));
-    expect(schemaFingerprint(SERVER_SCHEMA)).not.toBe(schemaFingerprint(SCHEMA));
+  test('the family’s database and the node’s are apart: a new schema for one leaves the other, and its sign-ins, as they were', async () => {
+    const familyPath = scratch();
+    const nodePath = familyPath.replace(/kraftverk\.db$/, 'node.db');
+    const family = openSchema(familyPath);
+    expect(tables(family)).toContain('device');
+    expect(tables(family)).not.toContain('users');
+    family.close();
+    const node = openSchema(nodePath, NODE_SCHEMA, ACCOUNTS_CARRIED);
+    expect(tables(node)).toEqual(['login_session', 'meta', 'users']);
+    const accounts = new Accounts(node);
+    const owner = await accounts.createFirstUser('owner', 'a-long-test-password');
+    const session = accounts.createSession(owner.id, '192.0.2.10', null);
+    node.close();
+
+    // The family's schema changes: the family's file is set aside; the node's is not touched.
+    const changed = openSchema(familyPath, SCHEMA + 'CREATE TABLE thing (name TEXT);');
+    expect(changed.setAside).toContain('.set-aside.');
+    changed.close();
+    const again = openSchema(nodePath, NODE_SCHEMA, ACCOUNTS_CARRIED);
+    expect(again.setAside).toBeUndefined();
+    expect(new Accounts(again).sessionAlive(session.token)).toBe(true);
+    again.close();
   });
 });

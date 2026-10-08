@@ -8,7 +8,7 @@ import { Hono } from 'hono';
 import { AuditLog, resetDatabase } from '@kraftverk/store';
 
 import { answerError } from '../app.ts';
-import { openDatabase } from '../platform/database.ts';
+import { openDatabase, openNodeDatabase } from '../platform/database.ts';
 import { hostAllowed, hostGuard, hostName } from './host.ts';
 import { LoginLimiter, limiterKeys, MAX_ENTRIES } from './limiter.ts';
 import { CLIENT_HEADER } from '@kraftverk/api-contract';
@@ -30,16 +30,19 @@ const PASSWORD = 'correct horse battery staple';
 
 // A database of these tests' own, and the accounts in it.
 const { database } = openDatabase(join(dir, 'test.db'));
-const accounts = new Accounts(database);
+const nodeDatabase = openNodeDatabase(join(dir, 'node.db')).database;
+const accounts = new Accounts(nodeDatabase);
 const audit = new AuditLog(database);
 
 afterAll(() => {
   database.close();
+  nodeDatabase.close();
   rmSync(dir, { recursive: true, force: true });
 });
 
 function emptyAccounts() {
-  database.exec('DELETE FROM users; DELETE FROM login_session; DELETE FROM home_setting;');
+  nodeDatabase.exec('DELETE FROM users; DELETE FROM login_session;');
+  database.exec('DELETE FROM home_setting;');
 }
 
 // --- deciding the home network -----------------------------------------------
@@ -235,7 +238,7 @@ describe('accounts', () => {
 
   test('the password is stored only as an argon2id hash', async () => {
     await accounts.createFirstUser('olof', PASSWORD);
-    const { password_hash } = database.query<{ password_hash: string }, []>('SELECT password_hash FROM users').get()!;
+    const { password_hash } = nodeDatabase.query<{ password_hash: string }, []>('SELECT password_hash FROM users').get()!;
     expect(password_hash.startsWith('$argon2id$')).toBe(true);
     expect(password_hash).not.toContain(PASSWORD);
   });
@@ -243,7 +246,7 @@ describe('accounts', () => {
   test('a session token is stored only as its hash', async () => {
     const user = await accounts.createFirstUser('olof', PASSWORD);
     const { token } = accounts.createSession(user.id, null, null);
-    const stored = database.query<{ token_hash: string }, []>('SELECT token_hash FROM login_session').get()!;
+    const stored = nodeDatabase.query<{ token_hash: string }, []>('SELECT token_hash FROM login_session').get()!;
     expect(stored.token_hash).not.toBe(token);
     expect(accounts.readSession(token)?.user.id).toBe(user.id);
     expect(accounts.readSession('forged')).toBeNull();
@@ -252,9 +255,9 @@ describe('accounts', () => {
   test('an expired session is refused and removed', async () => {
     const user = await accounts.createFirstUser('olof', PASSWORD);
     const { token } = accounts.createSession(user.id, null, null);
-    database.query('UPDATE login_session SET expires_at = ?').run(new Date(Date.now() - 1000).toISOString());
+    nodeDatabase.query('UPDATE login_session SET expires_at = ?').run(new Date(Date.now() - 1000).toISOString());
     expect(accounts.readSession(token)).toBeNull();
-    expect(database.query<{ n: number }, []>('SELECT COUNT(*) n FROM login_session').get()!.n).toBe(0);
+    expect(nodeDatabase.query<{ n: number }, []>('SELECT COUNT(*) n FROM login_session').get()!.n).toBe(0);
   });
 
   test('changing a password signs the account out everywhere else', async () => {
@@ -284,7 +287,7 @@ describe('the gate', () => {
   beforeAll(async () => {
     const proxies = new ProxyDirectory(PROXY);
     await proxies.refresh();
-    const auth = createAuth({ proxies, accounts, audit, limiter: new LoginLimiter() });
+    const auth = createAuth({ proxies, accounts, audit, forgetNodesOf: () => {}, limiter: new LoginLimiter() });
 
     app = new Hono();
     app.use('/api/*', hostGuard(new Set(['home.example.net'])));

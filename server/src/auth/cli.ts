@@ -1,10 +1,10 @@
 import { randomBytes } from 'node:crypto';
 
 import { actor } from '@kraftverk/device-sdk';
-import { AuditLog } from '@kraftverk/store';
+import { AuditLog, NodeStore } from '@kraftverk/store';
 
-import { loadConfig } from '../config.ts';
-import { openDatabase } from '../platform/database.ts';
+import { besideDatabase, loadConfig } from '../config.ts';
+import { openDatabase, openNodeDatabase } from '../platform/database.ts';
 import { AccountError, Accounts } from './accounts.ts';
 
 /**
@@ -27,10 +27,11 @@ import { AccountError, Accounts } from './accounts.ts';
  * your own, pipe it in:  echo -n 'a long password' | … password olof --stdin
  */
 
-// The server's own database, as the server finds it: the accounts in it, and its timeline.
-const { database } = openDatabase(loadConfig().databaseFile);
-const accounts = new Accounts(database);
-const timeline = new AuditLog(database);
+// The node's database, as the server finds it — the accounts in it — and the family's timeline.
+const config = loadConfig();
+const accounts = new Accounts(openNodeDatabase(besideDatabase(config, 'node.db')).database);
+const family = openDatabase(config.databaseFile).database;
+const timeline = new AuditLog(family);
 
 const [command, ...rest] = process.argv.slice(2);
 const name = rest.find((arg) => !arg.startsWith('--'));
@@ -85,6 +86,7 @@ try {
     case 'remove': {
       const user = accounts.findUserByName(requireName()) ?? fail(`No account called ${name}`);
       accounts.deleteUser(user.id);
+      new NodeStore(family).forgetJoinedFrom(user.id);
       record('user.removed', `Removed ${user.username} from the server console`, user.id);
       console.log(`Removed ${user.username}.`);
       break;

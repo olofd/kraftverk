@@ -122,6 +122,15 @@ export class NodeStore {
     this.#db.query('UPDATE node SET last_seen_at = ? WHERE id = ?').run(new Date().toISOString(), id);
   }
 
+  /**
+   * Forgets every node joined from an account, and every connection each
+   * held: the account is gone, and no other may speak for them. Never this
+   * database's own.
+   */
+  forgetJoinedFrom(accountId: string): void {
+    this.#db.query('DELETE FROM node WHERE account_id = ? AND self = 0').run(accountId);
+  }
+
   /** Forgets a node, and every connection it held. Never this database's own, nor the home's master. */
   remove(id: string): void {
     this.#db.query('DELETE FROM node WHERE id = ? AND self = 0 AND id NOT IN (SELECT master_id FROM home)').run(id);

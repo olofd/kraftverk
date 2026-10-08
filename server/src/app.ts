@@ -130,7 +130,7 @@ export function createApp(deps: AppDeps) {
   );
 
   /** Accounts, sessions, and the one gate in front of `/api`. See `auth/routes.ts`. */
-  const auth = createAuth({ proxies: deps.proxies, accounts: deps.accounts, audit: deps.hub.audit, limiter: deps.limiter });
+  const auth = createAuth({ proxies: deps.proxies, accounts: deps.accounts, audit: deps.hub.audit, forgetNodesOf: (account) => deps.hub.nodes.forgetJoinedFrom(account), limiter: deps.limiter });
 
   const api = new Hono();
   // First, before any route: Hono runs middleware only for routes registered after it.
