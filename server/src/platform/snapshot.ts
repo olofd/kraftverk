@@ -4,6 +4,8 @@ import { basename, dirname, join } from 'node:path';
 import { ApiError, type ImportPlan } from '@kraftverk/api-contract';
 import type { Configuration, ImportMode, Restored } from '@kraftverk/hub';
 
+import { asideName } from './aside.ts';
+
 /*
   The configuration kept beside the database (docs/CONFIG.md), as a file on
   the server's disk: the whole of it — devices, how each is reached and its
@@ -151,8 +153,7 @@ export class ConfigSnapshot {
    */
   async restore(): Promise<Restored | null> {
     if (!existsSync(this.file)) return null;
-    const stamp = new Date().toISOString().replace(/\.\d+Z$/, 'Z').replaceAll(':', '-');
-    const copy = `${this.file.replace(/\.yaml$/, '')}.before-${stamp}.yaml`;
+    const copy = asideName(`${this.file.replace(/\.yaml$/, '')}.before-`, '.yaml');
     copyFileSync(this.file, copy);
     this.#forgetOldCopies();
     this.restored = await this.configuration.restore(readFileSync(copy, 'utf8'), copy);

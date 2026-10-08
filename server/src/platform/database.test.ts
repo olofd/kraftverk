@@ -79,6 +79,25 @@ describe('the schema', () => {
     expect(existsSync(path)).toBe(true);
   });
 
+  test('set aside twice in a moment, both are kept', () => {
+    const path = scratch();
+    const made = (schema: string) => openSchema(path, schema);
+    const first = made(SERVER_SCHEMA + 'CREATE TABLE one (name TEXT);');
+    first.close();
+    const second = made(SERVER_SCHEMA + 'CREATE TABLE two (name TEXT);');
+    second.close();
+    const third = made(SERVER_SCHEMA);
+    third.close();
+    expect(second.setAside).toBeDefined();
+    expect(third.setAside).toBeDefined();
+    expect(second.setAside).not.toBe(third.setAside);
+    for (const [aside, table] of [[second.setAside!, 'one'], [third.setAside!, 'two']] as const) {
+      const kept = new Database(aside, { readonly: true });
+      expect(kept.query<{ name: string }, [string]>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)?.name).toBe(table);
+      kept.close();
+    }
+  });
+
   test('a database set aside hands its accounts to the new one, and not their sign-ins', async () => {
     const path = scratch();
     const first = openSchema(path);

@@ -302,7 +302,7 @@ Everything that outlives a restart is in the `kraftverk-data` volume, mounted at
 | `map/cache.db` | The detail fetched as someone looks where no region is held: 2 GB at most, the least used let go |
 | `map/assets/` | The map's fonts and icons, fetched with the world |
 | `baseline.json` | A register baseline, if one was taken |
-| `kraftverk.db.set-aside.<time>` | A database made by an earlier schema, set aside untouched when a new version started a new one: the way back from a bad upgrade |
+| `kraftverk.db.set-aside.<time>` | A database made by an earlier schema, set aside untouched when a new version started a new one: the way back from a bad upgrade. Named to the millisecond, and never written over by the next |
 
 Back it up:
 

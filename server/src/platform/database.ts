@@ -7,6 +7,7 @@ import { createSchema, metaOf, prepareDatabase, SCHEMA, schemaStateOf, type SqlD
 
 import { ACCOUNTS_CARRIED, ACCOUNTS_SCHEMA } from '../auth/schema.ts';
 import { DEFAULT_DATABASE_FILE, SERVER } from '../config.ts';
+import { asideName } from './aside.ts';
 
 /** The server's database is the home's, and its own accounts beside it: one definition, one fingerprint. */
 export const SERVER_SCHEMA = SCHEMA + ACCOUNTS_SCHEMA;
@@ -81,8 +82,8 @@ export function openSchema(path: string, schema = SERVER_SCHEMA): SqlDatabase & 
     // Read before it is set aside: the file set aside is never opened again, so it stays as it was.
     carried = ACCOUNTS_CARRIED.map((table) => readTable(handle, table)).filter((rows) => rows !== null);
     handle.close();
-    const stamp = new Date().toISOString().replace(/\.\d+Z$/, 'Z').replaceAll(':', '-');
-    setAside = `${path}.set-aside.${stamp}`;
+    // A name no file has: two set aside within one moment are both kept.
+    setAside = asideName(`${path}.set-aside.`, '', ['-wal', '-shm']);
     for (const suffix of ['', '-wal', '-shm']) if (existsSync(path + suffix)) renameSync(path + suffix, setAside + suffix);
     const madeBy = old.created_by_version ? `, made by kraftverk ${old.created_by_version} on ${old.created_at?.slice(0, 10)} with schema ${old.schema_hash},` : '';
     console.warn(`[db] ${path} was made by another schema${madeBy} and is set aside as ${setAside}; a new database is started. Nothing was deleted.`);
