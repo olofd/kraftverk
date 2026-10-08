@@ -223,6 +223,19 @@ Built and deployed, in four commits:
 - **Phase 4** (4aee815). The trust's end is read and shown. Renewal past
   half its life. A backoff kept across restarts. `sign-in-ending`.
 
+**Live, 2026-10-08.** The owner's Apple ID signed in at the first try after
+the fixes. Apple's options named the bridge route (`auth/bridge/step`, the
+bridge offered). Even so:
+- the PUT made Apple show a code on the iPhone (202);
+- the code went back the plain way (`verify/trusteddevice/securitycode` →
+  204);
+- trust followed (`2sv/trust` → 204), with no escrow asked;
+- 23 devices were found in Find My;
+- the account says "signed in until 6 Jan", 90 days.
+
+So for this account, a route that names the bridge still takes a code the
+plain way.
+
 **Not built: the bridge (§3.3).** Where Apple routes a sign-in there, the
 code is asked for the plain way (the PUT), and a text or a call to a
 trusted number is one tap away. If an account is found whose devices then
