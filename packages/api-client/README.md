@@ -29,8 +29,10 @@ slots.
   shows, and read back into what a form edits (`deviceYaml`,
   `automationYaml`, `readAutomationText`, `draftOfEntry`, behind
   `@kraftverk/api-client/config`, which brings YAML with it); what feeds
-  what, by part (`fedBy`, `feedsTo`); and a run's log made into what its
-  page draws (`run-chart.ts`). The index holds what is light: a device's
+  what, by part (`fedBy`, `feedsTo`); a run's log made into what its
+  page draws (`run-chart.ts`); and a home's spaces said in words — where a
+  device stands, the spaces a room is in, devices grouped by the room each
+  stands in (`placeLine`, `trailOf`, `byRoom`). The index holds what is light: a device's
   screens import it and bundle neither the HTTP client nor YAML. The
   contract's types are re-exported for those screens, which reach the API
   through this package alone; the app imports the contract itself.

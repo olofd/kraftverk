@@ -29,3 +29,4 @@ export * from './paths.ts';
 export * from './screens.ts';
 export * from './asking.ts';
 export * from './run-chart.ts';
+export * from './spaces.ts';

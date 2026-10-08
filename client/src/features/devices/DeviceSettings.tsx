@@ -14,6 +14,7 @@ import { Manage } from './Manage';
 import { screensFor } from './registry';
 import { RemovedDevice } from './RemovedDevice';
 import { Tools } from './Tools';
+import { WhereItIs } from './WhereItIs';
 import { WhereWritesGo } from './WhereWritesGo';
 
 /**
@@ -32,6 +33,7 @@ function SettingsOf({ device }: { device: DeviceView }) {
     <>
       <WhereWritesGo device={device} />
       {Panel ? <Panel {...screenProps(device)} /> : <GenericSettings device={device} />}
+      <WhereItIs device={device} />
       <Connections device={device} />
       <Links device={device} />
       <InfoCard info={device.info} />

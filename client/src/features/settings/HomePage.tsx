@@ -14,10 +14,11 @@ import { pickPicture, usePicture } from '../../platform/picture';
 import { useFamily } from '../../state/FamilyProvider';
 import { HomeLocation } from './HomeLocation';
 import { HOME_TYPES, homeLine } from './Homes';
+import { SpacesEditor } from './SpacesEditor';
 
 /**
  * One home (docs/PLAN-WORLD-MODEL.md §8.4): its name and what it is, its
- * clock — what its automations keep time in — and where it is. Left, it is
+ * clock — what its automations keep time in — where it is, and its rooms. Left, it is
  * archived: what was recorded there stays its own. Never the last.
  */
 export function HomePage() {
@@ -134,6 +135,8 @@ export function HomePage() {
           </YStack>
 
           <HomeLocation home={home} onChanged={setHome} />
+
+          <SpacesEditor home={home} />
 
           {count > 1 ? (
             <YStack gap="$2">

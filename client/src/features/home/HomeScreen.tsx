@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { Button, Spinner, Text, useTheme, YStack } from 'tamagui';
 
-import { PATHS, type DeviceTypeListing, type DeviceView } from '@kraftverk/api-client';
+import { byRoom, PATHS, type DeviceTypeListing, type DeviceView } from '@kraftverk/api-client';
 import { attributesOf, CATEGORIES, MAIN_PART } from '@kraftverk/device-sdk';
 import { Card, DeviceCard, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
@@ -12,6 +12,7 @@ import { useAnswer } from '../../components/useAnswer';
 import { useDevices } from '../../state/DevicesProvider';
 import { useFamily } from '../../state/FamilyProvider';
 import { useHomePlace } from '../../state/useHomePlace';
+import { useHomeSpaces } from '../../state/useHomeSpaces';
 import { useShowing } from '../../state/useShowing';
 import { Shortcuts } from '../automations/Shortcuts';
 import { DeviceIcon } from '../devices/DeviceIcon';
@@ -118,7 +119,7 @@ export function HomeScreen() {
         </Card>
       ) : null}
 
-      <DeviceList devices={hardware} />
+      <ByRoom devices={hardware} />
       {services.length > 0 ? (
         <YStack gap="$3">
           <SectionLabel>Services</SectionLabel>
@@ -191,6 +192,25 @@ export function HomeScreen() {
         </Card>
       </YStack>
     </Screen>
+  );
+}
+
+/** Devices by the room each stands in, in the order of the homes and their rooms; those in none after. With none placed, one list. */
+function ByRoom({ devices }: { devices: DeviceView[] }) {
+  const { homes } = useHomeSpaces();
+  return (
+    <>
+      {byRoom(devices, homes ?? []).map((group) =>
+        group.title === null ? (
+          <DeviceList key={group.id} devices={group.devices} />
+        ) : (
+          <YStack key={group.id} gap="$3">
+            <SectionLabel>{group.subtitle ? `${group.title} · ${group.subtitle}` : group.title}</SectionLabel>
+            <DeviceList devices={group.devices} />
+          </YStack>
+        )
+      )}
+    </>
   );
 }
 
