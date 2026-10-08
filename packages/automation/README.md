@@ -132,6 +132,14 @@ time are kept in seconds (`heldFor`, `every`), whatever a file writes.
 | `every` | `every: 15 min` | every so many minutes from midnight (every 15 min is :00, :15, :30, :45); once a slot, never catching up |
 | `event` | `event: mains.lost` with `from: station` | when the part filling a role raises an event its description declares |
 | `becomes` | `becomes: station.charge < 15 %`, with `for: 2 min` | when a condition turns true — and, with `for` (`heldFor`), has stayed true that long; reads and comparisons only |
+| `arrives` | `arrives: olof` with `at: work` — `arrives: someone`, `at: home` | when someone comes to a place, as presence says, as far as each shares: a role a person fills, any of a role people fill, or `someone`; at `home`, the automation's own, or a place a role names. The run knows who as `run.who` |
+| `leaves` | `leaves: someone` with `at: home` | when someone leaves a place: the same `who` and `at` |
+| `firstArrives` | `first arrives: home` — with `of: children` | when the first of the family — or of a role people fill — comes to a place none of them was at: a condition turning true (`edgeOf`), its state kept as `becomes`'s is |
+| `lastLeaves` | `last leaves: home` — with `of: grownUps` | when the last of them leaves a place: nobody of them is there |
+| `empties` | `empties: bathroom` with `for: 10 min` | when a place has nobody in it, whoever was there, by what stands in it — and, with `for`, has had nobody that long |
+| `occupied` | `is occupied: hallway` — with `for: 5 min` | when a place has someone in it, whoever they are — and, with `for`, has had that long |
+| `modeBecomes` | `mode becomes: away` — with `at: cabin` | when a home goes into a mode, by its key, whoever set it — the automation's own, unless `at` names another |
+| `modeChanges` | `mode changes: day` — with `at: cabin` | when a home's mode on an axis — `presence` or `day` — changes, to whichever |
 
 Any trigger may say what it does itself, under `do` (`then` in the data,
 one of `TRIGGER_FIELDS`): a run it starts takes those steps in place of the
@@ -193,6 +201,8 @@ Lengths of time are in seconds, named as a file says them: `wait.for`,
 | `start` | `start: role` with `with: { level: 90 % }`, `and wait: 10 min`, `remember as: reached` | start the automation filling the role, as a person's play would, given its inputs — the rest their defaults; with a wait, until its run ends, and what it answered remembered. What it is given, and what it answers, are held to its `inputs` and `result` where the hub knows both (`checkStarted`) |
 | `answer` | `answer: station.charge` | the run ends here, answering with a value of the kind its `result` says, in its unit: what a `start` that waited for it remembers, with `remember as` |
 | `remember` | `remember: timesCharged` with `as: memory.timesCharged + 1` | remember a value for later steps and later runs: one of what the automation declares under `memory:`, converted to its unit and held to its range |
+| `setMode` | `set mode: away` — with `at: cabin` | put a home in a mode, by its key — the automation's own, unless `at` names another — as a person would from its screen, on its timeline as the automation's |
+| `notify` | `notify: everyone` with `title: …`, `text: …` and `level: warning` | tell a person, a role people fill, or `everyone`: their inbox, and a push to their phones; a value in braces said as it is then — `{station.charge}`, `{run.who}`. Said, not sent, in watch mode |
 
 Every command and every setting goes through the gateway, under its rules,
 and is audited as the automation's. A step that waits always has a limit,
@@ -237,7 +247,8 @@ charge is below 15 %".
 | `not` | `not a` | not true |
 | `reachable` | `charger reachable` | whether the part filling a role can be reached now: its holder says it is connected. Never unknown |
 | `within` | `time between 23:00 and 05:00` | whether the owner's clock is between two times of day, from the first up to the second — across midnight when the second comes first |
-| `run` | `run.trigger`, `run.event`, `run.event.voltage` | what the run knows of itself, as a value: `trigger`, the `id` of the trigger that started it — `""` when none with an id did; `event`, the event a device raised that started it — and, with a field, what it carried, as the device declares it: unknown when no event started it. Never in a trigger, where there is no run yet. The language's own namespace: a fact a run gains later is read the same way |
+| `presentAt` | `olof at home` · `not olof at work` · `any(p in children: p at school)` | whether a person is at a place now, as far as they share (`RuleScope.presentAt`): a role a person fills, or what an `across` over a role people fill calls each; `home`, the automation's own, or a role a place fills. A place's own facts are read as a reading is: `home.people` (how many of the family are there), `bathroom.occupied` (whether anyone is, whoever), `home.presence` and `home.day` (its mode on each axis, by key) |
+| `run` | `run.trigger`, `run.event`, `run.event.voltage`, `run.who` | what the run knows of itself, as a value: `trigger`, the `id` of the trigger that started it — `""` when none with an id did; `event`, the event a device raised that started it — and, with a field, what it carried, as the device declares it: unknown when no event started it. Never in a trigger, where there is no run yet. The language's own namespace: a fact a run gains later is read the same way |
 
 Comparisons (`compare`):
 
@@ -294,7 +305,13 @@ never acts on what it cannot see.
 
 A role is filled by a part of a device that offers what the role needs
 (`capabilities`), or — with `automation: true` — by another automation, for
-`start`. In the text form a role's label and needs come from what the rule
+`start`. The family's world fills three kinds more: a person
+(`person: true`, `{ person: olof }` under `uses`), people — some, or
+everyone, whoever joins (`people: true`, `{ people: [anna, ben] }`,
+`{ people: everyone }`) — and a place (`place: true`, `{ home: cabin }`,
+`{ zone: work }`, `{ space: bathroom }`, a space of the automation's own
+home). `home` is the automation's own home without a role. What fills them
+is `RoleFills.world`, by id. In the text form a role's label and needs come from what the rule
 does with it (the commands it is sent, the standard readings read from it,
 the events it raises); say them only when they differ:
 `{ part: station.outlet.ac, label: …, needs: [switch, powerMeter] }`.

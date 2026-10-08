@@ -122,6 +122,12 @@ export type RuleScope = {
   clock(): string | null;
   /** A fact of the run being evaluated (`run.trigger`); null — or absent — where there is no run, or it is not known. */
   run?(fact: RunFact, field?: string): Measured;
+  /**
+   * Whether a person — a role a person fills, or what an `across` over people
+   * calls each — is at a place now: a role a place fills, or `home`, the
+   * automation's own. Absent, or null, where it cannot be told.
+   */
+  presentAt?(who: string, place: string): boolean | null;
 };
 
 const compare = (op: CompareOp, left: Value, right: Value): Value => {
@@ -366,6 +372,12 @@ export function measureNow(expr: Expr, scope: RuleScope, trace: string[] = [], a
       const value = now((expr as ExprOf<'not'>).not).value;
       return plain(typeof value === 'boolean' ? !value : null);
     }
+    case 'presentAt': {
+      const { who, place } = (expr as ExprOf<'presentAt'>).presentAt;
+      const there = scope.presentAt?.(who, place) ?? null;
+      trace.push(`${scope.name(who)}: ${there === null ? `whether at ${place === 'home' ? 'home' : scope.name(place)} is not known` : `${there ? '' : 'not '}at ${place === 'home' ? 'home' : scope.name(place)}`}`);
+      return plain(there);
+    }
     default: {
       const unknown: never = kind;
       throw new Error(`No way to evaluate an expression of kind ${String(unknown)}`);
@@ -502,6 +514,7 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
       case 'input':
       case 'sun':
       case 'across':
+      case 'presentAt':
         return settled;
       default: {
         const unknown: never = kind;

@@ -1,6 +1,6 @@
 import type { CapabilityName } from '@kraftverk/device-sdk';
 
-import { SEQUENCE_LIMITS, type Command, type Expr, type Step, type Write } from '../rule.ts';
+import { EVERYONE, NOTIFY_LEVELS, OWN_HOME, SEQUENCE_LIMITS, type Command, type Expr, type Step, type Write } from '../rule.ts';
 import type { FieldSpec, KindDocs, KindIcon } from './spec.ts';
 
 /*
@@ -10,7 +10,7 @@ import type { FieldSpec, KindDocs, KindIcon } from './spec.ts';
   seconds.
 */
 
-export type StepKind = 'command' | 'write' | 'wait' | 'waitUntil' | 'waitFor' | 'ensure' | 'choose' | 'watch' | 'repeat' | 'forEach' | 'try' | 'stop' | 'answer' | 'start' | 'remember';
+export type StepKind = 'command' | 'write' | 'wait' | 'waitUntil' | 'waitFor' | 'ensure' | 'choose' | 'watch' | 'repeat' | 'forEach' | 'try' | 'stop' | 'answer' | 'start' | 'remember' | 'setMode' | 'notify';
 
 /** A step of one kind. */
 export type StepOf<K extends StepKind> = K extends StepKind ? Extract<Step, Record<K, unknown>> : never;
@@ -35,6 +35,10 @@ export type StepSay = {
   memory(name: string): string;
   /** An event a role's part raises, in its own words: "mains lost". */
   event(role: string, event: string): string;
+  /** A mode by its key, as the family calls it: "Away". */
+  mode(key: string): string;
+  /** Words with values in braces, as they would read: "The charge is {Garage station's charge}". */
+  message(text: string): string;
 };
 
 /** What a kind's own text form reads with: the file reader's tools. */
@@ -480,6 +484,52 @@ const REMEMBER: StepSpec<'remember'> = {
   },
 };
 
+// --- the family's world ---------------------------------------------------------------------
+
+/** A home, in words: this automation's own, or another a role names. */
+const homeWords = (at: string | undefined, say: StepSay) => (!at || at === OWN_HOME ? 'the home' : say.name(at));
+
+const SET_MODE: StepSpec<'setMode'> = {
+  kind: 'setMode',
+  label: 'Set the mode',
+  icon: 'moon',
+  says: 'Put a home in a mode — away, night, one of your own — as you would from its screen.',
+  atOnce: true,
+  fields: [
+    { data: ['setMode', 'mode'], key: 'set mode', type: { type: 'mode' }, required: true, label: 'To' },
+    { data: ['setMode', 'at'], key: 'at', type: { type: 'place' }, required: false, label: 'Of which home', help: 'This automation’s own, unless you choose another.' },
+  ],
+  blank: () => ({ setMode: { mode: 'away' } }),
+  line: (step, say) => `Set ${homeWords(step.setMode.at, say)} to ${say.mode(step.setMode.mode)}`,
+  brief: (step, say) => `set ${homeWords(step.setMode.at, say)} to ${say.mode(step.setMode.mode)}`,
+  docs: {
+    summary: 'Put a home in a mode, by its key — the automation’s own home, unless `at` names another — as a person would from its screen: said on the home’s timeline as the automation’s, and to every automation that waits for it. Already in it, nothing changes.',
+    examples: ['set mode: away', 'set mode: night', 'set mode: home\nat: cabin'],
+  },
+};
+
+const NOTIFY: StepSpec<'notify'> = {
+  kind: 'notify',
+  label: 'Tell someone',
+  icon: 'send',
+  says: 'Tell a person, some of you, or everyone: in their inbox, and on their phone.',
+  atOnce: true,
+  fields: [
+    { data: ['notify', 'to'], key: 'notify', type: { type: 'who', anyone: EVERYONE }, required: true, label: 'Tell', help: 'A person, people, or everyone in the family.' },
+    { data: ['notify', 'title'], key: 'title', type: { type: 'message', max: 120 }, required: true, label: 'What', help: 'A line. A value in braces is said as it is then: {station.charge}.' },
+    { data: ['notify', 'text'], key: 'text', type: { type: 'message', max: 1000 }, required: false, label: 'More' },
+    { data: ['notify', 'level'], key: 'level', type: { type: 'choice', options: NOTIFY_LEVELS.map((level) => ({ value: level, label: level === 'info' ? 'As news' : level === 'warning' ? 'As a warning' : 'As an alarm' })) }, required: false, label: 'How', help: 'An alarm wakes a phone; news does not.' },
+  ],
+  blank: () => ({ notify: { to: EVERYONE, title: '' } }),
+  line: (step, say) => `Tell ${step.notify.to === EVERYONE ? 'everyone' : say.name(step.notify.to)}${step.notify.level === 'alarm' ? ', as an alarm' : step.notify.level === 'warning' ? ', as a warning' : ''}: “${say.message(step.notify.title)}”`,
+  brief: (step, say) => `tell ${step.notify.to === EVERYONE ? 'everyone' : say.name(step.notify.to)} “${say.message(step.notify.title)}”`,
+  docs: {
+    summary:
+      'Tell people something — a role a person fills, a role people fill, or `everyone` in the family — in their inbox, and pushed to their phones and browsers: a `title`, more `text` if you like, as news unless `level` says `warning` or `alarm`. A value in braces is said as it is then, in its unit: `{station.charge}`, `{run.who}`. In watch mode it is said, not sent.',
+    examples: ['notify: everyone\ntitle: Nobody is home, and the door is open', 'notify: olof\ntitle: "{home.people} of you are home"', 'notify: grownUps\ntitle: The station is at {station.charge}\nlevel: warning'],
+  },
+};
+
 /** Every kind of step, by its key: the table everything that handles steps reads. */
 export const STEP_KINDS: { readonly [K in StepKind]: StepSpec<K> } = {
   command: COMMAND,
@@ -497,10 +547,12 @@ export const STEP_KINDS: { readonly [K in StepKind]: StepSpec<K> } = {
   answer: ANSWER,
   start: START,
   remember: REMEMBER,
+  setMode: SET_MODE,
+  notify: NOTIFY,
 };
 
 /** The order the editor offers them in. */
-export const STEP_KIND_ORDER: readonly StepKind[] = ['command', 'write', 'wait', 'waitUntil', 'waitFor', 'ensure', 'choose', 'watch', 'repeat', 'forEach', 'try', 'stop', 'answer', 'start', 'remember'];
+export const STEP_KIND_ORDER: readonly StepKind[] = ['command', 'write', 'setMode', 'notify', 'wait', 'waitUntil', 'waitFor', 'ensure', 'choose', 'watch', 'repeat', 'forEach', 'try', 'stop', 'answer', 'start', 'remember'];
 
 /** Which kind a step is — by its key; one of no kind is an error, never taken for another. */
 export function stepKind(step: Step): StepKind {

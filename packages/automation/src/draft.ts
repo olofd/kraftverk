@@ -2,7 +2,7 @@ import { capabilitiesOf, capabilityIn, meetsNeed, partName, partsOf, type Automa
 
 import { usedRoles } from './edit.ts';
 import { NO_SETTINGS, withSettings } from './evaluate.ts';
-import { isAutomationRole, isGroupRole, roleKind, type Rule } from './rule.ts';
+import { isAutomationRole, isGroupRole, isPartRole, isWorldRole, roleKind, type Rule } from './rule.ts';
 
 /*
   An automation as it is being built, as data (docs/AUTOMATION-EDITOR.md): a
@@ -20,7 +20,26 @@ export type RoleBinding = { device: SavedDeviceId; part: string };
  * (`groups`), and another automation for each role a `start` step starts
  * (`starts`).
  */
-export type RoleFills = { roles: Record<string, RoleBinding>; groups: Record<string, readonly RoleBinding[]>; starts: Record<string, AutomationId> };
+export type RoleFills = {
+  roles: Record<string, RoleBinding>;
+  groups: Record<string, readonly RoleBinding[]>;
+  starts: Record<string, AutomationId>;
+  /** Who and where fills each role of the family's world: a person, people, a place. None: it has no such role. */
+  world?: Record<string, WorldFill>;
+};
+
+/** What a place a role names is: a home, a zone, or a space of a home. */
+export type PlaceKind = 'home' | 'zone' | 'space';
+
+/**
+ * What fills a role of the family's world: a person by their id; people —
+ * some, by their ids, or everyone in the family, whoever joins; a place by
+ * its id and what it is.
+ */
+export type WorldFill = { person: string } | { people: readonly string[] } | { everyone: true } | { place: string; kind: PlaceKind };
+
+/** How the people and places a draft names are called: what its sentences say for them. */
+export type WorldNames = { person(id: string): string | null; place(id: string): string | null };
 
 /** The parts filling a role: one, a group's several, or none — another automation's role, or one not filled yet. */
 export const bindingsOf = (fills: Pick<RoleFills, 'roles' | 'groups'>, role: string): readonly RoleBinding[] => {
@@ -114,7 +133,7 @@ export function automationRole<D extends AutomationDraft>(draft: D, automation: 
 export function pruned<D extends AutomationDraft>(draft: D): D {
   const used = usedRoles(draft.rule);
   const keep = <T>(record: Readonly<Record<string, T>>) => Object.fromEntries(Object.entries(record).filter(([role]) => used.has(role)));
-  return { ...draft, rule: { ...draft.rule, roles: keep(draft.rule.roles) }, roles: keep(draft.roles), groups: keep(draft.groups), starts: keep(draft.starts) };
+  return { ...draft, rule: { ...draft.rule, roles: keep(draft.rule.roles) }, roles: keep(draft.roles), groups: keep(draft.groups), starts: keep(draft.starts), world: keep(draft.world ?? {}) };
 }
 
 /** The roles of a rule, by kind — one part, several, another automation — each as an editor lists them. */
@@ -122,7 +141,27 @@ export const rolesOf = (rule: Rule) => ({
   parts: Object.entries(rule.roles).filter(([, spec]) => roleKind(spec) === 'part'),
   groups: Object.entries(rule.roles).filter(([, spec]) => roleKind(spec) === 'group'),
   automations: Object.entries(rule.roles).filter(([, spec]) => roleKind(spec) === 'automation'),
+  /** People and places. */
+  world: Object.entries(rule.roles).filter(([, spec]) => isWorldRole(spec)),
 });
+
+/** Whether two fills of the world are the same person, people or place. */
+const sameFill = (a: WorldFill, b: WorldFill): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * A person, people or a place picked for a block: the role the draft fills
+ * with them already — or a new one, named as they are called.
+ */
+export function worldRole<D extends AutomationDraft>(draft: D, fill: WorldFill, label: string): { draft: D; role: string } {
+  const found = Object.entries(draft.world ?? {}).find(([role, had]) => sameFill(had, fill) && draft.rule.roles[role]);
+  if (found) return { draft, role: found[0] };
+  const role = roleName(draft.rule, label);
+  const spec = 'place' in fill ? { place: true as const, label } : 'person' in fill ? { person: true as const, label } : { people: true as const, label };
+  return { role, draft: { ...draft, rule: { ...draft.rule, roles: { ...draft.rule.roles, [role]: spec } }, world: { ...draft.world, [role]: fill } } };
+}
+
+/** A role of the world filled anew: every block naming it now names them. */
+export const fillWorld = <D extends AutomationDraft>(draft: D, role: string, fill: WorldFill): D => ({ ...draft, world: { ...draft.world, [role]: fill } });
 
 /**
  * The parts another automation already uses for every part this draft still
@@ -153,14 +192,14 @@ export function sameParts(
 // --- starting points --------------------------------------------------------------------
 
 /** An automation built from nothing: no trigger, no step yet. */
-export const EMPTY_DRAFT: AutomationDraft = { rule: { roles: {}, params: NO_SETTINGS, when: [], then: [] }, roles: {}, groups: {}, starts: {} };
+export const EMPTY_DRAFT: AutomationDraft = { rule: { roles: {}, params: NO_SETTINGS, when: [], then: [] }, roles: {}, groups: {}, starts: {}, world: {} };
 
 /** A recipe's rule copied: its settings kept, at the recipe's values, for its owner to set; its roles still to fill. */
-export const draftOfRecipe = (rule: Rule): AutomationDraft => ({ rule: withSettings(rule, {}), roles: {}, groups: {}, starts: {} });
+export const draftOfRecipe = (rule: Rule): AutomationDraft => ({ rule: withSettings(rule, {}), roles: {}, groups: {}, starts: {}, world: {} });
 
 /** Whether a rule has a part for a device: one of its roles a part of it can fill. What a device's page offers to start from. */
 export const ruleFits = (rule: Rule, device: { description: DeviceDescription; name: string }): boolean =>
-  Object.values(rule.roles).some((spec) => !isAutomationRole(spec) && partsOf(device.description, device.name).some((part) => meetsNeed(spec, capabilitiesOf(device.description, part.id))));
+  Object.values(rule.roles).some((spec) => (isPartRole(spec) || isGroupRole(spec)) && partsOf(device.description, device.name).some((part) => meetsNeed(spec, capabilitiesOf(device.description, part.id))));
 
 /** A device as a draft names its parts: its id, its name, what it is. */
 export type DraftDevice = { id: SavedDeviceId; name: string; description: DeviceDescription; removedAt?: string | null; meta: { name: string } };
@@ -170,10 +209,22 @@ export type DraftDevice = { id: SavedDeviceId; name: string; description: Device
  * automation in quotes — or, not filled yet, its label as words within a
  * sentence: "turn what powers the charger on".
  */
-export function roleSaid(draft: AutomationDraft, role: string, devices: readonly DraftDevice[], automations: readonly { id: AutomationId; name: string }[]): string {
+export function roleSaid(draft: AutomationDraft, role: string, devices: readonly DraftDevice[], automations: readonly { id: AutomationId; name: string }[], world?: WorldNames): string {
   const spec = draft.rule.roles[role];
   if (!spec) return 'a part not chosen yet';
   const unfilled = spec.label.charAt(0).toLowerCase() + spec.label.slice(1);
+  // A person, people, a place: as the family calls them.
+  if (isWorldRole(spec)) {
+    const fill = draft.world?.[role];
+    if (!fill) return unfilled;
+    if ('everyone' in fill) return 'everyone';
+    if ('person' in fill) return world?.person(fill.person) ?? spec.label;
+    if ('people' in fill) {
+      const names = fill.people.flatMap((id) => world?.person(id) ?? []);
+      return names.length ? listed(names) : spec.label;
+    }
+    return world?.place(fill.place) ?? spec.label;
+  }
   if (isAutomationRole(spec)) {
     const started = automations.find((automation) => automation.id === draft.starts[role]);
     return started ? `“${started.name}”` : unfilled;

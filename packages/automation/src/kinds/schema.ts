@@ -54,6 +54,16 @@ export function fieldSchema(field: FieldSpec): JsonSchema {
       return { type: 'array', items: { $ref: '#/$defs/step' }, ...described };
     case 'args':
       return { type: 'object', additionalProperties: { $ref: '#/$defs/expression' }, ...described };
+    case 'who':
+    case 'crowd':
+    case 'place':
+      return { type: 'string', minLength: 1, ...described };
+    case 'mode':
+      return { type: 'string', pattern: '^[a-z][a-z0-9-]{0,29}$', ...described };
+    case 'choice':
+      return { enum: field.type.options.map((option) => option.value), ...described };
+    case 'message':
+      return { type: 'string', minLength: 1, maxLength: field.type.max, ...described };
   }
 }
 

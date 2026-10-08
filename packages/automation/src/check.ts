@@ -15,7 +15,37 @@ import type { AutomationFunction } from './functions.ts';
 import { eachAsGroup, ruleExpressions, ruleUses } from './reads.ts';
 import { convert, convertible, isUnit, product, quotient, unitIn, type Unit } from '@kraftverk/device-sdk';
 import { KEYWORDS } from './text/expr.ts';
-import { COMPARE_OPS, groupRoles, isAutomationRole, isGroupRole, isWhileRunning, memberRole, MATH_OPS, WHILE_RUNNING, ORDERED_OPS, partRoles, RUN_FACTS, SEQUENCE_LIMITS, TRIGGER_ID, type Command, type Expr, type PartRole, type Rule, type Step, type WriteTarget } from './rule.ts';
+import {
+  COMPARE_OPS,
+  groupRoles,
+  isAutomationRole,
+  isGroupRole,
+  isPartRole,
+  isPeopleRole,
+  isPersonRole,
+  isPlaceRole,
+  isWhileRunning,
+  isWorldRole,
+  memberRole,
+  MATH_OPS,
+  OWN_HOME,
+  PLACE_FACTS,
+  roleKind,
+  WHILE_RUNNING,
+  ORDERED_OPS,
+  partRoles,
+  RUN_FACTS,
+  SEQUENCE_LIMITS,
+  TRIGGER_ID,
+  type Command,
+  type Expr,
+  type PartRole,
+  type Rule,
+  type RoleSpec,
+  type Step,
+  type WriteTarget,
+} from './rule.ts';
+import { parseMessage } from './message.ts';
 
 /*
   Checking a rule before it runs (docs/AUTOMATIONS.md): every role, setting,
@@ -83,7 +113,16 @@ export type RuleVocabulary = {
    * Absent, or not known, and the setting is named by its key.
    */
   attribute?(role: string, target: WriteTarget): AttributeSpec | null;
+  /** The keys of the family's modes, its own beside the built-in ones. Absent: any key may be one, and its home says. */
+  modes?(): readonly string[];
 };
+
+/** The modes every family has, by key. */
+const BUILT_IN_MODES = ['home', 'away', 'vacation', 'day', 'evening', 'night'];
+
+/** What a role that is not a part is, in words: "an automation", "a person". */
+const kindWords = (spec: RoleSpec): string =>
+  ({ part: 'one part', group: 'several parts', automation: 'an automation', person: 'a person', people: 'people', place: 'a place' })[roleKind(spec)];
 
 /** The standard meanings a part offering these capabilities reports. */
 const meaningsOfNeed = (need: CapabilityNeed): Set<string> =>
@@ -105,6 +144,8 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
   const triggerIds = new Set((rule.when ?? []).flatMap((trigger) => (trigger.id ? [trigger.id] : [])));
   /** The events it waits for: what `run.event` may be. */
   const eventIds = [...new Set((rule.when ?? []).flatMap((trigger) => ('event' in trigger && trigger.event?.event ? [trigger.event.event] : [])))];
+  /** Whether someone arriving or leaving starts it: what `run.who` says. */
+  const startedBySomeone = (rule.when ?? []).some((trigger) => 'arrives' in trigger || 'leaves' in trigger);
 
   for (const [role, spec] of Object.entries(roles)) {
     if (!CAMEL_NAME.test(role)) problems.push(`roles.${role}: a role is named in camelCase`);
@@ -112,8 +153,9 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
     if (role === 'setting') problems.push('roles.setting: "setting" is how the rule names its settings — name the role otherwise');
     if (role === 'memory') problems.push('roles.memory: "memory" is how the rule names what it remembers — name the role otherwise');
     if (role === 'given') problems.push('roles.given: "given" is how the rule names what it is given — name the role otherwise');
+    if (KEYWORDS.has(role)) problems.push(`roles.${role}: "${role}" is a word of the language — name the role otherwise`);
     if (!spec.label?.trim()) problems.push(`roles.${role}: it has no label`);
-    if (isAutomationRole(spec)) continue;
+    if (isAutomationRole(spec) || isWorldRole(spec)) continue;
     const named = [...(spec.capabilities ?? []), ...(spec.oneOf ?? [])];
     if (!named.length) problems.push(`roles.${role}: it asks for no capability, so any device would do`);
     for (const capability of named) if (!isCapability(capability)) problems.push(`roles.${role}: there is no capability "${capability}"`);
@@ -124,11 +166,34 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
    * are checked: a role of one part, asking what the group asks of each.
    */
   let scoped: Readonly<Record<string, PartRole>> = {};
+  /** What an `across` over people calls each of them, while what is said of each is checked: a person, as a role is. */
+  let scopedPeople: ReadonlySet<string> = new Set();
 
   /** The role of one part a name is — within a `for each`, each part of its group — without a word about it: what a field's own check has said already. */
   const quietly = (name: string): PartRole | null => {
     const spec = scoped[name] ?? roles[name];
-    return spec && !isAutomationRole(spec) && !isGroupRole(spec) ? spec : null;
+    return spec && isPartRole(spec) ? spec : null;
+  };
+
+  /** A place a name is: `home`, the automation's own, or a role a place fills — said, when it is not. */
+  const place = (name: string, where: string): boolean => {
+    if (name === OWN_HOME) return true;
+    const spec = roles[name];
+    if (!name) problems.push(`${where}: which place?`);
+    else if (!spec) problems.push(`${where}: there is no role "${name}" — a place is home, or a role a home, a zone or a space fills`);
+    else if (!isPlaceRole(spec)) problems.push(`${where}: ${name} is ${kindWords(spec)}, not a place`);
+    return Boolean(spec && isPlaceRole(spec));
+  };
+
+  /** Who a name is: a role a person fills — or people, `many` — what an `across` over people calls each, or the word for the whole family. */
+  const who = (name: string, where: string, options: { many: boolean; anyone?: string }): void => {
+    if (options.anyone && name === options.anyone) return;
+    if (scopedPeople.has(name)) return;
+    const spec = roles[name];
+    const words = options.anyone ? `a role a person or people fill, or "${options.anyone}"` : options.many ? 'a role a person or people fill' : 'a role a person fills';
+    if (!name) problems.push(`${where}: who?`);
+    else if (!spec) problems.push(`${where}: there is no role "${name}" — who is ${words}`);
+    else if (!(isPersonRole(spec) || (options.many && isPeopleRole(spec)))) problems.push(`${where}: ${name} is ${kindWords(spec)}, not ${options.many ? 'a person, or people' : 'a person'}${isPeopleRole(spec) ? ` — say it of each: any(p in ${name}: p at home)` : ''}`);
   };
 
   /** A role a part fills: what is read, asked, switched or written — or, within a `for each`, each part of its group. */
@@ -139,9 +204,9 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
     // A block whose part is still to choose, as an editor makes one: said as that.
     if (!name) problems.push(`${where}: choose a part`);
     else if (!spec) problems.push(`${where}: there is no role "${name}"`);
-    else if (isAutomationRole(spec)) problems.push(`${where}: ${name} is an automation, not a part of a device`);
     else if (isGroupRole(spec)) problems.push(`${where}: ${name} is several parts — name each in turn with "for each"`);
-    return spec && !isAutomationRole(spec) && !isGroupRole(spec) ? spec : null;
+    else if (!isPartRole(spec)) problems.push(`${where}: ${name} is ${kindWords(spec)}, not a part of a device`);
+    return spec && isPartRole(spec) ? spec : null;
   };
 
   const shape = (expr: Expr, where: string, options: { calls: boolean; trigger?: boolean }): Shape => {
@@ -170,6 +235,10 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         return { type: 'string', options: eventIds };
       }
       if (expr.field !== undefined) problems.push(`${where}: run.${expr.run} carries nothing more`);
+      if (expr.run === 'who') {
+        if (!startedBySomeone) problems.push(`${where}: run.who is who arriving or leaving started it, but nothing that starts it is someone arriving or leaving`);
+        return { type: 'string', options: null };
+      }
       // One of its triggers' ids: compared with any other, the comparison says so.
       return { type: 'string', options: [...triggerIds, ''] };
     }
@@ -196,6 +265,27 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         return { type: 'unknown' };
       }
       return shapeOf(valueTypeOf(field));
+    }
+    if ('read' in expr && (expr.read.role === OWN_HOME || (roles[expr.read.role] && isWorldRole(roles[expr.read.role]!)))) {
+      // What is so of a place now: how many are there, whether anyone is, its modes.
+      const spec = roles[expr.read.role];
+      if (spec && !isPlaceRole(spec)) {
+        problems.push(`${where}: ${expr.read.role} is ${kindWords(spec)}: ask where with "at" — ${expr.read.role} at home`);
+        return { type: 'unknown' };
+      }
+      const fact = expr.read.means;
+      if (!Object.hasOwn(PLACE_FACTS, fact)) {
+        problems.push(`${where}: of a place, ask its ${Object.keys(PLACE_FACTS).join(', ')} — not "${fact}"`);
+        return { type: 'unknown' };
+      }
+      if (fact === 'people') return { type: 'number', unit: '' };
+      if (fact === 'occupied') return { type: 'boolean' };
+      return { type: 'string', options: vocabulary.modes ? [...vocabulary.modes()] : null };
+    }
+    if ('presentAt' in expr) {
+      who(expr.presentAt.who, `${where}.presentAt.who`, { many: false });
+      place(expr.presentAt.place, `${where}.presentAt.place`);
+      return { type: 'boolean' };
     }
     if ('read' in expr) {
       const spec = role(expr.read.role, where);
@@ -353,16 +443,20 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       const group = roles[expr.group];
       if (!expr.group) problems.push(`${where}: which group?`);
       else if (!group) problems.push(`${where}: there is no role "${expr.group}"`);
-      else if (!isGroupRole(group)) problems.push(`${where}: ${expr.group} is ${isAutomationRole(group) ? 'an automation' : 'one part'}, not several`);
+      else if (!isGroupRole(group) && !isPeopleRole(group)) problems.push(`${where}: ${expr.group} is ${kindWords(group)}, not several`);
       // A name of its own for each part: not a role's, an outer one's, nor a word of the language.
-      const named = CAMEL_NAME.test(expr.as) && !roles[expr.as] && !scoped[expr.as] && !KEYWORDS.has(expr.as);
+      const named = CAMEL_NAME.test(expr.as) && !roles[expr.as] && !scoped[expr.as] && !scopedPeople.has(expr.as) && !KEYWORDS.has(expr.as);
       if (!named) problems.push(`${where}: "${expr.as}" names something already, or nothing — call each part otherwise`);
       // A package is asked once, for one part: not of each part of a group.
       if ([...expressionsIn(expr.of)].some((each) => 'call' in each)) problems.push(`${where}.of: a package's function is not asked of each part of a group`);
       const outer = scoped;
+      const outerPeople = scopedPeople;
       if (named && group && isGroupRole(group)) scoped = { ...outer, [expr.as]: memberRole(group) };
+      // Each of several people: a person, as a role is — "p at home".
+      if (named && group && isPeopleRole(group)) scopedPeople = new Set([...outerPeople, expr.as]);
       const got = shape(expr.of, `${where}.of`, { ...options, calls: true });
       scoped = outer;
+      scopedPeople = outerPeople;
       if (spec.takes === 'condition') {
         if (!fits({ type: 'boolean' }, got)) problems.push(`${where}.of: ${expr.across} asks whether something holds of each part, not ${said(got)}`);
         return expr.across === 'count' ? { type: 'number', unit: null } : { type: 'boolean' };
@@ -509,7 +603,7 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         const spec = roles[name];
         if (!name) problems.push(`${at}: choose an automation`);
         else if (!spec) problems.push(`${at}: there is no role "${name}"`);
-        else if (!isAutomationRole(spec)) problems.push(`${at}: ${name} is a part of a device, not an automation`);
+        else if (!isAutomationRole(spec)) problems.push(`${at}: ${name} is ${kindWords(spec)}, not an automation`);
         return;
       }
       case 'group': {
@@ -517,14 +611,14 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         const spec = roles[name];
         if (!name) problems.push(`${at}: choose the parts`);
         else if (!spec) problems.push(`${at}: there is no role "${name}"`);
-        else if (!isGroupRole(spec)) problems.push(`${at}: ${name} is ${isAutomationRole(spec) ? 'an automation' : 'one part'}, not several`);
+        else if (!isGroupRole(spec)) problems.push(`${at}: ${name} is ${kindWords(spec)}, not several parts`);
         return;
       }
       case 'each': {
         // A name of its own: not a role's, nor an outer "for each"'s, nor one the language keeps.
         const name = String(value);
         if (!CAMEL_NAME.test(name)) problems.push(`${at}: a name in camelCase: "charger"`);
-        else if (roles[name] || scoped[name] || KEYWORDS.has(name)) problems.push(`${at}: "${name}" names something already — call each part otherwise`);
+        else if (roles[name] || scoped[name] || scopedPeople.has(name) || KEYWORDS.has(name)) problems.push(`${at}: "${name}" names something already — call each part otherwise`);
         return;
       }
       case 'event':
@@ -551,6 +645,47 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       case 'args':
       case 'memory':
         return;
+      case 'who':
+        who(String(value), at, { many: true, ...(type.anyone ? { anyone: type.anyone } : {}) });
+        return;
+      case 'crowd': {
+        const name = String(value);
+        const spec = roles[name];
+        if (!spec) problems.push(`${at}: there is no role "${name}" — some of you are a role people fill`);
+        else if (!isPeopleRole(spec)) problems.push(`${at}: ${name} is ${kindWords(spec)}, not people`);
+        return;
+      }
+      case 'place':
+        place(String(value), at);
+        return;
+      case 'mode': {
+        const key = String(value);
+        if (!/^[a-z][a-z0-9-]{0,29}$/.test(key)) problems.push(`${at}: a mode, by its key: ${BUILT_IN_MODES.join(', ')}, or one of the family's own`);
+        else if (vocabulary.modes && !vocabulary.modes().includes(key)) problems.push(`${at}: there is no mode "${key}" — ${vocabulary.modes().join(', ')}`);
+        return;
+      }
+      case 'choice':
+        if (!type.options.some((option) => option.value === value)) problems.push(`${at}: one of ${type.options.map((option) => option.value).join(', ')}`);
+        return;
+      case 'message': {
+        if (typeof value !== 'string' || !value.trim()) {
+          problems.push(`${at}: say it in words`);
+          return;
+        }
+        if (value.length > type.max) problems.push(`${at}: at most ${type.max} characters`);
+        const parsed = parseMessage(value);
+        if (!parsed.ok) {
+          problems.push(`${at}: ${parsed.error.message}`);
+          return;
+        }
+        // Each value in it is said as it is: of any kind but a list or an object.
+        parsed.pieces.forEach((piece, index) => {
+          if (!('expr' in piece)) return;
+          const got = shape(piece.expr, `${at}{${index}}`, { calls: true });
+          if (got.type === 'structure') problems.push(`${at}: {${piece.source}} is a list or an object: say one of its values`);
+        });
+        return;
+      }
       default: {
         const unknown: never = type;
         throw new Error(`No check for a field of type ${JSON.stringify(unknown)}`);

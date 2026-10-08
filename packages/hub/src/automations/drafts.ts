@@ -1,10 +1,43 @@
 import { ApiError, type AutomationDraftView, type AutomationView, type Rehearsal } from '@kraftverk/api-contract';
 import { capabilitiesOf, meetsNeed, partName, partsOf, savedDeviceId, validateConfig, type AutomationId, type Value } from '@kraftverk/device-sdk';
-import { bindingsOf, changedRoles, checkBinding, checkStarted, isGroupRole, listed, type GroupRole, type PartRole, type RoleFills, checkRule, describeRule, describeSteps, describeTriggers, isAutomationRole, problemArea, problemPlace, SEQUENCE_LIMITS, takesSteps, withSettings, writtenAttribute, type AutomationDraft, type BoundPart, type ProblemArea, type RoleBinding, type Rule, type RuleVocabulary } from '@kraftverk/automation';
+import {
+  bindingsOf,
+  changedRoles,
+  checkBinding,
+  checkStarted,
+  isGroupRole,
+  isPartRole,
+  isWorldRole,
+  listed,
+  roleKind,
+  type GroupRole,
+  type PartRole,
+  type RoleFills,
+  checkRule,
+  describeRule,
+  describeSteps,
+  describeTriggers,
+  isAutomationRole,
+  problemArea,
+  problemPlace,
+  SEQUENCE_LIMITS,
+  takesSteps,
+  withSettings,
+  writtenAttribute,
+  type AutomationDraft,
+  type BoundPart,
+  type ProblemArea,
+  type RoleBinding,
+  type Rule,
+  type RuleVocabulary,
+  type WorldFill,
+} from '@kraftverk/automation';
 
 import type { AutomationStore, DeviceCatalog, EventStore, HistoryStore } from '@kraftverk/store';
 import type { SessionManager } from '@kraftverk/holder';
 import { quoted, rehearse, type AutomationEngine, type AutomationLibrary, type AutomationRecord } from '@kraftverk/automation-engine';
+
+import { worldFillProblem, type WorldDirectory } from './world.ts';
 
 /**
  * What an automation is made of, checked the one way whoever makes it — a
@@ -25,6 +58,8 @@ export type DraftDeps = {
   library: AutomationLibrary;
   engine: AutomationEngine;
   automations: AutomationStore;
+  /** Who and where there is, for a role of the family's world; its modes. */
+  world: WorldDirectory;
 };
 
 /** A draft checked: what is wrong with it, and what fills its roles as far as it could be read. */
@@ -35,6 +70,7 @@ export type Checked = {
   roles: Record<string, RoleBinding>;
   groups: Record<string, RoleBinding[]>;
   starts: Record<string, AutomationId>;
+  world: Record<string, WorldFill>;
 };
 
 /** Problems by where they are: a list each, as an editor groups them. */
@@ -63,7 +99,7 @@ const looksLikeRule = (rule: unknown): rule is Rule => {
 
 const NOT_A_RULE = 'That is not a rule: it needs roles, settings, triggers and steps';
 
-export function drafts({ history, events, catalog, sessions, library, engine, automations }: DraftDeps) {
+export function drafts({ history, events, catalog, sessions, library, engine, automations, world }: DraftDeps) {
   /** "Garage station", or "Garage station — AC outlets": how a role's part is named, as everywhere else. */
   const roleName = (binding: RoleBinding | undefined): string => {
     const record = binding ? catalog.get(binding.device) : null;
@@ -77,6 +113,14 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
       Object.entries(rule.roles).map(([role, spec]) => {
         const unfilled = spec.label.charAt(0).toLowerCase() + spec.label.slice(1);
         if (isAutomationRole(spec)) return [role, fills.starts[role] ? quoted(automations.get(fills.starts[role])?.name ?? null) : unfilled];
+        // A person, people, a place: as the family calls them.
+        if (isWorldRole(spec)) {
+          const fill = fills.world?.[role];
+          if (!fill) return [role, unfilled];
+          if ('everyone' in fill) return [role, 'everyone'];
+          if ('place' in fill) return [role, world.place(fill.place, fill.kind) ?? 'a place no longer there'];
+          return [role, listed(('person' in fill ? [fill.person] : fill.people).map((id) => world.member(id) ?? 'someone who left')) || unfilled];
+        }
         if (isGroupRole(spec)) return [role, fills.groups[role]?.length ? listed(fills.groups[role].map(roleName)) : unfilled];
         return [role, fills.roles[role] ? roleName(fills.roles[role]) : unfilled];
       })
@@ -85,6 +129,7 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
   /** What the words need: the installed functions, and each setting a step changes as its device names it. */
   const vocabularyOf = (roles: Record<string, RoleBinding>): RuleVocabulary => ({
     fn: (id) => library.fn(id),
+    modes: () => world.modes(),
     attribute: (role, target) => {
       const binding = roles[role];
       const record = binding ? catalog.get(binding.device) : null;
@@ -169,13 +214,14 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
     const roles: Record<string, RoleBinding> = {};
     const groups: Record<string, RoleBinding[]> = {};
     const starts: Record<string, AutomationId> = {};
+    const worldFills: Record<string, WorldFill> = {};
     const rule: unknown = draft.rule;
-    const notARule = (): Checked => ({ problems: [NOT_A_RULE], areas: byArea([{ text: NOT_A_RULE, area: 'other' }]), roles, groups, starts });
+    const notARule = (): Checked => ({ problems: [NOT_A_RULE], areas: byArea([{ text: NOT_A_RULE, area: 'other' }]), roles, groups, starts, world: worldFills });
     if (!looksLikeRule(rule)) return notARule();
     let language: { text: string; area: ProblemArea }[];
     try {
       // Each said where its owner finds it: "Step 5: which setting?", not the language's own path — and kept where it is.
-      language = checkRule(rule, library).map((problem) => ({ text: problemPlace(problem, rule), area: problemArea(problem) }));
+      language = checkRule(rule, { fn: (id) => library.fn(id), modes: () => world.modes() }).map((problem) => ({ text: problemPlace(problem, rule), area: problemArea(problem) }));
     } catch {
       return notARule();
     }
@@ -201,6 +247,14 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
       return null;
     };
     for (const [role, spec] of Object.entries(rule.roles)) {
+      // A person, people, a place: one of the family's, there now.
+      if (isWorldRole(spec)) {
+        const fill = draft.world?.[role];
+        const problem = worldFillProblem(world, spec.label, roleKind(spec) as 'person' | 'people' | 'place', fill);
+        if (problem) problems.uses(problem);
+        else worldFills[role] = fill!;
+        continue;
+      }
       if (isAutomationRole(spec)) {
         const target = draft.starts?.[role];
         const automation = target ? automations.get(target) : null;
@@ -239,17 +293,17 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
         bound.set(role, [found]);
       }
     }
-    for (const role of [...Object.keys(draft.roles ?? {}), ...Object.keys(draft.groups ?? {}), ...Object.keys(draft.starts ?? {})]) {
+    for (const role of [...Object.keys(draft.roles ?? {}), ...Object.keys(draft.groups ?? {}), ...Object.keys(draft.starts ?? {}), ...Object.keys(draft.world ?? {})]) {
       if (!rule.roles[role]) problems.push(`There is no role called ${role}`);
     }
     // What the filled parts must report, raise and let be written: said once the rule itself holds.
     if (!language.length) {
-      const filled = Object.fromEntries(Object.entries(rule.roles).filter(([role, spec]) => !isAutomationRole(spec) && bound.has(role)));
+      const filled = Object.fromEntries(Object.entries(rule.roles).filter(([role, spec]) => (isPartRole(spec) || isGroupRole(spec)) && bound.has(role)));
       // What a part cannot do is said by its role: what it uses.
       for (const text of checkBinding({ ...rule, roles: filled }, (role) => bound.get(role) ?? [])) problems.uses(text);
     }
     problems.push(...chainProblems(self, Object.values(starts)));
-    return { problems: [...new Set(placed.map((each) => each.text))], areas: byArea(placed), roles, groups, starts };
+    return { problems: [...new Set(placed.map((each) => each.text))], areas: byArea(placed), roles, groups, starts, world: worldFills };
   };
 
   /** A draft, checked and said — nothing kept: what the editor shows as its owner builds. */

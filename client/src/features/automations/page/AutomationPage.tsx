@@ -66,7 +66,7 @@ export function AutomationPage({ id, edit = null }: { id: string; edit?: 'form' 
     return (
       <AutomationForm
         existing={automation}
-        initial={{ name: automation.name, rule: automation.rule, roles: automation.roles, groups: automation.groups, starts: automation.starts }}
+        initial={{ name: automation.name, rule: automation.rule, roles: automation.roles, groups: automation.groups, starts: automation.starts, world: automation.world ?? {} }}
         madeFrom={automation.madeFrom?.id ?? null}
         back={{ label: automation.name, to: PATHS.automations.one(id) }}
         view={editing}

@@ -19,7 +19,7 @@ and check a file with the same code.
 
 ```yaml
 # yaml-language-server: $schema=http://<your server>/api/config/schema.json
-kraftverk: 14                     # the document's version: required
+kraftverk: 15                     # the document's version: required
 
 family: { name: The Examples, kind: family, locale: en-GB }
 
@@ -198,6 +198,14 @@ describes.
   - `every: 15 min`
   - `event: mains.lost` with `from: station`
   - `becomes: <condition>`, with `for: 2 min` (at most a week)
+  - people and places, as presence says, as far as each shares:
+    `arrives: someone` / `leaves: anna` with `at: home` (the run knows who
+    as `run.who`); `first arrives: home` and `last leaves: home`, with
+    `of: children` — the place going from nobody to somebody, and back
+  - rooms, by what stands in them: `empties: bathroom` and
+    `is occupied: hallway`, each with `for: 10 min` if you like
+  - modes: `mode becomes: away` and `mode changes: day` (presence or day),
+    with `at: cabin` for a home not the automation's own
   - any of them with `do: [steps]` of its own, which a run it starts takes
     in place of the automation's — "when the charge is below 20 %, turn
     the charger on; when it is 40 %, off", one automation — and with a
@@ -226,6 +234,8 @@ describes.
   | `stop: Already charged` — and `failed: true` | the run ends here, saying why |
   | `start: role` + `and wait: 10 min` | start another automation |
   | `remember: name` + `as: <value>` | remember a value for later runs |
+  | `set mode: away` + `at: cabin` | put a home in a mode, as a person would |
+  | `notify: everyone` + `title: "{run.who} is home"` + `text:` + `level: warning` | tell people, in their inbox and pushed; a value in braces said as it is then |
 
   Whatever it repeats, a run ends: at most 100 rounds a repeat, and 500
   steps a run.
@@ -233,6 +243,10 @@ describes.
 - **Conditions and values** are expressions:
   - a reading: `role.meaning` — `charger.power`, `station.charge`;
   - `role reachable`;
+  - of a place — a role a place fills, or `home` — what is so of it now:
+    `home.people` (how many of the family are there), `bathroom.occupied`,
+    `home.presence` and `home.day` (its mode on each axis, by key);
+  - someone somewhere: `anna at home`, `any(p in children: p at school)`;
   - numbers with units — `50 W`, `15 %`, `30 min` — times of day `07:00`,
     `"text"`, `true`, `false`. A unit is one kraftverk knows
     (`packages/device-sdk/src/units.ts`: W, kW, Wh, kWh, %, °C, s, min, h …);
@@ -275,7 +289,13 @@ describes.
   group a `for each` goes through, a list of them —
   `chargers: [garage-plug, scooter-plug]`, in order, or
   `{ parts: [...], label: …, needs: […] }`; another automation as
-  `{ automation: key }`. A role's label and what it needs come
+  `{ automation: key }`. Who and where, of the family's world: a person
+  `{ person: anna-example }`, some of them `{ people: [anna-example, …] }`
+  — or everyone, `{ people: everyone }` — a home `{ home: cabin }`, a zone
+  `{ zone: work }`, a space of the automation's home `{ space: bathroom }`;
+  by the file's keys, so a home moved to another family reads as it should.
+  `home`, `someone` and `everyone` need no role: the automation's own home,
+  anyone of the family, all of it. A role's label and what it needs come
   from what the rule does with it — the commands it is sent, the standard
   readings read from it (`charge` asks for a battery, `power` a
   power meter), the events it raises (`mains.lost`, an AC input); say them
@@ -482,6 +502,7 @@ nothing wrong — and write back the same.
 | 12 | The family's zones (`zones:`, each by key with its name and location), who a device is with (a device's `people:` — carries, drives, owns, uses — by the people's keys) and what a person shares (`sharing: { level, keep }`). Nothing older says them, so nothing changes |
 | 13 | Geometry: a space's `frame`, `outline` and — a floor's — `plan`; an opening's `shape`; where in a space a device stands (`at`, `height`, `facing`). Nothing older says them, so nothing changes |
 | 14 | The family's own modes (`modes:`, each by key with its `axis` — presence or day — its name and icon). The built-in ones are every family's and never written; which mode a home is in is not the file's. Nothing older says them, so nothing changes |
+| 15 | Automations of people and places: a role under `uses` may be filled by a person, people, everyone, a home, a zone or a space — `{ person: key }`, `{ people: [keys] }`, `{ people: everyone }`, `{ home: key }`, `{ zone: key }`, `{ space: key }` — and the language has their triggers, `set mode` and `notify`. Nothing older says them, so nothing changes |
 
 **An integration's own entries.** A change to what a type is reached by —
 a way it no longer has — is not the document's shape, but a home kept

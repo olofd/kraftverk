@@ -9,6 +9,7 @@ import { blankCondition, ConditionField } from './Condition';
 import { pickPart, useEditor } from './context';
 import { GroupParts } from './GroupParts';
 import { DaysField, DurationField, durationOf, Label, NumberField, TimeField, type Measure } from './fields';
+import { placeChoices, whoChoices, type WorldChoice } from './world';
 
 /*
   One field of a construct — a trigger's, a step's — drawn by what it holds
@@ -177,6 +178,68 @@ function FieldEditor<T extends object>({ field, fields, construct, set, path }: 
             ]}
             value={value === true}
             onChange={(next) => put(next ? true : undefined)}
+          />
+          {help}
+        </YStack>
+      );
+    case 'who':
+    case 'crowd':
+    case 'place': {
+      // Who or where: a word for the whole family, a role the draft has, or one of the family's, made a role as it is picked.
+      const current = typeof value === 'string' ? value : '';
+      const choices: WorldChoice[] =
+        type.type === 'place' ? placeChoices(editor.world, editor.draft, editor.name) : whoChoices(editor.world, editor.draft, editor.name, { ...(type.type === 'who' && type.anyone ? { anyone: type.anyone } : {}), crowd: type.type === 'crowd' });
+      const chosen = choices.find((choice) => choice.key === current || choice.key === `role:${current}`);
+      return (
+        <YStack gap="$1">
+          <Label>{field.label}</Label>
+          <Picker
+            label={field.label}
+            chosen={chosen ? chosen.title : current ? editor.name(current) : null}
+            placeholder={type.type === 'place' ? 'Choose where' : 'Choose who'}
+            options={choices.map((choice) => ({ key: choice.key, title: choice.title, ...(choice.subtitle ? { subtitle: choice.subtitle } : {}), value: choice, selected: choice === chosen }))}
+            onPick={(choice) => {
+              const picked = choice.pick(editor.draft);
+              editor.change((draft) => ({ ...draft, ...picked.draft, name: draft.name }));
+              put(picked.value);
+            }}
+          />
+          {help}
+        </YStack>
+      );
+    }
+    case 'mode': {
+      const modes = editor.world.modes;
+      const chosen = typeof value === 'string' ? value : null;
+      return (
+        <YStack gap="$1">
+          <Label>{field.label}</Label>
+          <Chips label={field.label} options={modes.map((mode) => ({ value: mode.key, label: mode.name }))} value={chosen} onChange={(mode) => put(mode)} />
+          {help}
+        </YStack>
+      );
+    }
+    case 'choice':
+      return (
+        <YStack gap="$1">
+          <Label>{field.label}</Label>
+          <Chips label={field.label} options={type.options} value={typeof value === 'string' ? value : null} onChange={(next) => put(next)} />
+          {help}
+        </YStack>
+      );
+    case 'message':
+      return (
+        <YStack gap="$1">
+          <Label>{field.label}</Label>
+          <Input
+            size="$4"
+            value={typeof value === 'string' ? value : ''}
+            aria-label={field.label}
+            maxLength={type.max}
+            multiline={type.max > 200}
+            backgroundColor="$background"
+            borderColor="$borderColor"
+            onChangeText={(text) => put(text === '' && !field.required ? undefined : text)}
           />
           {help}
         </YStack>

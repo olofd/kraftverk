@@ -1,5 +1,46 @@
 import type { AutomationRun, RunLog, RunStep } from '@kraftverk/api-contract';
-import { bindingsOf, eachAsGroup, settingOf, triggerOf, isGroupRole, memberRole, branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, measure, paramText, toRemember, secondsNow, fieldValue, negation, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepsOf, stepSpec, takesSteps, type StepOf, type Command, type Expr, type Rule, type RoleBinding, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
+import {
+  bindingsOf,
+  eachAsGroup,
+  settingOf,
+  triggerOf,
+  isGroupRole,
+  memberRole,
+  branchesOf,
+  capitalise,
+  changedRoles,
+  describeSteps,
+  evaluate,
+  evaluateNow,
+  EVERYONE,
+  listed,
+  measure,
+  OWN_HOME,
+  paramText,
+  parseMessage,
+  shown,
+  toRemember,
+  secondsNow,
+  fieldValue,
+  negation,
+  ruleUses,
+  secondsText,
+  SEQUENCE_LIMITS,
+  settledChoice,
+  stepKind,
+  stepsOf,
+  stepSpec,
+  takesSteps,
+  type StepOf,
+  type Command,
+  type Expr,
+  type Rule,
+  type RoleBinding,
+  type RuleScope,
+  type Step,
+  type StepLine,
+  type Write,
+} from '@kraftverk/automation';
 import { attributeMeaning, MAIN_PART, readingOf, type Actor, type AutomationId, type Value } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
@@ -571,6 +612,8 @@ export class Runs {
       else if ('write' in step) walked = await this.#write(live, here, step.write, depth, within, what());
       else if ('start' in step) walked = await this.#startStep(live, here, step.start, depth, within, what(), mode);
       else if ('remember' in step) walked = await this.#remember(live, here, step.remember, depth, within, what());
+      else if ('setMode' in step) walked = this.#setMode(live, here, step.setMode, depth, within, what());
+      else if ('notify' in step) walked = await this.#notify(live, here, step.notify, depth, within, what());
       else if ('repeat' in step) walked = await this.#repeat(live, here, step.repeat, depth, within, what(), mode);
       else if ('forEach' in step) walked = await this.#forEach(live, here, step.forEach, depth, within, what(), mode);
       else if ('try' in step) walked = await this.#try(live, here, step.try, depth, within, what(), mode);
@@ -801,6 +844,77 @@ export class Runs {
     }
     this.deps.store.remember(here.automation.id, remember.name, kept.value);
     this.#add(live, { kind: 'remember', depth, within, what, outcome: 'done', detail: `Remembered ${paramText(schema, remember.name, kept.value)}`, until: null });
+    return 'ok';
+  }
+
+  /** The home a place names — or the automation's own — by its id: what a mode is set on. */
+  #homeOf(here: Here, at: string | undefined): string | null {
+    const world = this.deps.world;
+    if (!world) return null;
+    if (!at || at === OWN_HOME) return world.home(here.automation.homeId);
+    const fill = here.automation.world[at];
+    return fill && 'place' in fill ? world.homeOf({ id: fill.place, kind: fill.kind }) : null;
+  }
+
+  /** A home set to a mode, as the automation: already in it, nothing changes. */
+  #setMode(live: LiveRun, here: Here, set: { mode: string; at?: string }, depth: number, within: string | null, what: string): Walked {
+    const world = this.deps.world;
+    const home = this.#homeOf(here, set.at);
+    if (!world || !home) {
+      this.#add(live, { kind: 'setMode', depth, within, what, outcome: 'failed', detail: world ? 'There is no such home' : 'Modes are not kept here', until: null });
+      return 'failed';
+    }
+    if (world.mode(home, 'presence') === set.mode || world.mode(home, 'day') === set.mode) {
+      this.#add(live, { kind: 'setMode', depth, within, what, outcome: 'already', detail: 'It is so now', until: null });
+      return 'ok';
+    }
+    try {
+      world.setMode(home, set.mode, actorOf(here.automation));
+    } catch (error) {
+      this.#add(live, { kind: 'setMode', depth, within, what, outcome: 'failed', detail: (error as Error).message, until: null });
+      return 'failed';
+    }
+    this.#add(live, { kind: 'setMode', depth, within, what, outcome: 'done', detail: `${world.placeName({ id: home, kind: 'home' }) ?? 'The home'} is ${set.mode} now`, until: null });
+    return 'ok';
+  }
+
+  /** People told something: each value in its words said as it is now. */
+  async #notify(live: LiveRun, here: Here, notify: StepOf<'notify'>['notify'], depth: number, within: string | null, what: string): Promise<Walked> {
+    const world = this.deps.world;
+    if (!world) {
+      this.#add(live, { kind: 'notify', depth, within, what, outcome: 'failed', detail: 'Nobody can be told from here', until: null });
+      return 'failed';
+    }
+    const fill = here.automation.world[notify.to];
+    const people = notify.to === EVERYONE ? world.members() : !fill ? [] : 'person' in fill ? [fill.person] : 'people' in fill ? fill.people : 'everyone' in fill ? world.members() : [];
+    if (!people.length) {
+      this.#add(live, { kind: 'notify', depth, within, what, outcome: 'failed', detail: 'Nobody to tell', until: null });
+      return 'failed';
+    }
+    const scope = this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event, live.inputs);
+    /** Words with each value said as it is now, in its unit — unknown said as such. */
+    const said = async (text: string): Promise<string> => {
+      const parsed = parseMessage(text);
+      if (!parsed.ok) return text;
+      const pieces = await Promise.all(
+        parsed.pieces.map(async (piece) => {
+          if ('text' in piece) return piece.text;
+          const measured = await measure(piece.expr, scope).catch(() => ({ value: null, unit: null }));
+          return measured.value === null ? 'not known' : typeof measured.value === 'boolean' ? (measured.value ? 'yes' : 'no') : shown(measured.value, measured.unit ?? '');
+        })
+      );
+      return pieces.join('');
+    };
+    const title = (await said(notify.title)).slice(0, 120);
+    const text = notify.text ? (await said(notify.text)).slice(0, 1000) : null;
+    try {
+      await world.notify(people, { title, text, level: notify.level ?? 'info', homeId: world.home(here.automation.homeId) }, actorOf(here.automation));
+    } catch (error) {
+      this.#add(live, { kind: 'notify', depth, within, what, outcome: 'failed', detail: (error as Error).message, until: null });
+      return 'failed';
+    }
+    const names = notify.to === EVERYONE ? 'everyone' : listed(people.map((id) => world.personName(id) ?? 'someone'));
+    this.#add(live, { kind: 'notify', depth, within, what, outcome: 'done', detail: `Told ${names}: “${title}”`, until: null });
     return 'ok';
   }
 

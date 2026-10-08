@@ -1,4 +1,4 @@
-import { AutomationEngine, AutomationLibrary } from '@kraftverk/automation-engine';
+import { AutomationEngine, AutomationLibrary, type EngineWorld } from '@kraftverk/automation-engine';
 import { isPosition, SYSTEM, type Actor, type AuditRecord, type Clock, type PolicyValueName, type PolicyValues, type ScopedHttp } from '@kraftverk/device-sdk';
 import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
 import { ActionGateway, Confirmations, type GatewayPolicy } from '@kraftverk/gateway';
@@ -56,6 +56,7 @@ import { Sampler } from '../history/sampler.ts';
 import { Presence } from '../presence/presence.ts';
 import { Occupancy } from '../occupancy/occupancy.ts';
 import { Modes } from '../modes/modes.ts';
+import { familyWorld, type WorldDirectory } from '../automations/world.ts';
 import type { PushSender } from '../notifications/notify.ts';
 import { positionHidden } from '../presence/levels.ts';
 import { startTransports, type Installed } from '../installed/from.ts';
@@ -197,6 +198,8 @@ export class Hub {
   /** A home's modes, and which each is in: kept, and said on the bus as they change. */
   readonly modeStore: ModeStore;
   readonly modes: Modes;
+  /** The family's world as automations see it, and a draft checks what fills its roles of it against. */
+  readonly world: EngineWorld & WorldDirectory;
   readonly changeLog: ChangeLog;
   /** What the people using it are looking at, said by their apps. */
   readonly attention = new Attention();
@@ -292,25 +295,28 @@ export class Hub {
     this.policy = { values: () => policyValues(policyHome), set: (name, value) => setPolicyValue(policyHome, name, value) };
     const { catalog, connections, links, nodes, sessions } = this;
 
+    // The family's world, as its automations see it: who is where, rooms, modes; telling people.
+    this.notifications = new NotificationStore(db);
+    this.stays = new PresenceStore(db);
+    this.push = options.push ?? null;
+    this.occupancies = new OccupancyStore(db);
+    this.modeStore = new ModeStore(db);
+    this.modes = new Modes({ store: this.modeStore, places: this.places, bus: this.bus, clock: options.clock });
+    this.world = familyWorld({ people: this.people, places: this.places, spaces: this.spaces, stays: this.stays, occupancies: this.occupancies, modes: this.modes, modeStore: this.modeStore, notifications: this.notifications, push: this.push, record });
+
     /** What the installed packages bring to automations: their recipes and functions. None of the core's own. */
     this.library = new AutomationLibrary(types.contributions(), (message) => this.#log('warn', message));
     // What a package brings to automations comes with its code: when its integration loads.
     this.#stopContributions = types.onContribution((contributed) => this.library.add([contributed]));
-    this.engine = new AutomationEngine({ store: automations, library: this.library, device: homeDevices(catalog, sessions, (deviceId) => positionHidden(this, deviceId, null)), gateway: this.gateway, record, bus: this.bus, history: this.history, location: locationOf(this.places), clock: options.clock });
-    this.drafts = drafts({ history: this.history, events, catalog, sessions, library: this.library, engine: this.engine, automations });
+    this.engine = new AutomationEngine({ store: automations, library: this.library, device: homeDevices(catalog, sessions, (deviceId) => positionHidden(this, deviceId, null)), gateway: this.gateway, record, bus: this.bus, history: this.history, location: locationOf(this.places), world: this.world, clock: options.clock });
+    this.drafts = drafts({ history: this.history, events, catalog, sessions, library: this.library, engine: this.engine, automations, world: this.world });
 
     this.heldReadings = new HeldReadings(this.history);
     this.views = new DeviceViews({ catalog, types, sessions, connections, links, nodes, transports, heldReadings: this.heldReadings, self: self.id, master: () => this.family.get()!.masterId, readOnly: options.readOnly, placement: (id) => this.spaces.placement(id), labels: (id) => this.labels.on({ device: id }).map((label) => label.id), people: (id) => this.devicePeople.of(id) });
     this.ignored = new IgnoredSightings(this.db);
     this.nearby = new Nearby({ types, protocols, transports, connections, catalog, sessions, ignored: this.ignored });
-    this.notifications = new NotificationStore(db);
     this.sampler = new Sampler({ history: this.history, audit: this.audit, events, tracks: this.tracks, notifications: this.notifications }, this.views, (deviceId) => positionHidden(this, deviceId, null));
-    this.stays = new PresenceStore(db);
-    this.push = options.push ?? null;
     this.presence = new Presence({ people: this.people, devicePeople: this.devicePeople, places: this.places, stays: this.stays, spaces: this.spaces, views: this.views, bus: this.bus, clock: options.clock });
-    this.occupancies = new OccupancyStore(db);
-    this.modeStore = new ModeStore(db);
-    this.modes = new Modes({ store: this.modeStore, places: this.places, bus: this.bus, clock: options.clock });
     this.occupancy = new Occupancy({ places: this.places, spaces: this.spaces, store: this.occupancies, views: this.views, history: this.history, bus: this.bus, roomStays: (homeId) => this.stays.rooms(homeId), clock: options.clock });
     this.changeLog = new ChangeLog(this.history, this.bus, (id) => {
       const device = catalog.active(id);

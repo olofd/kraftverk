@@ -4,7 +4,7 @@ import { isAcrossFn } from '../kinds/across.ts';
 import { BUILTIN_ORDER, isBuiltin } from '../kinds/builtins.ts';
 import { HISTORY_ORDER, isHistoryFn } from '../kinds/history.ts';
 import { isSunEvent } from '../sun.ts';
-import { RUN_FACTS, type CompareOp, type Expr, type MathOp, type RunFact } from '../rule.ts';
+import { ANYONE, EVERYONE, OWN_HOME, RUN_FACTS, type CompareOp, type Expr, type MathOp, type RunFact } from '../rule.ts';
 
 /*
   The rule language's expressions as text (docs/CONFIG.md): what a condition
@@ -26,6 +26,7 @@ import { RUN_FACTS, type CompareOp, type Expr, type MathOp, type RunFact } from 
     * /                       a product
     -x                        the opposite
     an atom                   a value, a reading, `role reachable`,
+                              `olof at work`, `home.people`,
                               `run.trigger`, `setting.low`, `memory.count`,
                               `time between 23:00 and 05:00`,
                               `min(a, b)` and the language's other functions,
@@ -52,7 +53,7 @@ type Token =
 
 /** The language's own words: never a role's name. */
 /** The language's own words: none names a role, nor what a "for each" calls each part. */
-export const KEYWORDS: ReadonlySet<string> = new Set(['and', 'or', 'not', 'in', 'true', 'false', 'null', 'reachable', 'time', 'between', 'run', 'setting', 'memory', 'given', 'sunrise', 'sunset', 'before', 'after']);
+export const KEYWORDS: ReadonlySet<string> = new Set(['and', 'or', 'not', 'in', 'true', 'false', 'null', 'reachable', 'time', 'between', 'run', 'setting', 'memory', 'given', 'sunrise', 'sunset', 'before', 'after', 'at', OWN_HOME, ANYONE, EVERYONE]);
 const COMPARE: Record<string, CompareOp> = { '<': 'lt', '<=': 'le', '>': 'gt', '>=': 'ge', '==': 'eq', '!=': 'ne' };
 const COMPARE_TEXT: Record<CompareOp, string> = { lt: '<', le: '<=', gt: '>', ge: '>=', eq: '==', ne: '!=' };
 const MATH_TEXT: Record<MathOp, string> = { add: '+', subtract: '-', multiply: '*', divide: '/' };
@@ -322,6 +323,13 @@ export function parseExpr(text: string): Parsed {
         if (name.kind !== 'name' || !PARAM.test(name.value)) throw new Failure('Expected an input\'s name after "given."', name.at);
         return { input: name.value };
       }
+      case OWN_HOME: {
+        // What is so of the automation's own home: "home.people", "home.presence".
+        expect('.', '"." and what of it: home.people, home.occupied, home.presence, home.day');
+        const fact = next();
+        if (fact.kind !== 'name' || !NAME.test(fact.value)) throw new Failure('Expected what of the home: people, occupied, presence or day', fact.at);
+        return { read: { role: OWN_HOME, means: fact.value } };
+      }
       case 'memory': {
         // What the rule remembers: "memory.timesCharged".
         expect('.', '"." and what it remembers: memory.timesCharged');
@@ -385,7 +393,15 @@ export function parseExpr(text: string): Parsed {
       next();
       return { reachable: token.value };
     }
-    if (!isSymbol('.')) throw new Failure(`After the role "${token.value}": what it reports ("${token.value}.charge"), or "reachable"`, peek().at);
+    // Whether a person is at a place: "olof at work", "p at home".
+    if (isWord('at')) {
+      if (!NAME.test(token.value)) throw new Failure(`"${token.value}" is not a role's name: letters, digits and _ only`, token.at);
+      next();
+      const place = next();
+      if (place.kind !== 'name' || !NAME.test(place.value) || (KEYWORDS.has(place.value) && place.value !== OWN_HOME)) throw new Failure(`Expected a place after "${token.value} at": home, or a role a place fills`, place.at);
+      return { presentAt: { who: token.value, place: place.value } };
+    }
+    if (!isSymbol('.')) throw new Failure(`After the role "${token.value}": what it reports ("${token.value}.charge"), "reachable", or — a person — "at" a place`, peek().at);
     // A dotted name: what a role's part reports — "station.charge" — or, called, a package's function.
     const segments: { value: string; at: number }[] = [];
     while (isSymbol('.')) {
@@ -498,7 +514,11 @@ function print(expr: Expr, need: number): string {
   }
   if ('read' in expr) {
     if (!MEANING.test(expr.read.means)) throw new Unprintable();
-    return `${roleText(expr.read.role)}.${expr.read.means}`;
+    return `${expr.read.role === OWN_HOME ? OWN_HOME : roleText(expr.read.role)}.${expr.read.means}`;
+  }
+  if ('presentAt' in expr) {
+    const { who, place } = expr.presentAt;
+    return `${roleText(who)} at ${place === OWN_HOME ? OWN_HOME : roleText(place)}`;
   }
   if ('reachable' in expr) return `${roleText(expr.reachable)} reachable`;
   if ('run' in expr) {

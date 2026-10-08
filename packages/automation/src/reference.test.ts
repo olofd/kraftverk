@@ -20,7 +20,20 @@ const CODE = [...README.matchAll(/`([^`\n]+)`/g)].map((match) => match[1]!);
 type Keys<U> = U extends unknown ? keyof U : never;
 
 /** Each kind, by its name in data, and a word of its text form. */
-const TRIGGERS: Record<Exclude<Keys<Trigger>, 'days' | 'heldFor'>, string> = { at: 'at:', every: 'every:', event: 'event:', becomes: 'becomes:' };
+const TRIGGERS: Record<Exclude<Keys<Trigger>, 'days' | 'heldFor'>, string> = {
+  at: 'at:',
+  every: 'every:',
+  event: 'event:',
+  becomes: 'becomes:',
+  arrives: 'arrives:',
+  leaves: 'leaves:',
+  firstArrives: 'first arrives:',
+  lastLeaves: 'last leaves:',
+  empties: 'empties:',
+  occupied: 'is occupied:',
+  modeBecomes: 'mode becomes:',
+  modeChanges: 'mode changes:',
+};
 const STEPS: Record<Keys<Step>, string> = {
   command: 'turn on:',
   write: 'set:',
@@ -37,6 +50,8 @@ const STEPS: Record<Keys<Step>, string> = {
   stop: 'stop:',
   forEach: 'for each:',
   answer: 'answer:',
+  setMode: 'set mode:',
+  notify: 'notify:',
 };
 const EXPRESSIONS: Record<Exclude<Keys<Expr>, 'role' | 'args' | 'left' | 'right' | 'unit' | 'then' | 'else' | 'item' | 'field' | 'of' | 'over' | 'offset' | 'as' | 'group' | 'to'>, string> = {
   value: '50 W',
@@ -58,6 +73,7 @@ const EXPRESSIONS: Record<Exclude<Keys<Expr>, 'role' | 'args' | 'left' | 'right'
   in: ' in [',
   all: ' and ',
   any: ' or ',
+  presentAt: ' at home',
   not: 'not ',
   reachable: ' reachable',
   within: 'time between',

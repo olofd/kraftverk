@@ -318,6 +318,179 @@ when:
     from: station
 ```
 
+### `arrives` — When someone arrives
+
+When someone comes to a place, as presence says — as far as each shares: a role a person fills, any of a role people fill, or `someone`, anyone of the family; at `home`, the automation’s own, or a role a home, a zone or a room fills. The run knows who as `run.who`.
+
+| Word | Holds | |
+|---|---|---|
+| `arrives` | who: a role a person fills, or people fill — `{ person: key }`, `{ people: [keys] }` under `uses` — or `someone`, anyone in the family | needed |
+| `at` | a place: `home`, the automation’s own, or a role a home, a zone or a space fills — `{ zone: key }`, `{ space: key }` under `uses` | needed |
+
+```yaml
+when:
+  - arrives: someone
+    at: home
+```
+
+```yaml
+when:
+  - arrives: olof
+    at: work
+```
+
+```yaml
+when:
+  - arrives: children
+    at: school
+```
+
+### `leaves` — When someone leaves
+
+When someone leaves a place, as presence says — minutes out of its geofence, not a wobble at its edge: the same `who` and `at` as `arrives`. The run knows who as `run.who`.
+
+| Word | Holds | |
+|---|---|---|
+| `leaves` | who: a role a person fills, or people fill — `{ person: key }`, `{ people: [keys] }` under `uses` — or `someone`, anyone in the family | needed |
+| `at` | a place: `home`, the automation’s own, or a role a home, a zone or a space fills — `{ zone: key }`, `{ space: key }` under `uses` | needed |
+
+```yaml
+when:
+  - leaves: someone
+    at: home
+```
+
+```yaml
+when:
+  - leaves: olof
+    at: work
+```
+
+### `firstArrives` — When the first arrives
+
+When the first of the family — or, with `of`, of a role people fill — comes to a place none of them was at, as far as each shares: the place going from nobody to somebody. Its state survives a restart.
+
+| Word | Holds | |
+|---|---|---|
+| `first arrives` | a place: `home`, the automation’s own, or a role a home, a zone or a space fills — `{ zone: key }`, `{ space: key }` under `uses` | needed |
+| `of` | a role people fill: `{ people: [keys] }` under `uses` | if you like |
+
+```yaml
+when:
+  - first arrives: home
+```
+
+```yaml
+when:
+  - first arrives: home
+    of: children
+```
+
+### `lastLeaves` — When the last leaves
+
+When the last of the family — or, with `of`, of a role people fill — leaves a place, as far as each shares: the place going from somebody to nobody. "When the last one leaves, set away" is this.
+
+| Word | Holds | |
+|---|---|---|
+| `last leaves` | a place: `home`, the automation’s own, or a role a home, a zone or a space fills — `{ zone: key }`, `{ space: key }` under `uses` | needed |
+| `of` | a role people fill: `{ people: [keys] }` under `uses` | if you like |
+
+```yaml
+when:
+  - last leaves: home
+```
+
+```yaml
+when:
+  - last leaves: home
+    of: grownUps
+```
+
+### `empties` — When a room empties
+
+When a place has nobody in it, whoever was there — by what stands in it: motion, a presence radar, a door shut with someone inside, a count — and, with `for`, has had nobody that long.
+
+| Word | Holds | |
+|---|---|---|
+| `empties` | a place: `home`, the automation’s own, or a role a home, a zone or a space fills — `{ zone: key }`, `{ space: key }` under `uses` | needed |
+| `for` | a length of time, `2 min` — 1 s to 7 d | if you like |
+
+```yaml
+when:
+  - empties: bathroom
+    for: 10 min
+```
+
+```yaml
+when:
+  - empties: home
+```
+
+### `occupied` — When someone is in a room
+
+When a place has someone in it, whoever they are — by what stands in it — and, with `for`, has had that long.
+
+| Word | Holds | |
+|---|---|---|
+| `is occupied` | a place: `home`, the automation’s own, or a role a home, a zone or a space fills — `{ zone: key }`, `{ space: key }` under `uses` | needed |
+| `for` | a length of time, `2 min` — 1 s to 7 d | if you like |
+
+```yaml
+when:
+  - is occupied: hallway
+```
+
+```yaml
+when:
+  - is occupied: office
+    for: 5 min
+```
+
+### `modeBecomes` — When the mode becomes
+
+When a home goes into a mode, by its key — whoever set it: a person, another automation, a vacation beginning as planned. The automation’s own home, unless `at` names another.
+
+| Word | Holds | |
+|---|---|---|
+| `mode becomes` | a mode, by its key: `home`, `away`, `vacation`, `day`, `evening`, `night`, or one of the family’s own | needed |
+| `at` | a place: `home`, the automation’s own, or a role a home, a zone or a space fills — `{ zone: key }`, `{ space: key }` under `uses` | if you like |
+
+```yaml
+when:
+  - mode becomes: away
+```
+
+```yaml
+when:
+  - mode becomes: night
+```
+
+```yaml
+when:
+  - mode becomes: vacation
+    at: cabin
+```
+
+### `modeChanges` — When the mode changes
+
+When a home’s mode on an axis — `presence` or `day` — changes, to whichever: what to do as evening comes, and again as night does, read from `home.day`.
+
+| Word | Holds | |
+|---|---|---|
+| `mode changes` | one of `presence`, `day` | needed |
+| `at` | a place: `home`, the automation’s own, or a role a home, a zone or a space fills — `{ zone: key }`, `{ space: key }` under `uses` | if you like |
+
+```yaml
+when:
+  - mode changes: day
+```
+
+```yaml
+when:
+  - mode changes: presence
+    at: cabin
+```
+
 ### Every trigger — what it does, and its name
 
 Every trigger may say what it does itself, under `do`: a run it starts takes those steps in place of the automation’s own — one automation, each side where it is said. A name, `id`, that steps shared by several triggers read back as `run.trigger`. And `at most every`: a start it would make sooner than that after its last is let go — a minute to a week, a number or a setting.
@@ -409,6 +582,61 @@ do:
   - set: station
     meaning: chargeLimit
     to: 80 %
+```
+
+### `set mode` — Set the mode
+
+Put a home in a mode, by its key — the automation’s own home, unless `at` names another — as a person would from its screen: said on the home’s timeline as the automation’s, and to every automation that waits for it. Already in it, nothing changes.
+
+| Word | Holds | |
+|---|---|---|
+| `set mode` | a mode, by its key: `home`, `away`, `vacation`, `day`, `evening`, `night`, or one of the family’s own | needed |
+| `at` | a place: `home`, the automation’s own, or a role a home, a zone or a space fills — `{ zone: key }`, `{ space: key }` under `uses` | if you like |
+
+```yaml
+do:
+  - set mode: away
+```
+
+```yaml
+do:
+  - set mode: night
+```
+
+```yaml
+do:
+  - set mode: home
+    at: cabin
+```
+
+### `notify` — Tell someone
+
+Tell people something — a role a person fills, a role people fill, or `everyone` in the family — in their inbox, and pushed to their phones and browsers: a `title`, more `text` if you like, as news unless `level` says `warning` or `alarm`. A value in braces is said as it is then, in its unit: `{station.charge}`, `{run.who}`. In watch mode it is said, not sent.
+
+| Word | Holds | |
+|---|---|---|
+| `notify` | who: a role a person fills, or people fill — `{ person: key }`, `{ people: [keys] }` under `uses` — or `everyone`, everyone in the family | needed |
+| `title` | words of your own, at most 120 characters — a value in braces said as it is then: `{station.charge}` | needed |
+| `text` | words of your own, at most 1000 characters — a value in braces said as it is then: `{station.charge}` | if you like |
+| `level` | one of `info`, `warning`, `alarm` | if you like |
+
+```yaml
+do:
+  - notify: everyone
+    title: Nobody is home, and the door is open
+```
+
+```yaml
+do:
+  - notify: olof
+    title: "{home.people} of you are home"
+```
+
+```yaml
+do:
+  - notify: grownUps
+    title: The station is at {station.charge}
+    level: warning
 ```
 
 ### `wait` — Pause
@@ -705,11 +933,12 @@ reached — is never taken for true.
 | A setting | `setting.low` | One of the rule’s settings, by its name: a recipe’s, before it is copied into an automation. |
 | What it was given | `given.level` | One of the automation’s inputs, as the step that started the run gave it — or, not given, its default. |
 | What it remembers | `memory.timesCharged` | A value it remembers, as a run last left it — or, before any did, as it starts: kept across runs and restarts. |
-| A reading | `station.charge` · `charger.power` | What the part filling a role reports now, by what it means: a standard meaning, or a type’s own. Unknown when it has not said, or said too long ago. |
+| A reading | `station.charge` · `charger.power` · `home.people == 0` · `bathroom.occupied` · `home.presence == "vacation"` · `home.day == "night"` | What the part filling a role reports now, by what it means: a standard meaning, or a type’s own. Unknown when it has not said, or said too long ago. Of a place — a role a place fills, or `home`, the automation’s own — what is so of it now: `people`, how many of the family are there, as far as each shares; `occupied`, whether anyone is, whoever they are; `presence` and `day`, a home’s mode on each axis, by its key. |
+| Someone somewhere | `olof at home` · `not olof at work` · `any(p in children: p at school)` · `count(p in children: p at home) == 0` | Whether a person is at a place now, as far as they share — a home or a zone by where what they carry says they are, a room by a signal that tells people apart: a role a person fills, or what `any(p in children: …)` calls each of several; a role a place fills, or `home`. Unknown when they share too little to say. |
 | Over the time just gone | `average(station.charge, 1 h)` · `change(station.charge, 30 min) > 5 %` · `ago(charger.power, 10 min)` | A reading over the time just gone, from what the home kept of it: `average`, `lowest`, `highest`, `change` — how much it changed — or `ago`, what it was then. In the reading’s unit; the time a number or a setting, a minute to two weeks. Unknown when nothing was kept for that time. |
 | How far | `distance(phone.position) < 500 m` · `distance(phone.position) > 2 km` · `distance(phone.position, car.position) < 50 m` | How far the position a part reports is from the home — or from another part’s, given a second — over the Earth’s surface: a number in m, compared in any length. Unknown when either position is, or the home has not said where it is. |
 | Can be reached | `charger reachable` | Whether the part filling a role can be reached now: its holder says it is connected. Never unknown — not being reachable is the answer. |
-| What the run knows | `run.trigger == "low"` · `run.event.voltage < 200 V` | What the run knows of itself: `run.trigger`, the id of the trigger that started it — `""` when none with an id did; `run.event`, the event a device raised that started it, and `run.event.voltage`, what it carried, as its device declares it — unknown when no event did. |
+| What the run knows | `run.trigger == "low"` · `run.event.voltage < 200 V` · `run.who == "Anna"` | What the run knows of itself: `run.trigger`, the id of the trigger that started it — `""` when none with an id did; `run.event`, the event a device raised that started it, and `run.event.voltage`, what it carried, as its device declares it — unknown when no event did; `run.who`, the name of the person whose arriving or leaving started it — `""` when none did. |
 | Time of day | `time between 23:00 and 05:00` | Whether the owner’s clock is between two times of day, from the first up to the second — across midnight when the second comes first. |
 | The sun | `sunset` · `30 min before sunset` · `time between sunset and sunrise` · `time between 1 h after sunrise and setting.lead before sunset` | When the sun rises or sets where the home is, on the automation’s clock — or so long before or after, a minute to twelve hours: a time of day, as `07:00` is, for `at` and `time between`. Unknown until the home has a place, and on a day the sun does not cross the horizon. |
 | Across a group | `any(c in chargers: c.power > 10 W)` · `count(c in chargers: c reachable) < 2` · `sum(c in chargers: c.power ?? 0 W) > 2 kW` | Something of each part of a group, taken together — `all`, `any`, `count`, `sum`, `average`, `lowest`, `highest` — each part called by a name of its own within it, as a role is. Unknown while it is for a part, unless one part settles it; `??` gives a part that may not say a value of its own. |

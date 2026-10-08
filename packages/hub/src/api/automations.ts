@@ -108,6 +108,7 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
           roles: result.roles,
           groups: result.groups,
           starts: result.starts,
+          world: result.world,
           homeId: input.homeId ?? null,
           timeZone: input.timeZone ?? null,
           recheckMinutes: input.recheckMinutes ?? null,
@@ -120,6 +121,7 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
           roles: created.roles,
           groups: created.groups,
           starts: created.starts,
+          world: created.world,
           recheckMinutes: created.recheckMinutes,
         });
         engine.poke(created.id);
@@ -149,12 +151,12 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
         // A new rule comes with what fills its roles: all of them together, or none.
         const rebuilt = input.rule !== undefined || input.roles !== undefined || input.groups !== undefined || input.starts !== undefined;
         if (rebuilt && (!input.rule || !input.roles || !input.groups || !input.starts)) throw new ApiError('invalid', 'A new rule comes with what fills its roles: rule, roles, groups and starts together');
-        const result = rebuilt ? checked({ rule: input.rule!, roles: input.roles!, groups: input.groups!, starts: input.starts! } satisfies AutomationDraft, current.id) : null;
+        const result = rebuilt ? checked({ rule: input.rule!, roles: input.roles!, groups: input.groups!, starts: input.starts!, world: input.world ?? {} } satisfies AutomationDraft, current.id) : null;
         if (result) refuseProblems(result.problems);
         const nextRule = result ? input.rule! : current.rule;
         const nextRecheck = input.recheckMinutes !== undefined ? input.recheckMinutes : current.recheckMinutes;
         if (nextRecheck && !keepsSo(nextRule)) throw new ApiError('invalid', KEEPS_SO_ONLY);
-        const changedRule = result ? { rule: nextRule, roles: result.roles, groups: result.groups, starts: result.starts } : null;
+        const changedRule = result ? { rule: nextRule, roles: result.roles, groups: result.groups, starts: result.starts, world: result.world } : null;
 
         // Letting it act — and changing what one that acts does — is a deliberate act.
         const armedAfter = input.mode === 'act' || (input.mode === undefined && current.mode === 'act');

@@ -9,6 +9,7 @@ import { entryJsonSchema } from '@kraftverk/home-file';
 import type { TextProblem } from '../../components/ProblemList';
 import { useAnswer } from '../../components/useAnswer';
 import { useFamily } from '../../state/FamilyProvider';
+import { useWorldKeys } from './useWorldKeys';
 
 /** What the form edits: its name, rule, and what fills each role. */
 type Draft = { name: string; rule: Rule } & RoleFills;
@@ -41,6 +42,7 @@ export function useAutomationYaml({
   const { api } = useFamily();
   // What a file may name here — the installed types, the keys of what you have — read once.
   const { value: vocabulary, error } = useAnswer(() => api.configuration.vocabulary(), [api], { failure: 'What a configuration may name could not be read' });
+  const world = useWorldKeys();
   const [text, setText] = useState('');
   const [problems, setProblems] = useState<TextProblem[]>([]);
   /** Typed, and not read yet: nothing can be saved until it is. */
@@ -51,11 +53,11 @@ export function useAutomationYaml({
   /** The draft and its settings, written out: what the editor opens with. */
   const open = useCallback(
     (draft: Draft, settings: AutomationSettings) => {
-      setText(automationYaml({ ...draft, madeFrom, ...settings }, devices, automations));
+      setText(automationYaml({ ...draft, madeFrom, ...settings }, devices, automations, [], world));
       setProblems([]);
       setReading(false);
     },
-    [madeFrom, devices, automations]
+    [madeFrom, devices, automations, world]
   );
 
   const change = useCallback((next: string) => {
@@ -72,10 +74,10 @@ export function useAutomationYaml({
       if (madeFromFixed && result.entry && result.entry.madeFrom !== madeFrom) found.push({ message: madeFrom ? `"made from" says where it was copied from: ${madeFrom}. It does not change` : '"made from" says which recipe it was copied from: it was built from nothing', line: null, column: null });
       setProblems(found);
       setReading(false);
-      if (result.entry && !found.length) read.current({ ...draftOfEntry(result.entry, devices, automations), key: result.key !== automationKey ? result.key : null, madeFrom: result.entry.madeFrom });
+      if (result.entry && !found.length) read.current({ ...draftOfEntry(result.entry, devices, automations, [], world), key: result.key !== automationKey ? result.key : null, madeFrom: result.entry.madeFrom });
     }, 200);
     return () => clearTimeout(timer);
-  }, [reading, text, vocabulary, automationKey, madeFrom, madeFromFixed, devices, automations]);
+  }, [reading, text, vocabulary, automationKey, madeFrom, madeFromFixed, devices, automations, world]);
 
   const schema = useMemo(() => (vocabulary ? entryJsonSchema(vocabulary, 'automation') : null), [vocabulary]);
   return { text, change, open, problems, reading, ready: vocabulary !== null, error, schema };

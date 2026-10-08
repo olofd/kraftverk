@@ -1,5 +1,5 @@
 import { EVERY_SECONDS, HOLD_SECONDS } from '../clock.ts';
-import type { Rule, RuleTrigger, Step, Trigger } from '../rule.ts';
+import { ANYONE, AXES, OWN_HOME, type Expr, type Rule, type RuleTrigger, type Step, type Trigger } from '../rule.ts';
 import type { FieldSpec, KindDocs, KindIcon, Say } from './spec.ts';
 
 /*
@@ -9,7 +9,7 @@ import type { FieldSpec, KindDocs, KindIcon, Say } from './spec.ts';
   that handles triggers reads it from here.
 */
 
-export type TriggerKind = 'at' | 'every' | 'event' | 'becomes';
+export type TriggerKind = 'at' | 'every' | 'event' | 'becomes' | 'arrives' | 'leaves' | 'firstArrives' | 'lastLeaves' | 'empties' | 'occupied' | 'modeBecomes' | 'modeChanges';
 
 /** A trigger of one kind. */
 export type TriggerOf<K extends TriggerKind> = K extends TriggerKind ? Extract<Trigger, Record<K, unknown>> : never;
@@ -112,8 +112,190 @@ const BECOMES: TriggerSpec<'becomes'> = {
   },
 };
 
+// --- people and places --------------------------------------------------------------------------
+
+/** Who, in words: a role's name, or anyone of the family. */
+const whoWords = (who: string, say: Say) => (who === ANYONE ? 'someone' : say.name(who));
+/** A place, in words: a role's name, or the automation's own home. */
+const placeWords = (place: string, say: Say) => (place === OWN_HOME ? 'home' : say.name(place));
+
+const HOLD = { min: HOLD_SECONDS.min, max: HOLD_SECONDS.max };
+
+const ARRIVES: TriggerSpec<'arrives'> = {
+  kind: 'arrives',
+  label: 'When someone arrives',
+  icon: 'log-in',
+  says: 'When a person, one of several, or anyone of the family comes home — or to a zone, or into a room.',
+  fields: [
+    { data: ['arrives', 'who'], key: 'arrives', type: { type: 'who', anyone: ANYONE }, required: true, label: 'Who', help: 'A person, people, or someone: anyone of the family.' },
+    { data: ['arrives', 'at'], key: 'at', type: { type: 'place' }, required: true, label: 'At', help: 'Home — this automation’s own — another home, a zone, a room.' },
+  ],
+  blank: () => ({ arrives: { who: ANYONE, at: OWN_HOME } }),
+  words: (trigger, say) => `When ${whoWords(trigger.arrives.who, say)} arrives ${trigger.arrives.at === OWN_HOME ? 'home' : `at ${placeWords(trigger.arrives.at, say)}`}`,
+  docs: {
+    summary:
+      'When someone comes to a place, as presence says — as far as each shares: a role a person fills, any of a role people fill, or `someone`, anyone of the family; at `home`, the automation’s own, or a role a home, a zone or a room fills. The run knows who as `run.who`.',
+    examples: ['arrives: someone\nat: home', 'arrives: olof\nat: work', 'arrives: children\nat: school'],
+  },
+};
+
+const LEAVES: TriggerSpec<'leaves'> = {
+  kind: 'leaves',
+  label: 'When someone leaves',
+  icon: 'log-out',
+  says: 'When a person, one of several, or anyone of the family leaves home — or a zone, or a room.',
+  fields: [
+    { data: ['leaves', 'who'], key: 'leaves', type: { type: 'who', anyone: ANYONE }, required: true, label: 'Who', help: 'A person, people, or someone: anyone of the family.' },
+    { data: ['leaves', 'at'], key: 'at', type: { type: 'place' }, required: true, label: 'Leaves', help: 'Home — this automation’s own — another home, a zone, a room.' },
+  ],
+  blank: () => ({ leaves: { who: ANYONE, at: OWN_HOME } }),
+  words: (trigger, say) => `When ${whoWords(trigger.leaves.who, say)} leaves ${placeWords(trigger.leaves.at, say)}`,
+  docs: {
+    summary: 'When someone leaves a place, as presence says — minutes out of its geofence, not a wobble at its edge: the same `who` and `at` as `arrives`. The run knows who as `run.who`.',
+    examples: ['leaves: someone\nat: home', 'leaves: olof\nat: work'],
+  },
+};
+
+const FIRST_ARRIVES: TriggerSpec<'firstArrives'> = {
+  kind: 'firstArrives',
+  label: 'When the first arrives',
+  icon: 'user-check',
+  says: 'When the first of the family — or of some of you — comes to a place none of them was at.',
+  fields: [
+    { data: ['firstArrives', 'at'], key: 'first arrives', type: { type: 'place' }, required: true, label: 'At' },
+    { data: ['firstArrives', 'of'], key: 'of', type: { type: 'crowd' }, required: false, label: 'The first of', help: 'Some of you — the children. Everyone in the family, unless you choose.' },
+  ],
+  blank: () => ({ firstArrives: { at: OWN_HOME } }),
+  words: (trigger, say) => `When the first ${trigger.firstArrives.of ? `of ${say.name(trigger.firstArrives.of)}` : 'of the family'} arrives ${trigger.firstArrives.at === OWN_HOME ? 'home' : `at ${placeWords(trigger.firstArrives.at, say)}`}`,
+  docs: {
+    summary: 'When the first of the family — or, with `of`, of a role people fill — comes to a place none of them was at, as far as each shares: the place going from nobody to somebody. Its state survives a restart.',
+    examples: ['first arrives: home', 'first arrives: home\nof: children'],
+  },
+};
+
+const LAST_LEAVES: TriggerSpec<'lastLeaves'> = {
+  kind: 'lastLeaves',
+  label: 'When the last leaves',
+  icon: 'user-x',
+  says: 'When the last of the family — or of some of you — leaves a place: nobody of them is there.',
+  fields: [
+    { data: ['lastLeaves', 'at'], key: 'last leaves', type: { type: 'place' }, required: true, label: 'Leaves' },
+    { data: ['lastLeaves', 'of'], key: 'of', type: { type: 'crowd' }, required: false, label: 'The last of', help: 'Some of you — the grown-ups. Everyone in the family, unless you choose.' },
+  ],
+  blank: () => ({ lastLeaves: { at: OWN_HOME } }),
+  words: (trigger, say) => `When the last ${trigger.lastLeaves.of ? `of ${say.name(trigger.lastLeaves.of)}` : 'of the family'} leaves ${placeWords(trigger.lastLeaves.at, say)}`,
+  docs: {
+    summary: 'When the last of the family — or, with `of`, of a role people fill — leaves a place, as far as each shares: the place going from somebody to nobody. "When the last one leaves, set away" is this.',
+    examples: ['last leaves: home', 'last leaves: home\nof: grownUps'],
+  },
+};
+
+const EMPTIES: TriggerSpec<'empties'> = {
+  kind: 'empties',
+  label: 'When a room empties',
+  icon: 'square',
+  says: 'When nobody is in a room any more — whoever was — and, if you like, has not been for a while.',
+  fields: [
+    { data: ['empties', 'place'], key: 'empties', type: { type: 'place' }, required: true, label: 'Which room', help: 'A room, a floor, a home: whatever its sensors say of it.' },
+    { data: ['empties', 'heldFor'], key: 'for', type: { type: 'duration', ...HOLD }, required: false, label: 'And it has been empty for', help: 'So walking out for a moment does not count.' },
+  ],
+  blank: () => ({ empties: { place: '', heldFor: { value: 10, unit: 'min' } } }),
+  words: (trigger, say) => (trigger.empties.heldFor && say.seconds(trigger.empties.heldFor) !== 0 ? `When nobody has been in ${placeWords(trigger.empties.place, say)} for ${say.duration(trigger.empties.heldFor)}` : `When nobody is in ${placeWords(trigger.empties.place, say)} any more`),
+  docs: {
+    summary: 'When a place has nobody in it, whoever was there — by what stands in it: motion, a presence radar, a door shut with someone inside, a count — and, with `for`, has had nobody that long.',
+    examples: ['empties: bathroom\nfor: 10 min', 'empties: home'],
+  },
+};
+
+const OCCUPIED: TriggerSpec<'occupied'> = {
+  kind: 'occupied',
+  label: 'When someone is in a room',
+  icon: 'users',
+  says: 'When someone comes into a room — whoever it is — and, if you like, has stayed a while.',
+  fields: [
+    { data: ['occupied', 'place'], key: 'is occupied', type: { type: 'place' }, required: true, label: 'Which room' },
+    { data: ['occupied', 'heldFor'], key: 'for', type: { type: 'duration', ...HOLD }, required: false, label: 'And has been for', help: 'So passing through does not count.' },
+  ],
+  blank: () => ({ occupied: { place: '' } }),
+  words: (trigger, say) => (trigger.occupied.heldFor && say.seconds(trigger.occupied.heldFor) !== 0 ? `When someone has been in ${placeWords(trigger.occupied.place, say)} for ${say.duration(trigger.occupied.heldFor)}` : `When someone is in ${placeWords(trigger.occupied.place, say)}`),
+  docs: {
+    summary: 'When a place has someone in it, whoever they are — by what stands in it — and, with `for`, has had that long.',
+    examples: ['is occupied: hallway', 'is occupied: office\nfor: 5 min'],
+  },
+};
+
+const MODE_BECOMES: TriggerSpec<'modeBecomes'> = {
+  kind: 'modeBecomes',
+  label: 'When the mode becomes',
+  icon: 'moon',
+  says: 'When a home goes into a mode: away, vacation, night — or one of your own.',
+  fields: [
+    { data: ['modeBecomes', 'mode'], key: 'mode becomes', type: { type: 'mode' }, required: true, label: 'Which mode' },
+    { data: ['modeBecomes', 'at'], key: 'at', type: { type: 'place' }, required: false, label: 'Of which home', help: 'This automation’s own, unless you choose another.' },
+  ],
+  blank: () => ({ modeBecomes: { mode: 'away' } }),
+  words: (trigger, say) => `When ${trigger.modeBecomes.at && trigger.modeBecomes.at !== OWN_HOME ? `${say.name(trigger.modeBecomes.at)}’s` : 'the home’s'} mode becomes ${say.mode(trigger.modeBecomes.mode)}`,
+  docs: {
+    summary: 'When a home goes into a mode, by its key — whoever set it: a person, another automation, a vacation beginning as planned. The automation’s own home, unless `at` names another.',
+    examples: ['mode becomes: away', 'mode becomes: night', 'mode becomes: vacation\nat: cabin'],
+  },
+};
+
+const MODE_CHANGES: TriggerSpec<'modeChanges'> = {
+  kind: 'modeChanges',
+  label: 'When the mode changes',
+  icon: 'home',
+  says: 'When a home’s mode changes on one axis, to whichever: whether anyone is home, or the time of day.',
+  fields: [
+    { data: ['modeChanges', 'axis'], key: 'mode changes', type: { type: 'choice', options: AXES.map((axis) => ({ value: axis, label: axis === 'presence' ? 'Whether anyone is home' : 'The time of day' })) }, required: true, label: 'Which' },
+    { data: ['modeChanges', 'at'], key: 'at', type: { type: 'place' }, required: false, label: 'Of which home', help: 'This automation’s own, unless you choose another.' },
+  ],
+  blank: () => ({ modeChanges: { axis: 'day' } }),
+  words: (trigger, say) => `When ${trigger.modeChanges.at && trigger.modeChanges.at !== OWN_HOME ? `${say.name(trigger.modeChanges.at)}’s` : 'the home’s'} ${trigger.modeChanges.axis === 'presence' ? 'mode of presence' : 'time of day'} changes`,
+  docs: {
+    summary: 'When a home’s mode on an axis — `presence` or `day` — changes, to whichever: what to do as evening comes, and again as night does, read from `home.day`.',
+    examples: ['mode changes: day', 'mode changes: presence\nat: cabin'],
+  },
+};
+
 /** Every kind of trigger, by its key: the table everything that handles triggers reads. */
-export const TRIGGER_KINDS: { readonly [K in TriggerKind]: TriggerSpec<K> } = { at: AT, every: EVERY, event: EVENT, becomes: BECOMES };
+export const TRIGGER_KINDS: { readonly [K in TriggerKind]: TriggerSpec<K> } = {
+  at: AT,
+  every: EVERY,
+  event: EVENT,
+  becomes: BECOMES,
+  arrives: ARRIVES,
+  leaves: LEAVES,
+  firstArrives: FIRST_ARRIVES,
+  lastLeaves: LAST_LEAVES,
+  empties: EMPTIES,
+  occupied: OCCUPIED,
+  modeBecomes: MODE_BECOMES,
+  modeChanges: MODE_CHANGES,
+};
+
+/** The kinds that start a run as something happens — someone arrived, a mode changed — as a device's event does. */
+export const HAPPENINGS: readonly TriggerKind[] = ['event', 'arrives', 'leaves', 'modeBecomes', 'modeChanges'];
+
+/** What each part of a group is called within a condition made from a trigger: never a role's name. */
+const EACH = 'eachOfThem';
+
+/**
+ * The condition a trigger waits to turn true, and how long it must hold —
+ * for one that is a condition: `becomes`, and what people and places do
+ * that is so for a while (the first arrived, a room empty). Null for one
+ * that happens: a time, an event, someone arriving.
+ */
+export function edgeOf(trigger: Trigger): { condition: Expr; heldFor?: Expr } | null {
+  const anyOf = (at: string, of: string | undefined): Expr =>
+    of ? { across: 'any', as: EACH, group: of, of: { presentAt: { who: EACH, place: at } } } : { compare: 'gt', left: { read: { role: at, means: 'people' } }, right: { value: 0 } };
+  if ('becomes' in trigger) return { condition: trigger.becomes, ...(trigger.heldFor ? { heldFor: trigger.heldFor } : {}) };
+  if ('firstArrives' in trigger) return { condition: anyOf(trigger.firstArrives.at, trigger.firstArrives.of) };
+  if ('lastLeaves' in trigger) return { condition: { not: anyOf(trigger.lastLeaves.at, trigger.lastLeaves.of) } };
+  if ('empties' in trigger) return { condition: { not: { read: { role: trigger.empties.place, means: 'occupied' } } }, ...(trigger.empties.heldFor ? { heldFor: trigger.empties.heldFor } : {}) };
+  if ('occupied' in trigger) return { condition: { read: { role: trigger.occupied.place, means: 'occupied' } }, ...(trigger.occupied.heldFor ? { heldFor: trigger.occupied.heldFor } : {}) };
+  return null;
+}
 
 /**
  * The fields every trigger has, whatever its kind: after its own in a file,
@@ -157,7 +339,16 @@ export const TRIGGER_FIELDS_DOCS: KindDocs = {
 };
 
 /** The order the editor offers them in. */
-export const TRIGGER_KIND_ORDER: readonly TriggerKind[] = ['at', 'every', 'becomes', 'event'];
+export const TRIGGER_KIND_ORDER: readonly TriggerKind[] = ['at', 'every', 'becomes', 'event', 'arrives', 'leaves', 'firstArrives', 'lastLeaves', 'empties', 'occupied', 'modeBecomes', 'modeChanges'];
+
+/**
+ * The kind a file's trigger is, by its verb — its first field's key. Several
+ * verbs at once, as `arrives` with its `at`: the one that is not `at`.
+ */
+export function triggerKindOfVerbs(keys: readonly string[]): TriggerKind | null {
+  const found = TRIGGER_KIND_ORDER.filter((kind) => keys.includes(TRIGGER_KINDS[kind].fields[0]!.key));
+  return found.find((kind) => kind !== 'at') ?? found[0] ?? null;
+}
 
 /** Which kind a trigger is — by its key; one of no kind is an error, never taken for another. */
 export function triggerKind(trigger: Trigger): TriggerKind {

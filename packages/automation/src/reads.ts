@@ -3,8 +3,9 @@ import { capabilitySpec, isCapability, type CapabilityNeed } from '@kraftverk/de
 import { expressionsIn, mapChildren } from './kinds/exprs.ts';
 import { EXPRESSION_FIELDS, fieldValue, withField, type FieldSpec } from './kinds/spec.ts';
 import { branchesOf, stepSpec } from './kinds/steps.ts';
-import { stepListsOf, triggerFields, triggerSpec } from './kinds/triggers.ts';
-import type { Command, Expr, Rule, RuleTrigger, Step, Write } from './rule.ts';
+import { edgeOf, stepListsOf, triggerFields, triggerKind, triggerSpec } from './kinds/triggers.ts';
+import { messageExprs } from './message.ts';
+import { isWorldRole, OWN_HOME, type Command, type Expr, type Rule, type RuleTrigger, type Step, type Write } from './rule.ts';
 
 /*
   What a rule reads and changes, by role: what its conditions read, what its
@@ -90,6 +91,7 @@ export function* ruleExpressions(rule: Rule): Generator<Expr> {
         if (value === undefined) continue;
         if (EXPRESSION_FIELDS.has(field.type.type)) yield value as Expr;
         else if (field.type.type === 'args') yield* Object.values(value as Record<string, Expr>);
+        else if (field.type.type === 'message') yield* messageExprs(String(value));
         else if (field.type.type === 'steps') yield* inSteps(value as readonly Step[]);
       }
     }
@@ -119,6 +121,14 @@ export function ruleUses(written: Rule): {
   groups: string[];
   /** The windows of the day it looks at: when each opens and closes, something may turn true. */
   windows: { from: Expr; to: Expr }[];
+  /**
+   * Whether it reads the family's world — who is where, a room's occupancy, a
+   * home's mode — or waits for it: what someone arriving, a room emptying or
+   * a mode changing makes it look again at.
+   */
+  world: boolean;
+  /** The roles of people and places it names: in what starts it, what it reads, and what it does. */
+  places: string[];
 } {
   // What a "for each"'s steps do to each part, they do to its group.
   const rule = eachAsGroup(written);
@@ -130,10 +140,27 @@ export function ruleUses(written: Rule): {
   const starts: string[] = [];
   const groups: string[] = [];
   const awaits: { role: string; event: string }[] = [];
+  /** A place, read as a part is: the family's world, not a device's reading. */
+  const ofWorld = (role: string) => role === OWN_HOME || Boolean(rule.roles[role] && isWorldRole(rule.roles[role]!));
+  let world = rule.when.some((trigger) => edgeOf(trigger) !== null && !('becomes' in trigger)) || rule.when.some((trigger) => ['arrives', 'leaves', 'modeBecomes', 'modeChanges'].includes(triggerKind(trigger)));
+  const places = new Set<string>();
+  /** A field that names who or where: its role, when it is one. */
+  const named = (construct: object, fields: readonly FieldSpec[]) => {
+    for (const field of fields) {
+      if (field.type.type !== 'who' && field.type.type !== 'crowd' && field.type.type !== 'place') continue;
+      const value = fieldValue(construct, field);
+      if (typeof value === 'string' && rule.roles[value]) places.add(value);
+    }
+  };
+  for (const trigger of rule.when) named(trigger, triggerSpec(trigger).fields);
   // Every expression within, by its kind's children (kinds/exprs.ts): the readings, parts, windows and functions it names.
   for (const top of ruleExpressions(rule)) {
     for (const each of expressionsIn(top)) {
-      if ('read' in each) reads.push(each.read);
+      if ('presentAt' in each || ('read' in each && ofWorld(each.read.role))) {
+        world = true;
+        for (const role of 'presentAt' in each ? [each.presentAt.who, each.presentAt.place] : 'read' in each ? [each.read.role] : []) if (rule.roles[role]) places.add(role);
+      } else if ('across' in each && rule.roles[each.group] && isWorldRole(rule.roles[each.group]!)) places.add(each.group);
+      else if ('read' in each) reads.push(each.read);
       else if ('history' in each) reads.push(each.of);
       else if ('distance' in each) reads.push(each.distance, ...(each.to ? [each.to] : []));
       else if ('reachable' in each) reaches.push(each.reachable);
@@ -146,6 +173,7 @@ export function ruleUses(written: Rule): {
     for (const step of steps) {
       if ('write' in step) writes.push(step.write);
       awaits.push(...eventsIn(step, stepSpec(step).fields));
+      named(step, stepSpec(step).fields);
       for (const field of stepSpec(step).fields) {
         const value = fieldValue(step, field);
         if (value === undefined) continue;
@@ -159,7 +187,7 @@ export function ruleUses(written: Rule): {
   for (const list of stepListsOf(rule)) walkSteps(list.steps);
   // Each trigger by its kind's fields (kinds/triggers.ts): the events it waits for.
   const events = rule.when.flatMap((trigger) => eventsIn(trigger, triggerSpec(trigger).fields));
-  return { reads, events, awaits, calls, reaches: [...new Set(reaches)], writes, starts: [...new Set(starts)], groups: [...new Set(groups)], windows };
+  return { reads, events, awaits, calls, reaches: [...new Set(reaches)], writes, starts: [...new Set(starts)], groups: [...new Set(groups)], windows, world, places: [...places] };
 }
 
 /** The events a construct names, by its fields: each with the role whose part raises it — the field its event field names. */
@@ -204,7 +232,7 @@ export const takesSteps = (rule: Rule): boolean =>
   stepListsOf(rule).some((list) => list.steps.some((step) => !stepSpec(step).atOnce)) || Boolean(rule.otherwise?.length);
 
 /** Whether a rule waits for a condition to come true. */
-export const hasConditions = (rule: Rule): boolean => rule.when.some((trigger) => 'becomes' in trigger);
+export const hasConditions = (rule: Rule): boolean => rule.when.some((trigger) => edgeOf(trigger) !== null);
 
 /**
  * Whether an automation can keep things so (`recheckMinutes`): it waits for

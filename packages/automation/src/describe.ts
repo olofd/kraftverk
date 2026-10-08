@@ -12,7 +12,8 @@ import type { Say } from './kinds/spec.ts';
 import { branchesOf, stepSpec, type StepKind, type StepSay } from './kinds/steps.ts';
 import { TRIGGER_KINDS, triggerKind } from './kinds/triggers.ts';
 import { convert, UNITS } from '@kraftverk/device-sdk';
-import { isAutomationRole, isGroupRole, memberRole, type Command, type CompareOp, type Expr, type Rule, type RunFact, type Step, type Trigger, type Write } from './rule.ts';
+import { isGroupRole, isPartRole, isPeopleRole, isPlaceRole, memberRole, OWN_HOME, type Command, type CompareOp, type Expr, type Rule, type RunFact, type Step, type Trigger, type Write } from './rule.ts';
+import { sayMessage } from './message.ts';
 
 /*
   A rule in words (docs/AUTOMATIONS-UX.md): its triggers, conditions and
@@ -63,7 +64,19 @@ export function paramText(schema: ConfigSchema, name: string, value: Value): str
 }
 
 /** A fact of the run, as a sentence names it. */
-const RUN_FACT_WORDS: Record<RunFact, string> = { trigger: 'what started it', event: 'what the device reported' };
+const RUN_FACT_WORDS: Record<RunFact, string> = { trigger: 'what started it', event: 'what the device reported', who: 'who came or went' };
+
+/** The modes every family has, as a sentence names them. */
+const MODE_WORDS: Readonly<Record<string, string>> = { home: 'home', away: 'away', vacation: 'on vacation', day: 'day', evening: 'evening', night: 'night' };
+
+/** A mode by its key, mid-sentence: "away", "on vacation", "guests over". */
+export const modeWords = (key: string): string => MODE_WORDS[key] ?? key.replace(/-/g, ' ');
+
+/** A place's name, the automation's own home being "home". */
+const withHome = (name: (role: string) => string) => (role: string) => (role === OWN_HOME ? 'home' : name(role));
+
+/** Where a place is, after "at": "at home", "at Work". */
+const atPlace = (place: string, name: (role: string) => string) => (place === OWN_HOME ? 'at home' : `at ${name(place)}`);
 
 const OP_WORDS: Record<CompareOp, string> ={ lt: 'is below', le: 'is at most', gt: 'is above', ge: 'is at least', eq: 'is', ne: 'is not' };
 
@@ -79,7 +92,8 @@ export const whose = (name: string, thing: string): string => {
 };
 
 /** One expression of a rule, in words, with its settings filled in: "Garage station's charge is below 15 %". */
-export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<string, Value>>, name: (role: string) => string, vocabulary?: RuleVocabulary): string {
+export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<string, Value>>, named: (role: string) => string, vocabulary?: RuleVocabulary): string {
+  const name = withHome(named);
   const param = (key: string) => paramText(rule.params, key, settingValue(rule, params, key));
   /**
    * Which trigger started the run, compared with one's id: said as that
@@ -132,7 +146,18 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
       case 'read': {
         // What it reports, not chosen yet: "a reading" rather than an empty name.
         const { role, means } = (expr as ExprOf<'read'>).read;
+        // Of a place: how many are there, whether anyone is, its mode.
+        const spec = rule.roles[role];
+        if (role === OWN_HOME || (spec && isPlaceRole(spec))) {
+          if (means === 'people') return `how many of the family are ${atPlace(role, name)}`;
+          if (means === 'occupied') return `someone is in ${name(role)}`;
+          return whose(name(role), means === 'day' ? 'time of day' : 'mode');
+        }
         return whose(name(role), standardMeaning(means)?.label.toLowerCase() || means || 'reading');
+      }
+      case 'presentAt': {
+        const { who, place } = (expr as ExprOf<'presentAt'>).presentAt;
+        return `${name(who)} is ${atPlace(place, name)}`;
       }
       case 'history': {
         // "the average of Garage station’s charge over the last 1 h".
@@ -160,7 +185,7 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
         // What is said of each part, each called as its name says — "each charger’s power is above 10 W" — then of the group.
         const { across: fn, as, group, of } = expr as ExprOf<'across'>;
         const spec = rule.roles[group];
-        const roles = spec && isGroupRole(spec) ? { ...rule.roles, [as]: memberRole(spec) } : rule.roles;
+        const roles = spec && isGroupRole(spec) ? { ...rule.roles, [as]: memberRole(spec) } : spec && isPeopleRole(spec) ? { ...rule.roles, [as]: { person: true as const, label: as } } : rule.roles;
         const each = describeExpr({ ...rule, roles }, of, params, (role) => (role === as ? eachSaid(as) : name(role)), vocabulary);
         return ACROSS_FNS[fn].words(name(group), each);
       }
@@ -250,7 +275,7 @@ export const eachSaid = (name: string): string => `each ${name.replace(/([a-z0-9
 /** An event as its capability names it — "mains lost" — or, a type's own, its id in words. */
 const eventWords = (rule: Rule, role: string, event: string): string => {
   const spec = rule.roles[role];
-  const named = spec && !isAutomationRole(spec) ? [...spec.capabilities, ...(spec.oneOf ?? [])] : [];
+  const named = spec && (isPartRole(spec) || isGroupRole(spec)) ? [...spec.capabilities, ...(spec.oneOf ?? [])] : [];
   const label = named.flatMap((capability) => (isCapability(capability) ? [capabilitySpec(capability).events?.[event]?.label] : [])).find(Boolean);
   return (label ?? event.replace(/[._-]+/g, ' ')).toLowerCase();
 };
@@ -273,7 +298,8 @@ export function daysText(days: readonly Weekday[] | undefined): string {
  * person reads to know how often it looks, and at what. None: it runs when
  * played, or started by another automation.
  */
-export function describeTriggers(rule: Rule, params: Readonly<Record<string, Value>>, name: (role: string) => string, vocabulary?: RuleVocabulary): string[] {
+export function describeTriggers(rule: Rule, params: Readonly<Record<string, Value>>, named: (role: string) => string, vocabulary?: RuleVocabulary): string[] {
+  const name = withHome(named);
   const text = (expr: Expr): string => describeExpr(rule, expr, params, name, vocabulary);
   // Each kind says itself (kinds/triggers.ts); this hands it the words for what it holds.
   const say: Say = {
@@ -282,6 +308,7 @@ export function describeTriggers(rule: Rule, params: Readonly<Record<string, Val
     seconds: (expr) => secondsNow(expr, settledScope(rule, params)),
     days: daysText,
     name,
+    mode: modeWords,
     event: (role, event) => eventWords(rule, role, event),
   };
   return rule.when.map((trigger) => {
@@ -368,7 +395,20 @@ function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (rol
       return chosen ? steps(chosen, each) : [each(step)];
     });
   // What each kind's words are handed (kinds/steps.ts): how the parts of a step read.
-  const say: StepSay = { expr: text, seconds, count, name, command, write, briefs: (list) => briefs(list), memory: (key) => memoryWords(rule, key), event: (role, event) => eventWords(rule, role, event) };
+  const say: StepSay = {
+    expr: text,
+    seconds,
+    count,
+    name: withHome(name),
+    command,
+    write,
+    briefs: (list) => briefs(list),
+    memory: (key) => memoryWords(rule, key),
+    event: (role, event) => eventWords(rule, role, event),
+    mode: modeWords,
+    // Each value in braces said in words: "{Garage station’s charge}".
+    message: (words) => sayMessage(words, (expr) => `{${text(expr)}}`),
+  };
   const lines = (list: readonly Step[] | undefined): StepLine[] => steps(list, line);
   /** The words within a "for each": each part of its group said as what its steps call it — "each charger". */
   const within = (each: Extract<Step, { forEach: unknown }>['forEach']) => {

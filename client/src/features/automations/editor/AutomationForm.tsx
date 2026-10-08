@@ -3,7 +3,7 @@ import { Button, Input, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import type { AutomationSettings } from '@kraftverk/api-client/config';
 import { changeAutomation, describeError, withConfirmation, type AutomationDraftView, type AutomationView } from '@kraftverk/api-client';
-import { capitalise, isAutomationRole, OTHERWISE, pruned, rolesOf, sameParts, THEN, WHILE_RUNNING, type ProblemArea, type RoleBinding, type WhileRunning } from '@kraftverk/automation';
+import { capitalise, fillWorld, isAutomationRole, isGroupRole, isPartRole, OTHERWISE, pruned, roleKind, rolesOf, sameParts, THEN, WHILE_RUNNING, type ProblemArea, type RoleBinding, type WhileRunning } from '@kraftverk/automation';
 import { capabilitiesOf, configDefaults, meetsNeed } from '@kraftverk/device-sdk';
 import { Card, Chips, haptic, Icon, SchemaForm, SegmentedControl } from '@kraftverk/ui';
 
@@ -22,6 +22,7 @@ import { BlockList } from './Blocks';
 import { EditorProvider, useEditor, useEditorKit, type Draft } from './context';
 import { GroupParts } from './GroupParts';
 import { OnlyIf, Triggers } from './Triggers';
+import { fillChoices, useWorldOptions } from './world';
 
 /*
   An automation being changed, or made (docs/AUTOMATIONS-UX.md): the same
@@ -68,11 +69,12 @@ export function AutomationForm({
 }) {
   const { devices, loading } = useDevices();
   const { kit, automations, error } = useEditorKit();
+  const world = useWorldOptions();
   const [draft, setDraft] = useState<Draft>(initial);
   const title = existing ? existing.name : 'New automation';
 
   // Its devices too, before it is drawn: what fills each role is named from them, in the form and in its YAML.
-  if (!kit || !automations || loading) {
+  if (!kit || !automations || !world || loading) {
     return (
       <Screen back={back.label} backTo={back.to} title={title}>
         <Loading error={error} />
@@ -88,6 +90,7 @@ export function AutomationForm({
         automations: automations.filter((automation) => automation.id !== existing?.id),
         functions: kit.functions,
         prefer: prefer ?? null,
+        world,
       }}
     >
       <Editing existing={existing} initial={initial} madeFrom={madeFrom} back={back} title={title} view={view ?? 'form'} onSaved={onSaved} onCancel={onCancel} onView={onView} />
@@ -172,7 +175,7 @@ function Editing({
     const turn = ++asked.current;
     const timer = setTimeout(() => {
       api.automations
-        .draft({ rule: kept.rule, roles: kept.roles, groups: kept.groups, starts: kept.starts }, existing?.id ?? null)
+        .draft({ rule: kept.rule, roles: kept.roles, groups: kept.groups, starts: kept.starts, world: kept.world ?? {} }, existing?.id ?? null)
         .then((answer) => turn === asked.current && setCheck(answer))
         .catch(() => undefined);
     }, 300);
@@ -189,7 +192,7 @@ function Editing({
     setBusy(true);
     setProblem(null);
     try {
-      const body = { name: draft.name.trim(), rule: kept.rule, roles: kept.roles, groups: kept.groups, starts: kept.starts };
+      const body = { name: draft.name.trim(), rule: kept.rule, roles: kept.roles, groups: kept.groups, starts: kept.starts, world: kept.world ?? {} };
       // What its YAML changed beyond what the form edits.
       const changes = { ...Object.fromEntries(settingsChanged.map((name) => [name, settings[name]])), ...(key && key !== existing?.key ? { key } : {}) };
       const letAct = settings.mode === 'act' && before.mode !== 'act';
@@ -427,9 +430,9 @@ function Problems({ list }: { list: readonly string[] }) {
 function Uses({ problems }: { problems: readonly string[] }) {
   const editor = useEditor();
   const tone = useTone();
-  const { parts, groups, automations } = rolesOf(editor.draft.rule);
-  if (!parts.length && !groups.length && !automations.length) return null;
-  const choices = (spec: (typeof parts)[number][1]) => editor.parts((description, part) => !isAutomationRole(spec) && meetsNeed(spec, capabilitiesOf(description, part)));
+  const { parts, groups, automations, world } = rolesOf(editor.draft.rule);
+  if (!parts.length && !groups.length && !automations.length && !world.length) return null;
+  const choices = (spec: (typeof parts)[number][1]) => editor.parts((description, part) => (isPartRole(spec) || isGroupRole(spec)) && meetsNeed(spec, capabilitiesOf(description, part)));
   // What another automation already uses for the same roles, in one tap: a stop made after its start.
   const fits = (role: string, binding: RoleBinding) => {
     const spec = editor.draft.rule.roles[role];
@@ -437,7 +440,7 @@ function Uses({ problems }: { problems: readonly string[] }) {
   };
   const same = sameParts(editor.draft, editor.automations, fits).slice(0, 2);
   return (
-    <Group icon="box" title="Uses" summary={`${parts.length + groups.length + automations.length}`}>
+    <Group icon="box" title="Uses" summary={`${parts.length + groups.length + automations.length + world.length}`}>
       <Problems list={problems} />
       {same.map((other) => (
         <Button
@@ -476,6 +479,25 @@ function Uses({ problems }: { problems: readonly string[] }) {
           <GroupParts role={role} label={spec.label} />
         </YStack>
       ))}
+      {/* Each person, people and place it names: who and where, changed here for every block naming them. */}
+      {world.map(([role, spec]) => {
+        const kind = roleKind(spec) as 'person' | 'people' | 'place';
+        const fill = editor.draft.world?.[role];
+        return (
+          <YStack key={role} gap="$1.5">
+            <Text fontSize={13} fontWeight="600" color="$muted">
+              {spec.label}
+            </Text>
+            <Picker
+              label={spec.label}
+              chosen={fill ? editor.name(role) : null}
+              placeholder={kind === 'place' ? 'Choose a place' : kind === 'person' ? 'Choose someone' : 'Choose who'}
+              options={fillChoices(editor.world, kind).map((choice) => ({ key: choice.key, title: choice.title, ...(choice.subtitle ? { subtitle: choice.subtitle } : {}), value: choice.fill, selected: JSON.stringify(fill) === JSON.stringify(choice.fill) }))}
+              onPick={(next) => editor.change((draft) => fillWorld(draft, role, next))}
+            />
+          </YStack>
+        );
+      })}
       {automations.map(([role, spec]) => (
         <YStack key={role} gap="$1.5">
           <Text fontSize={13} fontWeight="600" color="$muted">

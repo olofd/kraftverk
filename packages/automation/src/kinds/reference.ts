@@ -63,6 +63,18 @@ function holds(field: FieldSpec, fields: readonly FieldSpec[]): string {
       return 'each argument by its name: a value, or an expression';
     case 'steps':
       return `steps${type.sure === false ? ' — none that waits for what might not come' : ''}${type.nonEmpty ? '; at least one' : ''}`;
+    case 'who':
+      return `who: a role a person fills, or people fill — \`{ person: key }\`, \`{ people: [keys] }\` under \`uses\`${type.anyone ? ` — or \`${type.anyone}\`, ${type.anyone === 'someone' ? 'anyone' : 'everyone'} in the family` : ''}`;
+    case 'crowd':
+      return 'a role people fill: `{ people: [keys] }` under `uses`';
+    case 'place':
+      return 'a place: `home`, the automation’s own, or a role a home, a zone or a space fills — `{ zone: key }`, `{ space: key }` under `uses`';
+    case 'mode':
+      return 'a mode, by its key: `home`, `away`, `vacation`, `day`, `evening`, `night`, or one of the family’s own';
+    case 'choice':
+      return `one of ${type.options.map((option) => `\`${option.value}\``).join(', ')}`;
+    case 'message':
+      return `words of your own, at most ${type.max} characters — a value in braces said as it is then: \`{station.charge}\``;
   }
 }
 

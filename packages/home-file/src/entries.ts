@@ -1,4 +1,5 @@
-import type { AutomationMode, Rule } from '@kraftverk/automation';
+import { keyFrom } from '@kraftverk/device-sdk';
+import type { AutomationMode, PlaceKind, Rule, WorldFill, WorldUse } from '@kraftverk/automation';
 
 import type { AutomationEntry, DeviceEntry, DevicePeopleEntry, PlaceEntry, Scalar, SecretValue } from './document.ts';
 import type { Use } from '@kraftverk/automation';
@@ -31,7 +32,25 @@ export type AutomationSource = {
   groups: Readonly<Record<string, readonly { device: string; part: string }[]>>;
   /** What fills each automation role: an automation by its id. */
   starts: Readonly<Record<string, string>>;
+  /** Who and where fills each role of the family's world, by id. */
+  world?: Readonly<Record<string, WorldFill>>;
 };
+
+/**
+ * Each person's key in a file, by their id: made from their name, in the
+ * order they joined — what an export writes them as, and what one
+ * automation's YAML in the app names them by.
+ */
+export function personKeysOf(people: readonly { id: string; name: string }[]): Map<string, string> {
+  const taken = new Set<string>();
+  const keys = new Map<string, string>();
+  for (const person of people) {
+    const key = keyFrom(person.name, (candidate) => taken.has(candidate), 'person');
+    taken.add(key);
+    keys.set(person.id, key);
+  }
+  return keys;
+}
 
 /**
  * An automation as its entry: each role by the key of what fills it. A role
@@ -40,7 +59,15 @@ export type AutomationSource = {
  */
 export function automationEntryFrom(
   source: AutomationSource,
-  keyOf: { device: (id: string) => string | null; automation: (id: string) => string | null; home?: (id: string) => string | null }
+  keyOf: {
+    device: (id: string) => string | null;
+    automation: (id: string) => string | null;
+    home?: (id: string) => string | null;
+    /** A person's key; none known: the role is left unfilled. */
+    person?: (id: string) => string | null;
+    /** A zone's or a space's key, by its id. */
+    place?: (id: string, kind: PlaceKind) => string | null;
+  }
 ): { entry: AutomationEntry; gone: string[] } {
   const uses: Record<string, Use> = {};
   const gone: string[] = [];
@@ -61,6 +88,25 @@ export function automationEntryFrom(
   for (const [role, id] of Object.entries(source.starts)) {
     const key = keyOf.automation(id);
     if (key) uses[role] = { automation: key };
+    else gone.push(role);
+  }
+  // A person, people, a place: by their keys — one no longer here said, by its role.
+  for (const [role, fill] of Object.entries(source.world ?? {})) {
+    if ('everyone' in fill) {
+      uses[role] = { everyone: true };
+      continue;
+    }
+    if ('person' in fill || 'people' in fill) {
+      const ids = 'person' in fill ? [fill.person] : fill.people;
+      const keys = ids.flatMap((id) => keyOf.person?.(id) ?? []);
+      if (keys.length < ids.length) gone.push(role);
+      if ('person' in fill) {
+        if (keys[0]) uses[role] = { person: keys[0] };
+      } else uses[role] = { people: keys };
+      continue;
+    }
+    const key = fill.kind === 'home' ? (keyOf.home?.(fill.place) ?? null) : (keyOf.place?.(fill.place, fill.kind) ?? null);
+    if (key) uses[role] = { [fill.kind]: key } as WorldUse;
     else gone.push(role);
   }
   return {
@@ -86,13 +132,52 @@ export function automationEntryFrom(
  */
 export function fillsFrom(
   uses: Readonly<Record<string, Use>>,
-  idOf: { device: (key: string) => string | null; automation: (key: string) => string | null }
-): { roles: Record<string, { device: string; part: string }>; groups: Record<string, { device: string; part: string }[]>; starts: Record<string, string>; missing: { role: string; key: string }[] } {
+  idOf: {
+    device: (key: string) => string | null;
+    automation: (key: string) => string | null;
+    /** A person's id, by their key. */
+    person?: (key: string) => string | null;
+    /** A home's, a zone's or — of the automation's home — a space's id, by its key. */
+    place?: (kind: PlaceKind, key: string) => string | null;
+  }
+): {
+  roles: Record<string, { device: string; part: string }>;
+  groups: Record<string, { device: string; part: string }[]>;
+  starts: Record<string, string>;
+  world: Record<string, WorldFill>;
+  missing: { role: string; key: string }[];
+} {
   const roles: Record<string, { device: string; part: string }> = {};
   const groups: Record<string, { device: string; part: string }[]> = {};
   const starts: Record<string, string> = {};
+  const world: Record<string, WorldFill> = {};
   const missing: { role: string; key: string }[] = [];
   for (const [role, use] of Object.entries(uses)) {
+    // A person, people, a place: by their keys — one not here, said.
+    if ('everyone' in use) {
+      world[role] = { everyone: true };
+      continue;
+    }
+    if ('person' in use || 'people' in use) {
+      const keys = 'person' in use ? [use.person] : use.people;
+      const ids = keys.flatMap((key) => {
+        const id = idOf.person?.(key) ?? null;
+        if (!id) missing.push({ role, key });
+        return id ? [id] : [];
+      });
+      if ('person' in use) {
+        if (ids[0]) world[role] = { person: ids[0] };
+      } else world[role] = { people: ids };
+      continue;
+    }
+    if ('home' in use || 'zone' in use || 'space' in use) {
+      const kind: PlaceKind = 'home' in use ? 'home' : 'zone' in use ? 'zone' : 'space';
+      const key = (use as Record<PlaceKind, string>)[kind];
+      const id = idOf.place?.(kind, key) ?? null;
+      if (id) world[role] = { place: id, kind };
+      else missing.push({ role, key });
+      continue;
+    }
     if ('automation' in use) {
       const id = idOf.automation(use.automation);
       if (id) starts[role] = id;
@@ -112,7 +197,7 @@ export function fillsFrom(
     if (id) roles[role] = { device: id, part: use.part };
     else missing.push({ role, key: use.device });
   }
-  return { roles, groups, starts, missing };
+  return { roles, groups, starts, world, missing };
 }
 
 /** A device as it lives: what the server keeps, and the app is shown. */

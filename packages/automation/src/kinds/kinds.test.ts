@@ -27,8 +27,21 @@ import { TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerKind, type TriggerKind } from
 
 const KINDS = Object.keys(TRIGGER_KINDS) as TriggerKind[];
 
-/** An automation's entry around one trigger, its roles filled by made-up parts. */
-const entryOf = (trigger: unknown) => ({ uses: { station: 'garage-station', plug: 'smart-plug', charger: 'charger-plug' }, when: [trigger], do: [{ 'turn on': 'plug' }] });
+/** The family's people and places the examples name, by made-up keys. */
+const WORLD = {
+  olof: { person: 'olof' },
+  children: { people: ['anna', 'ben'] },
+  grownUps: { people: 'everyone' },
+  work: { zone: 'work' },
+  school: { zone: 'school' },
+  bathroom: { space: 'bathroom' },
+  office: { space: 'office' },
+  hallway: { space: 'hallway' },
+  cabin: { home: 'cabin' },
+};
+
+/** An automation's entry around one trigger, its roles filled by made-up parts, people and places. */
+const entryOf = (trigger: unknown) => ({ uses: { station: 'garage-station', plug: 'smart-plug', charger: 'charger-plug', ...WORLD }, when: [trigger], do: [{ 'turn on': 'plug' }] });
 
 describe('the triggers, as data', () => {
   test('every kind is offered, once, in the editor’s order', () => {
@@ -43,8 +56,8 @@ describe('the triggers, as data', () => {
       expect(spec.says.trim()).not.toBe('');
       expect(spec.docs.summary.trim()).not.toBe('');
       expect(spec.docs.examples.length).toBeGreaterThan(0);
-      // Its verb is its first field's key, and each key is said once.
-      expect(spec.fields[0]?.key).toBe(kind);
+      // Its verb is its first field's key, its first field under its kind; and each key is said once.
+      expect(spec.fields[0]?.data[0]).toBe(kind);
       expect(new Set(spec.fields.map((field) => field.key)).size).toBe(spec.fields.length);
       for (const field of spec.fields) expect(fieldSchema(field)).toBeDefined();
     });
@@ -75,7 +88,7 @@ const STEPS = Object.keys(STEP_KINDS) as StepKind[];
 
 /** An automation's entry around one step, its roles filled by made-up parts and an automation. */
 const doing = (step: unknown) => ({
-  uses: { charger: 'charger-plug', station: 'garage-station', plug: 'smart-plug', supply: 'garage-station.outlet.ac', outlets: ['smart-plug', 'garage-station.outlet.ac'], chargeTheScooter: { automation: 'charge-the-scooter' } },
+  uses: { charger: 'charger-plug', station: 'garage-station', plug: 'smart-plug', supply: 'garage-station.outlet.ac', outlets: ['smart-plug', 'garage-station.outlet.ac'], chargeTheScooter: { automation: 'charge-the-scooter' }, ...WORLD },
   // What the examples remember: a count, and a reading.
   memory: { timesCharged: 0, lastPower: '0 W' },
   // What the examples answer: a power.

@@ -22,11 +22,21 @@ const roles = z.record(z.string().min(1).max(40), PART);
 /** Each group's parts, in order: a "for each" goes through at most so many. */
 const groups = z.record(z.string().min(1).max(40), z.array(PART).max(50));
 const starts = z.record(z.string().min(1).max(40), z.string().min(1).max(80));
+/** Who and where fills each role of the family's world: a person, people — some, or everyone — a place. */
+const world = z.record(
+  z.string().min(1).max(40),
+  z.union([
+    z.object({ person: z.string().min(1).max(80) }).strict(),
+    z.object({ people: z.array(z.string().min(1).max(80)).max(50) }).strict(),
+    z.object({ everyone: z.literal(true) }).strict(),
+    z.object({ place: z.string().min(1).max(80), kind: z.enum(['home', 'zone', 'space']) }).strict(),
+  ])
+);
 /** A rule is checked by the language, not by its shape here: the home says everything wrong with it. */
 const rule = z.record(z.string(), z.unknown());
 /** Minutes between looks that keep things so, a day at most; null, never. */
 const recheckMinutes = z.number().int().min(1).max(1440).nullable();
-const draft = z.object({ rule, roles, groups, starts }).strict();
+const draft = z.object({ rule, roles, groups, starts, world: world.optional() }).strict();
 
 /** What each role starts, its automations' ids as ids. */
 const startsOf = (given: Record<string, string>): AutomationDraft['starts'] => Object.fromEntries(Object.entries(given).map(([role, id]) => [role, automationId(id)]));
@@ -34,11 +44,12 @@ const startsOf = (given: Record<string, string>): AutomationDraft['starts'] => O
 const groupsOf = (given: Record<string, { device: string; part: string }[]>): AutomationDraft['groups'] =>
   Object.fromEntries(Object.entries(given).map(([role, parts]) => [role, parts.map((binding) => ({ device: savedDeviceId(binding.device), part: binding.part }))]));
 /** A draft as the home takes it. */
-const asDraft = (input: { rule: Record<string, unknown>; roles: Record<string, { device: string; part: string }>; groups: Record<string, { device: string; part: string }[]>; starts: Record<string, string> }): AutomationDraft => ({
+const asDraft = (input: { rule: Record<string, unknown>; roles: Record<string, { device: string; part: string }>; groups: Record<string, { device: string; part: string }[]>; starts: Record<string, string>; world?: z.infer<typeof world> }): AutomationDraft => ({
   rule: input.rule as unknown as Rule,
   roles: bindingsOf(input.roles),
   groups: groupsOf(input.groups),
   starts: startsOf(input.starts),
+  world: input.world ?? {},
 });
 
 export function automationRoutes(deps: AppDeps): Hono {
@@ -126,6 +137,7 @@ export function automationRoutes(deps: AppDeps): Hono {
           roles: roles.optional(),
           groups: groups.optional(),
           starts: starts.optional(),
+          world: world.optional(),
           homeId: z.string().min(1).max(64).nullable().optional(),
           timeZone: z.string().min(1).max(64).nullable().optional(),
           mode: z.enum(AUTOMATION_MODES).optional(),

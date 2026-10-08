@@ -8,7 +8,7 @@ import type { AutomationEngineDeps, AutomationRecord, Asker } from './model.ts';
 import { Runs } from './runs.ts';
 import { Triggers } from './triggers.ts';
 
-export { RunRefusal, type Asker, type AutomationEngineDeps, type AutomationMode, type AutomationRecord, type EngineDevice, type EngineHistory } from './model.ts';
+export { RunRefusal, type Asker, type AutomationEngineDeps, type AutomationMode, type AutomationRecord, type EngineDevice, type EngineHistory, type EnginePlace, type EngineWorld } from './model.ts';
 export { logKeyOf } from './listen.ts';
 export { quoted } from './words.ts';
 

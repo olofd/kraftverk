@@ -879,6 +879,25 @@ export const SCHEMA = `
   CREATE INDEX automation_group_part_device ON automation_group_part (device_id);
 
   /*
+    Who and where fills each role of the family's world an automation has
+    (packages/automation, RoleFills.world): a person, everyone in the
+    family, or a place — a home, a zone, a space — by id. Some of the family
+    are a row each, in their order.
+  */
+  CREATE TABLE automation_world (
+    automation_id TEXT NOT NULL REFERENCES automation (id) ON DELETE CASCADE,
+    role          TEXT NOT NULL,
+    place         INTEGER NOT NULL DEFAULT 0 CHECK (place >= 0),
+    kind          TEXT NOT NULL CHECK (kind IN ('person', 'people', 'everyone', 'place')),
+    person_id     TEXT REFERENCES person (id),
+    place_id      TEXT,
+    place_kind    TEXT CHECK (place_kind IN ('home', 'zone', 'space')),
+    PRIMARY KEY (automation_id, role, place),
+    CHECK ((kind IN ('person', 'people')) = (person_id IS NOT NULL)),
+    CHECK ((kind = 'place') = (place_id IS NOT NULL) AND (place_id IS NULL) = (place_kind IS NULL))
+  );
+
+  /*
     Each "becomes" trigger's state, by its key — its id, or its place among
     its rule's triggers when it has none ("#2", triggerKey):
     whether its condition held when last looked at, since when it has held,

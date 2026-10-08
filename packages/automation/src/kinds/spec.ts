@@ -61,6 +61,21 @@ export type FieldType =
   /** A command's arguments: each its name and an expression. */
   | { type: 'args' }
   /**
+   * Who: a role a person fills, or one people fill — or, where it says, a
+   * word for the whole family: `someone` (anyone of it), `everyone`.
+   */
+  | { type: 'who'; anyone?: 'someone' | 'everyone' }
+  /** Several people: a role people fill — "the children". */
+  | { type: 'crowd' }
+  /** A place: a role a home, a zone or a space fills — or `home`, the automation's own. */
+  | { type: 'place' }
+  /** One of a home's modes, by its key: `away`, `night`, a family's own. */
+  | { type: 'mode' }
+  /** One of a few words, each with what the editor calls it. */
+  | { type: 'choice'; options: readonly { value: string; label: string }[] }
+  /** Words of the owner's own, with values in braces — "The charge is {station.charge}" — at most `max` characters. */
+  | { type: 'message'; max: number }
+  /**
    * Steps within the step: its branch. `sure`: whether they may wait for
    * what might not come — not in a retry, which would only fail again; else
    * as the list the step is in.
@@ -90,7 +105,32 @@ export type FieldSpec = {
 export type KindDocs = { summary: string; examples: readonly string[] };
 
 /** The marks the editor draws a kind with: names in the app's icon set. */
-export type KindIcon = 'clock' | 'repeat' | 'activity' | 'bell' | 'power' | 'sliders' | 'pause' | 'git-branch' | 'eye' | 'play-circle' | 'save' | 'rotate-cw' | 'shield' | 'octagon' | 'layers' | 'corner-down-left';
+export type KindIcon =
+  | 'clock'
+  | 'repeat'
+  | 'activity'
+  | 'bell'
+  | 'power'
+  | 'sliders'
+  | 'pause'
+  | 'git-branch'
+  | 'eye'
+  | 'play-circle'
+  | 'save'
+  | 'rotate-cw'
+  | 'shield'
+  | 'octagon'
+  | 'layers'
+  | 'corner-down-left'
+  | 'log-in'
+  | 'log-out'
+  | 'user-check'
+  | 'user-x'
+  | 'square'
+  | 'users'
+  | 'moon'
+  | 'home'
+  | 'send';
 
 /**
  * How a sentence says the parts of a construct — what the describer hands a
@@ -105,8 +145,10 @@ export type Say = {
   seconds(expr: Expr): number | null;
   /** Days: "every day", "on weekdays", "on Mon and Fri". */
   days(days: readonly Weekday[] | undefined): string;
-  /** What fills a role: "Garage station". */
+  /** What fills a role: "Garage station" — a person, people, a place too; `home`, the automation's own. */
   name(role: string): string;
+  /** A mode by its key, as the family calls it: "Away". */
+  mode(key: string): string;
   /** An event a role's part raises, in its own words: "mains lost". */
   event(role: string, event: string): string;
 };

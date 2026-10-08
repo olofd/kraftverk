@@ -4,8 +4,8 @@ import { WEEKDAYS, type Weekday } from '../clock.ts';
 import { ruleCommands, ruleUses } from '../reads.ts';
 import { fieldValue, withField, type FieldSpec } from '../kinds/spec.ts';
 import { STEP_KIND_ORDER, STEP_KINDS, stepSpec, type StepKind, type StepReader, type StepSpec } from '../kinds/steps.ts';
-import { TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerFields } from '../kinds/triggers.ts';
-import { isAutomationRole, isWhileRunning, roleKind, TRIGGER_ID, WHILE_RUNNING, type Expr, type RoleKind, type RuleTrigger, type RoleSpec, type Rule, type Step } from '../rule.ts';
+import { TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerFields, triggerKindOfVerbs } from '../kinds/triggers.ts';
+import { isWhileRunning, isWorldRole, roleKind, TRIGGER_ID, WHILE_RUNNING, type Expr, type RoleKind, type RuleTrigger, type RoleSpec, type Rule, type Step } from '../rule.ts';
 import { parseExpr, printExpr } from './expr.ts';
 import { settingsFromConfig, settingsToConfig } from './settings.ts';
 
@@ -22,8 +22,15 @@ import { settingsFromConfig, settingsToConfig } from './settings.ts';
 export type Issue = { message: string; path: readonly (string | number)[]; offset?: number };
 
 /** What fills a role, as a file names it: a device by its key and one of its parts, or another automation by its key. */
-/** What fills a role, as a file names it: a device's part by its key; for a group, several; or another automation. */
-export type Use = PartUse | { parts: readonly PartUse[] } | { automation: string };
+/**
+ * What fills a role, as a file names it: a device's part by its key; for a
+ * group, several; another automation; a person, people — some, or everyone —
+ * or a place: a home, a zone, a space of the automation's home, by key.
+ */
+export type Use = PartUse | { parts: readonly PartUse[] } | { automation: string } | WorldUse;
+
+/** A person, people or a place, by their keys in the file. */
+export type WorldUse = { person: string } | { people: readonly string[] } | { everyone: true } | { home: string } | { zone: string } | { space: string };
 
 /** A device's part, by the device's key: `{ device: 'garage-station', part: 'outlet.ac' }`. */
 export type PartUse = { device: string; part: string };
@@ -149,13 +156,13 @@ class Reader {
   trigger(data: Data, path: Path): RuleTrigger {
     if (!isRecord(data)) return this.fail('Expected a trigger: at, every, event or becomes', path);
     // Its kind by its verb, and each of its fields — its kind's, and those every trigger has — by what it holds (kinds/triggers.ts).
-    const kind = TRIGGER_KIND_ORDER.find((each) => each in data);
-    if (!kind) return this.fail(`Not a trigger: ${Object.keys(data).map((key) => `"${key}"`).join(', ')}. A trigger is ${TRIGGER_KIND_ORDER.join(', ')}`, path);
+    const kind = triggerKindOfVerbs(Object.keys(data));
+    if (!kind) return this.fail(`Not a trigger: ${Object.keys(data).map((key) => `"${key}"`).join(', ')}. A trigger is ${TRIGGER_KIND_ORDER.map((each) => TRIGGER_KINDS[each].fields[0]!.key).join(', ')}`, path);
     const fields = [...TRIGGER_KINDS[kind].fields, ...TRIGGER_FIELDS];
     const keys = fields.map((field) => field.key);
     for (const key of Object.keys(data)) if (!keys.includes(key)) this.fail(`"${key}" is not part of this trigger: it takes ${keys.map((each) => `"${each}"`).join(', ')}`, [...path, key]);
     return fields.reduce<RuleTrigger>((trigger, field) => {
-      if (!(field.key in data)) return field.required ? this.fail(`"${kind}" needs "${field.key}": ${field.label.toLowerCase()}`, path) : trigger;
+      if (!(field.key in data)) return field.required ? this.fail(`"${TRIGGER_KINDS[kind].fields[0]!.key}" needs "${field.key}": ${field.label.toLowerCase()}`, path) : trigger;
       return withField(trigger, field, this.field(field, data[field.key], [...path, field.key]));
     }, {} as RuleTrigger);
   }
@@ -180,7 +187,19 @@ class Reader {
       case 'name':
       case 'memory':
       case 'text':
+      case 'who':
+      case 'crowd':
+      case 'place':
+      case 'mode':
         return this.name(data, path, field.label.toLowerCase());
+      case 'message':
+        if (typeof data !== 'string' && typeof data !== 'number') return this.fail(`Expected ${field.label.toLowerCase()}: words`, path);
+        return String(data);
+      case 'choice': {
+        const options = field.type.options;
+        if (typeof data !== 'string' || !options.some((option) => option.value === data)) return this.fail(`Expected one of ${options.map((option) => option.value).join(', ')}`, path);
+        return data;
+      }
       case 'flag':
         if (typeof data !== 'boolean') return this.fail('Expected true or false', path);
         return data;
@@ -275,6 +294,9 @@ function usedCapabilities(rule: RuleBody, role: string): string[] {
 export function inferredRole(rule: RuleBody, role: string, kind: RoleKind): RoleSpec {
   const label = labelOf(role);
   if (kind === 'automation') return { automation: true, label };
+  if (kind === 'person') return { person: true, label };
+  if (kind === 'people') return { people: true, label };
+  if (kind === 'place') return { place: true, label };
   const capabilities = usedCapabilities(rule, role) as CapabilityName[];
   return kind === 'group' ? { group: true, label, capabilities } : { label, capabilities };
 }
@@ -358,8 +380,9 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
           roles[role] = inferredRole(steps, role, 'group');
           return;
         }
-        if (!isRecord(data)) return reader.fail('Expected what fills the role: "device-key.part", a list of them, or { automation: key }', at);
-        const kind: RoleKind = 'automation' in data ? 'automation' : 'parts' in data ? 'group' : 'part';
+        if (!isRecord(data)) return reader.fail('Expected what fills the role: "device-key.part", a list of them, { automation: key }, { person: key }, { people: [keys] }, or { home | zone | space: key }', at);
+        const kind: RoleKind =
+          'automation' in data ? 'automation' : 'parts' in data ? 'group' : 'person' in data ? 'person' : 'people' in data ? 'people' : 'home' in data || 'zone' in data || 'space' in data ? 'place' : 'part';
         const inferred = inferredRole(steps, role, kind);
         const label = typeof data.label === 'string' ? data.label : inferred.label;
         const keys = ROLE_KEYS[kind];
@@ -367,6 +390,27 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
         if (kind === 'automation') {
           if (data.automation !== null) uses[role] = { automation: reader.name(data.automation, [...at, 'automation'], 'the key of the automation it starts') };
           roles[role] = { automation: true, label };
+          return;
+        }
+        // A person, people, a place: by their keys in the file — none yet, a role still to fill.
+        if (kind === 'person') {
+          if (data.person !== null) uses[role] = { person: reader.name(data.person, [...at, 'person'], 'the key of the person who fills it') };
+          roles[role] = { person: true, label };
+          return;
+        }
+        if (kind === 'people') {
+          if (data.people === 'everyone') uses[role] = { everyone: true };
+          else if (Array.isArray(data.people)) uses[role] = { people: data.people.map((each, index) => reader.name(each, [...at, 'people', index], 'the key of a person')) };
+          else if (data.people !== null) return reader.fail('"people" is a list of people by their keys, or everyone', [...at, 'people']);
+          roles[role] = { people: true, label };
+          return;
+        }
+        if (kind === 'place') {
+          const which = (['home', 'zone', 'space'] as const).filter((each) => each in data);
+          if (which.length > 1) return reader.fail('A place is one of home, zone and space', at);
+          const placeKind = which[0]!;
+          if (data[placeKind] !== null) uses[role] = { [placeKind]: reader.name(data[placeKind], [...at, placeKind], `the key of the ${placeKind}`) } as WorldUse;
+          roles[role] = { place: true, label };
           return;
         }
         if (kind === 'group') {
@@ -377,7 +421,7 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
           if (!use) return reader.fail(`"${String(data.part)}" is not a device's part`, [...at, 'part']);
           uses[role] = use;
         }
-        const capabilities = Array.isArray(data.needs) ? (data.needs as CapabilityName[]) : isAutomationRole(inferred) ? [] : inferred.capabilities;
+        const capabilities = Array.isArray(data.needs) ? (data.needs as CapabilityName[]) : 'capabilities' in inferred ? inferred.capabilities : [];
         const need = { label, capabilities, ...(Array.isArray(data['one of']) ? { oneOf: data['one of'] as CapabilityName[] } : {}) };
         roles[role] = kind === 'group' ? { group: true, ...need } : need;
       });
@@ -401,7 +445,14 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
 }
 
 /** What a role says of itself in a file, beside what fills it. */
-const ROLE_KEYS = { part: ['part', 'label', 'needs', 'one of'], group: ['parts', 'label', 'needs', 'one of'], automation: ['automation', 'label'] } as const satisfies Record<RoleKind, readonly string[]>;
+const ROLE_KEYS = {
+  part: ['part', 'label', 'needs', 'one of'],
+  group: ['parts', 'label', 'needs', 'one of'],
+  automation: ['automation', 'label'],
+  person: ['person', 'label'],
+  people: ['people', 'label'],
+  place: ['home', 'zone', 'space', 'label'],
+} as const satisfies Record<RoleKind, readonly string[]>;
 
 /** Days as a file writes them: "weekdays", "weekends", or the list. (In a sentence they are `daysText`'s.) */
 const daysInFile = (days: readonly string[]): string | string[] =>
@@ -457,6 +508,12 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
       case 'memory':
       case 'text':
       case 'flag':
+      case 'who':
+      case 'crowd':
+      case 'place':
+      case 'mode':
+      case 'choice':
+      case 'message':
         return value;
       case 'steps':
         return (value as readonly Step[]).map(step);
@@ -472,11 +529,16 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
     const inferred = inferredRole(rule, role, kind);
     const extra: Record<string, unknown> = {};
     if (spec.label !== inferred.label) extra.label = spec.label;
-    if (!isAutomationRole(spec) && !isAutomationRole(inferred)) {
+    if ('capabilities' in spec && 'capabilities' in inferred) {
       if (!sameList(spec.capabilities, inferred.capabilities)) extra.needs = [...spec.capabilities];
       if (spec.oneOf !== undefined) extra['one of'] = [...spec.oneOf];
     }
-    if (kind === 'automation') usesOut[role] = { automation: use && 'automation' in use ? use.automation : null, ...extra };
+    if (isWorldRole(spec)) {
+      // A person, people, a place: by their keys — none yet, the kind it is with nothing in it.
+      const filled = use && ('person' in use || 'people' in use || 'everyone' in use || 'home' in use || 'zone' in use || 'space' in use) ? (use as WorldUse) : null;
+      const said = filled ? ('everyone' in filled ? { people: 'everyone' } : 'people' in filled ? { people: [...filled.people] } : filled) : kind === 'place' ? { space: null } : { [kind]: null };
+      usesOut[role] = { ...said, ...extra };
+    } else if (kind === 'automation') usesOut[role] = { automation: use && 'automation' in use ? use.automation : null, ...extra };
     else if (kind === 'group') {
       // A group: its parts, as a list — with more to say, under "parts".
       const parts = use && 'parts' in use ? use.parts.map(useText) : [];

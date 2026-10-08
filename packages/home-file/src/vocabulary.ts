@@ -44,6 +44,10 @@ export type Vocabulary = {
   automations: { key: string; name: string }[];
   /** The family's homes now, by key: what an automation may be for. */
   homes: { key: string; name: string }[];
+  /** The family's people now, by their keys in a file; none said: not known, and not checked. */
+  people?: { key: string; name: string }[];
+  /** The family's zones now, by key; likewise. */
+  zones?: { key: string; name: string }[];
 };
 
 const split = (schema: ConfigSchema | undefined, secret: boolean): ConfigSchema => ({

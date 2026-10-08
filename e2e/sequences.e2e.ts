@@ -1,6 +1,6 @@
 import { expect, OWNER, test } from './fixtures';
 
-import { addSimulated, answer, press, unique, whose } from './helpers';
+import { addSimulated, answer, pick, press, unique, whose } from './helpers';
 
 /*
   Sequences built in the editor (docs/AUTOMATION-EDITOR.md): the owner's
@@ -11,12 +11,6 @@ import { addSimulated, answer, press, unique, whose } from './helpers';
 */
 
 const HEADERS = { 'x-kraftverk-client': 'app' };
-
-/** Picks, in the picker called `label`, the option that reads `option`. */
-async function pick(page: import('@playwright/test').Page, label: string, option: string) {
-  await page.getByRole('button', { name: new RegExp(`^${label}: .*Choose$`) }).last().click();
-  await page.getByText(option, { exact: true }).last().click();
-}
 
 test('start charging: copied from its recipe, its parts chosen, run from its page, followed — and the same card on the home page and its device', async ({ page, request }) => {
   const station = await addSimulated(request, 'aferiy.p280', unique('Garage P280'));

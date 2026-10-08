@@ -67,7 +67,7 @@ beforeEach(() => {
   const library = new AutomationLibrary([], () => {});
   const engine = { reset: () => {}, poke: () => {}, forget: () => {} };
   const sessions = { sync: async (records: readonly unknown[]) => void sessionsSynced.push(records.length), description: (record: { description: unknown }) => record.description };
-  const { checked } = drafts({ history: new HistoryStore(db), events: new EventStore(db), catalog, sessions: sessions as never, library, engine: engine as never, automations });
+  const { checked } = drafts({ history: new HistoryStore(db), events: new EventStore(db), catalog, sessions: sessions as never, library, engine: engine as never, automations, world: { member: () => null, place: () => null, modes: () => ['home', 'away', 'vacation', 'day', 'evening', 'night'] } });
   const places = new PlaceStore(db);
   places.addHome({ key: 'home', name: 'Home', type: 'house', timeZone: 'Europe/Stockholm' });
   // This node, the home's own: what holds the ways a file says.

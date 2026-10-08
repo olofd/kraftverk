@@ -51,6 +51,26 @@ language's own functions; settings as `setting.x`; run facts as
 Each is checked before it runs, said in words, written and read back in a
 file, run by the engine, and shown in the editor at least in words.
 
+**People and places** (2026-10-09, the world model's W7,
+[PLAN-WORLD-MODEL-WORK.md](PLAN-WORLD-MODEL-WORK.md)) — resumed for it:
+
+| Construct | Written |
+|---|---|
+| Roles of the world | `uses: anna: { person: anna }`, `children: { people: [a, b] }`, `{ people: everyone }`, `cabin: { home: cabin }`, `{ zone: work }`, `{ space: bathroom }`; `home`, `someone`, `everyone` need none |
+| Someone somewhere | `anna at home`, `any(p in children: p at school)` |
+| A place now | `home.people`, `bathroom.occupied`, `home.presence`, `home.day` |
+| Who started it | `run.who` |
+| Arriving and leaving | `arrives: someone`, `leaves: anna`, `at: home` |
+| The first and the last | `first arrives: home`, `last leaves: home`, `of: children` — edges, held and kept across a restart as `becomes` is |
+| Rooms | `empties: bathroom`, `is occupied: hallway`, `for: 10 min` |
+| Modes | `mode becomes: away`, `mode changes: day`, `at: cabin`; a `set mode` step |
+| Telling people | `notify: everyone`, `title: "{run.who} is home"`, `text:`, `level:` |
+
+The editor picks who and where from the family's people, homes, zones and
+rooms. The engine reads the world through its `EngineWorld` port, which the
+hub fills from presence, occupancy and modes, only as far as each person
+shares.
+
 ## Left to do
 
 ### 1. Show in the app what the language now keeps

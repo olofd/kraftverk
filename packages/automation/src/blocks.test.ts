@@ -108,7 +108,7 @@ describe('start another automation', () => {
   test('starts an automation’s role, and may wait for it — bounded, and only where waiting may fail the run', () => {
     expect(checkRule(rule([{ start: { role: 'charging' } }]), NO_FUNCTIONS)).toEqual([]);
     expect(checkRule(rule([{ start: { role: 'charging', andWait: { value: 300, unit: 's' } } }]), NO_FUNCTIONS)).toEqual([]);
-    expect(checkRule(rule([{ start: { role: 'plug' } }]), NO_FUNCTIONS)).toEqual(['then[0].start.role: plug is a part of a device, not an automation']);
+    expect(checkRule(rule([{ start: { role: 'plug' } }]), NO_FUNCTIONS)).toEqual(['then[0].start.role: plug is one part, not an automation']);
     expect(checkRule(rule([{ start: { role: 'charging', andWait: { value: 7200, unit: 's' } } }]), NO_FUNCTIONS)).toEqual(['then[0].start.andWait: from 1 s to 1 h']);
     expect(checkRule(rule([live(true)], { otherwise: [{ start: { role: 'charging', andWait: { value: 60, unit: 's' } } }] }), NO_FUNCTIONS)).toEqual([
       'otherwise[0].start: nothing here may wait for what might not come: it is started, not waited for',

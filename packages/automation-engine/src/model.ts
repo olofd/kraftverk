@@ -1,5 +1,5 @@
 import type { AutomationRun } from '@kraftverk/api-contract';
-import type { AutomationMode, Coordinates, RoleBinding, Rule, RulePart } from '@kraftverk/automation';
+import type { AutomationMode, Axis, Coordinates, NotifyLevel, PlaceKind, RoleBinding, Rule, RulePart, WorldFill } from '@kraftverk/automation';
 import type { AuditRecord, AutomationId, CapabilityId, Clock, DeviceDescription } from '@kraftverk/device-sdk';
 import type { ActionGateway, GatewayActor } from '@kraftverk/gateway';
 import type { LiveBus } from '@kraftverk/holder';
@@ -30,6 +30,8 @@ export type AutomationRecord = {
   groups: Record<string, readonly RoleBinding[]>;
   /** Which automation fills each role a `start` step starts. */
   starts: Record<string, AutomationId>;
+  /** Who and where fills each role of the family's world: a person, people, a place. */
+  world: Record<string, WorldFill>;
   /** The home it is for: its clock, and what "home" is in its rule. Null: the family's, on its first home's clock. */
   homeId: string | null;
   /** Its clock: its own, or else its home's — "Europe/Stockholm". */
@@ -67,6 +69,39 @@ export type EngineDevice = RulePart & {
   wantFresh(until: number): void;
 };
 
+/** A place as the engine names one: a home, a zone, or a space of a home, by its id. */
+export type EnginePlace = { id: string; kind: PlaceKind };
+
+/**
+ * The family's world, as an automation sees it: who is where — as far as
+ * each shares — whether a place has anyone in it, a home's modes; and what
+ * an automation may do there besides its devices: set a mode, tell people.
+ */
+export type EngineWorld = {
+  /** The home an automation is for — or, none said, the family's first. Null: the family has no home. */
+  home(homeId: string | null): string | null;
+  /** Everyone in the family now. */
+  members(): readonly string[];
+  /** A person as the family calls them; null for one it does not know. */
+  personName(id: string): string | null;
+  /** A place's name; null for one let go. */
+  placeName(place: EnginePlace): string | null;
+  /** The home a place is at: a home itself, a space's home; none for a zone. */
+  homeOf(place: EnginePlace): string | null;
+  /** Who of the family is at a place now, as far as each shares; null when it cannot be told. */
+  peopleAt(place: EnginePlace): readonly string[] | null;
+  /** Whether anyone is in a place now, whoever: a space by what stands there, a home or a zone by who is there. Null when it cannot be told. */
+  occupied(place: EnginePlace): boolean | null;
+  /** A home's mode on an axis now, by its key; null when none is set. */
+  mode(homeId: string, axis: Axis): string | null;
+  /** The keys of the family's modes: the built-in ones, and its own. */
+  modes(): readonly string[];
+  /** A home set to a mode, by its key, as an automation: on its timeline, and said on the bus. */
+  setMode(homeId: string, mode: string, by: GatewayActor): void;
+  /** People told something: each one's inbox, and a push. */
+  notify(people: readonly string[], message: { title: string; text: string | null; level: NotifyLevel; homeId: string | null }, by: GatewayActor): Promise<void>;
+};
+
 /** What the home kept of each reading, minute by minute, by device and attribute key. */
 export type EngineHistory = {
   /** What was kept between two times, oldest first. */
@@ -91,6 +126,8 @@ export type AutomationEngineDeps = {
    * null asks for the family's first. None, or null: unknown.
    */
   location?: (homeId: string | null) => Coordinates | null;
+  /** The family's world: who is where, a room's occupancy, a home's modes — and setting a mode, telling people. None: unknown, and those steps fail. */
+  world?: EngineWorld;
   /**
    * The home's time: what its triggers, holds, pauses and runs keep, and
    * what it stamps. Real time when not given; a test's own — fixed, or fast.

@@ -131,8 +131,16 @@ export function checkDocument(document: ConfigDocument, vocabulary: Vocabulary, 
       } else if ('parts' in use) {
         if (options.uses !== 'leave') use.parts.forEach((each, index) => part(each, [...path, 'uses', role, index]));
       }
-      else if (!(use.automation in document.automations) && !vocabulary.automations.some((each) => each.key === use.automation)) {
-        problem(`There is no automation "${use.automation}", in the file or on the server`, [...path, 'uses', role]);
+      else if ('automation' in use) {
+        if (!(use.automation in document.automations) && !vocabulary.automations.some((each) => each.key === use.automation)) problem(`There is no automation "${use.automation}", in the file or on the server`, [...path, 'uses', role]);
+      } else if ('person' in use || 'people' in use) {
+        // People by their keys: in the file, or the family's now, when the server says.
+        const keys = 'person' in use ? [use.person] : use.people;
+        for (const key of keys) if (!(key in document.people) && vocabulary.people && !vocabulary.people.some((each) => each.key === key)) problem(`There is no person "${key}", in the file or in the family`, [...path, 'uses', role]);
+      } else if ('home' in use) {
+        if (!homeKnown(use.home)) problem(`No home is called "${use.home}"`, [...path, 'uses', role]);
+      } else if ('zone' in use) {
+        if (!(use.zone in document.zones) && vocabulary.zones && !vocabulary.zones.some((each) => each.key === use.zone)) problem(`There is no zone "${use.zone}", in the file or the family's`, [...path, 'uses', role]);
       }
     }
   }

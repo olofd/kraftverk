@@ -89,3 +89,9 @@ export async function answer(page: Page, yes: boolean): Promise<string> {
  * shown: a page gone back from stays in the stack, hidden, with its own.
  */
 export const press = (page: Page, text: string) => page.getByText(text, { exact: true }).filter({ visible: true }).first().click();
+
+/** Picks, in the picker called `label`, the option that reads `option`. */
+export async function pick(page: Page, label: string, option: string): Promise<void> {
+  await page.getByRole('button', { name: new RegExp(`^${label}: .*Choose$`) }).last().click();
+  await page.getByText(option, { exact: true }).last().click();
+}

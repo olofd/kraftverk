@@ -6,7 +6,7 @@ import { checkBinding, checkRule } from '../check.ts';
 import type { Weekday } from '../clock.ts';
 import { evaluateNow, inlineParams, withSettings, type RuleScope } from '../evaluate.ts';
 import { STANDARD_RECIPES } from '../recipes.ts';
-import { isAutomationRole, type Expr, type Recipe, type Rule } from '../rule.ts';
+import { isAutomationRole, isPeopleRole, isPersonRole, isPlaceRole, type Expr, type Recipe, type Rule } from '../rule.ts';
 import { durationSeconds, durationText, ruleFromConfig, ruleToConfig, type Use } from './rules.ts';
 
 /*
@@ -22,9 +22,22 @@ const copied = (recipe: Recipe): Rule => {
   return withSettings(rule, {});
 };
 
-/** Each role filled: a part of a made-up device, or another automation. */
+/** Each role filled: a part of a made-up device, another automation, a made-up person, everyone, a made-up room. */
 const usesOf = (rule: Rule): Record<string, Use> =>
-  Object.fromEntries(Object.entries(rule.roles).map(([role, spec], index) => [role, isAutomationRole(spec) ? { automation: `other-${index}` } : { device: `device-${index}`, part: index % 2 ? 'main' : 'outlet.ac' }]));
+  Object.fromEntries(
+    Object.entries(rule.roles).map(([role, spec], index): [string, Use] => [
+      role,
+      isAutomationRole(spec)
+        ? { automation: `other-${index}` }
+        : isPersonRole(spec)
+          ? { person: `person-${index}` }
+          : isPeopleRole(spec)
+            ? { everyone: true }
+            : isPlaceRole(spec)
+              ? { space: `room-${index}` }
+              : { device: `device-${index}`, part: index % 2 ? 'main' : 'outlet.ac' },
+    ])
+  );
 
 describe('a rule, written and read back', () => {
   for (const recipe of STANDARD_RECIPES) {
@@ -164,7 +177,7 @@ describe('a rule, written and read back', () => {
     expect(read.rule).toBeNull();
     expect(read.issues).toEqual([
       { message: 'It ends where a value was expected', path: ['automations', 'x', 'do', 1, 'make sure'], offset: 15 },
-      { message: 'Not a step: "jump". A step starts with turn on, turn off, switch, send, set, wait, wait until, wait for, make sure, if, watch, repeat, for each, try, stop, answer, start or remember', path: ['automations', 'x', 'do', 2] },
+      { message: 'Not a step: "jump". A step starts with turn on, turn off, switch, send, set, set mode, notify, wait, wait until, wait for, make sure, if, watch, repeat, for each, try, stop, answer, start or remember', path: ['automations', 'x', 'do', 2] },
       { message: '"wait until" needs "at most": every wait has its limit: then the run stops, not having succeeded', path: ['automations', 'x', 'do', 3] },
     ]);
   });

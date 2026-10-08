@@ -369,6 +369,8 @@ erDiagram
   automation ||--o{ automation_role : "is started by"
   automation ||--o{ automation_group_part : "goes through"
   device ||--o{ automation_group_part : "is one of"
+  automation ||--o{ automation_world : "is filled by"
+  person ||--o{ automation_world : "fills"
   automation ||--o{ automation_memory : "remembers"
   automation ||--o{ automation_trigger : "watches with"
   automation ||--o{ automation_run : "ran"
@@ -674,6 +676,15 @@ erDiagram
     text device_id FK "d-3f9a2c61b0e43f9a"
     text part "main · outlet.ac"
   }
+  automation_world {
+    text automation_id PK "a-71c2d0e5f9a371c2"
+    text role PK "children"
+    int place PK "0 · its order among the people"
+    text kind "person · people · everyone · place"
+    text person_id FK "p-01JA8ZK3Q4R7T9V2W5X6Y8Z0AB · null: a place or everyone"
+    text place_id "h-1 · a home, a zone or a space · null: a person"
+    text place_kind "home · zone · space"
+  }
   automation_memory {
     text automation_id PK "a-71c2d0e5f9a371c2"
     text name PK "timesCharged"
@@ -892,6 +903,7 @@ each one's master is: this device, or a server by its address.
 | `device_switch`, `device_write` | The gateway's memory of each part and setting: when it was last switched or written, and by whom — what the dwell counts from, so a restart is no way around it, and what lets an automation that keeps things so leave what another automation set. A part never switched has no row: its first switch through a consequential link is confirmed. | by the gateway, at each switch and write |
 | `automation`, `automation_role` | An automation: its own rule, the recipe it was copied from, its clock, mode and place on the home page; and what fills each role — a part of a device, or another automation a step starts — a row each, so a device's page asks which automations it can start; an automation deleted takes with it the roles that would start it, and those that did say they have nothing to start. | made, changed |
 | `automation_group_part` | The parts of each group a `for each` goes through, in order, each once: a device's page asks this too. | made, changed |
+| `automation_world` | Who and where fills each role of the family's world: a person, some people in order, everyone, or a place — a home, a zone, a space of the automation's home. | made, changed |
 | `automation_memory` | What each automation remembers, by name: the value a run last left it, kept across runs, restarts and changes to it. | as a run remembers |
 | `automation_trigger` | Each `becomes` trigger's state, so a restart continues a hold and never fires one twice. | as its conditions are looked at |
 | `automation_run` | Every run, with each step it took; the unended one is running now, written at every step — one at a time, held by a unique index. A restart ends it as interrupted (docs/SEQUENCES.md). | as it runs |

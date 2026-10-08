@@ -11,7 +11,7 @@ import type { KindDocs } from './spec.ts';
   one left out.
 */
 
-export type ExprKind = 'value' | 'param' | 'memory' | 'input' | 'read' | 'history' | 'distance' | 'sun' | 'across' | 'call' | 'apply' | 'compare' | 'math' | 'negate' | 'if' | 'either' | 'in' | 'all' | 'any' | 'not' | 'reachable' | 'within' | 'run';
+export type ExprKind = 'value' | 'param' | 'memory' | 'input' | 'read' | 'history' | 'distance' | 'sun' | 'across' | 'call' | 'apply' | 'compare' | 'math' | 'negate' | 'if' | 'either' | 'in' | 'all' | 'any' | 'not' | 'reachable' | 'within' | 'run' | 'presentAt';
 
 /** An expression of one kind. */
 export type ExprOf<K extends ExprKind> = K extends ExprKind ? Extract<Expr, Record<K, unknown>> : never;
@@ -43,7 +43,16 @@ export const EXPR_KINDS: { readonly [K in ExprKind]: ExprSpec<K> } = {
   param: leaf('param', 'A setting', { summary: 'One of the rule’s settings, by its name: a recipe’s, before it is copied into an automation.', examples: ['setting.low'] }),
   input: leaf('input', 'What it was given', { summary: 'One of the automation’s inputs, as the step that started the run gave it — or, not given, its default.', examples: ['given.level'] }),
   memory: leaf('memory', 'What it remembers', { summary: 'A value it remembers, as a run last left it — or, before any did, as it starts: kept across runs and restarts.', examples: ['memory.timesCharged'] }),
-  read: leaf('read', 'A reading', { summary: 'What the part filling a role reports now, by what it means: a standard meaning, or a type’s own. Unknown when it has not said, or said too long ago.', examples: ['station.charge', 'charger.power'] }),
+  read: leaf('read', 'A reading', {
+    summary:
+      'What the part filling a role reports now, by what it means: a standard meaning, or a type’s own. Unknown when it has not said, or said too long ago. Of a place — a role a place fills, or `home`, the automation’s own — what is so of it now: `people`, how many of the family are there, as far as each shares; `occupied`, whether anyone is, whoever they are; `presence` and `day`, a home’s mode on each axis, by its key.',
+    examples: ['station.charge', 'charger.power', 'home.people == 0', 'bathroom.occupied', 'home.presence == "vacation"', 'home.day == "night"'],
+  }),
+  presentAt: leaf('presentAt', 'Someone somewhere', {
+    summary:
+      'Whether a person is at a place now, as far as they share — a home or a zone by where what they carry says they are, a room by a signal that tells people apart: a role a person fills, or what `any(p in children: …)` calls each of several; a role a place fills, or `home`. Unknown when they share too little to say.',
+    examples: ['olof at home', 'not olof at work', 'any(p in children: p at school)', 'count(p in children: p at home) == 0'],
+  }),
   history: {
     kind: 'history',
     label: 'Over the time just gone',
@@ -151,13 +160,13 @@ export const EXPR_KINDS: { readonly [K in ExprKind]: ExprSpec<K> } = {
   },
   run: leaf('run', 'What the run knows', {
     summary:
-      'What the run knows of itself: `run.trigger`, the id of the trigger that started it — `""` when none with an id did; `run.event`, the event a device raised that started it, and `run.event.voltage`, what it carried, as its device declares it — unknown when no event did.',
-    examples: ['run.trigger == "low"', 'run.event.voltage < 200 V'],
+      'What the run knows of itself: `run.trigger`, the id of the trigger that started it — `""` when none with an id did; `run.event`, the event a device raised that started it, and `run.event.voltage`, what it carried, as its device declares it — unknown when no event did; `run.who`, the name of the person whose arriving or leaving started it — `""` when none did.',
+    examples: ['run.trigger == "low"', 'run.event.voltage < 200 V', 'run.who == "Anna"'],
   }),
 };
 
 /** The order the reference lists them in. */
-export const EXPR_KIND_ORDER: readonly ExprKind[] = ['value', 'param', 'input', 'memory', 'read', 'history', 'distance', 'reachable', 'run', 'within', 'sun', 'across', 'call', 'apply', 'compare', 'in', 'math', 'negate', 'if', 'either', 'all', 'any', 'not'];
+export const EXPR_KIND_ORDER: readonly ExprKind[] = ['value', 'param', 'input', 'memory', 'read', 'presentAt', 'history', 'distance', 'reachable', 'run', 'within', 'sun', 'across', 'call', 'apply', 'compare', 'in', 'math', 'negate', 'if', 'either', 'all', 'any', 'not'];
 
 /** Which kind an expression is — by its key; one of no kind is an error, never taken for another. */
 export function exprKind(expr: Expr): ExprKind {

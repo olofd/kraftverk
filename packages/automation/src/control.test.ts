@@ -79,7 +79,7 @@ describe('for each part of a group', () => {
       'then[0].forEach.as: "chargers" names something already — call each part otherwise',
       'then[0].forEach.steps[0].command.role: chargers is several parts — name each in turn with "for each"',
     ]);
-    expect(check({ ...grouped([forEach([turnOn('charger')], 'charger', 'plug')]), roles: { ...groupRoles, plug: { label: 'Plug', capabilities: ['switch'] } } })).toContainEqual('then[0].forEach.in: plug is one part, not several');
+    expect(check({ ...grouped([forEach([turnOn('charger')], 'charger', 'plug')]), roles: { ...groupRoles, plug: { label: 'Plug', capabilities: ['switch'] } } })).toContainEqual('then[0].forEach.in: plug is one part, not several parts');
     expect(check(grouped([forEach([])]))).toEqual(['then[0].forEach.steps: what does it do with each?']);
   });
 

@@ -80,7 +80,7 @@ describe('the schema a file is checked against as it is typed', () => {
         const strange = { ...trigger, 'not a word': 1 };
         expect(valid(automation, entry(strange)).length).toBeGreaterThan(0);
         expect(ruleFromConfig(entry(strange), []).issues.length).toBeGreaterThan(0);
-        for (const field of spec.fields.filter((each) => each.required && each.key !== spec.kind)) {
+        for (const field of spec.fields.filter((each) => each.required && each.key !== spec.fields[0]!.key)) {
           const { [field.key]: _gone, ...without } = trigger;
           expect(valid(automation, entry(without)).length).toBeGreaterThan(0);
           expect(ruleFromConfig(entry(without), []).issues.length).toBeGreaterThan(0);

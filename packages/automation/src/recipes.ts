@@ -247,4 +247,64 @@ export const cheapHours = defineRecipe({
   then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { compare: 'le', left: rank, right: { param: 'hours' } } } } }],
 });
 
-export const STANDARD_RECIPES: readonly Recipe[] = [lowBattery, chargeBetween, mainsLost, startCharging, stopCharging, cheapHours];
+/**
+ * Away when the last of the family leaves home; home when the first comes
+ * back. On vacation, leaving changes nothing — and coming back ends it.
+ */
+export const AWAY_WHEN_EVERYONE_LEAVES = defineRecipe({
+  id: 'standard.away-when-everyone-leaves',
+  label: 'Away when everyone leaves',
+  description: 'The home goes to away when the last of you leaves it, and back to home when the first of you comes back — as far as each of you shares where they are. On vacation it stays on vacation until someone is back.',
+  sentence: 'When the last of you leaves home, set it to away; when the first comes back, home.',
+  roles: {},
+  params: { fields: {} },
+  when: [
+    { id: 'left', lastLeaves: { at: 'home' }, then: [{ choose: { if: { compare: 'ne', left: { read: { role: 'home', means: 'presence' } }, right: { value: 'vacation' } }, then: [{ setMode: { mode: 'away' } }] } }] },
+    { id: 'back', firstArrives: { at: 'home' }, then: [{ setMode: { mode: 'home' } }] },
+  ],
+  then: [],
+});
+
+/** The time of day by the sun: day at sunrise, evening at sunset, night at a time of its owner's. */
+export const DAY_BY_THE_SUN = defineRecipe({
+  id: 'standard.day-by-the-sun',
+  label: 'The time of day, by the sun',
+  description: 'The home’s time of day: day from sunrise, evening from sunset, night from 23:00 — what other automations read as home.day, or wait for. Change the hour as you like once copied.',
+  roles: {},
+  params: { fields: {} },
+  when: [
+    { id: 'sunrise', at: { sun: 'sunrise' }, then: [{ setMode: { mode: 'day' } }] },
+    { id: 'sunset', at: { sun: 'sunset' }, then: [{ setMode: { mode: 'evening' } }] },
+    { id: 'night', at: { value: '23:00' }, then: [{ setMode: { mode: 'night' } }] },
+  ],
+  then: [],
+});
+
+/** Someone of the family tells the others they are home. */
+export const TELL_WHEN_SOMEONE_ARRIVES = defineRecipe({
+  id: 'standard.tell-when-someone-arrives',
+  label: 'Tell when someone comes home',
+  description: 'Those you choose are told when someone of the family comes home — who, by name.',
+  sentence: 'When someone comes home, tell {told}.',
+  roles: { told: { people: true, label: 'Who is told', description: 'Everyone, or some of you' } },
+  params: { fields: {} },
+  when: [{ arrives: { who: 'someone', at: 'home' } }],
+  then: [{ notify: { to: 'told', title: '{run.who} is home' } }],
+});
+
+/** A room's lights off once nobody has been in it a while. */
+export const OFF_WHEN_EMPTY = defineRecipe({
+  id: 'standard.off-when-empty',
+  label: 'Off when a room is empty',
+  description: 'Something switched off once nobody has been in a room for a while — the lights, a fan — as what stands there says: motion, a radar, a door shut.',
+  sentence: 'When nobody has been in {room} for {after}, turn {switch} off.',
+  roles: {
+    room: { place: true, label: 'Room', description: 'A room — or a floor, the home — its sensors placed in it' },
+    switch: { label: 'What is switched off', capabilities: ['switch'], description: 'Anything that switches: a lamp, a plug, a fan' },
+  },
+  params: { fields: { after: { type: 'number', title: 'After', unit: 's', min: 60, max: 3 * 3600, default: 600 } } },
+  when: [{ empties: { place: 'room', heldFor: { param: 'after' } } }],
+  then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { value: false } } } }],
+});
+
+export const STANDARD_RECIPES: readonly Recipe[] = [lowBattery, chargeBetween, mainsLost, startCharging, stopCharging, cheapHours, AWAY_WHEN_EVERYONE_LEAVES, DAY_BY_THE_SUN, TELL_WHEN_SOMEONE_ARRIVES, OFF_WHEN_EMPTY];

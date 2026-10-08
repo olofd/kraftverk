@@ -13,7 +13,7 @@
 import type { FileMigration, FileTypes } from '@kraftverk/device-sdk';
 
 /** The version this kraftverk writes. */
-export const CURRENT_VERSION = 14;
+export const CURRENT_VERSION = 15;
 
 /** Each version's document, as data, made into the next version's. */
 export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unknown>) => Record<string, unknown>>> = {
@@ -40,6 +40,8 @@ export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unkno
   12: (document) => document,
   // Version 14 may say the family's own modes (`modes:`, each by key with its axis and name): nothing older does, so nothing changes.
   13: (document) => document,
+  // Version 15 may fill an automation's roles with people and places (`uses:` `{ person }`, `{ people }`, `{ home }`, `{ zone }`, `{ space }`) and say its triggers and steps of them: nothing older does, so nothing changes.
+  14: (document) => document,
 };
 
 /**

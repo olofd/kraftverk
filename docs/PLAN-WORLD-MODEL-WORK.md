@@ -542,6 +542,33 @@ Steps:
 
 ## W7. Automating people and places
 
+**Built, 2026-10-09** (commits W7.1 and W7.2 to W7.4). What building it changed:
+
+- **Modes** are `mode` and `home_mode` (`packages/hub/src/modes`): the
+  built-in six seeded for every family, also after a reset; a family's own
+  in the file (version 14); which a home is in never in it.
+- **Roles of the world** are role kinds of their own — a person, people,
+  a place — filled apart from the parts, in `automation_world`
+  (`{ person }`, `{ people }`, `{ everyone }`, `{ place, kind }`), by the
+  file's keys in `uses:` (version 15). `home`, `someone` and `everyone`
+  need no role.
+- **Reading the world** is `who at place` and a place's `people`,
+  `occupied`, `presence` and `day`, through an `EngineWorld` port the hub
+  fills from presence, occupancy and modes (`familyWorld`). `run.who` is
+  who arrived or left.
+- **The state triggers** — `first arrives`, `last leaves`, `empties`,
+  `is occupied` — are edges of a condition (`edgeOf`), so they keep their
+  state across a restart, can be held (`for:`), and are said in "Right
+  now" as any `becomes` is. `arrives`, `leaves` and the mode triggers are
+  happenings, heard on the bus.
+- **`notify`** writes to each person's inbox and pushes; its title and text
+  hold `{expr}` values, said in their units (`message.ts`). In watch mode it
+  is said, not sent. **`set mode`** sets as a person would, said as the
+  automation's.
+- **Recipes:** away when everyone leaves (and home when the first comes
+  back), the day's modes by the sun, tell when someone comes home, off
+  when a room empties.
+
 - Modes on two axes, set by people, automations and presence.
 - Waits on the automation language resuming
   ([AUTOMATION-LANGUAGE-STATUS.md](AUTOMATION-LANGUAGE-STATUS.md)):

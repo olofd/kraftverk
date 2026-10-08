@@ -1,4 +1,4 @@
-import type { AutomationMode, RoleBinding, RoleFills, Rule } from '@kraftverk/automation';
+import type { AutomationMode, PlaceKind, RoleBinding, RoleFills, Rule, WorldFill } from '@kraftverk/automation';
 import { savedDeviceId, type AutomationId } from '@kraftverk/device-sdk';
 import {
   automationEntryFrom,
@@ -29,19 +29,39 @@ export type AutomationSettings = { mode: AutomationMode; homeId: string | null; 
 /** The family's homes, as a file names them: by key. */
 type HomeKeys = readonly { id: string; key: string }[];
 
+/**
+ * The family's people and places, as a file names them: each person by the
+ * key an export writes them as (`personKeysOf`), each zone and space by its
+ * own — a space with the home it is in.
+ */
+export type WorldKeys = { people: readonly { id: string; key: string }[]; places: readonly { id: string; key: string; kind: PlaceKind; homeId?: string }[] };
+
+const NO_KEYS: WorldKeys = { people: [], places: [] };
+
 /** An automation as YAML text: its rule, what fills its roles, and its settings. */
 export function automationYaml(
-  automation: { name: string; rule: Rule; roles: Readonly<Record<string, RoleBinding>>; groups: Readonly<Record<string, readonly RoleBinding[]>>; starts: Readonly<Record<string, string>>; madeFrom: string | null } & AutomationSettings,
+  automation: {
+    name: string;
+    rule: Rule;
+    roles: Readonly<Record<string, RoleBinding>>;
+    groups: Readonly<Record<string, readonly RoleBinding[]>>;
+    starts: Readonly<Record<string, string>>;
+    world?: Readonly<Record<string, WorldFill>>;
+    madeFrom: string | null;
+  } & AutomationSettings,
   devices: readonly DeviceView[],
   automations: readonly Pick<AutomationView, 'id' | 'key'>[],
-  homes: HomeKeys = []
+  homes: HomeKeys = [],
+  world: WorldKeys = NO_KEYS
 ): string {
   const { entry } = automationEntryFrom(
     { ...automation, ownTimeZone: automation.timeZone },
     {
       device: (id) => devices.find((device) => device.id === id)?.key ?? null,
       automation: (id) => automations.find((each) => each.id === id)?.key ?? null,
-      home: (id) => homes.find((home) => home.id === id)?.key ?? null,
+      home: (id) => homes.find((home) => home.id === id)?.key ?? world.places.find((place) => place.id === id)?.key ?? null,
+      person: (id) => world.people.find((person) => person.id === id)?.key ?? null,
+      place: (id) => world.places.find((place) => place.id === id)?.key ?? null,
     }
   );
   return writeAutomationYaml(entry);
@@ -65,11 +85,16 @@ export function draftOfEntry(
   entry: AutomationEntry,
   devices: readonly DeviceView[],
   automations: readonly Pick<AutomationView, 'id' | 'key'>[],
-  homes: HomeKeys = []
+  homes: HomeKeys = [],
+  world: WorldKeys = NO_KEYS
 ): { draft: { name: string; rule: Rule } & RoleFills; settings: AutomationSettings } {
+  // A space is of the automation's home: the one it says, or the family's first.
+  const homeId = (entry.home ? homes.find((home) => home.key === entry.home)?.id : homes[0]?.id) ?? world.places.find((place) => place.kind === 'home' && (!entry.home || place.key === entry.home))?.id ?? null;
   const fills = fillsFrom(entry.uses, {
     device: (key) => devices.find((device) => device.key === key && !device.removedAt)?.id ?? null,
     automation: (key) => automations.find((each) => each.key === key)?.id ?? null,
+    person: (key) => world.people.find((person) => person.key === key)?.id ?? null,
+    place: (kind, key) => world.places.find((place) => place.kind === kind && place.key === key && (kind !== 'space' || place.homeId === homeId))?.id ?? null,
   });
   return {
     draft: {
@@ -78,6 +103,7 @@ export function draftOfEntry(
       roles: Object.fromEntries(Object.entries(fills.roles).map(([role, binding]) => [role, { device: savedDeviceId(binding.device), part: binding.part }])),
       groups: Object.fromEntries(Object.entries(fills.groups).map(([role, parts]) => [role, parts.map((binding) => ({ device: savedDeviceId(binding.device), part: binding.part }))])),
       starts: fills.starts as Record<string, AutomationId>,
+      world: fills.world,
     },
     settings: { mode: entry.mode, homeId: entry.home ? (homes.find((home) => home.key === entry.home)?.id ?? null) : null, timeZone: entry.clock, recheckMinutes: entry.recheckMinutes },
   };

@@ -1,8 +1,48 @@
 import type { ConditionState } from '@kraftverk/api-contract';
-import { bindingsOf, capitalise, isGroupRole, memberRole, sunTimes, type HistoryPoint, groupRoles, listed, memoryOf, settingOf, checkBinding, describeExpr, describeSteps, evaluateNow, measure, numberIn, secondsNow, isAutomationRole, partRoles, secondsText, triggerKey, triggerOf, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type RuleSteps, type Step, type Write } from '@kraftverk/automation';
+import {
+  bindingsOf,
+  capitalise,
+  describeTriggers,
+  edgeOf,
+  isGroupRole,
+  isPeopleRole,
+  isPlaceRole,
+  memberRole,
+  OWN_HOME,
+  sunTimes,
+  type HistoryPoint,
+  groupRoles,
+  listed,
+  memoryOf,
+  settingOf,
+  checkBinding,
+  describeExpr,
+  describeSteps,
+  evaluateNow,
+  measure,
+  numberIn,
+  secondsNow,
+  isAutomationRole,
+  partRoles,
+  secondsText,
+  triggerKey,
+  triggerOf,
+  writtenAttribute,
+  type BoundPart,
+  type Command,
+  type Expr,
+  type RoleBinding,
+  type Rule,
+  type RuleScope,
+  type RuleTrigger,
+  type RuleVocabulary,
+  type RuleSteps,
+  type Step,
+  type Write,
+} from '@kraftverk/automation';
 import { attributeMeaning, capabilityIn, clockTime, localTime, MAIN_PART, isCurrent, isPosition, isScalar, readingOf, REAL_CLOCK, standardMeaning, unitIn, type CapabilityName, type Clock, type Value } from '@kraftverk/device-sdk';
 
-import type { AutomationEngineDeps, AutomationRecord, EngineDevice } from './model.ts';
+import type { AutomationEngineDeps, AutomationRecord, EngineDevice, EnginePlace } from './model.ts';
 import { quoted } from './words.ts';
 
 /*
@@ -22,10 +62,13 @@ export type PlannedWrite = { binding: RoleBinding; key: string; value: Value };
 export type Planned = { command: PlannedAction } | { write: PlannedWrite };
 
 /** What the context reads: the automations, the installed functions, the parts, and the clock. */
-export type ContextDeps = Pick<AutomationEngineDeps, 'store' | 'library' | 'device' | 'clock' | 'history' | 'location'>;
+export type ContextDeps = Pick<AutomationEngineDeps, 'store' | 'library' | 'device' | 'clock' | 'history' | 'location' | 'world'>;
 
-/** The event a device raised that started a run: its id, and what it carried. */
-export type StartingEvent = { id: string; data: Readonly<Record<string, Value>> | null };
+/**
+ * What happened that started a run: the event a device raised — its id, and
+ * what it carried — or someone arriving or leaving, by their id (`who`).
+ */
+export type StartingEvent = { id: string; data: Readonly<Record<string, Value>> | null; who?: string };
 
 export class RuleContext {
   constructor(private deps: ContextDeps) {}
@@ -37,7 +80,10 @@ export class RuleContext {
    */
   startedByNow(automation: AutomationRecord, rule: Rule): string | null {
     const scope = this.scope(automation, rule);
-    const index = rule.when.findIndex((trigger) => 'becomes' in trigger && evaluateNow(trigger.becomes, scope) === true);
+    const index = rule.when.findIndex((trigger) => {
+      const edge = edgeOf(trigger);
+      return edge !== null && evaluateNow(edge.condition, scope) === true;
+    });
     return index < 0 ? null : triggerKey(rule.when[index]!, index);
   }
 
@@ -52,13 +98,53 @@ export class RuleContext {
       const device = binding ? this.deps.device(binding) : null;
       return device && !device.removed ? device : null;
     };
+    const world = this.deps.world;
+    /** The place a name is: the automation's own home, or what fills a role a place fills. */
+    const placeOf = (name: string): EnginePlace | null => {
+      if (name === OWN_HOME) {
+        const id = world?.home(automation.homeId) ?? null;
+        return id ? { id, kind: 'home' } : null;
+      }
+      const fill = automation.world[name];
+      return fill && 'place' in fill ? { id: fill.place, kind: fill.kind } : null;
+    };
+    /** The people a role is, by id: one, some, or everyone now. */
+    const peopleOf = (name: string): readonly string[] | null => {
+      const fill = automation.world[name];
+      if (!fill) return null;
+      if ('person' in fill) return [fill.person];
+      if ('people' in fill) return fill.people;
+      if ('everyone' in fill) return world?.members() ?? null;
+      return null;
+    };
+    /** What is so of a place now, as a reading says it. */
+    const placeFact = (name: string, fact: string): { value: string | number | boolean; label: string; unit: null } | null => {
+      const place = placeOf(name);
+      if (!place || !world) return null;
+      if (fact === 'people') {
+        const there = world.peopleAt(place);
+        return there ? { value: there.length, label: 'People there', unit: null } : null;
+      }
+      if (fact === 'occupied') {
+        const occupied = world.occupied(place);
+        return occupied === null ? null : { value: occupied, label: 'Someone there', unit: null };
+      }
+      if (fact === 'presence' || fact === 'day') {
+        const home = world.homeOf(place);
+        const mode = home ? world.mode(home, fact) : null;
+        return mode === null ? null : { value: mode, label: fact === 'day' ? 'Time of day' : 'Mode', unit: null };
+      }
+      return null;
+    };
     return {
       clock: () => clockTime(now, automation.timeZone),
       // No trigger with an id started it: that is known, and said as no id at all.
       run: (fact, field) => {
         if (fact === 'trigger') return { value: triggerOf(rule, trigger)?.id ?? '', unit: null };
+        // Who arriving or leaving started it, by name; "" when nobody did.
+        if (fact === 'who') return { value: event?.who ? (world?.personName(event.who) ?? 'someone') : '', unit: null };
         // The event that started it, and what it carried; unknown when none did.
-        if (!event) return { value: null, unit: null };
+        if (!event || !event.id) return { value: null, unit: null };
         if (field === undefined) return { value: event.id, unit: null };
         // What it carried, in the unit its device declares for it: a voltage in V is never taken for kV.
         const started = triggerOf(rule, trigger);
@@ -73,6 +159,9 @@ export class RuleContext {
       // What it remembers: as a run last left it, or as it starts.
       memory: (name) => memoryOf(rule.memory ?? { fields: {} }, name, this.deps.store.memory(automation.id)[name]),
       read: (role, means) => {
+        // A place: how many of the family are there, whether anyone is, its modes.
+        const spec = rule.roles[role];
+        if (role === OWN_HOME || (spec && isPlaceRole(spec))) return placeFact(role, means);
         const device = part(role);
         const attribute = device ? attributeMeaning(device.description, device.part, means) : null;
         const reading = device?.device && attribute ? readingOf(device.device.readings(), attribute.key) : null;
@@ -108,9 +197,21 @@ export class RuleContext {
         if (reading && typeof reading.value === 'number' && isCurrent(attribute, reading, to)) points.push({ at: Math.max(Date.parse(reading.at), points.at(-1)?.at ?? from), value: reading.value });
         return points.length ? { points, from, to, unit: unitIn(attribute), label: standardMeaning(means)?.label ?? attribute.label } : null;
       },
-      // Each part of a group: what an expression is evaluated against for it, the part called as its name says.
+      // Whether a person is at a place now, as far as they share.
+      presentAt: (who, place) => {
+        const fill = automation.world[who];
+        const at = placeOf(place);
+        const there = at && world ? world.peopleAt(at) : null;
+        return fill && 'person' in fill && there ? there.includes(fill.person) : null;
+      },
+      // Each part of a group — or each of several people: what an expression is evaluated against for it, it called as its name says.
       members: (group, as) => {
         const spec = rule.roles[group];
+        if (spec && isPeopleRole(spec)) {
+          const people = peopleOf(group);
+          if (!people) return null;
+          return people.map((person) => this.scope({ ...automation, world: { ...automation.world, [as]: { person } } }, { ...rule, roles: { ...rule.roles, [as]: { person: true, label: as } } }, now, trigger, event, inputs));
+        }
         const parts = automation.groups[group];
         if (!spec || !isGroupRole(spec) || !parts) return null;
         const one = memberRole(spec);
@@ -136,6 +237,17 @@ export class RuleContext {
         return fn.evaluate({ part: device, args, now, timeZone: automation.timeZone });
       },
       name: (role) => {
+        // A place, a person, people: as the family calls them.
+        if (role === OWN_HOME) {
+          const home = placeOf(OWN_HOME);
+          return (home && world?.placeName(home)) ?? 'home';
+        }
+        const fill = automation.world[role];
+        if (fill) {
+          if ('place' in fill) return world?.placeName({ id: fill.place, kind: fill.kind }) ?? 'a place no longer there';
+          if ('everyone' in fill) return 'everyone';
+          return listed((peopleOf(role) ?? []).map((id) => world?.personName(id) ?? 'someone')) || 'nobody';
+        }
         const started = automation.starts[role];
         if (started) return quoted(this.deps.store.get(started)?.name ?? null);
         // A group: its parts, each by name.
@@ -153,6 +265,7 @@ export class RuleContext {
   vocabulary(automation: AutomationRecord): RuleVocabulary {
     return {
       fn: (id) => this.deps.library.fn(id),
+      ...(this.deps.world ? { modes: () => this.deps.world!.modes() } : {}),
       attribute: (role, target) => {
         const binding = automation.roles[role];
         const device = binding ? this.deps.device(binding) : null;
@@ -174,6 +287,19 @@ export class RuleContext {
     return describeExpr(rule, expr, this.settled(automation, rule), (role) => scope.name(role), this.vocabulary(automation));
   }
 
+  /**
+   * A condition a trigger waits to turn true, in words: a `becomes` its
+   * condition — "Garage station's charge is below 15 %" — one of people and
+   * places as the trigger says itself: "The last of the family leaves home".
+   */
+  edgeSaid(automation: AutomationRecord, rule: Rule, trigger: RuleTrigger): string {
+    const edge = edgeOf(trigger);
+    if (edge && 'becomes' in trigger) return this.said(automation, rule, edge.condition);
+    const scope = this.scope(automation, rule);
+    const said = describeTriggers({ ...rule, when: [trigger] }, this.settled(automation, rule), (role) => scope.name(role), this.vocabulary(automation))[0]!;
+    return said.replace(/^When /, '');
+  }
+
   /** Its steps in words, numbered and nested, as its card shows them. */
   steps(automation: AutomationRecord): RuleSteps {
     const rule = automation.rule;
@@ -190,10 +316,11 @@ export class RuleContext {
     const scope = this.scope(automation, rule, at);
     const saw: string[] = [];
     const conditions = rule.when.flatMap((trigger): ConditionState[] => {
-      if (!('becomes' in trigger)) return [];
-      const holds = evaluateNow(trigger.becomes, scope, saw);
-      const seconds = trigger.heldFor ? (secondsNow(trigger.heldFor, scope) ?? 0) : 0;
-      const text = `${capitalise(this.said(automation, rule, trigger.becomes))}${seconds > 0 ? ` for ${secondsText(seconds)}` : ''}`;
+      const edge = edgeOf(trigger);
+      if (!edge) return [];
+      const holds = evaluateNow(edge.condition, scope, saw);
+      const seconds = edge.heldFor ? (secondsNow(edge.heldFor, scope) ?? 0) : 0;
+      const text = 'becomes' in trigger ? `${capitalise(this.said(automation, rule, edge.condition))}${seconds > 0 ? ` for ${secondsText(seconds)}` : ''}` : capitalise(this.edgeSaid(automation, rule, trigger));
       return [{ text, holds: typeof holds === 'boolean' ? holds : null }];
     });
     return { conditions, saw: [...new Set(saw)] };

@@ -30,17 +30,18 @@ the owner's Forgejo checks it and deploys it onto the server it runs on
 empty: the core names no product, and every device is found, not listed.
 
 - **The world model** ([PLAN-WORLD-MODEL.md](PLAN-WORLD-MODEL.md), the work
-  in [PLAN-WORLD-MODEL-WORK.md](PLAN-WORLD-MODEL-WORK.md)): **W1 to W4
-  are built**.
+  in [PLAN-WORLD-MODEL-WORK.md](PLAN-WORLD-MODEL-WORK.md)): **W1 to W4,
+  W6 and W7 are built**; W5 (things that move) waits, on purpose.
   - Every id is a prefix and a ULID.
   - Who did something is one actor shape everywhere.
   - A server's sign-ins live in `node.db`, apart from the family's database.
   - The root is the **family**, with **homes** inside it, each a place with
     its own clock, and an automation for one of them.
-  - Configuration version 12 holds the family and its homes, their
+  - Configuration version 15 holds the family and its homes, their
     spaces, openings, where each device stands, labels, zones, and its
     people with their own shortcuts and what each shares; who each device
-    is with.
+    is with; the geometry of its spaces; the family's own modes; and
+    automations whose roles people and places fill.
   - Pictures are kept by their content.
   - Each home is a tree of **spaces** (buildings, floors, rooms) with
     **openings** between them; a device's **placement** is kept as
@@ -67,7 +68,19 @@ empty: the core names no product, and every device is found, not listed.
     assistant, automations — only as far as each shares. The family's map
     and a person's page; an inbox per person, and web push from the server.
 
-  Next is W5: things that move.
+  - **Rooms and presence** (W6): motion, radars, contacts and counts say
+    which spaces have someone in them (`packages/hub/src/occupancy`), with
+    their evidence; spaces have frames, outlines and a floor's drawing; the
+    home's map at `/rooms` draws them; a `spot` puts a person in a room and
+    a robot where it is.
+  - **Automating people and places** (W7): modes on two axes (presence,
+    the day), set by people and automations; roles filled by a person,
+    people, everyone or a place; `who at place` and a place's `people`,
+    `occupied`, `presence` and `day`; triggers for arriving, leaving, the
+    first and the last, a room emptying or occupied, a mode; `set mode` and
+    `notify`; and the recipe "away when everyone leaves".
+
+  Next is W8 (several homes, several nodes), or W5 when the owner wants it.
 
 - **The shared core** ([PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md)): the
   home is one hub (`@kraftverk/hub`) behind one interface (`KraftverkApi`),

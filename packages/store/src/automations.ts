@@ -2,7 +2,7 @@
 import type { AutomationRun, RunLog, RunLogDevice, RunLogKey, RunLogReach, RunLogReading, RunLogRole } from '@kraftverk/api-contract';
 import { KEY, keyFrom } from '@kraftverk/device-sdk';
 import { automationId, savedDeviceId, type ActorKind, type AutomationId, type Quantity, type Value } from '@kraftverk/device-sdk';
-import type { RoleBinding, Rule } from '@kraftverk/automation';
+import type { PlaceKind, RoleBinding, Rule, WorldFill } from '@kraftverk/automation';
 
 import type { SqlDatabase } from './database.ts';
 import { newId } from '@kraftverk/device-sdk';
@@ -56,6 +56,8 @@ const RUN_SELECT = `SELECT r.*, p.automation_id AS parent_automation, pa.name AS
 
 /** What an automation is made of, as it is kept: its rule, and what fills its roles. */
 export type AutomationInput = Pick<AutomationRecord, 'name' | 'rule' | 'madeFrom' | 'roles' | 'groups' | 'starts' | 'recheckMinutes'> & {
+  /** Who and where fills its roles of the family's world; none: it has none. */
+  world?: Record<string, WorldFill>;
   /** The home it is for; null or left out: the family's. */
   homeId?: string | null;
   /** A clock of its own; null: its home's. */
@@ -63,7 +65,7 @@ export type AutomationInput = Pick<AutomationRecord, 'name' | 'rule' | 'madeFrom
 };
 
 /** What an automation keeps changed: its clock its own (a time zone) or its home's (null). */
-export type AutomationUpdate = Partial<Pick<AutomationRecord, 'key' | 'name' | 'rule' | 'roles' | 'groups' | 'starts' | 'mode' | 'recheckMinutes' | 'homeId'>> & { timeZone?: string | null };
+export type AutomationUpdate = Partial<Pick<AutomationRecord, 'key' | 'name' | 'rule' | 'roles' | 'groups' | 'starts' | 'world' | 'mode' | 'recheckMinutes' | 'homeId'>> & { timeZone?: string | null };
 
 /** Where no home says a clock: none kept yet. */
 const NO_CLOCK = 'UTC';
@@ -153,6 +155,25 @@ export class AutomationStore implements AutomationStorage {
       own[member.role] = [...(own[member.role] ?? []), { device: savedDeviceId(member.device_id), part: member.part }];
       groups.set(member.automation_id, own);
     }
+    // Who and where fills each role of the family's world.
+    const world = new Map<string, Record<string, WorldFill>>();
+    for (const row of this.#db
+      .query<{ automation_id: string; role: string; kind: 'person' | 'people' | 'everyone' | 'place'; person_id: string | null; place_id: string | null; place_kind: PlaceKind | null }, string[]>(
+        `SELECT automation_id, role, kind, person_id, place_id, place_kind FROM automation_world WHERE automation_id IN (${marks}) ORDER BY automation_id, role, place`
+      )
+      .all(...ids)) {
+      const own = world.get(row.automation_id) ?? {};
+      const had = own[row.role];
+      own[row.role] =
+        row.kind === 'person'
+          ? { person: row.person_id! }
+          : row.kind === 'people'
+            ? { people: [...(had && 'people' in had ? had.people : []), row.person_id!] }
+            : row.kind === 'everyone'
+              ? { everyone: true }
+              : { place: row.place_id!, kind: row.place_kind! };
+      world.set(row.automation_id, own);
+    }
     // Each one's latest ended run, and the one it runs now.
     const last = new Map(
       this.#db
@@ -179,6 +200,7 @@ export class AutomationStore implements AutomationStorage {
       roles: roles.get(row.id) ?? {},
       groups: groups.get(row.id) ?? {},
       starts: starts.get(row.id) ?? {},
+      world: world.get(row.id) ?? {},
       homeId: row.home_id,
       timeZone: row.time_zone ?? (row.home_id ? clocks.get(row.home_id) : undefined) ?? first ?? NO_CLOCK,
       ownTimeZone: row.time_zone,
@@ -228,9 +250,17 @@ export class AutomationStore implements AutomationStorage {
     }
   }
 
-  #setRoles(id: string, fills: Pick<AutomationRecord, 'roles' | 'groups' | 'starts'>): void {
+  #setRoles(id: string, fills: Pick<AutomationRecord, 'roles' | 'groups' | 'starts'> & { world?: Record<string, WorldFill> }): void {
     this.#db.query('DELETE FROM automation_role WHERE automation_id = ?').run(id);
     this.#db.query('DELETE FROM automation_group_part WHERE automation_id = ?').run(id);
+    this.#db.query('DELETE FROM automation_world WHERE automation_id = ?').run(id);
+    const filled = this.#db.query('INSERT INTO automation_world (automation_id, role, place, kind, person_id, place_id, place_kind) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    for (const [role, fill] of Object.entries(fills.world ?? {})) {
+      if ('person' in fill) filled.run(id, role, 0, 'person', fill.person, null, null);
+      else if ('people' in fill) fill.people.forEach((person, place) => filled.run(id, role, place, 'people', person, null, null));
+      else if ('everyone' in fill) filled.run(id, role, 0, 'everyone', null, null, null);
+      else filled.run(id, role, 0, 'place', null, fill.place, fill.kind);
+    }
     const part = this.#db.query('INSERT INTO automation_role (automation_id, role, device_id, part, starts) VALUES (?, ?, ?, ?, NULL)');
     for (const [role, binding] of Object.entries(fills.roles)) part.run(id, role, binding.device, binding.part);
     const member = this.#db.query('INSERT INTO automation_group_part (automation_id, role, place, device_id, part) VALUES (?, ?, ?, ?, ?)');
@@ -280,7 +310,7 @@ export class AutomationStore implements AutomationStorage {
       this.#db
         .query('UPDATE automation SET key = ?, name = ?, rule = ?, home_id = ?, time_zone = ?, mode = ?, recheck_minutes = ?, updated_at = ? WHERE id = ?')
         .run(next.key, next.name, JSON.stringify(next.rule), next.homeId, next.ownTimeZone, next.mode, next.recheckMinutes, new Date().toISOString(), id);
-      if (changes.roles || changes.groups || changes.starts) this.#setRoles(id, next);
+      if (changes.roles || changes.groups || changes.starts || changes.world) this.#setRoles(id, next);
     })();
     this.#revision += 1;
     return this.get(id);

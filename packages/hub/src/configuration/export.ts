@@ -1,5 +1,6 @@
 import {
   automationEntryFrom,
+  personKeysOf,
   deviceEntryFrom,
   emptyDocument,
   vocabularyOf,
@@ -175,6 +176,9 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
 
   /** Each person in the file, by their id: what a device's people are written as. */
   const personKeys = new Map<string, string>();
+  /** Each member's key as an export of everything would write it: what a file of one automation names them by. */
+  let familyKeysMade: Map<string, string> | null = null;
+  const familyKeys = () => (familyKeysMade ??= personKeysOf(deps.people.members().filter((person) => person.member && deps.people.chainOf(person.id).length)));
   if (everything) {
     const family = deps.family.get();
     if (family) document.family = { name: family.name, kind: family.kind, locale: family.locale };
@@ -183,7 +187,7 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
     for (const person of deps.people.members()) {
       const chain = deps.people.chainOf(person.id);
       if (!chain.length || !person.member) continue;
-      const key = keyFrom(person.name, (candidate) => taken.has(candidate), 'person');
+      const key = familyKeys().get(person.id) ?? keyFrom(person.name, (candidate) => taken.has(candidate), 'person');
       taken.add(key);
       const shortcuts = deps.shortcuts.of(person.id).flatMap((id) => {
         const automation = deps.automations.get(id);
@@ -286,11 +290,14 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
     },
     automation: (id: string) => deps.automations.get(id)?.key ?? null,
     home: (id: string) => deps.places.home(id)?.key ?? null,
+    // People by the keys this file writes them as — or, a file without its people, as the family's would be.
+    person: (id: string) => personKeys.get(id) ?? familyKeys().get(id) ?? null,
+    place: (id: string, kind: 'home' | 'zone' | 'space') => (kind === 'home' ? (deps.places.home(id)?.key ?? null) : kind === 'zone' ? (deps.places.zone(id)?.key ?? null) : (deps.spaces.space(id)?.key ?? null)),
   };
   const elsewhere = new Set<string>();
   for (const automation of automations) {
     const { entry, gone } = automationEntryFrom({ ...automation, labels: labelKeys(labelled.automations[automation.id]) }, keyOf);
-    for (const role of gone) notes.push(`"${automation.name}": ${automation.rule.roles[role]?.label ?? role} was filled by ${role in automation.starts ? 'an automation' : 'a device'} that is gone: written empty`);
+    for (const role of gone) notes.push(`"${automation.name}": ${automation.rule.roles[role]?.label ?? role} was filled by ${role in automation.starts ? 'an automation' : role in automation.world ? 'someone, or a place,' : 'a device'} that is gone: written empty`);
     for (const binding of Object.values(automation.roles)) {
       const key = keyOf.device(binding.device);
       if (key && !carried.has(binding.device)) elsewhere.add(key);

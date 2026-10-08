@@ -64,12 +64,16 @@ describe('automations', () => {
   test('lists the recipes to start from — the shared ones and those the installed packages bring — each with its rule, and where it came from', async () => {
     const { recipes } = await t.home.automations.kit();
     expect(recipes.map((recipe) => recipe.id).sort()).toEqual([
+      'standard.away-when-everyone-leaves',
       'standard.charge-between',
       'standard.cheap-hours',
+      'standard.day-by-the-sun',
       'standard.low-battery',
       'standard.mains-lost',
+      'standard.off-when-empty',
       'standard.start-charging',
       'standard.stop-charging',
+      'standard.tell-when-someone-arrives',
       'test.forecast.forecast-switch',
     ]);
     expect(recipes.find((recipe) => recipe.id === 'test.forecast.forecast-switch')).toMatchObject({

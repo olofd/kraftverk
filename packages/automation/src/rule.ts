@@ -129,7 +129,45 @@ export type Expr =
    * with its own level and hold, nothing said twice. `event`, the event
    * that started it — and, with `field`, what it carried: `run.event.voltage`.
    */
-  | { run: RunFact; field?: string };
+  | { run: RunFact; field?: string }
+  /**
+   * Whether a person is at a place now, as far as they share: a home or a
+   * zone by their stays, a room by a signal that tells people apart —
+   * `olof at work`, `p at home`. `who`: a role a person fills, or what an
+   * `across` calls each of several people; `place`: a role a place fills,
+   * or `home`, the automation's own. Unknown when they share too little to
+   * say.
+   */
+  | { presentAt: { who: string; place: string } };
+
+/** The automation's own home, as a place is named: `home.people`, `at: home`. */
+export const OWN_HOME = 'home';
+
+/** Anyone of the family, as `arrives` and `leaves` name who: `arrives: someone`. */
+export const ANYONE = 'someone';
+
+/** Everyone in the family, as `notify` names who it tells: `notify: everyone`. */
+export const EVERYONE = 'everyone';
+
+/**
+ * What is so of a place now, read as a part's reading is — `home.people`,
+ * `bathroom.occupied`, `home.presence == "away"`: how many of the family
+ * are there, as far as each shares; whether anyone is, whoever they are;
+ * and a home's mode on each axis, by its key.
+ */
+export const PLACE_FACTS = { people: 'How many of the family are there', occupied: 'Whether anyone is there', presence: 'Its mode of presence: home, away, vacation', day: 'Its mode of the day: day, evening, night' } as const;
+
+export type PlaceFact = keyof typeof PLACE_FACTS;
+
+/** A home's two axes of mode. */
+export const AXES = ['presence', 'day'] as const;
+
+export type Axis = (typeof AXES)[number];
+
+/** How loudly people are told: as news, as a warning, or as an alarm that wakes them. */
+export const NOTIFY_LEVELS = ['info', 'warning', 'alarm'] as const;
+
+export type NotifyLevel = (typeof NOTIFY_LEVELS)[number];
 
 /**
  * What a run knows of itself, as values a rule reads: the language's own
@@ -144,8 +182,10 @@ export type Expr =
  * - `event`: the id of the event a device raised that started it —
  *   `mains.lost` — and `event.<field>`, what it carried, as its device
  *   declares it: `run.event.voltage`. Unknown when no event started it.
+ * - `who`: the name of the person whose arriving or leaving started it —
+ *   "Anna" — as the family calls them. The empty text when none did.
  */
-export const RUN_FACTS = ['trigger', 'event'] as const;
+export const RUN_FACTS = ['trigger', 'event', 'who'] as const;
 
 export type RunFact = (typeof RUN_FACTS)[number];
 
@@ -189,7 +229,27 @@ export type Trigger =
    * When a condition turns true — and, with `heldFor` (seconds), has stayed
    * true that long. Reads and comparisons only: it is evaluated on every reading.
    */
-  | { becomes: Expr; heldFor?: Expr };
+  | { becomes: Expr; heldFor?: Expr }
+  /**
+   * When someone comes to a place, as presence says: a person, any of
+   * several (a people role), or anyone of the family (`who` "someone") —
+   * at a home, a zone or a room, or `home`, the automation's own.
+   */
+  | { arrives: { who: string; at: string } }
+  /** When someone leaves a place, as presence says: the same `who` and `at`. */
+  | { leaves: { who: string; at: string } }
+  /** When the first of the family — or, with `of`, of several people — comes to a place none of them was at. */
+  | { firstArrives: { at: string; of?: string } }
+  /** When the last of the family — or of several people — leaves a place: nobody of them is there. */
+  | { lastLeaves: { at: string; of?: string } }
+  /** When a place has nobody in it, whoever they were — and, with `heldFor`, has had nobody that long. */
+  | { empties: { place: string; heldFor?: Expr } }
+  /** When a place has someone in it, whoever they are — and, with `heldFor`, has had for that long. */
+  | { occupied: { place: string; heldFor?: Expr } }
+  /** When a home's mode becomes this one, by its key: `away` — the automation's own home, unless `at` names another. */
+  | { modeBecomes: { mode: string; at?: string } }
+  /** When a home's mode on an axis changes, to whichever: the time of day turning to evening, or to night. */
+  | { modeChanges: { axis: Axis; at?: string } };
 
 /**
  * A trigger as a rule holds it: its kind, and what every kind may have
@@ -292,7 +352,16 @@ export type Step =
    * one at the same time — the part called `as` within them, as a role is:
    * `for each: charger`, `in: chargers`, `do: [turn on: charger]`.
    */
-  | { forEach: { as: string; in: string; together?: boolean; steps: readonly Step[] } };
+  | { forEach: { as: string; in: string; together?: boolean; steps: readonly Step[] } }
+  /** A home set to a mode, by its key — the automation's own, unless `at` names another — as a person would from its screen. */
+  | { setMode: { mode: string; at?: string } }
+  /**
+   * Tell people something: in their inbox, and pushed to their phones — a
+   * person, several (a people role), or everyone in the family (`to`
+   * "everyone"). `title` and `text` are words with values in braces:
+   * "The charge is {station.charge}". `level`: news unless it says.
+   */
+  | { notify: { to: string; title: string; text?: string; level?: NotifyLevel } };
 
 /**
  * What one of its triggers starting it while it runs does: it is let go —
@@ -312,20 +381,32 @@ export const WHILE_RUNNING: { readonly [W in WhileRunning]: { label: string; say
 
 export const isWhileRunning = (value: unknown): value is WhileRunning => typeof value === 'string' && Object.hasOwn(WHILE_RUNNING, value);
 
+/** None of the other kinds of role: what each kind says it is not, so they are told apart. */
+type NotOther<K extends string> = { [Kind in Exclude<'group' | 'automation' | 'person' | 'people' | 'place', K>]?: never };
+
 /** A role a part of a device fills: what it is called, and what it must offer. */
-export type PartRole = CapabilityNeed & { label: string; group?: never; automation?: never };
+export type PartRole = CapabilityNeed & { label: string } & NotOther<never>;
 
 /**
  * A role several parts fill — one or more, each offering what it needs —
  * named one at a time by a `for each`: "the chargers".
  */
-export type GroupRole = CapabilityNeed & { label: string; group: true; automation?: never };
+export type GroupRole = CapabilityNeed & { label: string; group: true } & NotOther<'group'>;
 
 /** A role another automation fills: one a `start` step starts. */
-export type AutomationRole = { automation: true; label: string; group?: never };
+export type AutomationRole = { automation: true; label: string } & NotOther<'automation'>;
 
-/** What fills a role — a part, several, or an automation — and what it is called. */
-export type RoleSpec = PartRole | GroupRole | AutomationRole;
+/** A role a person of the family fills: who `at`, `arrives` and `notify` name. */
+export type PersonRole = { person: true; label: string } & NotOther<'person'>;
+
+/** A role people of the family fill: some, by name, or everyone in it. */
+export type PeopleRole = { people: true; label: string } & NotOther<'people'>;
+
+/** A role a place fills: a home, a zone, or a space of a home — what `at`, `empties` and `home.people` name. */
+export type PlaceRole = { place: true; label: string } & NotOther<'place'>;
+
+/** What fills a role — a part, several, another automation, a person, people, a place — and what it is called. */
+export type RoleSpec = PartRole | GroupRole | AutomationRole | PersonRole | PeopleRole | PlaceRole;
 
 /**
  * A recipe's role: what it is, said for whoever fills it — "Anything that
@@ -336,17 +417,28 @@ export type RoleSpec = PartRole | GroupRole | AutomationRole;
 export type RecipeRole = RoleSpec & { description: string };
 
 /** What a role of each kind holds: what an automation keeps of one, and what a database's fingerprint carries. */
-export const ROLE_FIELDS = { part: ['label', 'capabilities', 'oneOf'], group: ['group', 'label', 'capabilities', 'oneOf'], automation: ['automation', 'label'] } as const satisfies {
+export const ROLE_FIELDS = {
+  part: ['label', 'capabilities', 'oneOf'],
+  group: ['group', 'label', 'capabilities', 'oneOf'],
+  automation: ['automation', 'label'],
+  person: ['person', 'label'],
+  people: ['people', 'label'],
+  place: ['place', 'label'],
+} as const satisfies {
   part: readonly (keyof PartRole)[];
   group: readonly (keyof GroupRole)[];
   automation: readonly (keyof AutomationRole)[];
+  person: readonly (keyof PersonRole)[];
+  people: readonly (keyof PeopleRole)[];
+  place: readonly (keyof PlaceRole)[];
 };
 
-/** The kinds of role: one part, several, or another automation. */
+/** The kinds of role: one part, several, another automation, a person, people, a place. */
 export type RoleKind = keyof typeof ROLE_FIELDS;
 
 /** Which kind of role it is. */
-export const roleKind = (spec: RoleSpec): RoleKind => (isAutomationRole(spec) ? 'automation' : isGroupRole(spec) ? 'group' : 'part');
+export const roleKind = (spec: RoleSpec): RoleKind =>
+  isAutomationRole(spec) ? 'automation' : isGroupRole(spec) ? 'group' : isPersonRole(spec) ? 'person' : isPeopleRole(spec) ? 'people' : isPlaceRole(spec) ? 'place' : 'part';
 
 /** A rule's roles as an automation keeps them: its fields alone — what a recipe said for whoever fills them stays with the recipe. */
 export const automationRoles = (roles: Readonly<Record<string, RoleSpec>>): Record<string, RoleSpec> =>
@@ -361,9 +453,24 @@ export const isAutomationRole = (spec: RoleSpec): spec is AutomationRole => 'aut
 
 export const isGroupRole = (spec: RoleSpec): spec is GroupRole => 'group' in spec && spec.group === true;
 
+export const isPersonRole = (spec: RoleSpec): spec is PersonRole => 'person' in spec && spec.person === true;
+
+export const isPeopleRole = (spec: RoleSpec): spec is PeopleRole => 'people' in spec && spec.people === true;
+
+export const isPlaceRole = (spec: RoleSpec): spec is PlaceRole => 'place' in spec && spec.place === true;
+
+/** A role a person, people or a place fills: the family's world, not a device's part. */
+export const isWorldRole = (spec: RoleSpec): spec is PersonRole | PeopleRole | PlaceRole => isPersonRole(spec) || isPeopleRole(spec) || isPlaceRole(spec);
+
+/** A role one part of a device fills: none of the others. */
+export const isPartRole = (spec: RoleSpec): spec is PartRole => roleKind(spec) === 'part';
+
 /** The roles one part of a device fills each: what binding checks, and what a device's page lists. */
-export const partRoles = (rule: Pick<Rule, 'roles'>): [string, PartRole][] =>
-  Object.entries(rule.roles).filter((entry): entry is [string, PartRole] => !isAutomationRole(entry[1]) && !isGroupRole(entry[1]));
+export const partRoles = (rule: Pick<Rule, 'roles'>): [string, PartRole][] => Object.entries(rule.roles).filter((entry): entry is [string, PartRole] => isPartRole(entry[1]));
+
+/** The roles the family's world fills — people, places — each with its kind. */
+export const worldRoles = (rule: Pick<Rule, 'roles'>): [string, PersonRole | PeopleRole | PlaceRole][] =>
+  Object.entries(rule.roles).filter((entry): entry is [string, PersonRole | PeopleRole | PlaceRole] => isWorldRole(entry[1]));
 
 /** The roles several parts fill. */
 export const groupRoles = (rule: Pick<Rule, 'roles'>): [string, GroupRole][] => Object.entries(rule.roles).filter((entry): entry is [string, GroupRole] => isGroupRole(entry[1]));

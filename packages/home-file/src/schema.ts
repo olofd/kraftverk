@@ -315,7 +315,7 @@ function automationSchema(vocabulary: Vocabulary): Schema {
       result: { ...FORM_FIELD, description: 'What it answers: an answer step gives it, and a start step that waits remembers it ("remember as").' },
       uses: {
         type: 'object',
-        description: 'Each role, and what fills it: "device-key" or "device-key.part"; a list of them for a group a "for each" goes through; or { automation: key } for one a step starts. Empty (~) while nothing fills it yet.',
+        description: 'Each role, and what fills it: "device-key" or "device-key.part"; a list of them for a group a "for each" goes through; { automation: key } for one a step starts; { person: key }, { people: [keys] } or { people: everyone }; { home: key }, { zone: key } or { space: key }. Empty (~) while nothing fills it yet.',
         additionalProperties: {
           anyOf: [
             partRef,
@@ -342,6 +342,16 @@ function automationSchema(vocabulary: Vocabulary): Schema {
                 label: { type: 'string' },
               },
             },
+            { type: 'object', required: ['person'], additionalProperties: false, properties: { person: { type: ['string', 'null'], description: 'A person, by their key in the file.' }, label: { type: 'string' } } },
+            {
+              type: 'object',
+              required: ['people'],
+              additionalProperties: false,
+              properties: { people: { anyOf: [{ const: 'everyone' }, { type: 'array', items: { type: 'string' }, uniqueItems: true }, { type: 'null' }], description: 'Some of the family, by their keys — or everyone in it, whoever joins.' }, label: { type: 'string' } },
+            },
+            { type: 'object', required: ['home'], additionalProperties: false, properties: { home: { type: ['string', 'null'], description: 'A home, by its key.' }, label: { type: 'string' } } },
+            { type: 'object', required: ['zone'], additionalProperties: false, properties: { zone: { type: ['string', 'null'], description: 'A zone, by its key.' }, label: { type: 'string' } } },
+            { type: 'object', required: ['space'], additionalProperties: false, properties: { space: { type: ['string', 'null'], description: 'A space of the automation’s home, by its key.' }, label: { type: 'string' } } },
           ],
         },
       },

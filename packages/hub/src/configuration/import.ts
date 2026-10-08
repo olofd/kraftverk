@@ -1,5 +1,5 @@
 import { ApiError, type DevicePeople, type ImportApplied, type ImportItem, type ImportPlan, type LabelTarget, type PlacementInput } from '@kraftverk/api-contract';
-import { checkBinding, checkRule, isAutomationRole, isGroupRole, keepsSo, useOf, useText, type AutomationDraft, type BoundPart, type GroupRole, type PartRole, type PartUse } from '@kraftverk/automation';
+import { checkBinding, checkRule, isAutomationRole, isPartRole, isPeopleRole, isPersonRole, isPlaceRole, isWorldRole, keepsSo, useOf, useText, type AutomationDraft, type BoundPart, type GroupRole, type PartRole, type PartUse, type Use, type WorldFill, type WorldUse } from '@kraftverk/automation';
 import type { AutomationEngine, AutomationLibrary, AutomationRecord } from '@kraftverk/automation-engine';
 import {
   capabilitiesOf,
@@ -25,6 +25,7 @@ import {
 } from '@kraftverk/device-sdk';
 import type { SessionManager } from '@kraftverk/holder';
 import {
+  personKeysOf,
   checkDocument,
   readConfig,
   type AutomationEntry,
@@ -282,13 +283,19 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     for (const said of checkRule(entry.rule, deps.library)) problem(said, path);
     if (entry.recheckMinutes !== null && !keepsSo(entry.rule)) problem('Only an automation that waits for a condition, and does what it does at once, can keep things so ("recheck")', [...path, 'recheck']);
     // A role nothing fills — a rule written while it was being built — cannot run: said where it is.
-    for (const [role, spec] of Object.entries(entry.rule.roles)) if (!entry.uses[role]) problem(`${spec.label}: nothing fills it — name ${isAutomationRole(spec) ? 'an automation' : 'a device'} for it`, [...path, 'uses', role]);
+    for (const [role, spec] of Object.entries(entry.rule.roles))
+      if (!entry.uses[role]) problem(`${spec.label}: nothing fills it — name ${isAutomationRole(spec) ? 'an automation' : isPersonRole(spec) ? 'a person' : isPeopleRole(spec) ? 'people' : isPlaceRole(spec) ? 'a place' : 'a device'} for it`, [...path, 'uses', role]);
     /** Whether a device is here, or the file brings it. */
     const known = (device: string) => Boolean((document.devices[device] && !leftOut.has(device)) || deps.catalog.byKey(device));
     for (const [role, use] of Object.entries(entry.uses)) {
       const spec = entry.rule.roles[role];
       if ('automation' in use) {
         if (!document.automations[use.automation] && !deps.automations.byKey(use.automation)) problem(`There is no automation "${use.automation}", in the file or here`, [...path, 'uses', role]);
+        continue;
+      }
+      // A person, people, a place: in the file, or here.
+      if (isWorldUse(use)) {
+        for (const missing of worldMissing(deps, document, entry, use)) problem(`${spec?.label ?? role}: ${missing}`, [...path, 'uses', role]);
         continue;
       }
       // A group's parts, each where it is in its list: one not here is said, not chosen again.
@@ -300,7 +307,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
       }
       if (known(use.device)) continue;
       // A device you do not have: one of yours that can do what the role needs — or, restoring, nothing yet.
-      const need = spec && !isAutomationRole(spec) && !isGroupRole(spec) ? spec : null;
+      const need = spec && isPartRole(spec) ? spec : null;
       if (options.lenient) problem(`${spec?.label ?? role}: "${useText(use)}" is not here`, [...path, 'uses', role]);
       else needs.rebind.push({ automation: key, role, label: spec?.label ?? role, wanted: useText(use), candidates: candidatesFor(deps, need, document) });
     }
@@ -500,7 +507,7 @@ function bindingProblems(deps: ImportDeps, entry: AutomationEntry, document: Con
   };
   for (const [role, spec] of Object.entries(entry.rule.roles)) {
     const use = entry.uses[role];
-    if (isAutomationRole(spec) || !use || 'automation' in use) continue;
+    if (isAutomationRole(spec) || isWorldRole(spec) || !use || 'automation' in use || isWorldUse(use)) continue;
     const uses = 'parts' in use ? use.parts : [use];
     const parts = uses.flatMap((each, index) => {
       const part = partOf(spec, each, 'parts' in use ? ['uses', role, index] : ['uses', role]);
@@ -510,7 +517,7 @@ function bindingProblems(deps: ImportDeps, entry: AutomationEntry, document: Con
   }
   // What the filled parts must report and let be written: once the rule itself holds.
   if (checkRule(entry.rule, deps.library).length) return found;
-  const filled = Object.fromEntries(Object.entries(entry.rule.roles).filter(([role, spec]) => !isAutomationRole(spec) && bound.has(role)));
+  const filled = Object.fromEntries(Object.entries(entry.rule.roles).filter(([role, spec]) => !isAutomationRole(spec) && !isWorldRole(spec) && bound.has(role)));
   for (const said of checkBinding({ ...entry.rule, roles: filled }, (role) => bound.get(role) ?? [])) found.push({ message: said, path: [] });
   return found;
 }
@@ -764,10 +771,17 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
         const roles: Record<string, { device: SavedDeviceId; part: string }> = {};
         const groups: Record<string, { device: SavedDeviceId; part: string }[]> = {};
         const starts: Record<string, AutomationId> = {};
+        const world: Record<string, WorldFill> = {};
         for (const [role, use] of Object.entries(entry.uses)) {
           if ('automation' in use) {
             const other = deps.automations.byKey(use.automation);
             if (other) starts[role] = other.id;
+            continue;
+          }
+          // A person, people, a place: by their ids here, now that the file's are written.
+          if (isWorldUse(use)) {
+            const fill = worldFillOf(deps, document, entry, use);
+            if (fill) world[role] = fill;
             continue;
           }
           // A group: each part that is here, in order.
@@ -782,13 +796,13 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
           const device = named ? deps.catalog.byKey(named.device) : null;
           if (device && named) roles[role] = { device: device.id, part: named.part };
         }
-        const result = deps.checked({ rule: entry.rule, roles, groups, starts }, id);
+        const result = deps.checked({ rule: entry.rule, roles, groups, starts, world }, id);
         // Restoring, one that cannot be kept as it was is kept turned off — its rule, what still fills it — and said: its owner's work is not lost.
         const why = [...new Set([...(kept.turnedOff.get(key) ?? []), ...result.problems])];
         if (why.length && !options.lenient) throw new ApiError('invalid', `"${entry.name}" cannot be kept as it is`, { problems: why.map((said) => `"${entry.name}": ${said}`) });
         each(`"${entry.name}"`, () => {
           const homeId = entry.home ? (deps.places.homeByKey(entry.home)?.id ?? null) : null;
-          deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, groups: result.groups, starts: result.starts, homeId, timeZone: entry.clock, mode: why.length ? 'off' : entry.mode, recheckMinutes: entry.recheckMinutes });
+          deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, groups: result.groups, starts: result.starts, world: result.world, homeId, timeZone: entry.clock, mode: why.length ? 'off' : entry.mode, recheckMinutes: entry.recheckMinutes });
           writeLabels(deps, { automation: id }, entry.labels);
           (existing ? applied.automations.changed : applied.automations.added).push(key);
           if (why.length) applied.notes.push(`"${entry.name}" is restored turned off: ${why.join('; ')}`);
@@ -916,6 +930,54 @@ function labelsDiffer(deps: ImportDeps, target: LabelTarget, said: readonly stri
 function writeLabels(deps: ImportDeps, target: LabelTarget, said: readonly string[]): void {
   if (!labelsDiffer(deps, target, said)) return;
   deps.labels.set(target, said.flatMap((key) => deps.labels.byKey(key)?.id ?? []));
+}
+
+/** Whether what fills a role is the family's world: a person, people, a place. */
+const isWorldUse = (use: Use): use is WorldUse => 'person' in use || 'people' in use || 'everyone' in use || 'home' in use || 'zone' in use || 'space' in use;
+
+/** Each member's key, as an export writes them: what a file without its people names them by. */
+const familyKeys = (deps: ImportDeps): Map<string, string> => new Map([...personKeysOf(deps.people.members().filter((person) => person.member && deps.people.chainOf(person.id).length))].map(([id, key]) => [key, id]));
+
+/** The home an automation's spaces are of: the one it is for, or the family's first — in the file, or here. */
+const homeKeyOf = (deps: ImportDeps, document: ConfigDocument, entry: AutomationEntry): string | null => entry.home ?? Object.keys(document.homes)[0] ?? deps.places.homes()[0]?.key ?? null;
+
+/** What a person, people or a place a file names is here — or will be, once the file is applied — said by what is not. */
+function worldMissing(deps: ImportDeps, document: ConfigDocument, entry: AutomationEntry, use: WorldUse): string[] {
+  if ('everyone' in use) return [];
+  if ('person' in use || 'people' in use) {
+    const known = familyKeys(deps);
+    return ('person' in use ? [use.person] : use.people).filter((key) => !document.people[key] && !known.has(key)).map((key) => `there is no person "${key}", in the file or in the family`);
+  }
+  if ('home' in use) return document.homes[use.home] || deps.places.homeByKey(use.home) ? [] : [`there is no home "${use.home}"`];
+  if ('zone' in use) return document.zones[use.zone] || deps.places.zoneByKey(use.zone) ? [] : [`there is no zone "${use.zone}"`];
+  const homeKey = homeKeyOf(deps, document, entry);
+  const brought = homeKey ? document.homes[homeKey] : undefined;
+  const here = homeKey ? deps.places.homeByKey(homeKey) : null;
+  const found = (brought && flatSpaces(brought.spaces).some((each) => each.space.key === use.space)) || (here && deps.spaces.spaceByKey(here.id, use.space));
+  return found ? [] : [`there is no space "${use.space}" in ${brought?.name ?? here?.name ?? 'its home'}`];
+}
+
+/** What a person, people or a place a file names is, by id here: none when it is not here. */
+function worldFillOf(deps: ImportDeps, document: ConfigDocument, entry: AutomationEntry, use: WorldUse): WorldFill | null {
+  if ('everyone' in use) return { everyone: true };
+  if ('person' in use || 'people' in use) {
+    const known = familyKeys(deps);
+    const ids = ('person' in use ? [use.person] : use.people).flatMap((key) => document.people[key]?.id ?? known.get(key) ?? []);
+    if ('person' in use) return ids[0] ? { person: ids[0] } : null;
+    return { people: ids };
+  }
+  if ('home' in use) {
+    const home = deps.places.homeByKey(use.home);
+    return home ? { place: home.id, kind: 'home' } : null;
+  }
+  if ('zone' in use) {
+    const zone = deps.places.zoneByKey(use.zone);
+    return zone ? { place: zone.id, kind: 'zone' } : null;
+  }
+  const homeKey = homeKeyOf(deps, document, entry);
+  const home = homeKey ? deps.places.homeByKey(homeKey) : null;
+  const space = home ? deps.spaces.spaceByKey(home.id, use.space) : null;
+  return space ? { place: space.id, kind: 'space' } : null;
 }
 
 /** Whether a device stands where a file says: by keys. */

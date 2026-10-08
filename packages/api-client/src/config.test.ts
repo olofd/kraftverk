@@ -84,7 +84,7 @@ describe('an automation as YAML, in the app', () => {
     const read = readAutomationText(text, 'charge', VOCABULARY);
     expect(read.problems).toEqual([]);
     const { draft, settings } = draftOfEntry(read.entry!, [plug], []);
-    expect(draft).toEqual({ name: 'Charge', rule, roles: automation.roles, groups: {}, starts: {} });
+    expect(draft).toEqual({ name: 'Charge', rule, roles: automation.roles, groups: {}, starts: {}, world: {} });
     expect(settings).toEqual({ mode: 'act', homeId: null, timeZone: 'Europe/Stockholm', recheckMinutes: null });
   });
 

@@ -1,4 +1,27 @@
-import { bindingsOf, capitalise, describeTriggers, evaluateNow, secondsNow, EVERY_SECONDS, HOLD_SECONDS, readsRole, runsOn, secondsText, slotOf, stepsOf, takesSteps, triggerKey, triggerKind, type RuleTrigger, type Rule, type Trigger } from '@kraftverk/automation';
+import {
+  ANYONE,
+  bindingsOf,
+  capitalise,
+  describeTriggers,
+  edgeOf,
+  evaluateNow,
+  secondsNow,
+  EVERY_SECONDS,
+  HOLD_SECONDS,
+  OWN_HOME,
+  readsRole,
+  ruleUses,
+  runsOn,
+  secondsText,
+  slotOf,
+  stepsOf,
+  takesSteps,
+  triggerKey,
+  triggerKind,
+  type RuleTrigger,
+  type Rule,
+  type Trigger,
+} from '@kraftverk/automation';
 import { dayAfter, localTime, MAIN_PART, zonedInstant, type ClockTimer } from '@kraftverk/device-sdk';
 import type { LiveMessage } from '@kraftverk/holder';
 
@@ -25,6 +48,8 @@ export class Triggers {
   #becoming = new Map<string, { state: TriggerState; hold: ClockTimer | null }>();
   /** Which automations each device's messages concern, by store revision: not every automation for every reading. */
   #index: { revision: number; byDevice: Map<string, AutomationRecord[]> } | null = null;
+  /** The automations the family's world moving concerns — someone arriving, a room emptying, a mode — by store revision. */
+  #worldly: { revision: number; automations: AutomationRecord[] } | null = null;
   readonly #context: RuleContext;
   readonly #runs: Runs;
 
@@ -51,6 +76,7 @@ export class Triggers {
     for (const entry of this.#becoming.values()) this.#context.clock.clear(entry.hold);
     this.#becoming.clear();
     this.#index = null;
+    this.#worldly = null;
   }
 
   /**
@@ -77,8 +103,15 @@ export class Triggers {
     const automation = this.deps.store.get(automationId);
     if (!automation || automation.mode === 'off') return;
     automation.rule.when.forEach((trigger, index) => {
-      if ('becomes' in trigger) this.#becomes(automation, automation.rule, trigger, index);
+      if (edgeOf(trigger)) this.#becomes(automation, automation.rule, trigger, index);
     });
+  }
+
+  /** The automations the family's world moving concerns: those that read who is where, a room, a mode — or wait for one. */
+  #concerningWorld(): AutomationRecord[] {
+    const revision = this.deps.store.revision;
+    if (this.#worldly?.revision !== revision) this.#worldly = { revision, automations: this.deps.store.list().filter((automation) => ruleUses(automation.rule).world) };
+    return this.#worldly.automations;
   }
 
   /** The automations a device's events and readings can start: bound to it, and with a trigger that listens. */
@@ -119,7 +152,7 @@ export class Triggers {
         // A condition is looked at on the clock too, not only when a reading moves: a battery that sits
         // at 8 % sends nothing, and an automation just let act must still see it is below its level.
         rule.when.forEach((trigger, index) => {
-          if ('becomes' in trigger) this.#becomes(automation, rule, trigger, index);
+          if (edgeOf(trigger)) this.#becomes(automation, rule, trigger, index);
         });
         // Keeping things so is for what a rule does at once: a sequence is started, not kept.
         if (automation.recheckMinutes && !takesSteps(rule)) await this.#recheck(automation, rule, now);
@@ -142,11 +175,12 @@ export class Triggers {
 
     const scope = this.#context.scope(automation, rule, now);
     for (const [index, trigger] of rule.when.entries()) {
-      if (!('becomes' in trigger)) continue;
+      const edge = edgeOf(trigger);
+      if (!edge) continue;
       // Fired and still true: a hold still waiting it out, or a condition that has ended, is not one.
       const state = this.#becoming.get(`${automation.id}:${triggerKey(trigger, index)}`)?.state;
       if (!state?.last || !state.fired) continue;
-      if (evaluateNow(trigger.becomes, scope) !== true) continue;
+      if (evaluateNow(edge.condition, scope) !== true) continue;
       // What this trigger does — its own steps, or the rule's — is what is kept so.
       const key = triggerKey(trigger, index);
       const planned = await this.#context.plan(automation, stepsOf(rule, key), this.#context.scope(automation, rule, now, key));
@@ -160,13 +194,14 @@ export class Triggers {
         return by !== undefined && by.kind === 'automation' && by.id !== automation.id;
       });
       if (others) return;
-      await this.#runs.runAndKeep(automation, `Looked again after ${automation.recheckMinutes} min, and it still holds: ${this.#context.said(automation, rule, trigger.becomes)}`, key);
+      await this.#runs.runAndKeep(automation, `Looked again after ${automation.recheckMinutes} min, and it still holds: ${this.#context.edgeSaid(automation, rule, trigger)}`, key);
       return;
     }
   }
 
-  /** What a device said: an event some automation waits for, or a reading some condition reads. */
+  /** What a device said: an event some automation waits for, or a reading some condition reads. And the family's world moving. */
   async hear(message: LiveMessage): Promise<void> {
+    if (message.kind === 'presence' || message.kind === 'occupancy' || message.kind === 'mode') return this.#heardWorld(message);
     if (message.kind !== 'event' && message.kind !== 'readings') return;
     for (const indexed of this.#concerning(message.deviceId)) {
       const automation = this.deps.store.get(indexed.id) ?? indexed;
@@ -182,10 +217,64 @@ export class Triggers {
           const going = this.#runs.runAndKeep(automation, `${device?.name ?? 'A device'} said: ${label}`, triggerKey(trigger, index), { id: message.event.id, data: message.event.data });
           if (!takesSteps(rule)) await going;
         }
-        if (message.kind === 'readings' && 'becomes' in trigger) {
+        if (message.kind === 'readings' && edgeOf(trigger)) {
           const watched = Object.keys(rule.roles).some((role) => readsRole(rule, role) && bindingsOf(automation, role).some((binding) => binding.device === message.deviceId));
           if (watched) this.#becomes(automation, rule, trigger, index);
         }
+      }
+    }
+  }
+
+  /**
+   * The family's world moved: someone came or went, a room filled or
+   * emptied, a home's mode changed. What waits for that starts — as far as
+   * each person shares, which is what presence keeps — and every condition
+   * of people and places is looked at again.
+   */
+  async #heardWorld(message: Extract<LiveMessage, { kind: 'presence' | 'occupancy' | 'mode' }>): Promise<void> {
+    const world = this.deps.world;
+    for (const indexed of this.#concerningWorld()) {
+      const automation = this.deps.store.get(indexed.id) ?? indexed;
+      if (automation.mode === 'off') continue;
+      const rule = automation.rule;
+      const home = world?.home(automation.homeId) ?? null;
+      /** The place a trigger names, by id: the automation's own home, or what fills its role. */
+      const placeId = (name: string | undefined): string | null => {
+        if (!name || name === OWN_HOME) return home;
+        const fill = automation.world[name];
+        return fill && 'place' in fill ? fill.place : null;
+      };
+      /** Whether a person is who a trigger names: anyone of the family, a person, one of several. */
+      const isWho = (who: string, person: string): boolean => {
+        if (who === ANYONE) return true;
+        const fill = automation.world[who];
+        if (!fill) return false;
+        if ('person' in fill) return fill.person === person;
+        if ('people' in fill) return fill.people.includes(person);
+        return 'everyone' in fill;
+      };
+      for (const [index, trigger] of rule.when.entries()) {
+        let why: string | null = null;
+        if (message.kind === 'presence') {
+          const step = 'arrives' in trigger ? { ...trigger.arrives, change: 'arrived' } : 'leaves' in trigger ? { ...trigger.leaves, change: 'left' } : null;
+          if (step && step.change === message.change && message.place.id === placeId(step.at) && isWho(step.who, message.personId)) {
+            const person = world?.personName(message.personId) ?? 'Someone';
+            const place = step.at === OWN_HOME ? 'home' : (world?.placeName({ id: message.place.id, kind: message.place.kind }) ?? 'a place');
+            why = message.change === 'arrived' ? `${person} arrived ${step.at === OWN_HOME ? 'home' : `at ${place}`}` : `${person} left ${place}`;
+          }
+        }
+        if (message.kind === 'mode') {
+          const name = world?.placeName({ id: message.homeId, kind: 'home' }) ?? 'The home';
+          if ('modeBecomes' in trigger && message.homeId === placeId(trigger.modeBecomes.at) && message.mode === trigger.modeBecomes.mode) why = `${name} became ${message.mode}`;
+          if ('modeChanges' in trigger && message.homeId === placeId(trigger.modeChanges.at) && message.axis === trigger.modeChanges.axis) why = `${name}’s ${message.axis === 'day' ? 'time of day' : 'mode'} became ${message.mode}`;
+        }
+        if (why) {
+          const going = this.#runs.runAndKeep(automation, why, triggerKey(trigger, index), message.kind === 'presence' ? { id: '', data: null, who: message.personId } : null);
+          if (!takesSteps(rule)) await going;
+          continue;
+        }
+        // A condition of people and places — or a `becomes` that reads them — looked at again.
+        if (edgeOf(trigger)) this.#becomes(automation, rule, trigger, index);
       }
     }
   }
@@ -196,10 +285,12 @@ export class Triggers {
    * already true. Its state is kept after every change, so a restart resumes
    * a hold with the time it had left and never fires one twice.
    */
-  #becomes(automation: AutomationRecord, rule: Rule, trigger: Extract<RuleTrigger, { becomes: unknown }>, index: number): void {
+  #becomes(automation: AutomationRecord, rule: Rule, trigger: RuleTrigger, index: number): void {
+    const edge = edgeOf(trigger);
+    if (!edge) return;
     const key = `${automation.id}:${triggerKey(trigger, index)}`;
     const scope = this.#context.scope(automation, rule);
-    const now = evaluateNow(trigger.becomes, scope);
+    const now = evaluateNow(edge.condition, scope);
     // Unknown — a device gone quiet — changes nothing: neither a start nor an end.
     if (typeof now !== 'boolean') return;
 
@@ -230,9 +321,9 @@ export class Triggers {
     // True, and already dealt with.
     if (state.fired) return;
 
-    const said = capitalise(this.#context.said(automation, rule, trigger.becomes));
+    const said = capitalise(this.#context.edgeSaid(automation, rule, trigger));
     // A setting filled in later is held to a hold's bounds here too: a timer past them would not wait at all.
-    const asked = trigger.heldFor ? (secondsNow(trigger.heldFor, scope) ?? 0) : 0;
+    const asked = edge.heldFor ? (secondsNow(edge.heldFor, scope) ?? 0) : 0;
     const seconds = Number.isFinite(asked) ? Math.min(HOLD_SECONDS.max, Math.max(0, asked)) : 0;
     const fire = (why: string) => {
       const current = this.deps.store.get(automation.id);
@@ -260,7 +351,7 @@ export class Triggers {
       entry.hold = null;
       try {
         // Still true, all this time? Only then.
-        if (evaluateNow(trigger.becomes, this.#context.scope(automation, rule)) !== true) return;
+        if (evaluateNow(edge.condition, this.#context.scope(automation, rule)) !== true) return;
         fire(`${said}, for ${secondsText(seconds)}`);
       } catch (error) {
         // A timer has nobody to throw to: what went wrong is said, never left to bring the server down.
@@ -279,6 +370,14 @@ export class Triggers {
         return this.#dueEvery(automation, rule, trigger as Extract<Trigger, { every: unknown }>, now, this.#lastStarted(automation, rule, trigger));
       case 'event':
       case 'becomes':
+      case 'arrives':
+      case 'leaves':
+      case 'firstArrives':
+      case 'lastLeaves':
+      case 'empties':
+      case 'occupied':
+      case 'modeBecomes':
+      case 'modeChanges':
         return false;
     }
   }

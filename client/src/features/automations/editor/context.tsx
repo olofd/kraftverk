@@ -6,6 +6,7 @@ import { capabilitiesOf, meetsNeed, type CapabilityNeed, type DeviceDescription,
 
 import { useAnswer } from '../../../components/useAnswer';
 import { useFamily } from '../../../state/FamilyProvider';
+import type { WorldOptions } from './world';
 
 /** An automation as it is being built (`@kraftverk/automation`'s draft), and its name. */
 export type Draft = AutomationDraft & { name: string };
@@ -31,6 +32,8 @@ export type EditorKit = {
   functions: readonly FunctionView[];
   /** The device a new one was started from: its parts are offered first. */
   prefer?: string | null;
+  /** The family's people, places and modes: who and where a block may name. */
+  world: WorldOptions;
 };
 
 const EditorContext = createContext<EditorKit | null>(null);
@@ -50,14 +53,14 @@ export function EditorProvider({ kit, children }: { kit: EditorKit; children: Re
 export function useEditor() {
   const kit = useContext(EditorContext);
   if (!kit) throw new Error('The editor is used outside its provider');
-  const { draft, devices, automations, functions, prefer } = kit;
+  const { draft, devices, automations, functions, prefer, world } = kit;
 
   return useMemo(() => {
     const deviceOf = (binding: RoleBinding | undefined) => (binding ? devices.find((device) => device.id === binding.device) : undefined);
     /** What each "for each" calls each part, and its group. */
     const each = eachNames(draft.rule);
     /** A role's name, as its steps say it — what a "for each" calls each part, as "each part". */
-    const name = (role: string): string => (each[role] && !draft.rule.roles[role] ? eachSaid(role) : roleSaid(draft, role, devices, automations));
+    const name = (role: string): string => (each[role] && !draft.rule.roles[role] ? eachSaid(role) : roleSaid(draft, role, devices, automations, world.names));
     /**
      * The part filling a role: its device's description, and which part — for
      * what a "for each" calls each part, its group's first: what its blocks
@@ -70,6 +73,7 @@ export function useEditor() {
     };
     const vocabulary: RuleVocabulary = {
       fn: (id) => (functions.find((fn) => fn.id === id) as unknown as AutomationFunction | undefined) ?? null,
+      ...(world.modes.length ? { modes: () => world.modes.map((mode) => mode.key) } : {}),
       attribute: (role, target) => {
         const bound = partOf(role);
         return bound ? writtenAttribute(bound.description, bound.part, target) : null;
@@ -101,7 +105,7 @@ export function useEditor() {
     /** Whether a block's part is chosen: a role of the draft's, or what a "for each" calls each part. */
     const chosen = (role: string): boolean => Boolean(role && (draft.rule.roles[role] || each[role]));
     return { ...kit, name, partOf, vocabulary, said, saidExpr, saidTrigger, parts, offering, chosen };
-  }, [kit, draft, devices, automations, functions, prefer]);
+  }, [kit, draft, devices, automations, functions, prefer, world]);
 }
 
 /** A part picked for a block: the role it fills — its own, or a new one — and the draft with it. */

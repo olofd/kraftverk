@@ -1,6 +1,6 @@
-import { expect, test, type Page } from './fixtures';
+import { expect, test } from './fixtures';
 
-import { addSimulated, answer, link, press, unique, whose } from './helpers';
+import { addSimulated, answer, link, pick, press, unique, whose } from './helpers';
 
 const SOC = { read: { role: 'battery', means: 'charge' } };
 
@@ -10,12 +10,6 @@ const SOC = { read: { role: 'battery', means: 'charge' } };
   the station's own settings allow. Made in the editor, read back as a
   sentence, and checked against the station as it is now.
 */
-
-/** Picks, in the picker called `label`, the option that reads `option`. */
-async function pick(page: Page, label: string, option: string) {
-  await page.getByRole('button', { name: new RegExp(`^${label}: .*Choose$`) }).last().click();
-  await page.getByText(option, { exact: true }).last().click();
-}
 
 test('a charge window of your own, copied from the shared recipe', async ({ page, request }) => {
   const station = await addSimulated(request, 'aferiy.p280', unique('Garage P280'));
