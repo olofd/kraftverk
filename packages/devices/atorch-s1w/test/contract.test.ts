@@ -85,7 +85,7 @@ describe('the ATORCH S1W', () => {
     const found = await atorch.identify(over(plug({ '131': 'open', '1': false, '18': 6600, '19': 152000, '20': 23000 }).channel), {
       config: {},
       log: quiet,
-      signal: AbortSignal.timeout(10_000),
+      home: null, signal: AbortSignal.timeout(10_000),
     });
     expect(found.identity).toBe('tuya-local:bf8dc9aa');
     expect(found.summary).toContain('the relay is on, drawing 1520 W');

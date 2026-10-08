@@ -19,6 +19,7 @@ import {
   sightingMatches,
   type AuditRecord,
   type ConfigValues,
+  type DeviceHome,
   type DeviceType,
   type Identified,
   type IntegrationKept,
@@ -70,6 +71,8 @@ export type SetupServiceDeps = {
   db: SqlDatabase;
   /** Where the timeline goes. */
   record: (entry: AuditRecord) => void;
+  /** The home a device is for: the one a way set up again stands in, or the family's first. */
+  home?: (deviceId: SavedDeviceId | null) => DeviceHome | null;
   types: DeviceTypeRegistry;
   protocols: ProtocolRegistry;
   transports: TransportHost;
@@ -589,6 +592,7 @@ export class SetupService {
       held: new Map(),
       given: new Map(),
       ...start,
+      home: this.deps.home?.(start.again?.deviceId ?? null) ?? null,
       identityHint: null,
       device: {},
       connection: {},

@@ -103,7 +103,11 @@ Work through `src/type.ts` in this order:
    about: a forecast for 14:00 fetched at 09:30 was observed at 09:30. Reads
    are synchronous — the session polls its own device with `ctx.schedule` —
    so nothing waits on a device that stopped answering. `ctx.event(id, data)`
-   raises an event the description declares.
+   raises an event the description declares. `ctx.home()` is the home the
+   device is for — the one it stands in, or the family's first — with its
+   place and clock: a forecast with no place of its own asks for its home's,
+   each time, since a device can be moved while it runs (`identify` is told
+   it as `home`).
    **Tools** — a register dump, a raw frame — are declared on the type as
    data (`tools`): what each asks for, what it answers in the value system,
    and whether it writes. Whoever holds the device checks the input before a

@@ -1,12 +1,12 @@
 import type { Coordinates } from '@kraftverk/automation';
-import type { PolicyValueName, PolicyValues } from '@kraftverk/device-sdk';
-import { HomeSettings, policyValues, setPolicyValue, type HomeRecord, type PlaceStore, type SqlDatabase } from '@kraftverk/store';
+import type { DeviceHome, PolicyValueName, PolicyValues, SavedDeviceId } from '@kraftverk/device-sdk';
+import { HomeSettings, policyValues, setPolicyValue, type HomeRecord, type PlaceStore, type SpaceStore, type SqlDatabase } from '@kraftverk/store';
 
 /*
   A family's homes, as the hub uses them (docs/PLAN-WORLD-MODEL.md §8.4):
-  the first made with the family, where each is, and each one's values.
-  Until devices stand in homes (PLAN-WORLD-MODEL-WORK.md, W2), the first is
-  the family's own place, policy and clock.
+  the first made with the family, where each is, and each one's values. A
+  device is for the home it stands in — its place, its clock and its values
+  are that home's — and, placed nowhere, for the family's first.
 */
 
 /** The time zone where this node runs: what a family's first home keeps until its people say otherwise. */
@@ -24,6 +24,15 @@ export function ensureFirstHome(places: PlaceStore, timeZone = localTimeZone()):
 }
 
 /** Where a home is — the one named, or the family's first — as a rule's "home" and the sun's times want it. Null: not said. */
+/** The home a device is for (`DeviceContext.home`): the one it stands in, or the family's first. */
+export const deviceHomeOf =
+  (places: PlaceStore, spaces: SpaceStore) =>
+  (deviceId: SavedDeviceId | null): DeviceHome | null => {
+    const placed = deviceId ? spaces.placement(deviceId) : null;
+    const home = (placed ? places.home(placed.homeId) : null) ?? places.first();
+    return home ? { name: home.name, location: home.location ? { latitude: home.location.latitude, longitude: home.location.longitude } : null, timeZone: home.timeZone } : null;
+  };
+
 export const locationOf =
   (places: PlaceStore) =>
   (homeId: string | null): Coordinates | null => {

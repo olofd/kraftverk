@@ -4,7 +4,7 @@ import { REAL_CLOCK } from './clock.ts';
 import type { Bridge } from './bridge.ts';
 import { simulatedMethodOf, type BridgedConnection, type DirectConnection, type OpenConnection } from './connection.ts';
 import { attributeMeaning, capabilitiesOf, capabilityIn, checkAttributeValue, currentForOf, isCurrent, partsOf, type AttributeSpec, type DeviceDescription } from './description.ts';
-import type { DeviceContext, DeviceSession, DeviceType } from './device-type.ts';
+import type { DeviceContext, DeviceHome, DeviceSession, DeviceType } from './device-type.ts';
 import { savedDeviceId } from './ids.ts';
 import { configDefaults, validateConfig, valueTypeOf, type ConfigSchema, type ConfigValues } from './schema.ts';
 import { validateDeviceType } from './validate.ts';
@@ -44,6 +44,8 @@ export type ContractOptions = {
    * `identify` against. Built from the channels below.
    */
   connections?: readonly (() => OpenConnection | Promise<OpenConnection>)[];
+  /** The home the device is for, as its session asks (`DeviceContext.home`): none when not given. */
+  home?: DeviceHome;
 };
 
 export type RaisedEvent = { id: string; data?: Readonly<Record<string, Value>>; part?: string };
@@ -78,6 +80,7 @@ export function simulatorContext<Config extends ConfigValues = ConfigValues>(
     readOnly: false,
     allowRawFrames: false,
     platform: 'system',
+    home: () => options.home ?? null,
     schedule: (everyMs, task) => {
       let running = false;
       timers.push(
@@ -322,7 +325,7 @@ async function identifyProblems(type: Pick<DeviceType<any>, 'identify' | 'kind'>
   const quiet = () => undefined;
   try {
     const found = await Promise.race([
-      type.identify(connection, { config, log: { info: quiet, warn: quiet, error: quiet }, signal: AbortSignal.timeout(10_000) }),
+      type.identify(connection, { config, log: { info: quiet, warn: quiet, error: quiet }, home: null, signal: AbortSignal.timeout(10_000) }),
       sleep(10_000).then(() => {
         throw new Error('did not answer within 10 s');
       }),

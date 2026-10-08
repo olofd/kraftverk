@@ -50,12 +50,12 @@ describe('a NIU account', () => {
   });
 
   test('checked once: the scooters on it, and who it is — its sign-in, written plainly', async () => {
-    const identified = await account.identify(over(), { config: {}, log: console as never, signal: AbortSignal.timeout(5_000) });
+    const identified = await account.identify(over(), { config: {}, log: console as never, home: null, signal: AbortSignal.timeout(5_000) });
     expect(identified).toMatchObject({ identity: 'niu-cloud:account:rider@example.test', summary: 'Signed in: Blixten, NQi GT are on it.' });
   });
 
   test('a wrong password is said, not guessed around', async () => {
-    await expect(account.identify(over('wrong'), { config: {}, log: console as never, signal: AbortSignal.timeout(5_000) })).rejects.toThrow('did not accept');
+    await expect(account.identify(over('wrong'), { config: {}, log: console as never, home: null, signal: AbortSignal.timeout(5_000) })).rejects.toThrow('did not accept');
   });
 });
 

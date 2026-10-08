@@ -58,10 +58,19 @@ export type DeviceTypeMeta = {
   docsUrl?: string;
 };
 
+/**
+ * The home a device is for (docs/PLAN-WORLD-MODEL.md §17): the one it stands
+ * in, or — placed nowhere — the family's first. Where it is, when that has
+ * been said, and its clock: what a forecast is for when no place of its own is.
+ */
+export type DeviceHome = { name: string; location: { latitude: number; longitude: number } | null; timeZone: string };
+
 /** What `identify` may use besides the connection. */
 export type IdentifyContext = {
   /** The device's own config entered so far: a weather service's location. */
   config: ConfigValues;
+  /** The home it is being added to: the family's first, until it is placed. Null where there is none to say. */
+  home: DeviceHome | null;
   log: DeviceLogger;
   signal: AbortSignal;
 };
@@ -325,6 +334,12 @@ export interface DeviceContext<Config extends ConfigValues = ConfigValues> {
   readonly allowRawFrames: boolean;
   /** Where this session is running. */
   readonly platform: Platform;
+  /**
+   * The home it is for now: the one it stands in, or the family's first.
+   * Asked again whenever it matters — a device can be moved while it is
+   * open. Null where there is none to say: a node that keeps no homes.
+   */
+  home(): DeviceHome | null;
   /**
    * Repeating work, cancelled when the session closes. A run still going when
    * the next is due is skipped, not queued: a device that stops answering must

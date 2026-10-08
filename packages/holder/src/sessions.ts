@@ -15,6 +15,7 @@ import {
   type ConnectionHealth,
   type DescriptionSource,
   type DeviceDescription,
+  type DeviceHome,
   type DeviceInfo,
   type DeviceSession,
   type DeviceStore,
@@ -135,6 +136,8 @@ export type SessionManagerDeps = {
   readOnly: () => boolean;
   /** Frames nobody has described may be sent, by a type's raw-frame tool. */
   allowRawFrames: boolean;
+  /** The home a device is for now: the one it stands in, or the family's first. None on a node that keeps no homes. */
+  home?(deviceId: SavedDeviceId): DeviceHome | null;
   /** What another node of the home is called, in "held by …": "Olof's iPhone". */
   nodeName?: (node: string) => string | null;
   /** A connection of its own answered. */
@@ -559,6 +562,7 @@ export class SessionManager {
         // Read-only is about hardware: a simulated device has none, and takes writes either way.
         readOnly: this.deps.readOnly() && !simulated,
         allowRawFrames: this.deps.allowRawFrames,
+        home: () => this.deps.home?.(record.id) ?? null,
         log: { info: log('log'), warn: log('warn'), error: log('error') },
         // A device that pushes, or a poll that finished: what moved is published now, not at the next pulse.
         changed: () => {

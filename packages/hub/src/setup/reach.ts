@@ -62,7 +62,7 @@ async function readOnce(draft: Draft, open: (linked: <T extends MemberLink>(link
     connection = await open(linked);
     const quiet = { info: () => {}, warn: (m: string) => console.warn(`[setup] ${m}`), error: (m: string) => console.error(`[setup] ${m}`) };
     const identified = await withTimeout(
-      draft.type.identify(connection, { config: draft.device as ConfigValues, log: quiet, signal: AbortSignal.timeout(CHECK_TIMEOUT_MS) }),
+      draft.type.identify(connection, { config: draft.device as ConfigValues, home: draft.home, log: quiet, signal: AbortSignal.timeout(CHECK_TIMEOUT_MS) }),
       `Reading the ${draft.type.meta.name}`,
       CHECK_TIMEOUT_MS
     );

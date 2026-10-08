@@ -93,12 +93,12 @@ describe('a Shelly switch', () => {
 
   test('is read once at the check: who it is, and what it does now', async () => {
     const played = playedShelly();
-    const identified = await shellySwitch.identify(played.connection(), { config: {}, log: { info: () => {}, warn: () => {}, error: () => {} }, signal: AbortSignal.timeout(5_000) });
+    const identified = await shellySwitch.identify(played.connection(), { config: {}, log: { info: () => {}, warn: () => {}, error: () => {} }, home: null, signal: AbortSignal.timeout(5_000) });
     expect(identified).toEqual({ identity: shellyIdentity(MAC), model: 'PlusPlugS', summary: 'A Shelly PlusPlugS (SNPL-00112EU), firmware 1.4.2: off, drawing 0 W.' });
   });
 
   test('with a password: signed in when it is right, waiting on a person when it is missing or wrong', async () => {
-    const quiet = { config: {}, log: { info: () => {}, warn: () => {}, error: () => {} }, signal: AbortSignal.timeout(5_000) };
+    const quiet = { config: {}, log: { info: () => {}, warn: () => {}, error: () => {} }, home: null, signal: AbortSignal.timeout(5_000) };
     const right = playedShelly({ password: 'correct horse' });
     expect((await shellySwitch.identify(right.connection({ password: 'correct horse' }), quiet)).identity).toBe(shellyIdentity(MAC));
     for (const secrets of [{}, { password: 'wrong' }] as Record<string, string>[]) {
@@ -108,7 +108,7 @@ describe('a Shelly switch', () => {
   });
 
   test('a first-generation Shelly is said to be one, not mistaken for another', async () => {
-    const quiet = { config: {}, log: { info: () => {}, warn: () => {}, error: () => {} }, signal: AbortSignal.timeout(5_000) };
+    const quiet = { config: {}, log: { info: () => {}, warn: () => {}, error: () => {} }, home: null, signal: AbortSignal.timeout(5_000) };
     await expect(shellySwitch.identify(playedShelly({ gen: 1 }).connection(), quiet)).rejects.toThrow('first generation');
   });
 

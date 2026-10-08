@@ -143,7 +143,7 @@ describe('the Tuya Zigbee plug', () => {
   });
 
   test('its check reads the plug through the gateway, in the units its app shows', async () => {
-    const found = await plugType.identify(await over(gateway({ ...MAPPED }).channel), { config: {}, log: quiet, signal: AbortSignal.timeout(10_000) });
+    const found = await plugType.identify(await over(gateway({ ...MAPPED }).channel), { config: {}, log: quiet, home: null, signal: AbortSignal.timeout(10_000) });
     expect(found.identity).toBe('zigbee:a4c1380000000001');
     expect(found.summary).toBe('Answering through its gateway, Tuya 3.4: the relay is on, drawing 997 W.');
   });

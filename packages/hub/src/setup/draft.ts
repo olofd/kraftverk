@@ -1,5 +1,5 @@
 import type { CheckOutcome, DraftView, SaveInput } from '@kraftverk/api-contract';
-import type { Actor, NodeId, ConfigValues, ConnectionMethod, DeviceType, Identified, memoryHeld, SavedDeviceId, SetupStepView, Sighting } from '@kraftverk/device-sdk';
+import type { Actor, NodeId, ConfigValues, ConnectionMethod, DeviceHome, DeviceType, Identified, memoryHeld, SavedDeviceId, SetupStepView, Sighting } from '@kraftverk/device-sdk';
 
 import type { Reach } from './reach.ts';
 
@@ -34,6 +34,8 @@ export type Draft = {
   /** The secrets a way set up again already had: what was given anew is what differs. */
   given: Map<string, string>;
   identityHint: string | null;
+  /** The home it is for, as its type's `identify` is told: the family's first, until it is placed. */
+  home: DeviceHome | null;
   device: Record<string, unknown>;
   connection: Record<string, unknown>;
   secrets: Map<string, string>;

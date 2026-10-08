@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { DeviceView } from '@kraftverk/api-contract';
 import { savedDeviceId } from '@kraftverk/device-sdk';
 
+import { deviceHomeOf } from '../src/homes/homes.ts';
 import { aHome, refusal, settle, type TestHome } from './a-home.ts';
 
 /*
@@ -124,6 +125,19 @@ describe('a device you have', () => {
     expect((await t.home.devices.get(lamp.id)).labels).toEqual([heating.id]);
     expect((await t.home.labels.labelled()).devices).toEqual({ [lamp.id]: [heating.id] });
     expect((await t.home.timeline()).some((entry) => entry.kind === 'label.removed')).toBe(true);
+  });
+
+  test('its home, as its session asks: the family’s first until it stands in another, and that one then', async () => {
+    const lamp = await aLamp();
+    const [first] = await t.home.homes.list();
+    await t.home.homes.update(first!.id, { location: { latitude: 59.33, longitude: 18.07, radius: 150 } });
+    const cabin = await t.home.homes.add({ name: 'Cabin', type: 'cabin', timeZone: 'Europe/Oslo' });
+    const homeOf = deviceHomeOf(t.hub.places, t.hub.spaces);
+    expect(homeOf(lamp.id)).toEqual({ name: first!.name, location: { latitude: 59.33, longitude: 18.07 }, timeZone: first!.timeZone });
+    expect(homeOf(null)?.name).toBe(first!.name);
+    const [site] = await t.home.spaces.list(cabin.id);
+    await t.home.devices.place(lamp.id, { spaceId: site!.id });
+    expect(homeOf(lamp.id)).toEqual({ name: 'Cabin', location: null, timeZone: 'Europe/Oslo' });
   });
 
   test('moved from the bedroom to the kitchen at noon: its readings before are the bedroom’s, after the kitchen’s — and both the floor’s', async () => {

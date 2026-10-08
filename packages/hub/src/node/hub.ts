@@ -33,7 +33,7 @@ import {
 } from '@kraftverk/store';
 
 import { familyApi } from '../api/index.ts';
-import { ensureFirstHome, locationOf, policyOf } from '../homes/homes.ts';
+import { deviceHomeOf, ensureFirstHome, locationOf, policyOf } from '../homes/homes.ts';
 import { Attention } from '../attention/attention.ts';
 import { keepWatchedFresh } from '../attention/freshness.ts';
 import { homeDevices } from '../automations/devices.ts';
@@ -205,6 +205,7 @@ export class Hub {
       {
         tag: 'devices',
         record,
+        home: (deviceId) => deviceHomeOf(this.places, this.spaces)(deviceId),
         ways: ({ connections, self }) => holding(connections, self.id),
         sessions: {
           store: (deviceId) => deviceStore(db, deviceId),
@@ -228,7 +229,8 @@ export class Hub {
           },
           linksFrom: (id, part) => this.links.from(id, part).map((link) => ({ kind: link.kind, target: link.target })),
           policy: options.gateway,
-          policyValues: () => this.policy.values(),
+          // A device's own home's values: the one it stands in, or the family's first.
+          policyValues: (deviceId) => policyOf(db)(this.spaces.placement(deviceId)?.homeId ?? ensureFirstHome(this.places).id).values(),
         }),
       }
     );
@@ -243,7 +245,7 @@ export class Hub {
     this.media = new MediaStore(db);
     this.spaces = new SpaceStore(db);
     this.labels = new LabelStore(db);
-    // The policy is a home's: the first one's, until devices stand in homes.
+    // The family's values, as its API sets them: its first home's. The gateway asks each device's own home (`policyValues`).
     const policyHome = new HomeSettings(db, () => ensureFirstHome(this.places).id);
     this.policy = { values: () => policyValues(policyHome), set: (name, value) => setPolicyValue(policyHome, name, value) };
     const { catalog, connections, links, nodes, sessions } = this;

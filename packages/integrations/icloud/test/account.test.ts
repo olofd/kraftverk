@@ -70,7 +70,7 @@ describe('the types', () => {
 describe('an iCloud account', () => {
   test('is read once at the check: who it is, and who is in its Find My', async () => {
     const { connection } = await signedInAccount();
-    expect(await account.identify(connection, { config: {}, log: { info: () => {}, warn: () => {}, error: () => {} }, signal: AbortSignal.timeout(10_000) })).toEqual({
+    expect(await account.identify(connection, { config: {}, log: { info: () => {}, warn: () => {}, error: () => {} }, home: null, signal: AbortSignal.timeout(10_000) })).toEqual({
       identity: accountIdentity(DSID),
       model: null,
       summary: 'Signed in: Someone’s iPhone, Alex’s iPhone (Alex), Someone’s MacBook are in its Find My.',

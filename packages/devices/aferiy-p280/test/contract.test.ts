@@ -52,7 +52,7 @@ describe('the P280 device type', () => {
 
   test('is recognised as the same station however it is reached', async () => {
     const quiet = { info: () => {}, warn: () => {}, error: () => {} };
-    const context = { config: {}, log: quiet, signal: AbortSignal.timeout(10_000) };
+    const context = { config: {}, log: quiet, home: null, signal: AbortSignal.timeout(10_000) };
     const wifi = await p280.identify(overWifi(), context);
     const ble = await p280.identify(overBluetooth(), context);
     expect(wifi.identity).toBe(`sydpower:${MAC}`);
@@ -64,7 +64,7 @@ describe('the P280 device type', () => {
     const quiet = { info: () => {}, warn: () => {}, error: () => {} };
     const { channel } = overBluetooth();
     const inBrowser = fakeConnection({ method: 'bluetooth', protocol: 'sydpower', transport: 'ble', address: 'k3Jx9-browser-handle', channel });
-    const found = await p280.identify(inBrowser, { config: {}, log: quiet, signal: AbortSignal.timeout(10_000) });
+    const found = await p280.identify(inBrowser, { config: {}, log: quiet, home: null, signal: AbortSignal.timeout(10_000) });
     expect(found.identity).toBeNull();
   });
 

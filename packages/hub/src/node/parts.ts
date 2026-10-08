@@ -1,4 +1,4 @@
-import { LINK_KINDS, type AuditRecord, type Clock, type ScopedHttp } from '@kraftverk/device-sdk';
+import { LINK_KINDS, type AuditRecord, type Clock, type DeviceHome, type SavedDeviceId, type ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, type GatewayDeps } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, type SessionManagerDeps } from '@kraftverk/holder';
 import { AutomationStore, ConnectionStore, databaseLedger, DeviceCatalog, HistoryStore, integrationKept, LastReadings, LinkStore, NodeSettings, NodeStore, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
@@ -43,6 +43,8 @@ export type NodeRole = {
   tag: string;
   /** Where its timeline goes: the home's own, or owed to the master. */
   record(entry: AuditRecord): void;
+  /** The home a device is for — the one it stands in, or the family's first; for one not yet added, the first. None on a node that keeps no homes. */
+  home?(deviceId: SavedDeviceId | null): DeviceHome | null;
   /** Which of the home's ways its sessions hold, and their secrets. */
   ways(stores: { connections: ConnectionStore; self: NodeRecord }): Pick<SessionManagerDeps, 'connections' | 'holds' | 'secret' | 'secretFields' | 'keepSecret' | 'onConnected'>;
   /** What else its sessions are handed: where a device's store is, what is done with what a device says. */
@@ -102,6 +104,7 @@ export function nodeParts(options: NodeOptions, role: NodeRole): NodeParts {
       return feeding.some((link) => sessions.reads(link.source.device, link.source.part, evidence.follows) === true);
     },
     ...role.sessions,
+    home: (deviceId) => role.home?.(deviceId) ?? null,
     record: (entry) => role.record(entry),
     bus,
     // What each device last said: what it shows, as it was, until it says again after a restart.
@@ -122,6 +125,7 @@ export function nodeParts(options: NodeOptions, role: NodeRole): NodeParts {
   const setup = new SetupService({
     db,
     record: (entry) => role.record(entry),
+    home: (deviceId) => role.home?.(deviceId) ?? null,
     types,
     protocols,
     transports,

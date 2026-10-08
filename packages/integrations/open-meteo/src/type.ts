@@ -1,13 +1,15 @@
 import {
   defineDeviceType,
   MAIN_PART,
+  type ConfigValues,
   type DeviceContext,
+  type DeviceHome,
   type DeviceDescription,
   type DeviceSession,
   type Reading,
   channelOf,
 } from '@kraftverk/device-sdk';
-import { fetchForecast, OPEN_METEO, type WeatherHour } from './protocol/index.ts';
+import { fetchForecast, OPEN_METEO, type Place, type WeatherHour } from './protocol/index.ts';
 
 
 /**
@@ -25,7 +27,17 @@ import { fetchForecast, OPEN_METEO, type WeatherHour } from './protocol/index.ts
  * not leave a gap in history.
  */
 
-type WeatherConfig = { latitude: number; longitude: number; place?: string };
+type WeatherConfig = { latitude?: number; longitude?: number; place?: string };
+
+/** Where a forecast is for: its own place, when one is said — or its home's. Null: neither is. */
+const placeOf = (config: ConfigValues, home: DeviceHome | null): Place | null => {
+  const latitude = Number(config.latitude);
+  const longitude = Number(config.longitude);
+  if (config.latitude !== undefined && config.longitude !== undefined && Number.isFinite(latitude) && Number.isFinite(longitude)) return { latitude, longitude };
+  return home?.location ?? null;
+};
+
+const NOWHERE = 'Say where: a place of its own, or where its home is (App settings → Homes)';
 
 /** How often to ask. The forecast changes a few times a day; this is plenty. */
 const REFRESH_MS = 30 * 60_000;
@@ -105,7 +117,10 @@ async function realSession(ctx: DeviceContext<WeatherConfig>): Promise<DeviceSes
 
   const refresh = async () => {
     try {
-      hours = await fetchForecast(channel, ctx.config);
+      // Its home's, asked each time: a home's place can be said, or the service moved, while it runs.
+      const place = placeOf(ctx.config, ctx.home());
+      if (!place) throw new Error(NOWHERE);
+      hours = await fetchForecast(channel, place);
       fetchedAt = new Date().toISOString();
       lastError = null;
       // Kept, so a restart has a forecast before the next one arrives.
@@ -182,8 +197,8 @@ export default defineDeviceType<WeatherConfig>({
   config: {
     fields: {
       place: { type: 'string', title: 'Place', description: 'What you call it: “Home”, “The cabin”.', placeholder: 'Home' },
-      latitude: { type: 'number', title: 'Latitude', description: 'Degrees north; south is negative.', required: true, min: -90, max: 90 },
-      longitude: { type: 'number', title: 'Longitude', description: 'Degrees east; west is negative.', required: true, min: -180, max: 180 },
+      latitude: { type: 'number', title: 'Latitude', description: 'Degrees north; south is negative. Its home’s, when none is said.', min: -90, max: 90 },
+      longitude: { type: 'number', title: 'Longitude', description: 'Degrees east; west is negative. Its home’s, when none is said.', min: -180, max: 180 },
     },
   },
   connections: [
@@ -205,12 +220,12 @@ export default defineDeviceType<WeatherConfig>({
         kind: 'form',
         target: 'device',
         title: 'Where?',
-        description: 'The forecast is for this spot. Two decimals — about a kilometre — is plenty.',
+        description: 'The forecast is for its home, where that is said — or for a spot of its own. Two decimals — about a kilometre — is plenty.',
         schema: {
           fields: {
             place: { type: 'string', title: 'Place', placeholder: 'Home' },
-            latitude: { type: 'number', title: 'Latitude', required: true, min: -90, max: 90 },
-            longitude: { type: 'number', title: 'Longitude', required: true, min: -180, max: 180 },
+            latitude: { type: 'number', title: 'Latitude', description: 'Leave it empty for its home’s.', min: -90, max: 90 },
+            longitude: { type: 'number', title: 'Longitude', description: 'Leave it empty for its home’s.', min: -180, max: 180 },
           },
         },
       },
@@ -219,10 +234,9 @@ export default defineDeviceType<WeatherConfig>({
 
   async identify(connection, ctx) {
     const channel = channelOf(connection, 'http', 'A weather service needs its web API');
-    const latitude = Number(ctx.config.latitude);
-    const longitude = Number(ctx.config.longitude);
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) throw new Error('Give a latitude and a longitude first');
-    const hours = await fetchForecast(channel, { latitude, longitude });
+    const place = placeOf(ctx.config, ctx.home);
+    if (!place) throw new Error(NOWHERE);
+    const hours = await fetchForecast(channel, place);
     const now = hourOf(hours);
     return {
       identity: null,

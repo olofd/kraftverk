@@ -93,7 +93,7 @@ describe('NIU scooter', () => {
   test('checked once, through its account: which scooter, its model and how it is', async () => {
     const { session, connection, stop } = await throughTheAccount();
     try {
-      const identified = await scooter.identify(connection, { config: {}, log: console as never, signal: AbortSignal.timeout(5_000) });
+      const identified = await scooter.identify(connection, { config: {}, log: console as never, home: null, signal: AbortSignal.timeout(5_000) });
       expect(identified).toMatchObject({ identity: 'niu-cloud:N0TAREALSERIAL01', model: 'UQi GT Sport', name: 'Blixten', info: { manufacturer: 'NIU', serial: 'N0TAREALSERIAL01' } });
       expect(identified.summary).toContain('74 % charged, charging, 38 km of range');
     } finally {

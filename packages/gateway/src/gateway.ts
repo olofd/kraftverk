@@ -271,8 +271,8 @@ export type GatewayDeps = {
    * and a gateway given none, keep it in memory.
    */
   ledger?: GatewayLedger;
-  /** What the home has set of the values a declaration may name — how much is a load. What it has not set takes its default. */
-  policyValues?: () => PolicyValues;
+  /** What a device's home has set of the values a declaration may name — how much is a load. What it has not set takes its default. */
+  policyValues?: (deviceId: SavedDeviceId) => PolicyValues;
 };
 
 /** What a linked part reads that should follow the command: its evidence, and whether it is current. */
@@ -535,7 +535,7 @@ export class ActionGateway {
       const reading = readingOf(readingsNow(), attribute.key);
       return { value: reading?.value ?? null, current: this.#fresh(attribute, reading) };
     };
-    const values = this.#deps.policyValues?.() ?? {};
+    const values = this.#deps.policyValues?.(intent.deviceId) ?? {};
     const declared = declaredConsequence(spec, intent.args, partValue, values);
     const whenMatches = spec.consequential !== undefined && (spec.consequential === 'always' || !spec.consequential.when || intent.args[spec.consequential.when.arg] === spec.consequential.when.is);
     const consequentialLink = links.find((link) => link.kind.consequential) ?? null;

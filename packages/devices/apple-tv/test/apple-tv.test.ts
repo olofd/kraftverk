@@ -13,7 +13,7 @@ import appleTv from '../src/type.ts';
   dropped and verified again, and a pairing the TV no longer keeps.
 */
 
-const quiet = { config: {}, log: { info: () => {}, warn: () => {}, error: () => {} }, signal: AbortSignal.timeout(5_000) };
+const quiet = { config: {}, log: { info: () => {}, warn: () => {}, error: () => {} }, home: null, signal: AbortSignal.timeout(5_000) };
 
 async function until(check: () => boolean, what: string, ms = 2_000): Promise<void> {
   const end = Date.now() + ms;

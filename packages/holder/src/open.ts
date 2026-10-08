@@ -17,6 +17,7 @@ import {
   type ClockTimer,
   type ConnectionHealth,
   type DeviceContext,
+  type DeviceHome,
   type DescriptionSource,
   type DeviceDescription,
   type DeviceInfo,
@@ -90,6 +91,8 @@ export type OpenInput = {
   readOnly: boolean;
   allowRawFrames: boolean;
   log: DeviceLogger;
+  /** The home it is for now, asked whenever the session asks (`DeviceContext.home`). */
+  home?: () => DeviceHome | null;
   /** After each scheduled run: the app redraws what the run changed. */
   afterScheduled?: () => void;
   /** A device that pushes said something changed: a reading, its description, its information. */
@@ -236,6 +239,7 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
       readOnly: input.readOnly,
       allowRawFrames: input.allowRawFrames,
       platform: input.platform,
+      home: () => input.home?.() ?? null,
       schedule: (everyMs, task) => {
         let running = false;
         timers.push(

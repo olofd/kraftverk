@@ -42,7 +42,7 @@ describe('Elpriset just nu', () => {
   test('its check asks for today in the area given, and says the price now and its hour’s rank', async () => {
     const channel = api();
     const quiet = { info: () => {}, warn: () => {}, error: () => {} };
-    const found = await prices.identify(connection(channel), { config: { area: 'SE4', currency: 'SEK' }, log: quiet, signal: AbortSignal.timeout(5000) });
+    const found = await prices.identify(connection(channel), { config: { area: 'SE4', currency: 'SEK' }, log: quiet, home: null, signal: AbortSignal.timeout(5000) });
     expect(found.identity).toBeNull();
     expect(found.summary).toMatch(/^SE4: \d+\.\d\d SEK\/kWh now, ranked \d+ of 2[345] hours by price today\.$/);
     expect(channel.asked[0]).toEndWith('_SE4.json');
