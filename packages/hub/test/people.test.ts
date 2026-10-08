@@ -5,6 +5,8 @@ import type { Caller } from '@kraftverk/api-contract';
 import { checkChain, keyId, newSecret, recoveryKey, softwareKey, type SigningKey } from '@kraftverk/identity';
 import { createSchema, PERSONAL_SCHEMA, PersonalStore, prepareDatabase, type SqlDatabase } from '@kraftverk/store';
 
+import { changesConfiguration } from '../src/configuration/configuration.ts';
+import { acceptInvitation } from '../src/people/join.ts';
 import { personalApi, type DeviceKeys } from '../src/personal/personal.ts';
 import { aHome, refusal, type TestHome } from './a-home.ts';
 
@@ -103,6 +105,65 @@ describe('a family founded by its first person', () => {
     const founded = (await t.home.timeline()).find((entry) => entry.kind === 'family.founded')!;
     expect(founded.actor).toEqual({ kind: 'person', id: account.personId, name: 'Anna Example' });
     expect((await refusal(t.as(anna).people.found({ chain, name: 'Again', kind: 'family', home: { name: 'Home', type: 'house', timeZone: 'Europe/Stockholm' } }))).kind).toBe('conflict');
+  });
+
+  test('invited: a secret answered once; taken by someone showing who they are — in, or waiting for an admin; never twice, never a wrong one', async () => {
+    const { personal } = aDevice();
+    const anna = (await personal.create({ name: 'Anna', deviceName: 'Phone' })).account;
+    const asAnna: Caller = { kind: 'person', id: anna.personId, name: 'Anna' };
+    await t.as(asAnna).people.found({ chain: await personal.chain(anna.personId), name: 'The Examples', kind: 'family', home: { name: 'Home', type: 'house', timeZone: 'Europe/Stockholm' } });
+
+    const { invitation, secret } = await t.as(asAnna).people.invite({ role: 'member', forName: 'Bo', needsApproval: false });
+    expect(invitation).toMatchObject({ role: 'member', forName: 'Bo', status: 'open', madeBy: anna.personId });
+    const bo = (await personal.create({ name: 'Bo', deviceName: 'Phone' })).account;
+    const boChain = await personal.chain(bo.personId);
+    expect(() => acceptInvitation(t.hub, { invitation: invitation.id, secret: `${secret}x`, chain: boChain })).toThrow('not open');
+    expect(acceptInvitation(t.hub, { invitation: invitation.id, secret, chain: boChain })).toMatchObject({ status: 'joined', family: { name: 'The Examples' } });
+    expect((await t.as(asAnna).people.list()).map((each) => [each.name, each.member?.role])).toEqual([
+      ['Anna', 'admin'],
+      ['Bo', 'member'],
+    ]);
+    expect(() => acceptInvitation(t.hub, { invitation: invitation.id, secret, chain: boChain })).toThrow('not open');
+
+    // One that needs a yes: taken, then waiting, until an admin lets them in. Only an admin invites.
+    const asBo: Caller = { kind: 'person', id: bo.personId, name: 'Bo' };
+    expect((await refusal(t.as(asBo).people.invite({ role: 'member', needsApproval: false }))).kind).toBe('forbidden');
+    const second = await t.as(asAnna).people.invite({ role: 'child', needsApproval: true, days: 1 });
+    const sam = (await personal.create({ name: 'Sam', deviceName: 'Tablet' })).account;
+    expect(acceptInvitation(t.hub, { invitation: second.invitation.id, secret: second.secret, chain: await personal.chain(sam.personId) }).status).toBe('waiting');
+    expect((await t.as(asAnna).people.list()).map((each) => each.name)).toEqual(['Anna', 'Bo']);
+    expect((await t.as(asAnna).people.invitations()).find((each) => each.id === second.invitation.id)?.status).toBe('waiting');
+    expect((await t.as(asAnna).people.approve(second.invitation.id)).member?.role).toBe('child');
+    expect((await t.as(asAnna).people.list()).map((each) => each.name)).toEqual(['Anna', 'Bo', 'Sam']);
+
+    // Taken back: no one takes it.
+    const third = await t.as(asAnna).people.invite({ role: 'member', needsApproval: false });
+    expect((await t.as(asAnna).people.revokeInvitation(third.invitation.id)).status).toBe('revoked');
+    const cleo = (await personal.create({ name: 'Cleo', deviceName: 'Phone' })).account;
+    expect(() => acceptInvitation(t.hub, { invitation: third.invitation.id, secret: third.secret, chain: [] })).toThrow();
+    const cleoChain = await personal.chain(cleo.personId);
+    expect(() => acceptInvitation(t.hub, { invitation: third.invitation.id, secret: third.secret, chain: cleoChain })).toThrow('not open');
+  });
+
+  test('every change to what the file carries — rooms, places, labels, people — writes the kept file again', async () => {
+    const { personal } = aDevice();
+    const anna = (await personal.create({ name: 'Anna', deviceName: 'Phone' })).account;
+    const asAnna = t.as({ kind: 'person', id: anna.personId, name: 'Anna' });
+    const before = (await t.home.timeline({ limit: 1000 })).length;
+    await asAnna.people.found({ chain: await personal.chain(anna.personId), name: 'The Examples', kind: 'family', home: { name: 'Home', type: 'house', timeZone: 'Europe/Stockholm' } });
+    await asAnna.people.update(anna.personId, { nickname: 'Mum' });
+    const [home] = await asAnna.homes.list();
+    const [site] = await asAnna.spaces.list(home!.id);
+    const kitchen = await asAnna.spaces.add({ parentId: site!.id, kind: 'room', name: 'Kitchen' });
+    await asAnna.spaces.update(kitchen.id, { name: 'The kitchen' });
+    const door = await asAnna.openings.add({ fromId: kitchen.id, toId: null, kind: 'door' });
+    await asAnna.openings.remove(door.id);
+    const label = await asAnna.labels.add({ name: 'Heating' });
+    await asAnna.labels.set({ space: kitchen.id }, [label.id]);
+    await asAnna.labels.update(label.id, { name: 'Warmth' });
+    const kinds = (await t.home.timeline({ limit: 1000 })).slice(0, -before || undefined).map((entry) => entry.kind);
+    expect(kinds.length).toBeGreaterThan(8);
+    expect(kinds.filter((kind) => !changesConfiguration(kind))).toEqual([]);
   });
 
   test('refused: someone else’s chain, a chain that does not check; and only an admin changes a member', async () => {

@@ -8,6 +8,7 @@ import { Card, Chips, haptic } from '@kraftverk/ui';
 import { ErrorText } from '../../components/ErrorText';
 import { useAccount } from '../../state/AccountProvider';
 import { HomeLocation } from '../settings/HomeLocation';
+import { JoinFamily } from './JoinFamily';
 import { HOME_TYPES } from '../settings/Homes';
 
 /*
@@ -45,6 +46,8 @@ export function FoundFamily({ api, onFounded }: { api: KraftverkApi; onFounded: 
   const [home, setHome] = useState<HomeView | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Someone sent an invitation: joining their family, rather than starting one.
+  const [joining, setJoining] = useState(false);
   const zoneValid = isTimeZone(zone.trim());
   const ready = name.trim().length > 0 && homeName.trim().length > 0 && zoneValid;
 
@@ -72,7 +75,19 @@ export function FoundFamily({ api, onFounded }: { api: KraftverkApi; onFounded: 
   return (
     <ScrollView flex={1} backgroundColor="$background" contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 16 }}>
       <YStack width="100%" maxWidth={440} alignSelf="center" gap="$4" paddingVertical="$6">
-        {!home ? (
+        {joining ? (
+          <>
+            <YStack gap="$2">
+              <Text role="heading" fontSize={26} fontWeight="800" color="$color">
+                Join a family
+              </Text>
+              <Text fontSize={14} color="$muted" lineHeight={20}>
+                Someone in it sent you a link. Their family is kept on their server, which this app then uses.
+              </Text>
+            </YStack>
+            <JoinFamily onBack={() => setJoining(false)} />
+          </>
+        ) : !home ? (
           <>
             <YStack gap="$2">
               <Text role="heading" fontSize={26} fontWeight="800" color="$color">
@@ -111,6 +126,9 @@ export function FoundFamily({ api, onFounded }: { api: KraftverkApi; onFounded: 
             </YStack>
             <Button size="$5" minHeight={52} backgroundColor="$accent" color="$background" fontWeight="700" disabled={!ready || busy} opacity={ready && !busy ? 1 : 0.5} onPress={() => void found()}>
               {busy ? <Spinner size="small" /> : 'Continue'}
+            </Button>
+            <Button size="$3" minHeight={44} chromeless onPress={() => setJoining(true)}>
+              Have an invitation? Join a family instead
             </Button>
           </>
         ) : (

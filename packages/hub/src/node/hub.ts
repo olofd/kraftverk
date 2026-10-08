@@ -15,6 +15,7 @@ import {
   SpaceStore,
   LabelStore,
   PeopleStore,
+  InvitationStore,
   FamilyStore,
   NodeStore,
   ConnectionStore,
@@ -129,6 +130,7 @@ export class Hub {
   readonly spaces: SpaceStore;
   readonly labels: LabelStore;
   readonly people: PeopleStore;
+  readonly invitations: InvitationStore;
   /** The family this database is, and its master. */
   readonly family: FamilyStore;
   /** This node: what its database is, and what holds the ways it holds. */
@@ -250,6 +252,7 @@ export class Hub {
     this.spaces = new SpaceStore(db);
     this.labels = new LabelStore(db);
     this.people = new PeopleStore(db);
+    this.invitations = new InvitationStore(db);
     // The family's values, as its API sets them: its first home's. The gateway asks each device's own home (`policyValues`).
     const policyHome = new HomeSettings(db, () => ensureFirstHome(this.places).id);
     this.policy = { values: () => policyValues(policyHome), set: (name, value) => setPolicyValue(policyHome, name, value) };

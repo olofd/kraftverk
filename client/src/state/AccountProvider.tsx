@@ -6,6 +6,7 @@ import { NotOpen, Waiting } from '../components/FamilyOpening';
 import { Welcome } from '../features/account/Welcome';
 import { HomeOpenElsewhere, type OpenDevice } from '../platform/home/home';
 import { openDevice } from '../platform/home/open';
+import { useServers } from './ServersProvider';
 
 /**
  * This device, and who uses it (docs/PLAN-WORLD-MODEL.md §10.6): the
@@ -92,9 +93,34 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   // A new account, or another one: everything inside starts again as them.
   return (
     <AccountContext.Provider key={account.personId} value={value}>
+      <ItsServer />
       {children}
     </AccountContext.Provider>
   );
+}
+
+/**
+ * The family an account opens as it is opened: one it is in, on a server —
+ * that server — or, in none there, its own on this device. One in no family
+ * yet keeps what this device chose: a server beside the app, to sign in to
+ * and claim, or none. Chosen once per opening; choosing another server after
+ * is the person's.
+ */
+function ItsServer() {
+  const { account } = useAccount();
+  const servers = useServers();
+  const chosen = useRef(false);
+  useEffect(() => {
+    if (chosen.current || servers.deciding) return;
+    chosen.current = true;
+    if (!account.families.length) return;
+    const onServer = account.families.find((family) => family.master === 'server' && family.serverUrl === servers.active?.url) ?? account.families.find((family) => family.master === 'server');
+    if (onServer?.serverUrl === servers.active?.url && onServer) return;
+    const saved = onServer ? servers.all.find((server) => server.url === onServer.serverUrl) : null;
+    if (onServer && saved) servers.use(saved.id);
+    else if (!onServer && servers.active) servers.use(null);
+  }, [account.families, servers]);
+  return null;
 }
 
 /** This device, and the account it opens as. */

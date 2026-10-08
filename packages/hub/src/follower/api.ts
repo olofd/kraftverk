@@ -364,6 +364,10 @@ export function followerApi(h: Follower): KraftverkApi {
       found: (input) => home.people.found(input),
       present: (chain) => home.people.present(chain),
       update: (id, changes) => home.people.update(id, changes),
+      invite: (input) => home.people.invite(input),
+      invitations: () => home.people.invitations(),
+      approve: (id) => home.people.approve(id),
+      revokeInvitation: (id) => home.people.revokeInvitation(id),
     },
     /** Labels are the family's: the master's. */
     labels: {

@@ -170,6 +170,34 @@ export const SCHEMA = `
   CREATE UNIQUE INDEX member_color ON member (color) WHERE left_at IS NULL;
 
   /*
+    An invitation into the family (§8.3): a one-time secret in a link or a
+    code, kept here only as its hash. Taken by someone showing who they are
+    — their chain — who then is a member in its role, or waits for an admin
+    to let them in. Used once; until it expires, or is taken back.
+  */
+  CREATE TABLE invitation (
+    id             TEXT PRIMARY KEY CHECK (id GLOB 'i-*'),
+    role           TEXT NOT NULL CHECK (role IN ('admin', 'member', 'child')),
+    /* Who it is meant for, as the inviter said: "Grandma"; null: anyone with it. */
+    for_name       TEXT CHECK (length(for_name) BETWEEN 1 AND 60),
+    /* SHA-256 of its secret, in hex. */
+    secret_hash    TEXT NOT NULL,
+    needs_approval INTEGER NOT NULL CHECK (needs_approval IN (0, 1)),
+    made_by        TEXT NOT NULL REFERENCES person (id),
+    made_at        TEXT NOT NULL,
+    expires_at     TEXT NOT NULL,
+    used_by        TEXT REFERENCES person (id),
+    used_at        TEXT,
+    approved_by    TEXT REFERENCES person (id),
+    approved_at    TEXT,
+    revoked_at     TEXT,
+    CHECK (expires_at > made_at),
+    CHECK ((used_by IS NULL) = (used_at IS NULL)),
+    CHECK ((approved_by IS NULL) = (approved_at IS NULL)),
+    CHECK (approved_by IS NULL OR used_by IS NOT NULL)
+  );
+
+  /*
     Places on the globe the family names (docs/PLAN-WORLD-MODEL.md §8.4): its
     homes, and the zones it knows — school, work. Presence asks both the same
     way, so the geofence lives here once; a home has more, beside it in home.

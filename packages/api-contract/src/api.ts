@@ -11,7 +11,7 @@ import type { ConfigExported, ConfigExportRequest, ConfigSnapshotView, ImportAns
 import type { MapRegionAsk, MapRegionsView } from './map.ts';
 import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, FamilyElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
-import type { FoundFamily, MemberChanges, PersonView } from './people.ts';
+import type { FoundFamily, InvitationInput, InvitationMade, InvitationView, Joined, MemberChanges, PersonView } from './people.ts';
 import type { HomeInput, HomeView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView } from './homes.ts';
 import type { MediaData, MediaView, NewMedia } from './media.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, FamilyView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
@@ -290,6 +290,14 @@ export interface KraftverkApi {
     present(chain: Statement[]): Promise<PersonView>;
     /** An admin's: a member's role — never the last admin's away — what the family calls them, their colour. */
     update(personId: string, changes: MemberChanges): Promise<PersonView>;
+    /** An admin's: an invitation made, its secret answered this once. */
+    invite(input: InvitationInput): Promise<InvitationMade>;
+    /** An admin's: the invitations made, newest first. */
+    invitations(): Promise<InvitationView[]>;
+    /** An admin's: one who took an invitation that needs a yes, let in. */
+    approve(invitationId: string): Promise<PersonView>;
+    /** An admin's: an invitation taken back. */
+    revokeInvitation(invitationId: string): Promise<InvitationView>;
   };
   /** A family's labels (docs/PLAN-WORLD-MODEL.md §8.13): any grouping it wants, on devices, spaces and automations. */
   labels: {
@@ -346,6 +354,8 @@ export interface KraftverkApi {
 export interface ServerApi {
   /** Whether a kraftverk server answers here at all: what an address typed in is tried with. */
   probe(): Promise<boolean>;
+  /** An invitation taken, with no session here yet: its secret, and who you are. */
+  join(input: { invitation: string; secret: string; chain: Statement[] }): Promise<Joined>;
   auth: {
     /** Who is signed in, whether this network is trusted, and whether the first account is still to be made. */
     state(): Promise<AuthState>;

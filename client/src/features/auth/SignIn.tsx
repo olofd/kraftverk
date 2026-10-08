@@ -10,6 +10,7 @@ import { Pressable } from '../../components/Pressable';
 import { useAttempt } from '../../components/useAttempt';
 import { useAuth } from '../../state/AuthProvider';
 import { useServers } from '../../state/ServersProvider';
+import { JoinFamily } from '../account/JoinFamily';
 import { Field, passwordProblem } from './fields';
 
 export function SignIn() {
@@ -33,6 +34,14 @@ export function SignIn() {
           </YStack>
 
           {mode === 'login' ? <LoginForm /> : mode === 'setup' ? <SetupForm /> : <SetupElsewhere />}
+
+          {/* Invited, with no password here: the invitation lets this device's account in, and its key signs in from then. */}
+          {mode === 'login' ? (
+            <YStack gap="$2">
+              <SectionLabel>Or, invited</SectionLabel>
+              <JoinFamily />
+            </YStack>
+          ) : null}
 
           <WayOut />
         </YStack>

@@ -80,11 +80,13 @@ export function labelsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'labels'
       },
 
       async set(target, labelIds) {
-        there(target);
+        const name = there(target);
         for (const id of labelIds) labelOf(id);
         hub.labels.set(target, labelIds);
+        const on = hub.labels.on(target);
+        record('label.set', 'family', family(), on.length ? `Labelled ${name}: ${on.map((label) => label.name).join(', ')}` : `Took the labels off ${name}`);
         changed();
-        return hub.labels.on(target);
+        return on;
       },
     },
   };

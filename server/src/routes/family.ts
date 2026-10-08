@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import type { KraftverkApi } from '@kraftverk/api-contract';
+import { acceptInvitation } from '@kraftverk/hub';
 import { KEY, NODE_ID, nodeId, type PolicyValueName } from '@kraftverk/device-sdk';
 
 import { familyFor, RESOURCE_KIND, type AppDeps } from './context.ts';
@@ -108,6 +109,18 @@ export function familyRoutes(deps: AppDeps): Hono {
   api.post('/people/present', async (c) => {
     const { chain } = await body(c, z.object({ chain: CHAIN }).strict());
     return c.json(await familyFor(deps, c).people.present(chain as unknown as Parameters<KraftverkApi['people']['present']>[0]));
+  });
+  api.get('/people/invitations', async (c) => c.json({ invitations: await familyFor(deps, c).people.invitations() }));
+  api.post('/people/invitations', async (c) => {
+    const input = await body(c, z.object({ role: z.enum(['admin', 'member', 'child']), forName: z.string().max(60).nullable().optional(), needsApproval: z.boolean(), days: z.number().int().min(1).max(30).optional() }).strict());
+    return c.json(await familyFor(deps, c).people.invite(input));
+  });
+  api.post('/people/invitations/:id/approve', async (c) => c.json(await familyFor(deps, c).people.approve(c.req.param('id'))));
+  api.delete('/people/invitations/:id', async (c) => c.json(await familyFor(deps, c).people.revokeInvitation(c.req.param('id'))));
+  /** An invitation taken: open — the secret is what lets someone with no session here ask — and taken once. */
+  api.post('/join', async (c) => {
+    const input = await body(c, z.object({ invitation: z.string().max(40), secret: z.string().min(20).max(100), chain: CHAIN }).strict());
+    return c.json(acceptInvitation(deps.hub, input as unknown as Parameters<typeof acceptInvitation>[1]));
   });
   api.patch('/people/:id', async (c) => {
     const changes = await body(c, z.object({ role: z.enum(['admin', 'member', 'child']), nickname: z.string().max(30).nullable(), color: z.string().regex(/^#[0-9a-f]{6}$/) }).partial().strict());

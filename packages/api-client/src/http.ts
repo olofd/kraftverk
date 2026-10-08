@@ -12,6 +12,7 @@ import {
   type DeviceEventView,
   type HomeView,
   type LabelView,
+  type InvitationView,
   type PersonView,
   type OpeningView,
   type PlacementView,
@@ -271,6 +272,10 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
       found: (input) => call('POST', '/people/found', input),
       present: (chain) => call('POST', '/people/present', { chain }),
       update: (id, changes) => call('PATCH', `/people/${enc(id)}`, changes),
+      invite: (input) => call('POST', '/people/invitations', input),
+      invitations: async () => (await get<{ invitations: InvitationView[] }>('/people/invitations')).invitations,
+      approve: (id) => call('POST', `/people/invitations/${enc(id)}/approve`, {}),
+      revokeInvitation: (id) => call('DELETE', `/people/invitations/${enc(id)}`),
     },
     labels: {
       list: async () => (await get<{ labels: LabelView[] }>('/labels')).labels,
@@ -345,6 +350,7 @@ export function serverApi(options: HttpApiOptions): ServerApi {
         return false;
       }
     },
+    join: (input) => call('POST', '/join', input),
     auth: {
       state: () => get('/auth/state'),
       setup: async (username, password) => (await call<{ user: Account }>('POST', '/auth/setup', { username, password })).user,

@@ -41,7 +41,7 @@ export const SESSION_COOKIE = 'kraftverk_session';
  * the configuration's JSON Schema, which an editor fetches without logging in:
  * the installed types only, nothing you have (`routes/configuration.ts`).
  */
-const OPEN = new Set(['/api/auth/state', '/api/auth/setup', '/api/auth/login', '/api/auth/logout', '/api/auth/challenge', '/api/auth/key', `/api${CONFIG_SCHEMA_PATH}`]);
+const OPEN = new Set(['/api/auth/state', '/api/auth/setup', '/api/auth/login', '/api/auth/logout', '/api/auth/challenge', '/api/auth/key', '/api/join', `/api${CONFIG_SCHEMA_PATH}`]);
 
 /**
  * The health check, for the container's own healthcheck — which runs inside

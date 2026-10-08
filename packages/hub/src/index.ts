@@ -31,4 +31,5 @@ export * from './node/hub.ts';
 export { actorOf, familyApi, intentOf } from './api/index.ts';
 export * from './follower/follower.ts';
 export * from './personal/personal.ts';
+export { acceptInvitation } from './people/join.ts';
 export * from './node/lead.ts';

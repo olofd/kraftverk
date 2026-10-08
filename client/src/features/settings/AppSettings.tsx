@@ -51,6 +51,14 @@ export function AppSettings() {
             <Row title="Homes" subtitle="Where your family lives, or spends time: each with its own place and clock" accessory={chevron} />
           </Pressable>
           <RowSeparator />
+          <Pressable onPress={() => router.push(PATHS.settings.people)}>
+            <Row title="People" subtitle="Who is in your family, and inviting someone" accessory={chevron} />
+          </Pressable>
+          <RowSeparator />
+          <Pressable onPress={() => router.push(PATHS.settings.join)}>
+            <Row title="Join a family" subtitle="With an invitation someone sent you" accessory={chevron} />
+          </Pressable>
+          <RowSeparator />
           <Pressable onPress={() => router.push(PATHS.settings.labels)}>
             <Row title="Labels" subtitle="Your own groupings — heating, upstairs — to filter your devices by" accessory={chevron} />
           </Pressable>

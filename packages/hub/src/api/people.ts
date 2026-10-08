@@ -84,6 +84,49 @@ export function peopleApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'people'
         return person;
       },
 
+      async invite(input) {
+        asAdmin();
+        if (!['admin', 'member', 'child'].includes(input.role)) throw new ApiError('invalid', 'A member is an admin, a member, or a child');
+        const forName = input.forName?.trim() || null;
+        if (forName && forName.length > 60) throw new ApiError('invalid', 'Who it is for is at most 60 characters');
+        const days = input.days ?? 7;
+        if (!(Number.isInteger(days) && days >= 1 && days <= 30)) throw new ApiError('invalid', 'An invitation lasts 1 to 30 days');
+        const by = me ?? hub.people.members().find((each) => each.member?.role === 'admin')?.id;
+        if (!by) throw new ApiError('forbidden', 'Only a person in the family can invite someone');
+        const at = new Date();
+        const made = hub.invitations.make({ role: input.role, forName, needsApproval: input.needsApproval, madeBy: by, at: at.toISOString(), expiresAt: new Date(at.getTime() + days * 86_400_000).toISOString() });
+        record('invitation.made', 'family', hub.family.get()!.id, `Invited ${forName ?? 'someone'} to join as ${input.role === 'admin' ? 'an admin' : input.role === 'child' ? 'a child' : 'a member'}${input.needsApproval ? ', an admin letting them in' : ''}`, { invitation: made.invitation.id });
+        return made;
+      },
+
+      async invitations() {
+        asAdmin();
+        return hub.invitations.list();
+      },
+
+      async approve(invitationId) {
+        asAdmin();
+        const invitation = hub.invitations.get(invitationId);
+        if (!invitation || invitation.status !== 'waiting' || !invitation.usedBy) throw new ApiError('not-found', 'No one waits on that invitation');
+        const at = new Date().toISOString();
+        const person = refusing(() =>
+          hub.db.transaction(() => {
+            hub.invitations.approve(invitationId, me ?? invitation.madeBy, at);
+            return hub.people.addMember(invitation.usedBy!, { role: invitation.role, invitedBy: invitation.madeBy, at });
+          })()
+        );
+        record('member.joined', 'person', person.id, `${person.name} was let in`);
+        return person;
+      },
+
+      async revokeInvitation(invitationId) {
+        asAdmin();
+        if (!hub.invitations.get(invitationId)) throw new ApiError('not-found', 'No such invitation');
+        const invitation = hub.invitations.revoke(invitationId, new Date().toISOString())!;
+        record('invitation.revoked', 'family', hub.family.get()!.id, `Took back an invitation${invitation.forName ? ` for ${invitation.forName}` : ''}`);
+        return invitation;
+      },
+
       async update(id, changes) {
         asAdmin();
         const was = personOf(id);

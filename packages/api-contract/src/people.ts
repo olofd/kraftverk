@@ -37,5 +37,30 @@ export type FoundFamily = {
   home: { name: string; type: 'house' | 'apartment' | 'cabin' | 'boat' | 'caravan' | 'office' | 'other'; timeZone: string };
 };
 
+/** An invitation into the family, as its admins see it: never its secret, which is answered once, when it is made. */
+export type InvitationView = {
+  id: string;
+  role: MemberRole;
+  /** Who it is meant for, as the inviter said; null: anyone with it. */
+  forName: string | null;
+  needsApproval: boolean;
+  madeBy: string;
+  madeAt: string;
+  expiresAt: string;
+  usedBy: string | null;
+  usedAt: string | null;
+  /** Open to take; taken and in; taken and waiting for an admin; expired; taken back. */
+  status: 'open' | 'used' | 'waiting' | 'expired' | 'revoked';
+};
+
+/** An invitation made: what it is, and its secret — this once. With the address it is taken at, it is the code a person is given. */
+export type InvitationMade = { invitation: InvitationView; secret: string };
+
+/** An invitation asked for. */
+export type InvitationInput = { role: MemberRole; forName?: string | null; needsApproval: boolean; days?: number };
+
+/** An invitation taken: the family it is into, and whether its person is in or waits for an admin. */
+export type Joined = { family: { id: string; name: string }; status: 'joined' | 'waiting' };
+
 /** What an admin changes of a member: their role, what the family calls them, their colour. */
 export type MemberChanges = { role?: MemberRole; nickname?: string | null; color?: string };

@@ -85,6 +85,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       let next = await server.auth.state();
       if (asked.current !== serverUrl) return null;
+      // Signed in there as someone else — another account on this device, by this browser's cookie: not this account's session.
+      if (next.user && next.user.id !== account.personId) {
+        await server.auth.logOut().catch(() => undefined);
+        next = await server.auth.state();
+        if (asked.current !== serverUrl) return null;
+      }
       if (!next.user && member) {
         // Signed in by this device's key: no password, nothing typed. Refused — the key unknown there now — the form is shown.
         const signedInByKey = await server.auth
@@ -161,11 +167,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logIn = useCallback(
     async (username: string, password: string) => {
-      await server?.auth.logIn(username, password);
+      const user = await server?.auth.logIn(username, password);
       await claim();
+      // A login that is someone else's — their own account claimed it — is not this account's way in.
+      const now = await server?.auth.state();
+      if (user && now?.user && now.user.id !== account.personId) {
+        await server?.auth.logOut().catch(() => undefined);
+        throw new Error(`That login is ${now.user.username}'s here. Sign in as yourself, or open their account on this device.`);
+      }
       await signedIn();
     },
-    [claim, server, signedIn]
+    [account.personId, claim, server, signedIn]
   );
 
   const setup = useCallback(
