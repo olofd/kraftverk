@@ -14,6 +14,8 @@ import {
   type ZoneView,
   type PresenceView,
   type OccupancyView,
+  type ModeView,
+  type HomeModeView,
   type NotificationView,
   type LabelView,
   type InvitationView,
@@ -305,6 +307,14 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
     },
     presence: {
       list: async () => (await get<{ presence: PresenceView[] }>('/presence')).presence,
+    },
+    modes: {
+      list: async (options = {}) => (await get<{ modes: ModeView[] }>('/modes', options.removed ? { removed: 'true' } : undefined)).modes,
+      add: (input) => call('POST', '/modes', input),
+      update: (id, changes) => call('PATCH', `/modes/${encodeURIComponent(id)}`, changes),
+      remove: (id) => call('DELETE', `/modes/${encodeURIComponent(id)}`),
+      of: async (homeId) => (await get<{ modes: HomeModeView[] }>(`/homes/${encodeURIComponent(homeId)}/modes`)).modes,
+      set: async (homeId, input) => (await call<{ modes: HomeModeView[] }>('PUT', `/homes/${encodeURIComponent(homeId)}/modes`, input)).modes,
     },
     occupancy: {
       now: async (homeId) => (await get<{ occupancy: OccupancyView[] }>(`/homes/${encodeURIComponent(homeId)}/occupancy`)).occupancy,

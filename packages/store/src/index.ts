@@ -33,6 +33,7 @@ export * from './shortcuts.ts';
 export * from './device-people.ts';
 export * from './presence.ts';
 export * from './occupancy.ts';
+export * from './modes.ts';
 export * from './notifications.ts';
 export * from './personal.ts';
 export * from './media.ts';

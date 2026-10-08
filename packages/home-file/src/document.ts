@@ -174,6 +174,12 @@ export type DevicePeopleEntry = { carries: string | null; drives: string | null;
 /** A label: any grouping the family wants, by its key. */
 export type LabelEntry = { name: string; color: string | null; icon: string | null };
 
+/** A family's own mode, by its key: on one of the two axes — presence or the day — beside the built-in ones. */
+export type ModeEntry = { axis: 'presence' | 'day'; name: string; icon: string | null };
+
+/** The built-in modes' keys: a family's own is none of them. */
+export const BUILT_IN_MODE_KEYS = ['home', 'away', 'vacation', 'day', 'evening', 'night'] as const;
+
 /** A zone: a place the family knows that is no home — school, work — always somewhere, by its key. */
 export type ZoneEntry = { name: string; icon: string | null; location: Coordinates & { radius: number | null } };
 
@@ -203,6 +209,8 @@ export type ConfigDocument = {
   labels: Record<string, LabelEntry>;
   /** Its zones, by key. */
   zones: Record<string, ZoneEntry>;
+  /** Its own modes, by key: the built-in ones are every family's, and not in a file. */
+  modes: Record<string, ModeEntry>;
   /** Its homes, by key, in their order. */
   homes: Record<string, HomeEntry>;
   devices: Record<string, DeviceEntry>;
@@ -230,7 +238,9 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
   const issues: Issue[] = [];
   const problem = (message: string, path: Path) => void issues.push({ message, path });
   if (!isRecord(data)) return { document: null, issues: [{ message: 'A configuration is a map: kraftverk, family, homes, devices, links, automations', path: [] }] };
-  for (const key of Object.keys(data)) if (!['kraftverk', 'family', 'people', 'labels', 'homes', 'zones', 'devices', 'links', 'automations', 'secrets'].includes(key)) problem(`"${key}" is not part of a configuration: it has kraftverk, family, people, labels, homes, zones, devices, links, automations and secrets`, [key]);
+  for (const key of Object.keys(data))
+    if (!['kraftverk', 'family', 'people', 'labels', 'homes', 'zones', 'modes', 'devices', 'links', 'automations', 'secrets'].includes(key))
+      problem(`"${key}" is not part of a configuration: it has kraftverk, family, people, labels, homes, zones, modes, devices, links, automations and secrets`, [key]);
 
   /** A record of numbers, each of `fields`. */
   const numbersOf = (value: unknown, fields: readonly string[], path: Path, what: string): Record<string, number> | null => {
@@ -477,6 +487,27 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
       }
   }
 
+  // The family's own modes, by key: each on one axis.
+  const modes: Record<string, ModeEntry> = {};
+  if (data.modes !== undefined && data.modes !== null) {
+    if (!isRecord(data.modes)) problem('"modes" is a map: each of the family\'s own modes by its key', ['modes']);
+    else
+      for (const [key, entry] of Object.entries(data.modes)) {
+        const path = ['modes', key];
+        if (!/^[a-z][a-z0-9-]{0,29}$/.test(key)) problem(`"${key}" is not a mode's key: lowercase letters, digits and dashes, from a letter`, path);
+        else if ((BUILT_IN_MODE_KEYS as readonly string[]).includes(key)) problem(`"${key}" is a built-in mode: every family has it, and a file does not say it`, path);
+        if (!isRecord(entry)) {
+          problem('Expected a mode: its axis and its name', path);
+          continue;
+        }
+        for (const field of Object.keys(entry)) if (!['axis', 'name', 'icon'].includes(field)) problem(`"${field}" is not part of a mode: it has axis, name and icon`, [...path, field]);
+        const axis = entry.axis === 'presence' || entry.axis === 'day' ? entry.axis : (problem('"axis" is presence or day', [...path, 'axis']), null);
+        const name = text(entry.name, [...path, 'name'], 'its name');
+        const icon = entry.icon === undefined || entry.icon === null ? null : text(entry.icon, [...path, 'icon'], 'its icon');
+        if (axis && name) modes[key] = { axis, name, icon };
+      }
+  }
+
   // The devices.
   const devices: Record<string, DeviceEntry> = {};
   const devicesData = data.devices ?? {};
@@ -634,7 +665,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
 
   // Partial: what could be read, beside every problem — whose entries the reader leaves out (`readConfig`).
   if (issues.length && !options.partial) return { document: null, issues };
-  return { document: { version: CURRENT_VERSION, family, people, labels, homes, zones, devices, links, automations, secrets }, issues };
+  return { document: { version: CURRENT_VERSION, family, people, labels, homes, zones, modes, devices, links, automations, secrets }, issues };
 }
 
 
@@ -803,6 +834,9 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
           ),
         }
       : {}),
+    ...(Object.keys(document.modes).length
+      ? { modes: Object.fromEntries(Object.entries(document.modes).map(([key, mode]) => [key, { axis: mode.axis, name: mode.name, ...(mode.icon !== null ? { icon: mode.icon } : {}) }])) }
+      : {}),
     ...(Object.keys(document.devices).length ? { devices } : {}),
     ...(document.links.length ? { links: document.links.map((link) => ({ [link.kind]: { from: useText(link.from), to: useText(link.to) } })) } : {}),
     ...(Object.keys(document.automations).length ? { automations } : {}),
@@ -811,4 +845,4 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
 }
 
 /** An empty document of this version. */
-export const emptyDocument = (): ConfigDocument => ({ version: CURRENT_VERSION, family: { name: null, kind: null, locale: null }, people: {}, labels: {}, homes: {}, zones: {}, devices: {}, links: [], automations: {}, secrets: {} });
+export const emptyDocument = (): ConfigDocument => ({ version: CURRENT_VERSION, family: { name: null, kind: null, locale: null }, people: {}, labels: {}, homes: {}, zones: {}, modes: {}, devices: {}, links: [], automations: {}, secrets: {} });

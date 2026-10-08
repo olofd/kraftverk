@@ -33,6 +33,8 @@ export type ImportPlan = {
   labels: ImportItem[];
   /** Its zones, by key: added, moved or renamed, or the same. One the file does not name is left. */
   zones: ImportItem[];
+  /** Its own modes, by key: added, renamed, or the same. One the file does not name is left. */
+  modes: ImportItem[];
   /** Its people, by their ids: added to the family, a newer copy of who they are, their role and what it calls them. One the file does not name stays. */
   people: ImportItem[];
   /** Each home's values the file changes, by the home's key. */
@@ -60,6 +62,7 @@ export type ImportApplied = {
   homes: { added: string[]; changed: string[] };
   labels: { added: string[]; changed: string[] };
   zones: { added: string[]; changed: string[] };
+  modes: { added: string[]; changed: string[] };
   people: { added: string[]; changed: string[] };
   /** Each value set, as "home-key.name". */
   policy: string[];

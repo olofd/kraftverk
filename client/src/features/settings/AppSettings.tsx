@@ -88,6 +88,10 @@ export function AppSettings() {
               <RowSeparator />
             </>
           ) : null}
+          <Pressable onPress={() => router.push(PATHS.settings.modes)}>
+            <Row title="Modes" subtitle="Home, away, vacation; day, evening, night — your own beside them, and one planned ahead" accessory={chevron} />
+          </Pressable>
+          <RowSeparator />
           <Pressable onPress={() => router.push(PATHS.settings.labels)}>
             <Row title="Labels" subtitle="Your own groupings — heating, upstairs — to filter your devices by" accessory={chevron} />
           </Pressable>

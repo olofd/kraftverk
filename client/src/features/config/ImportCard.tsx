@@ -275,7 +275,7 @@ function PlanView({ plan, onAgain, onApplied }: { plan: ImportPlan; onAgain: () 
           ))}
         </Card>
       ) : null}
-      {plan.family.length || plan.homes.some((home) => home.action !== 'same') || plan.zones.some((zone) => zone.action !== 'same') ? (
+      {plan.family.length || plan.homes.some((home) => home.action !== 'same') || plan.zones.some((zone) => zone.action !== 'same') || plan.modes.some((mode) => mode.action !== 'same') ? (
         <Card gap="$1.5">
           <Text fontSize={15} fontWeight="600" color="$color">
             The family and its homes
@@ -290,6 +290,13 @@ function PlanView({ plan, onAgain, onApplied }: { plan: ImportPlan; onAgain: () 
             .map((home) => (
               <Text key={home.key} fontSize={13} color="$color" lineHeight={19}>
                 {home.action === 'add' ? `New home: ${home.name}` : `${home.name}: ${home.changes.join(', ')}`}
+              </Text>
+            ))}
+          {plan.modes
+            .filter((mode) => mode.action !== 'same')
+            .map((mode) => (
+              <Text key={`mode:${mode.key}`} fontSize={13} color="$color" lineHeight={19}>
+                {mode.action === 'add' ? `New mode: ${mode.name}` : `${mode.name}: ${mode.changes.join(', ')}`}
               </Text>
             ))}
           {plan.zones
@@ -495,6 +502,8 @@ function AppliedView({ applied }: { applied: ImportApplied }) {
     count(applied.homes.changed.length, 'home', 'changed'),
     count(applied.zones.added.length, 'zone', 'added'),
     count(applied.zones.changed.length, 'zone', 'changed'),
+    count(applied.modes.added.length, 'mode', 'added'),
+    count(applied.modes.changed.length, 'mode', 'changed'),
     applied.family ? 'the family’s name or language set' : null,
     applied.policy.length ? `${applied.policy.length} of the homes’ values set` : null,
   ].filter(Boolean);

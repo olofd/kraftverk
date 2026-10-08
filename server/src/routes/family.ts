@@ -68,6 +68,16 @@ export function familyRoutes(deps: AppDeps): Hono {
   api.post('/notifications/test', async (c) => c.json(await familyFor(deps, c).notifications.test()));
   // Where each member is, as far as each shares: never more.
   api.get('/presence', async (c) => c.json({ presence: await familyFor(deps, c).presence.list() }));
+  // A home's modes: the family's own, and which each home is in.
+  const MODE = z.object({ key: z.string().regex(/^[a-z][a-z0-9-]{0,29}$/), axis: z.enum(['presence', 'day']), name: z.string().trim().min(1).max(30), icon: z.string().max(40).nullable() }).strict();
+  api.get('/modes', async (c) => c.json({ modes: await familyFor(deps, c).modes.list({ removed: c.req.query('removed') === 'true' }) }));
+  api.post('/modes', async (c) => c.json(await familyFor(deps, c).modes.add(await body(c, MODE.partial({ key: true, icon: true })))));
+  api.patch('/modes/:id', async (c) => c.json(await familyFor(deps, c).modes.update(c.req.param('id'), await body(c, MODE.omit({ axis: true }).partial()))));
+  api.delete('/modes/:id', async (c) => c.json(await familyFor(deps, c).modes.remove(c.req.param('id'))));
+  api.get('/homes/:id/modes', async (c) => c.json({ modes: await familyFor(deps, c).modes.of(c.req.param('id')) }));
+  api.put('/homes/:id/modes', async (c) =>
+    c.json({ modes: await familyFor(deps, c).modes.set(c.req.param('id'), await body(c, z.object({ mode: z.string().min(1).max(40), from: z.iso.datetime({ offset: true }).optional(), until: z.iso.datetime({ offset: true }).nullable().optional() }).strict())) })
+  );
   // Which spaces have someone in them: whoever they are.
   api.get('/homes/:id/occupancy', async (c) => c.json({ occupancy: await familyFor(deps, c).occupancy.now(c.req.param('id')) }));
   api.get('/spaces/:id/occupancy', async (c) => {

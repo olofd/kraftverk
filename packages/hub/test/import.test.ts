@@ -8,7 +8,7 @@ import type { Rule } from '@kraftverk/automation';
 import { ApiError } from '@kraftverk/api-contract';
 import { AutomationLibrary } from '@kraftverk/automation-engine';
 import type { AuditRecord } from '@kraftverk/device-sdk';
-import { FamilyStore, LabelStore, MediaStore, PeopleStore, ShortcutStore, DevicePeopleStore, PlaceStore, SpaceStore, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
+import { FamilyStore, LabelStore, MediaStore, PeopleStore, ShortcutStore, DevicePeopleStore, ModeStore, PlaceStore, SpaceStore, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
 import { policyOf } from '../src/homes/homes.ts';
 
 import { drafts } from '../src/automations/drafts.ts';
@@ -94,6 +94,7 @@ beforeEach(() => {
     people: new PeopleStore(db),
     shortcuts: new ShortcutStore(db),
     devicePeople: new DevicePeopleStore(db),
+    modes: new ModeStore(db),
     media: new MediaStore(db),
     policyOf: policyOf(db),
     sealing: testSealing,

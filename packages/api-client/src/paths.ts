@@ -25,7 +25,7 @@
     /family[/<person>]                      where everyone is, and one person
     /rooms[/<home>]                         a home's map: its rooms, who is in them
     /notifications                          your inbox
-    /settings[/accounts|/connectivity|/configuration|/server-log|/maps|/homes[/<id>]|/zones[/<id>]|/labels|/people|/join]
+    /settings[/accounts|/connectivity|/configuration|/server-log|/maps|/homes[/<id>]|/zones[/<id>]|/labels|/modes|/people|/join]
 
   Built here and nowhere else: a screen asks for an address, it never
   spells one.
@@ -117,6 +117,7 @@ export const PATHS = {
     homes: '/settings/homes',
     zones: '/settings/zones',
     labels: '/settings/labels',
+    modes: '/settings/modes',
     people: '/settings/people',
     join: '/settings/join',
     home: (id: string) => `/settings/homes/${at(id)}`,

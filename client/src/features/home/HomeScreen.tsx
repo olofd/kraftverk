@@ -22,6 +22,7 @@ import { PROBLEMS_SHOWN } from '../devices/ProblemsScreen';
 import { pictureFor } from '../devices/registry';
 import { Elsewhere } from './Elsewhere';
 import { FoundNearYou } from './FoundNearYou';
+import { ModesCard } from './ModesCard';
 import { NeedsYou } from './NeedsYou';
 
 /** What can be added, from the categories something installed is in: "Power stations, smart plugs, weather". */
@@ -51,6 +52,8 @@ const productList = (installed: readonly { meta: { name: string } }[]) => {
  */
 export function HomeScreen() {
   const { devices, removed, loading, error, heard } = useDevices();
+  // Each home's mode, above what is in it.
+  const { homes: spaces } = useHomeSpaces();
   const { api, role } = useFamily();
   const theme = useTheme();
   // What the home can add: the installed types, as it lists them.
@@ -121,6 +124,9 @@ export function HomeScreen() {
         </Card>
       ) : null}
 
+      {(spaces ?? []).map((each) => (
+        <ModesCard key={each.home.id} home={each.home} titled={(spaces?.length ?? 0) > 1} />
+      ))}
       <ByRoom devices={hardware} />
       {services.length > 0 ? (
         <YStack gap="$3">

@@ -397,6 +397,14 @@ export function followerApi(h: Follower): KraftverkApi {
     presence: {
       list: () => home.presence.list(),
     },
+    modes: {
+      list: (options) => home.modes.list(options),
+      add: (input) => home.modes.add(input),
+      update: (id, changes) => home.modes.update(id, changes),
+      remove: (id) => home.modes.remove(id),
+      of: (homeId) => home.modes.of(homeId),
+      set: (homeId, input) => home.modes.set(homeId, input),
+    },
     occupancy: {
       now: (homeId) => home.occupancy.now(homeId),
       history: (spaceId, options) => home.occupancy.history(spaceId, options),

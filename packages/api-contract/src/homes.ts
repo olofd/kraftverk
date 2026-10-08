@@ -195,6 +195,21 @@ export type PlacementView = {
   until: string | null;
 };
 
+/** A home's two axes of mode (docs/PLAN-WORLD-MODEL.md §8.10): whether anyone is home, and the time of day. */
+export type ModeAxis = 'presence' | 'day';
+
+/** A mode: built in — home, away, vacation; day, evening, night — or a family's own on either axis, known by its key. */
+export type ModeView = { id: string; key: string; axis: ModeAxis; name: string; icon: string | null; builtIn: boolean; removedAt: string | null };
+
+/** A family's own mode, made or changed: its key made from its name when not given. */
+export type ModeInput = { key?: string; axis: ModeAxis; name: string; icon?: string | null };
+
+/** A home's mode on one axis: now, since when and who set it — none when never set — and what is set to come. */
+export type HomeModeView = { axis: ModeAxis; mode: ModeView | null; since: string | null; by: string | null; ahead: { mode: ModeView; from: string; until: string | null }[] };
+
+/** A home set to a mode, by its id or key: from now unless said, for good or until a time — the mode before coming back then. */
+export type ModeSet = { mode: string; from?: string; until?: string | null };
+
 /**
  * A space with someone in it, whoever they are (docs/PLAN-WORLD-MODEL.md
  * §8.9): since when — and until, once nobody is — what said so, and the

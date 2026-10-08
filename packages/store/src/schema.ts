@@ -742,6 +742,46 @@ export const SCHEMA = `
   CREATE UNIQUE INDEX occupancy_now ON occupancy (space_id) WHERE until IS NULL;
   CREATE INDEX occupancy_space ON occupancy (space_id, since);
 
+  /*
+    A home's modes (docs/PLAN-WORLD-MODEL.md §8.10): on two axes at once —
+    presence (home, away, vacation) and the day (day, evening, night) — and
+    a family's own on either. A built-in one's id is its key; a family's own
+    is m-…, known in a file and an automation by its key. One let go is
+    archived: history names it.
+  */
+  CREATE TABLE mode (
+    id         TEXT PRIMARY KEY,
+    key        TEXT NOT NULL CHECK (key GLOB '[a-z]*' AND key NOT GLOB '*[^a-z0-9-]*' AND length(key) <= 30),
+    axis       TEXT NOT NULL CHECK (axis IN ('presence', 'day')),
+    name       TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 30),
+    icon       TEXT,
+    built_in   INTEGER NOT NULL CHECK (built_in IN (0, 1)),
+    position   INTEGER NOT NULL DEFAULT 0,
+    removed_at TEXT,
+    UNIQUE (id, axis)
+  );
+  CREATE UNIQUE INDEX mode_key ON mode (key) WHERE removed_at IS NULL;
+
+  /*
+    Which mode a home is in on each axis, as intervals, the open one now —
+    and some ahead: a vacation from Saturday ends what is before it then.
+    Who set it, a person, an automation, presence. Kept two years.
+  */
+  CREATE TABLE home_mode (
+    home_id    TEXT NOT NULL REFERENCES home (id),
+    mode_id    TEXT NOT NULL,
+    axis       TEXT NOT NULL,
+    since      TEXT NOT NULL,
+    until      TEXT,
+    actor_kind TEXT NOT NULL CHECK (actor_kind IN ('person', 'agent', 'automation', 'node', 'integration', 'system')),
+    actor_id   TEXT,
+    actor_name TEXT NOT NULL,
+    PRIMARY KEY (home_id, axis, since),
+    FOREIGN KEY (mode_id, axis) REFERENCES mode (id, axis),
+    CHECK (until IS NULL OR until > since)
+  );
+  CREATE UNIQUE INDEX home_mode_now ON home_mode (home_id, axis) WHERE until IS NULL;
+
   /* What said someone was there: each device, once. */
   CREATE TABLE occupancy_evidence (
     occupancy_id TEXT NOT NULL REFERENCES occupancy (id) ON DELETE CASCADE,

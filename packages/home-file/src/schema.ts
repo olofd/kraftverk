@@ -424,6 +424,17 @@ export function configJsonSchema(vocabulary: Vocabulary): Schema {
           properties: { name: { type: 'string', minLength: 1, maxLength: 30 }, color: { type: 'string', pattern: '^#[0-9a-f]{6}$' }, icon: { type: 'string' } },
         },
       },
+      modes: {
+        type: 'object',
+        propertyNames: { pattern: '^[a-z][a-z0-9-]{0,29}$', not: { enum: ['home', 'away', 'vacation', 'day', 'evening', 'night'] } },
+        description: 'The family’s own modes, by key, beside the built-in ones — home, away, vacation; day, evening, night — on either axis.',
+        additionalProperties: {
+          type: 'object',
+          required: ['axis', 'name'],
+          additionalProperties: false,
+          properties: { axis: { enum: ['presence', 'day'] }, name: { type: 'string', minLength: 1, maxLength: 30 }, icon: { type: 'string' } },
+        },
+      },
       zones: {
         type: 'object',
         ...keys,

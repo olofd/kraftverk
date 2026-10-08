@@ -19,7 +19,7 @@ and check a file with the same code.
 
 ```yaml
 # yaml-language-server: $schema=http://<your server>/api/config/schema.json
-kraftverk: 13                     # the document's version: required
+kraftverk: 14                     # the document's version: required
 
 family: { name: The Examples, kind: family, locale: en-GB }
 
@@ -78,6 +78,9 @@ homes:                            # each by its key, in their order
 
 zones:                            # places the family knows that are no home, by key
   school: { name: School, location: { latitude: 51.49, longitude: 0.01, radius: 200 } }
+
+modes:                            # the family's own, by key, beside home, away, vacation; day, evening, night
+  guests-over: { axis: presence, name: Guests over }
 
 devices:
   garage-station:                 # its key: what everything else names it by
@@ -478,6 +481,7 @@ nothing wrong — and write back the same.
 | 11 | Shortcuts are each person's own: `shortcuts:` under a person, automations by key in order. An automation has no `home page:`; version 10's become every person's shortcuts, in their places — a file with no people keeps none |
 | 12 | The family's zones (`zones:`, each by key with its name and location), who a device is with (a device's `people:` — carries, drives, owns, uses — by the people's keys) and what a person shares (`sharing: { level, keep }`). Nothing older says them, so nothing changes |
 | 13 | Geometry: a space's `frame`, `outline` and — a floor's — `plan`; an opening's `shape`; where in a space a device stands (`at`, `height`, `facing`). Nothing older says them, so nothing changes |
+| 14 | The family's own modes (`modes:`, each by key with its `axis` — presence or day — its name and icon). The built-in ones are every family's and never written; which mode a home is in is not the file's. Nothing older says them, so nothing changes |
 
 **An integration's own entries.** A change to what a type is reached by —
 a way it no longer has — is not the document's shape, but a home kept

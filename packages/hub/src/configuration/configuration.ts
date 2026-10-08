@@ -34,6 +34,7 @@ const CHANGES = new RegExp(
       'policy\\.changed',
       'home\\.(added|changed|removed)',
       'zone\\.(added|changed|removed)',
+      'mode\\.(added|changed|removed)',
       'space\\.(added|changed|removed)',
       'opening\\.(added|changed|removed)',
       'label\\.(added|changed|removed|set)',

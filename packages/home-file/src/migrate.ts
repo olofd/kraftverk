@@ -13,7 +13,7 @@
 import type { FileMigration, FileTypes } from '@kraftverk/device-sdk';
 
 /** The version this kraftverk writes. */
-export const CURRENT_VERSION = 13;
+export const CURRENT_VERSION = 14;
 
 /** Each version's document, as data, made into the next version's. */
 export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unknown>) => Record<string, unknown>>> = {
@@ -38,6 +38,8 @@ export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unkno
   11: (document) => document,
   // Version 13 may say a space's frame, outline and drawing, an opening's shape, and where in a space a device stands (`at`, `height`, `facing`): nothing older does, so nothing changes.
   12: (document) => document,
+  // Version 14 may say the family's own modes (`modes:`, each by key with its axis and name): nothing older does, so nothing changes.
+  13: (document) => document,
 };
 
 /**

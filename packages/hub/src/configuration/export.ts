@@ -12,7 +12,7 @@ import {
   type WaySource,
 } from '@kraftverk/home-file';
 import { keyFrom, methodsOf, partsOf, type NodeId, type PolicyValueName, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
-import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, FamilyStore, LinkStore, MediaStore, LabelStore, PeopleStore, PlaceStore, SecretsAtRest, ShortcutStore, DevicePeopleStore, SpaceStore } from '@kraftverk/store';
+import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, FamilyStore, LinkStore, MediaStore, LabelStore, PeopleStore, PlaceStore, SecretsAtRest, ShortcutStore, DevicePeopleStore, ModeStore, SpaceStore } from '@kraftverk/store';
 import { base64url } from '@kraftverk/identity';
 import type { SpaceView } from '@kraftverk/api-contract';
 
@@ -51,6 +51,8 @@ export type ConfigDeps = {
   shortcuts: ShortcutStore;
   /** Who each device is with. */
   devicePeople: DevicePeopleStore;
+  /** The family's own modes, beside the built-in ones. */
+  modes: ModeStore;
   /** Pictures, by their content: what a home or a device in a file names. */
   media: MediaStore;
   /** A home's own values: how much is a load, the reserve. */
@@ -193,6 +195,7 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
       document.people[key] = { id: person.id, name: person.name, role: person.member.role, nickname: person.member.nickname, color: person.member.color, chain: base64url(new TextEncoder().encode(JSON.stringify(chain))), shortcuts, sharing: said };
     }
     for (const zone of deps.places.zones()) document.zones[zone.key] = { name: zone.name, icon: zone.icon, location: zone.location };
+    for (const mode of deps.modes.list()) if (!mode.builtIn) document.modes[mode.key] = { axis: mode.axis, name: mode.name, icon: mode.icon };
     for (const home of deps.places.homes()) {
       document.homes[home.key] = {
         name: home.name,

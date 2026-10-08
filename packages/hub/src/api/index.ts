@@ -10,6 +10,7 @@ import { homesApi } from './homes.ts';
 import { zonesApi } from './zones.ts';
 import { presenceApi } from './presence.ts';
 import { occupancyApi } from './occupancy.ts';
+import { modesApi } from './modes.ts';
 import { notificationsApi } from './notifications.ts';
 import { mediaApi } from './media.ts';
 import { labelsApi } from './labels.ts';
@@ -40,6 +41,7 @@ export function familyApi(hub: Hub, caller: Caller): KraftverkApi {
     ...zonesApi(hub, caller),
     ...presenceApi(hub, caller),
     ...occupancyApi(hub),
+    ...modesApi(hub, caller),
     ...notificationsApi(hub, caller),
     ...mediaApi(hub, caller),
     ...spacesApi(hub, caller),

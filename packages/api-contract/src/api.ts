@@ -12,7 +12,7 @@ import type { MapRegionAsk, MapRegionsView } from './map.ts';
 import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DevicePeople, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, FamilyElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
 import type { FoundFamily, InvitationInput, InvitationMade, InvitationView, Joined, MemberChanges, PersonView, SharingChanges, SharingLevel, PresenceView, NotificationView, WebPushSubscription } from './people.ts';
-import type { HomeInput, HomeView, ZoneInput, ZoneView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView, OccupancyView } from './homes.ts';
+import type { HomeInput, HomeView, ZoneInput, ZoneView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView, OccupancyView, ModeView, ModeInput, HomeModeView, ModeSet } from './homes.ts';
 import type { MediaData, MediaView, NewMedia } from './media.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, FamilyView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
 import type { CheckOutcome, DraftView, FoundAt, FoundView, HeldSetupInput, KeptView, SaveInput, SightingView } from './setup.ts';
@@ -283,6 +283,20 @@ export interface KraftverkApi {
   /** Where each member is, as far as each shares (docs/PLAN-WORLD-MODEL.md §8.9, §11). */
   presence: {
     list(): Promise<PresenceView[]>;
+  };
+  /** A home's modes on two axes (docs/PLAN-WORLD-MODEL.md §8.10): the built-in ones and the family's own, and which each home is in. */
+  modes: {
+    /** Every mode, presence first; with those let go, `removed`. */
+    list(options?: { removed?: boolean }): Promise<ModeView[]>;
+    add(input: ModeInput): Promise<ModeView>;
+    /** A family's own mode renamed, rekeyed, its icon changed. A built-in one is not. */
+    update(id: string, changes: Partial<Omit<ModeInput, 'axis'>>): Promise<ModeView>;
+    /** A family's own mode let go: history names it. */
+    remove(id: string): Promise<ModeView>;
+    /** A home's mode on each axis now, and what is set to come. */
+    of(homeId: string): Promise<HomeModeView[]>;
+    /** A home set to a mode — now, or ahead: a vacation from Saturday to Sunday week. */
+    set(homeId: string, input: ModeSet): Promise<HomeModeView[]>;
   };
   /** Which spaces of a home have someone in them, whoever they are (§8.9). */
   occupancy: {

@@ -20,6 +20,7 @@ import {
   DevicePeopleStore,
   PresenceStore,
   OccupancyStore,
+  ModeStore,
   NotificationStore,
   FamilyStore,
   NodeStore,
@@ -54,6 +55,7 @@ import { ChangeLog } from '../history/changes.ts';
 import { Sampler } from '../history/sampler.ts';
 import { Presence } from '../presence/presence.ts';
 import { Occupancy } from '../occupancy/occupancy.ts';
+import { Modes } from '../modes/modes.ts';
 import type { PushSender } from '../notifications/notify.ts';
 import { positionHidden } from '../presence/levels.ts';
 import { startTransports, type Installed } from '../installed/from.ts';
@@ -192,6 +194,9 @@ export class Hub {
   /** Whether each space has someone in it, kept: from what stands there. */
   readonly occupancies: OccupancyStore;
   readonly occupancy: Occupancy;
+  /** A home's modes, and which each is in: kept, and said on the bus as they change. */
+  readonly modeStore: ModeStore;
+  readonly modes: Modes;
   readonly changeLog: ChangeLog;
   /** What the people using it are looking at, said by their apps. */
   readonly attention = new Attention();
@@ -304,6 +309,8 @@ export class Hub {
     this.push = options.push ?? null;
     this.presence = new Presence({ people: this.people, devicePeople: this.devicePeople, places: this.places, stays: this.stays, spaces: this.spaces, views: this.views, bus: this.bus, clock: options.clock });
     this.occupancies = new OccupancyStore(db);
+    this.modeStore = new ModeStore(db);
+    this.modes = new Modes({ store: this.modeStore, places: this.places, bus: this.bus, clock: options.clock });
     this.occupancy = new Occupancy({ places: this.places, spaces: this.spaces, store: this.occupancies, views: this.views, history: this.history, bus: this.bus, roomStays: (homeId) => this.stays.rooms(homeId), clock: options.clock });
     this.changeLog = new ChangeLog(this.history, this.bus, (id) => {
       const device = catalog.active(id);
@@ -329,6 +336,7 @@ export class Hub {
       people: this.people,
       shortcuts: this.shortcuts,
       devicePeople: this.devicePeople,
+      modes: this.modeStore,
       media: this.media,
       policyOf: policyOf(db),
       sealing: options.sealing,
@@ -359,6 +367,7 @@ export class Hub {
     this.sampler.start();
     this.presence.start();
     this.occupancy.start();
+    this.modes.start();
     this.changeLog.start();
     this.engine.start();
     this.#stopFreshness = keepWatchedFresh(this.attention, (device, until, close) => this.sessions.get(device)?.wantFresh?.(until, close));
@@ -376,16 +385,18 @@ export class Hub {
     this.sampler.stop();
     this.presence.stop();
     this.occupancy.stop();
+    this.modes.stop();
     // Runs end and holds are let go before their automations' rows are: nothing steps, or fires, into an emptied home.
     this.engine.clear();
     await this.sessions.closeAll();
     const { tables, rows } = resetDatabase(this.db);
     // A family always has a home: the first made again, as when it was new.
     ensureFirstHome(this.places);
+    this.modeStore.ensureBuiltIns();
     this.audit.record({ at: new Date().toISOString(), kind: 'database.reset', actor: by, summary: `The database was reset: ${rows} rows across ${tables.length} tables`, detail: { tables } });
     // Back to the state a fresh home starts in: no devices, so no sessions.
     await this.sessions.sync(this.catalog.list());
-    if (this.#started) (this.sampler.start(), this.presence.start(), this.occupancy.start());
+    if (this.#started) (this.sampler.start(), this.presence.start(), this.occupancy.start(), this.modes.start());
     this.bus.publish({ kind: 'changed', deviceId: null });
     return { tables, rows };
   }
@@ -408,6 +419,7 @@ export class Hub {
     this.sampler.stop();
     this.presence.stop();
     this.occupancy.stop();
+    this.modes.stop();
     this.changeLog.stop();
     this.setup.stop();
     this.nearby.stop();

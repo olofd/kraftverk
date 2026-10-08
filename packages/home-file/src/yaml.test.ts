@@ -143,7 +143,7 @@ automations:
     expect(located.problems).toEqual([]);
     expect(located.document!.homes.home!.location).toEqual({ latitude: 51.4779, longitude: -0.0015, radius: null });
     expect(readConfig(writeConfig(located.document!)).document!.homes.home!.location).toEqual({ latitude: 51.4779, longitude: -0.0015, radius: null });
-    const home = (location: string) => `kraftverk: 13\nhomes:\n  home:\n    name: Home\n    time zone: Europe/London\n    location: ${location}\n`;
+    const home = (location: string) => `kraftverk: 14\nhomes:\n  home:\n    name: Home\n    time zone: Europe/London\n    location: ${location}\n`;
     expect(readConfig(home('{ latitude: 51.4779, longitude: -0.0015, radius: 200 }')).document!.homes.home!.location).toEqual({ latitude: 51.4779, longitude: -0.0015, radius: 200 });
     const wrong = (location: string) => readConfig(home(location)).problems.map((problem) => problem.message);
     expect(wrong('{ latitude: 95, longitude: 0 }')).toEqual(['A latitude is a number from -90 to 90']);
@@ -154,7 +154,7 @@ automations:
 
   test('a home’s spaces, its openings, and where a device stands: read, written back the same, and held to the home', () => {
     const text = [
-      'kraftverk: 13',
+      'kraftverk: 14',
       'homes:',
       '  home:',
       '    name: Home',
@@ -243,8 +243,8 @@ automations:
 
   test('YAML that is not YAML, a missing version, and one written by a newer kraftverk', () => {
     expect(readConfig('devices: [').problems[0]).toMatchObject({ line: 1 });
-    expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 13" at its top');
-    expect(readConfig('kraftverk: 14').problems[0]).toMatchObject({ message: 'It was written by a newer kraftverk (version 14); this one reads up to version 13', line: 1, column: 12 });
+    expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 14" at its top');
+    expect(readConfig('kraftverk: 15').problems[0]).toMatchObject({ message: 'It was written by a newer kraftverk (version 15); this one reads up to version 14', line: 1, column: 12 });
   });
 });
 
