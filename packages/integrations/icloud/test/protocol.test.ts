@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { memoryKept, needsSignIn, validateProtocol, type SetupContext } from '@kraftverk/device-sdk';
 
-import protocol, { cookieHeader, cookiesSet, FindMy, IcloudAuth, keep, newState, passwordKey, srpProofs, srpServer, srpStart, stateOf, type IcloudFetch } from '../src/protocol/index.ts';
+import protocol, { authOptionsOf, cookieHeader, cookiesSet, FindMy, IcloudAuth, keep, newState, passwordKey, srpProofs, srpServer, srpStart, stateOf, usesBridge, type IcloudFetch } from '../src/protocol/index.ts';
 import { APPLE_ID, DEVICE_CODE, DSID, PASSWORD, playedApple, TEXT_CODE } from './apple.ts';
 
 /*
@@ -99,28 +99,93 @@ describe('signing in, as setup does', () => {
     expect(apple.asked).toContain('POST idmsa.apple.com/appleauth/auth/signin/complete');
   });
 
-  test('by text instead, when asked: a code to the trusted number', async () => {
+  test('with what is typed, nothing saved before: what was typed is kept with the question, so the next turn has it', async () => {
+    const apple = playedApple();
+    const ctx = { ...contextFor(apple.fetch), connection: {}, secrets: { get: () => null } };
+    const first = await signInAction.run(ctx, { appleId: ` ${APPLE_ID} `, password: PASSWORD });
+    expect(first).toMatchObject({ ok: true, detail: 'Apple asks for a code', suggestedConfig: { appleId: APPLE_ID, password: PASSWORD } });
+    // The code is asked for: Apple shows none on the devices until it is.
+    expect(apple.asked).toContain('PUT idmsa.apple.com/appleauth/auth/verify/trusteddevice/securitycode');
+    expect(await signInAction.run(ctx, { ...first.ask!.carry, code: '123 456' })).toMatchObject({ ok: true });
+    // With nothing typed and nothing kept, it says what is missing, and asks Apple nothing.
+    const before = apple.asked.length;
+    expect(await signInAction.run(ctx, {})).toEqual({ ok: false, detail: 'Type your Apple ID and its password' });
+    expect(apple.asked.length).toBe(before);
+  });
+
+  test('by text instead, when asked: a code to the trusted number, sent back as Apple named it', async () => {
     const apple = playedApple();
     const ctx = contextFor(apple.fetch);
     const first = await signInAction.run(ctx, {});
-    expect(first.ask!.schema.fields.byText).toBeDefined();
+    expect(first.ask!.schema.fields.byText).toMatchObject({ title: 'Text it to +46 •• ••• •• 12 instead' });
     const texted = await signInAction.run(ctx, { ...first.ask!.carry, byText: true });
     expect(texted).toMatchObject({ ok: true, detail: 'A code is on its way by text', ask: { schema: { help: 'Apple sent a code by text to +46 •• ••• •• 12.' } } });
     expect(apple.asked).toContain('PUT idmsa.apple.com/appleauth/auth/verify/phone');
     expect(await signInAction.run(ctx, { ...texted.ask!.carry, code: TEXT_CODE })).toMatchObject({ ok: true });
   });
 
-  test('an Apple ID with no trusted device has a code texted at once', async () => {
+  test('Apple’s options as its JSON once had them, flat, are read as well', async () => {
+    const apple = playedApple({ flat: true });
+    const ctx = contextFor(apple.fetch);
+    const first = await signInAction.run(ctx, {});
+    expect(first.ask!.schema.fields.byText).toBeDefined();
+    expect(await signInAction.run(ctx, { ...first.ask!.carry, code: DEVICE_CODE })).toMatchObject({ ok: true });
+  });
+
+  test('an Apple ID with no trusted device has a code texted at once; one whose devices show none, too', async () => {
     const apple = playedApple({ noTrustedDevices: true, protocol: 's2k_fo' });
     const first = await signInAction.run(contextFor(apple.fetch), {});
     expect(first).toMatchObject({ ok: true, detail: 'Apple sent a code by text' });
-    expect(first.ask!.carry!.phoneId).toBe(1);
+    expect(JSON.parse(first.ask!.carry!.phone as string)).toMatchObject({ id: 1, mode: 'sms' });
+
+    const refusing = playedApple();
+    refusing.control.refuseDeviceCode = true;
+    expect(await signInAction.run(contextFor(refusing.fetch), {})).toMatchObject({ ok: true, detail: 'Apple sent a code by text' });
+  });
+
+  test('a mistyped code keeps its question, with a text still offered', async () => {
+    const apple = playedApple();
+    const ctx = contextFor(apple.fetch);
+    const first = await signInAction.run(ctx, {});
+    const typo = await signInAction.run(ctx, { ...first.ask!.carry, code: '12' });
+    expect(typo).toMatchObject({ ok: false, detail: 'Type the digits Apple shows', ask: { schema: { fields: { byText: {} } } } });
+    const wrong = await signInAction.run(ctx, { ...typo.ask!.carry, code: '000000' });
+    expect(wrong.ask!.schema.fields.byText).toBeDefined();
   });
 
   test('the wrong password is said so, and nothing is kept', async () => {
     const apple = playedApple();
     const refused = await signInAction.run(contextFor(apple.fetch, 'not it'), {});
     expect(refused).toEqual({ ok: false, detail: 'Apple did not accept that Apple ID and password' });
+  });
+
+  test('Apple refusing sign-ins for a while is said so, with when to try once more — and each step is in the log', async () => {
+    const apple = playedApple();
+    apple.control.busy = true;
+    const lines: string[] = [];
+    const ctx = { ...contextFor(apple.fetch), log: { info: (line: string) => lines.push(line), warn: (line: string) => lines.push(line), error: () => {} } };
+    const refused = await signInAction.run(ctx, {});
+    expect(refused.ok).toBe(false);
+    expect(refused.detail).toMatch(/^Apple is refusing sign-ins for this Apple ID for a while, usually after several tries\. Try once more in about 30 minutes/);
+    expect(lines).toContain('iCloud: GET /appleauth/auth/authorize/signin → 503 (Apple’s request req-busy)');
+    expect(lines.join('\n')).not.toContain(PASSWORD);
+  });
+});
+
+describe('Apple’s options for a second factor', () => {
+  test('from its page’s boot_args, nested; flat JSON; and the bridge it may name', () => {
+    const phone = { id: 3, obfuscatedNumber: '•• 34', pushMode: 'voice', nonFTEU: true };
+    const page = `<html><script class="boot_args" type="application/json">${JSON.stringify({ direct: { authInitialRoute: 'auth/bridge/step', hasTrustedDevices: true, twoSV: { sourceAppId: 1159, bridgeInitiateData: { apnsTopic: 'com.apple.idmsauthwidget', phoneNumberVerification: { trustedPhoneNumbers: [phone] } } } } })}</script></html>`;
+    const nested = authOptionsOf(page);
+    expect(nested).toMatchObject({ route: 'auth/bridge/step', devices: true, sourceAppId: '1159', phones: [{ id: 3, number: '•• 34', mode: 'voice', nonFTEU: true }] });
+    expect(usesBridge(nested)).toBe(true);
+
+    const flat = authOptionsOf(JSON.stringify({ noTrustedDevices: true, securityCode: { length: 6 }, trustedPhoneNumbers: [{ id: 1, numberWithDialCode: '+46 12' }], keyNames: ['YubiKey'] }));
+    expect(flat).toMatchObject({ devices: false, route: null, bridge: null, phones: [{ id: 1, number: '+46 12', mode: 'sms' }], securityKeys: ['YubiKey'] });
+    expect(usesBridge(flat)).toBe(false);
+
+    // A page with nothing readable is no options at all, not a failure.
+    expect(authOptionsOf('<html></html>')).toMatchObject({ length: 6, devices: true, phones: [] });
   });
 });
 

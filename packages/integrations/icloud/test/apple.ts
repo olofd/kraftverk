@@ -18,7 +18,12 @@ const base64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 const fromBase64 = (text: string) => Uint8Array.from(atob(text), (char) => char.charCodeAt(0));
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } });
 
-export function playedApple(options: { protocol?: 's2k' | 's2k_fo'; noTrustedDevices?: boolean } = {}) {
+/**
+ * Apple as it is in 2026: its options in its page's boot_args, nested under
+ * `direct.twoSV` (or flat, as its JSON once was); no code on the devices
+ * until one is asked for (PUT); a right code answered 409 with `valid: true`.
+ */
+export function playedApple(options: { protocol?: 's2k' | 's2k_fo'; noTrustedDevices?: boolean; flat?: boolean } = {}) {
   const salt = Uint8Array.from({ length: 16 }, (_, index) => (index * 37 + 11) % 256);
   const iterations = 1000;
   const protocol = options.protocol ?? 's2k';
@@ -30,9 +35,11 @@ export function playedApple(options: { protocol?: 's2k' | 's2k_fo'; noTrustedDev
   let sessionToken = 'session-1';
   let webauth = 'webauth-1';
   let trusted = false;
+  /** Whether a code is shown on the devices: only once asked for. */
+  let codeShown = false;
   const asked: string[] = [];
-  /** Whether a second factor is asked of a trust token Apple gave: Apple may stop trusting one. */
-  const control = { distrust: false, expireWebauth: false };
+  /** Whether a second factor is asked of a trust token Apple gave (Apple may stop trusting one); whether Apple refuses sign-ins for a while; whether it shows no code on the devices. */
+  const control = { distrust: false, expireWebauth: false, busy: false, refuseDeviceCode: false };
 
   const fetch = async (url: string, given: RequestInit = {}): Promise<Response> => {
     const at = new URL(url);
@@ -41,6 +48,7 @@ export function playedApple(options: { protocol?: 's2k' | 's2k_fo'; noTrustedDev
     asked.push(route);
     const body = typeof init.body === 'string' && init.body !== 'null' ? (JSON.parse(init.body) as Record<string, any>) : {};
     const cookie = init.headers.cookie ?? '';
+    if (control.busy && at.hostname === 'idmsa.apple.com') return new Response('', { status: 503, headers: { 'X-Apple-I-Request-ID': 'req-busy' } });
     switch (route) {
       case 'GET idmsa.apple.com/appleauth/auth/authorize/signin':
         return new Response('<html></html>', { headers: { 'Set-Cookie': 'aasp=aasp-1; Domain=.apple.com; Path=/; Secure; HttpOnly' } });
@@ -56,19 +64,23 @@ export function playedApple(options: { protocol?: 's2k' | 's2k_fo'; noTrustedDev
         if (trustToken && body.trustTokens?.includes(trustToken) && !control.distrust) return json({ authType: 'hsa2' }, 200, headers);
         return json({ authType: 'hsa2' }, 409, headers);
       }
-      case 'GET idmsa.apple.com/appleauth/auth':
-        return json({
-          securityCode: { length: 6, tooManyCodesSent: false },
-          noTrustedDevices: options.noTrustedDevices ?? false,
-          trustedPhoneNumbers: [{ id: 1, numberWithDialCode: '+46 •• ••• •• 12', pushMode: 'sms' }],
-        });
+      case 'GET idmsa.apple.com/appleauth/auth': {
+        const phone = { id: 1, numberWithDialCode: '+46 •• ••• •• 12', pushMode: 'sms', nonFTEU: false };
+        if (options.flat) return json({ securityCode: { length: 6, tooManyCodesSent: false }, noTrustedDevices: options.noTrustedDevices ?? false, trustedPhoneNumbers: [phone] });
+        const boot = { direct: { authInitialRoute: 'auth/trusteddevice', hasTrustedDevices: !options.noTrustedDevices, twoSV: { phoneNumberVerification: { trustedPhoneNumber: phone, trustedPhoneNumbers: [phone], securityCode: { length: 6 } } } } };
+        return new Response(`<html><body><script type="application/json" class="boot_args">${JSON.stringify(boot)}</script></body></html>`, { headers: { 'Content-Type': 'text/html' } });
+      }
+      case 'PUT idmsa.apple.com/appleauth/auth/verify/trusteddevice/securitycode':
+        if (options.noTrustedDevices || control.refuseDeviceCode) return json({ service_errors: [{ code: '-28' }] }, 412);
+        codeShown = true;
+        return json({ trustedDeviceCount: 2 }, 202);
       case 'POST idmsa.apple.com/appleauth/auth/verify/trusteddevice/securitycode':
         if (init.headers.scnt !== 'scnt-1' || init.headers['x-apple-id-session-id'] !== 'sid-1') return json({}, 401);
-        return body.securityCode?.code === DEVICE_CODE ? new Response(null, { status: 204 }) : json({ service_errors: [{ code: '-21669' }] }, 400);
+        return codeShown && body.securityCode?.code === DEVICE_CODE ? json({ securityCode: { code: DEVICE_CODE, valid: true } }, 409) : json({ service_errors: [{ code: '-21669' }] }, 400);
       case 'PUT idmsa.apple.com/appleauth/auth/verify/phone':
         return json({ trustedPhoneNumber: { id: body.phoneNumber?.id } });
       case 'POST idmsa.apple.com/appleauth/auth/verify/phone/securitycode':
-        return body.securityCode?.code === TEXT_CODE && body.phoneNumber?.id === 1 ? json({}) : json({ service_errors: [{ code: '-21669' }] }, 400);
+        return body.securityCode?.code === TEXT_CODE && body.phoneNumber?.id === 1 && body.phoneNumber?.nonFTEU === false && body.mode === 'sms' ? json({}) : json({ service_errors: [{ code: '-21669' }] }, 400);
       case 'GET idmsa.apple.com/appleauth/auth/2sv/trust':
         trustToken = 'trust-1';
         sessionToken = 'session-2';

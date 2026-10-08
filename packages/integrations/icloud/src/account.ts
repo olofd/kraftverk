@@ -153,13 +153,13 @@ const DESCRIPTION = {
 };
 
 /** Signs in to iCloud with what a connection keeps: the Apple ID, its password, and the session Apple's sign-in made. */
-export function icloudOver(connection: OpenConnection): { auth: IcloudAuth; appleId: string; password: string } {
+export function icloudOver(connection: OpenConnection, trace?: (line: string) => void): { auth: IcloudAuth; appleId: string; password: string } {
   const channel = channelOf(connection, 'http', 'iCloud is reached over HTTPS');
   const { secrets } = directOf(connection, 'iCloud is reached over HTTPS');
   const appleId = String(connection.config.appleId ?? '').trim();
   const password = secrets.get('password');
   if (!appleId || !password) throw new Error('No Apple ID: give it and its password on the account’s connection');
-  const auth = new IcloudAuth((url, init) => channel.fetch(url, init), stateOf(secrets.get('session')), (state) => secrets.set('session', JSON.stringify(state)));
+  const auth = new IcloudAuth((url, init) => channel.fetch(url, init), stateOf(secrets.get('session')), (state) => secrets.set('session', JSON.stringify(state)), trace);
   return { auth, appleId, password };
 }
 
@@ -231,7 +231,7 @@ function session(ctx: DeviceContext<Config>, family: Family, identity: () => str
 
 async function accountSession(ctx: DeviceContext<Config>): Promise<DeviceSession> {
   if (!ctx.connection) throw new Error('An iCloud account is reached through iCloud');
-  const { auth, appleId, password } = icloudOver(ctx.connection);
+  const { auth, appleId, password } = icloudOver(ctx.connection, (line) => ctx.log.info(line));
   const { source, account } = findMyOver(auth, appleId, password);
   return session(ctx, new Family(source), () => {
     const signedIn = account();
@@ -274,7 +274,7 @@ export default defineDeviceType<Config>({
     try {
       account = await auth.resume(appleId, password);
     } catch (error) {
-      if (needsSignIn(error)) throw new Error('Apple asks for a code: press "Sign in with Apple" above, and give it the code');
+      if (needsSignIn(error)) throw new Error('Apple asks for a code: go back, press "Sign in", and give it the code');
       throw error;
     }
     const devices = account.findMe ? await new FindMy(auth, account).devices() : [];

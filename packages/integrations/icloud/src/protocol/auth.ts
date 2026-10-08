@@ -1,6 +1,7 @@
 import { NeedsSignIn, NotReachable, randomHex } from '@kraftverk/device-sdk';
 
 import { cookieHeader, cookiesSet, keep, type Cookie } from './cookies.ts';
+import { authOptionsOf, type AuthOptions, type TrustedPhone } from './options.ts';
 import { passwordKey, srpProofs, srpStart, type SrpProtocol } from './srp.ts';
 
 /*
@@ -11,8 +12,11 @@ import { passwordKey, srpProofs, srpStart, type SrpProtocol } from './srp.ts';
     3. POST …/signin/complete  {accountName, c, m1, m2, rememberMe, trustTokens}
          200 signed in: a trust token from before was enough
          409 a second factor is asked for
-    4. a code from a trusted device (POST …/verify/trusteddevice/securitycode),
-       or one sent by text (PUT …/verify/phone, POST …/verify/phone/securitycode)
+    4. how a code can come (GET …/appleauth/auth: options.ts); a code asked
+       for on the trusted devices (PUT …/verify/trusteddevice/securitycode —
+       since 2026 Apple shows none until asked) and given back (POST, same
+       path), or one sent by text (PUT …/verify/phone, POST
+       …/verify/phone/securitycode)
     5. GET  …/2sv/trust        → a trust token: the next sign-in asks no second factor
     6. POST setup.icloud.com/setup/ws/1/accountLogin  → the account: its dsid, its services
 
@@ -22,7 +26,8 @@ import { passwordKey, srpProofs, srpStart, type SrpProtocol } from './srp.ts';
   no person. A second factor always needs one.
 */
 
-const AUTH = 'https://idmsa.apple.com/appleauth/auth';
+const IDMSA = 'https://idmsa.apple.com';
+const AUTH = `${IDMSA}/appleauth/auth`;
 const SETUP = 'https://setup.icloud.com/setup/ws/1';
 const HOME = 'https://www.icloud.com';
 /** iCloud's web client, as Apple knows it. */
@@ -57,16 +62,6 @@ export type IcloudAccount = {
   challenged: boolean;
 };
 
-/** How a second factor can be given: a code on a trusted device, or by text to one of these numbers. */
-export type SecondFactor = {
-  /** The length of the code. */
-  length: number;
-  /** Where Apple sends it by itself: to the trusted devices, unless it says it cannot. */
-  byDevice: boolean;
-  /** The numbers a code can be texted to, as Apple shows them (the digits mostly hidden). */
-  phones: readonly { id: number; number: string }[];
-};
-
 /** Fetch, as a channel gives it: to the hosts its protocol declared. */
 export type IcloudFetch = (url: string, init?: RequestInit & { timeoutMs?: number }) => Promise<Response>;
 
@@ -77,6 +72,20 @@ export class AppleRefused extends Error {
     message: string
   ) {
     super(message);
+  }
+}
+
+/** How long Apple is left alone after it refuses sign-ins: its block outlasts minutes, and each try lengthens it. */
+export const BUSY_MS = 30 * 60_000;
+
+/**
+ * Apple refusing sign-ins for a while (503 from its sign-in host): after
+ * several tries it suspects them, for hours. Tried again after `until`,
+ * never sooner — trying sooner makes it longer.
+ */
+export class AppleBusy extends NotReachable {
+  constructor(readonly until: number) {
+    super(`Apple is refusing sign-ins for this Apple ID for a while, usually after several tries. Try once more in about ${Math.max(1, Math.round((until - Date.now()) / 60_000))} minutes: trying sooner makes it longer`, Math.max(0, until - Date.now()));
   }
 }
 
@@ -97,7 +106,9 @@ export class IcloudAuth {
     /** What is kept: read and changed in place, and handed back by `state`. */
     private kept: IcloudState,
     /** Told when what is kept changed: a session writes it down. */
-    private onChange: (state: IcloudState) => void = () => {}
+    private onChange: (state: IcloudState) => void = () => {},
+    /** Told each step of a sign-in, with Apple's answer and its request id — never a password, token or cookie. */
+    private trace: (line: string) => void = () => {}
   ) {}
 
   get state(): IcloudState {
@@ -129,6 +140,12 @@ export class IcloudAuth {
       }
     }
     if (changed) this.onChange(this.kept);
+    const signingIn = host === new URL(AUTH).hostname;
+    if (signingIn || url.includes('/accountLogin')) {
+      const id = response.headers.get('X-Apple-I-Request-ID');
+      this.trace(`${init.method ?? 'GET'} ${new URL(url).pathname} → ${response.status}${id ? ` (Apple’s request ${id})` : ''}`);
+    }
+    if (signingIn && response.status === 503) throw new AppleBusy(Date.now() + BUSY_MS);
     if (response.status >= 500) throw new NotReachable(`Apple answered ${response.status}: try again in a while`, 60_000);
     return response;
   }
@@ -145,7 +162,9 @@ export class IcloudAuth {
       'X-Apple-OAuth-Response-Mode': 'web_message',
       'X-Apple-OAuth-Response-Type': 'code',
       'X-Apple-OAuth-State': this.kept.clientId,
+      'X-Apple-Frame-Id': this.kept.clientId,
       'X-Apple-Widget-Key': WIDGET_KEY,
+      Referer: IDMSA,
       'X-Apple-FD-Client-Info': JSON.stringify({ U: USER_AGENT, L: 'en-US', Z: 'GMT+00:00', V: '1.1', F: '' }),
       ...(this.kept.scnt ? { scnt: this.kept.scnt } : {}),
       ...(this.kept.sessionId ? { 'X-Apple-ID-Session-Id': this.kept.sessionId } : {}),
@@ -194,41 +213,43 @@ export class IcloudAuth {
     return 'signed-in';
   }
 
-  /** How a second factor can be given, as Apple says for this sign-in. Asking also has Apple send a code to the trusted devices. */
-  async secondFactor(): Promise<SecondFactor> {
-    const response = await this.request(AUTH, { headers: this.#authHeaders({ Accept: 'application/json' }) });
-    const said = (await response.json().catch(() => ({}))) as {
-      securityCode?: { length?: number };
-      noTrustedDevices?: boolean;
-      authInitialRoute?: string;
-      trustedPhoneNumbers?: { id: number; numberWithDialCode?: string; obfuscatedNumber?: string }[];
-    };
-    return {
-      length: said.securityCode?.length ?? 6,
-      // A route Apple's newer device verifier takes is not this client's: a text is sent instead.
-      byDevice: !said.noTrustedDevices && said.authInitialRoute !== 'auth/bridge/step',
-      phones: (said.trustedPhoneNumbers ?? []).map((phone) => ({ id: phone.id, number: phone.numberWithDialCode ?? phone.obfuscatedNumber ?? `number ${phone.id}` })),
-    };
+  /**
+   * How a second factor can be given, as Apple says for this sign-in: asked
+   * for as its sign-in page is (HTML), whose options name every route —
+   * the bridge's included — where JSON may name only some.
+   */
+  async authOptions(): Promise<AuthOptions> {
+    const response = await this.request(AUTH, { headers: this.#authHeaders({ Accept: 'text/html' }) });
+    if (!response.ok) throw refusal(response.status, await response.text());
+    return authOptionsOf(await response.text());
   }
 
-  /** Has Apple text a code to one of the account's trusted numbers. */
-  async sendTextCode(phoneId: number): Promise<void> {
-    const response = await this.request(`${AUTH}/verify/phone`, { method: 'PUT', headers: this.#authHeaders(), body: JSON.stringify({ phoneNumber: { id: phoneId }, mode: 'sms' }) });
+  /** Has Apple show a code on the account's trusted devices: since 2026 it shows none until asked. */
+  async requestCode(): Promise<void> {
+    const response = await this.request(`${AUTH}/verify/trusteddevice/securitycode`, { method: 'PUT', headers: this.#authHeaders({ Accept: 'application/json' }) });
+    if (!response.ok) throw refusal(response.status, await response.text());
+  }
+
+  /** Has Apple text a code to a trusted number — or call it, as the number asks. */
+  async sendTextCode(phone: TrustedPhone): Promise<void> {
+    const response = await this.request(`${AUTH}/verify/phone`, { method: 'PUT', headers: this.#authHeaders({ Accept: 'application/json' }), body: JSON.stringify({ phoneNumber: phoneNumberOf(phone), mode: phone.mode }) });
     if (!response.ok) throw refusal(response.status, await response.text());
   }
 
   /**
-   * Gives the second factor's code — from a trusted device, or texted to
-   * `phoneId` — then has Apple trust this client, and signs in to iCloud.
+   * Gives the second factor's code — from a trusted device, or sent to
+   * `phone` — then has Apple trust this client, and signs in to iCloud.
    * A wrong code is refused, saying so; another can be given.
    */
-  async verify(code: string, phoneId?: number): Promise<IcloudAccount> {
-    const response = phoneId === undefined
-      ? await this.request(`${AUTH}/verify/trusteddevice/securitycode`, { method: 'POST', headers: this.#authHeaders(), body: JSON.stringify({ securityCode: { code } }) })
-      : await this.request(`${AUTH}/verify/phone/securitycode`, { method: 'POST', headers: this.#authHeaders({ Accept: 'application/json, text/plain' }), body: JSON.stringify({ phoneNumber: { id: phoneId }, securityCode: { code }, mode: 'sms' }) });
+  async verify(code: string, phone?: TrustedPhone): Promise<IcloudAccount> {
+    const response = phone === undefined
+      ? await this.request(`${AUTH}/verify/trusteddevice/securitycode`, { method: 'POST', headers: this.#authHeaders({ Accept: 'application/json' }), body: JSON.stringify({ securityCode: { code } }) })
+      : await this.request(`${AUTH}/verify/phone/securitycode`, { method: 'POST', headers: this.#authHeaders({ Accept: 'application/json, text/plain' }), body: JSON.stringify({ phoneNumber: phoneNumberOf(phone), securityCode: { code }, mode: phone.mode }) });
     const answered = await response.text();
     if (!response.ok && !(response.status === 409 && acceptedConflict(answered))) {
       if (response.status === 400 || response.status === 401) throw new AppleRefused(response.status, 'That code was not the one Apple sent: try again, or have another sent');
+      // A code from the devices Apple will not take this way: its newer route asks for one by text instead.
+      if (response.status === 409 && phone === undefined) throw new AppleRefused(409, 'Apple did not take a code from your devices this way: have one texted instead');
       throw refusal(response.status, answered);
     }
     const trusted = await this.request(`${AUTH}/2sv/trust`, { headers: this.#authHeaders() });
@@ -282,6 +303,9 @@ function refusal(status: number, body: string): AppleRefused {
   if (status === 421 || status === 450) return new AppleRefused(status, 'iCloud no longer takes this session: sign in again');
   return new AppleRefused(status, `Apple refused (${status})${body.trim() ? `: ${body.trim().slice(0, 200)}` : ''}`);
 }
+
+/** A trusted number as Apple's verify calls want it back. */
+const phoneNumberOf = (phone: TrustedPhone) => ({ id: phone.id, ...(phone.nonFTEU !== undefined ? { nonFTEU: phone.nonFTEU } : {}) });
 
 /** A 409 to a code that says it was the right one: Apple accepts it so. */
 function acceptedConflict(body: string): boolean {

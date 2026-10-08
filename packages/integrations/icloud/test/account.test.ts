@@ -38,6 +38,7 @@ async function signedInAccount() {
     connection: { appleId: APPLE_ID },
     secrets: { get: (field: string) => (field === 'password' ? PASSWORD : null) },
     http: (url: string, init?: RequestInit) => apple.fetch(url, init),
+    log: { info: () => {}, warn: () => {}, error: () => {} },
   } as unknown as SetupContext;
   const first = await action.run(setup, {});
   const done = await action.run(setup, { ...first.ask!.carry, code: DEVICE_CODE });
