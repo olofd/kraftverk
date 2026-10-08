@@ -60,7 +60,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - run: npm ci --prefer-offline --no-audit --no-fund
+      - run: sh scripts/ci/install.sh
       - run: npm run check:architecture
       - run: npm run typecheck
       - run: npm run knip
@@ -83,7 +83,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - run: npm ci --prefer-offline --no-audit --no-fund
+      - run: sh scripts/ci/install.sh
       # Builds the app as it ships, then runs its share of e2e/ against a
       # read-only server of its own, every device simulated.
       - run: npm run test:e2e -- --shard=${{ matrix.shard }}/2

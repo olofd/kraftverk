@@ -18,7 +18,10 @@ checks are.
    browser and libraries, and the tools native modules build with), npm's
    download cache and Metro's kept between runs in volumes the runner allows
    ([DEPLOY.md](DEPLOY.md#the-runner)):
-   - `npm ci`, from the cache first, a dropped download tried again;
+   - `scripts/ci/install.sh`: `node_modules` unpacked from an archive of the
+     last install with the same lockfile, Node and npm (about 4 s), or else
+     `npm ci` — from the cache first, a dropped download tried again — and
+     its result archived for the next job;
    - `npm run check:architecture`: the dependency rule and the
      product-identifier ratchet ([ARCHITECTURE.md §7](ARCHITECTURE.md#7-guardrails-in-ci));
    - `npm run typecheck` (each project's own `tsc`, side by side —
