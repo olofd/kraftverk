@@ -59,6 +59,18 @@ export function deviceRoutes(deps: AppDeps, confirm: ConfirmPassword): Hono {
     return c.json(await homeFor(deps, c).devices.setPaused(id(c.req.param('id')), paused));
   });
 
+  /** Where it has been, kept for so many days, or none of it: null forgets what was kept. */
+  api.put('/devices/:id/track', async (c) => {
+    const { days } = await body(c, z.object({ days: z.number().int().min(1).max(366).nullable() }).strict());
+    return c.json(await homeFor(deps, c).devices.setTrack(id(c.req.param('id')), days));
+  });
+
+  /** Where it has been since a time, while that is kept: never cached, never in an export. */
+  api.get('/devices/:id/track', async (c) => {
+    const { since } = query(c, z.object({ since: z.iso.datetime({ offset: true }) }).strict());
+    return c.json({ points: await homeFor(deps, c).devices.track(id(c.req.param('id')), since) });
+  });
+
   /** Which picture it shows: the home says which it has. */
   api.put('/devices/:id/picture', async (c) => {
     const { picture } = await body(c, z.object({ picture: z.string().min(1).max(40) }).strict());
