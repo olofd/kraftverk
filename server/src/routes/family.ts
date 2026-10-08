@@ -56,6 +56,10 @@ export function familyRoutes(deps: AppDeps): Hono {
   api.post('/spaces', async (c) => c.json(await familyFor(deps, c).spaces.add(await body(c, SPACE.partial({ key: true, purpose: true, icon: true, pictureId: true, position: true, level: true, elevation: true, height: true })))));
   api.patch('/spaces/:id', async (c) => c.json(await familyFor(deps, c).spaces.update(c.req.param('id'), await body(c, SPACE.partial()))));
   api.delete('/spaces/:id', async (c) => c.json(await familyFor(deps, c).spaces.remove(c.req.param('id'))));
+  api.get('/spaces/:id/history', async (c) => {
+    const asked = query(c, z.object({ means: z.string().min(1).max(64), points: z.coerce.number().int().min(20).max(1000).default(240), hours: z.coerce.number().min(0.5).max(24 * 730).optional(), from: z.iso.datetime({ offset: true }).optional(), to: z.iso.datetime({ offset: true }).optional() }).strict());
+    return c.json(await familyFor(deps, c).spaces.history(c.req.param('id'), asked));
+  });
 
   /** Where its spaces meet, or meet the outside. */
   const OPENING = z

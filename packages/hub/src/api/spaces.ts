@@ -1,7 +1,10 @@
-import { ApiError, type Caller, type KraftverkApi, type OpeningInput, type SpaceInput } from '@kraftverk/api-contract';
+import { ApiError, type Caller, type KraftverkApi, type OpeningInput, type SpaceHistory, type SpaceInput } from '@kraftverk/api-contract';
+import { attributeMeaning, partsOf } from '@kraftverk/device-sdk';
 
+import { resolutionOf, series } from '../history/sampler.ts';
 import type { Hub } from '../node/hub.ts';
 import { actorOf } from './caller.ts';
+import { spanOf } from './devices.ts';
 
 /*
   A home's spaces and the openings between them, as a family answers them
@@ -73,6 +76,34 @@ export function spacesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'spaces'
         const space = hub.spaces.archiveSpace(id, by)!;
         record('space.removed', was.homeId, `Removed ${was.name}: what stood there is kept as history`);
         return space;
+      },
+
+      /*
+        By meaning, not by key: a room's temperature is whatever stood there
+        that reads one, under whatever key its type keeps it. A device placed
+        as a whole reads there on every part not placed apart.
+      */
+      async history(id, query) {
+        const space = spaceOf(id);
+        const { from, to } = spanOf(query);
+        const resolution = resolutionOf(from, to);
+        const tree = hub.spaces.spaces(space.homeId, { removed: true });
+        const within = [space.id];
+        for (let index = 0; index < within.length; index++) for (const inner of tree) if (inner.parentId === within[index]) within.push(inner.id);
+        const stays = within.flatMap((spaceId) => hub.spaces.stoodIn(spaceId, from, to).map((stay) => ({ ...stay, spaceId })));
+        const found: SpaceHistory['series'] = stays.flatMap((stay) => {
+          const device = hub.catalog.get(stay.deviceId);
+          if (!device) return [];
+          const description = hub.sessions.description(device);
+          const parts = stay.part === 'main' ? partsOf(description).map((part) => part.id).filter((part) => part === 'main' || !hub.spaces.history(device.id, part).length) : [stay.part];
+          const start = stay.since > from ? stay.since : from;
+          const end = stay.until !== null && stay.until < to ? stay.until : to;
+          return parts.flatMap((part) => {
+            const attribute = attributeMeaning(description, part, query.means);
+            return attribute ? [{ deviceId: device.id, part, key: attribute.key, spaceId: stay.spaceId, from: start, to: end, points: series(hub.history, device.id, attribute.key, start, end, query.points ?? 240, resolution) }] : [];
+          });
+        });
+        return { spaceId: space.id, means: query.means, from, to, resolution, series: found };
       },
     },
 

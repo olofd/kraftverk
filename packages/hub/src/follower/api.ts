@@ -349,6 +349,7 @@ export function followerApi(h: Follower): KraftverkApi {
       add: (input) => home.spaces.add(input),
       update: (id, changes) => home.spaces.update(id, changes),
       remove: (id) => home.spaces.remove(id),
+      history: (id, query) => home.spaces.history(id, query),
     },
     openings: {
       list: (homeId) => home.openings.list(homeId),

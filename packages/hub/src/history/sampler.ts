@@ -141,8 +141,8 @@ export function resolutionOf(fromIso: string, toIso: string): 'minute' | 'hour' 
  * of minute samples is 20 000 points for a chart 300 pixels wide, and
  * sending them all would make a phone do arithmetic it cannot show.
  */
-export function series(history: HistoryStore, deviceId: string, key: string, fromIso: string, toIso: string, points = 240): SeriesPoint[] {
-  const rows = history.series(deviceId, key, fromIso, toIso, resolutionOf(fromIso, toIso));
+export function series(history: HistoryStore, deviceId: string, key: string, fromIso: string, toIso: string, points = 240, resolution = resolutionOf(fromIso, toIso)): SeriesPoint[] {
+  const rows = history.series(deviceId, key, fromIso, toIso, resolution);
   if (rows.length <= points) return rows;
   const stride = rows.length / points;
   const thinned: SeriesPoint[] = [];

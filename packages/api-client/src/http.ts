@@ -255,6 +255,7 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
       add: (input) => call('POST', '/spaces', input),
       update: (id, changes) => call('PATCH', `/spaces/${enc(id)}`, changes),
       remove: (id) => call('DELETE', `/spaces/${enc(id)}`),
+      history: (id, query) => get(`/spaces/${enc(id)}/history`, query),
     },
     openings: {
       list: async (homeId) => (await get<{ openings: OpeningView[] }>(`/homes/${enc(homeId)}/openings`)).openings,

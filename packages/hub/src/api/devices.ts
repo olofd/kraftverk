@@ -27,7 +27,7 @@ import { checkKey, scopeOf } from './scope.ts';
  * last `hours` up to now, or the last day. A span that ends before it begins,
  * or reaches further back than anything is kept, is refused.
  */
-function spanOf(query: { hours?: number; from?: string; to?: string }): { from: string; to: string } {
+export function spanOf(query: { hours?: number; from?: string; to?: string }): { from: string; to: string } {
   const to = query.to ? new Date(query.to) : new Date();
   const from = query.from ? new Date(query.from) : new Date(to.getTime() - (query.hours ?? 24) * 3_600_000);
   if (query.from && query.hours !== undefined) throw new ApiError('invalid', 'Ask for from and to, or hours: not both');

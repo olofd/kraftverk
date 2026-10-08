@@ -10,7 +10,7 @@ import type { ConfigExported, ConfigExportRequest, ConfigSnapshotView, ImportAns
 import type { MapRegionAsk, MapRegionsView } from './map.ts';
 import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, FamilyElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
-import type { HomeInput, HomeView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceInput, SpaceView } from './homes.ts';
+import type { HomeInput, HomeView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView } from './homes.ts';
 import type { MediaData, MediaView, NewMedia } from './media.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, FamilyView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
 import type { CheckOutcome, DraftView, FoundAt, FoundView, HeldSetupInput, KeptView, SaveInput, SightingView } from './setup.ts';
@@ -262,6 +262,8 @@ export interface KraftverkApi {
     update(id: string, changes: Partial<SpaceInput>): Promise<SpaceView>;
     /** Archived, with what is inside it: what stood there is history, and what stands there now moves out to its parent. Never the site. */
     remove(id: string): Promise<SpaceView>;
+    /** What was read in it, and in the spaces inside it, by what stood there while it stood there: a room's temperature, whichever sensor it was. An archived one's too. */
+    history(id: string, query: SpaceHistoryQuery): Promise<SpaceHistory>;
   };
   /** Where a home's spaces meet, or meet the outside: doors, stairs, windows. */
   openings: {

@@ -107,6 +107,30 @@ describe('a device you have', () => {
     expect((await t.home.devices.placements(lamp.id)).length).toBeGreaterThan(2);
   });
 
+  test('moved from the bedroom to the kitchen at noon: its readings before are the bedroom’s, after the kitchen’s — and both the floor’s', async () => {
+    const lamp = await aLamp();
+    const [home] = await t.home.homes.list();
+    const [site] = await t.home.spaces.list(home!.id);
+    const floor = await t.home.spaces.add({ parentId: site!.id, kind: 'floor', name: 'Ground floor' });
+    const bedroom = await t.home.spaces.add({ parentId: floor.id, kind: 'room', purpose: 'bedroom', name: 'Bedroom' });
+    const kitchen = await t.home.spaces.add({ parentId: floor.id, kind: 'room', purpose: 'kitchen', name: 'Kitchen' });
+    // Yesterday's hours: minute samples are kept for days, not for ever.
+    const day = Math.floor(Date.now() / 86_400_000) * 86_400_000 - 86_400_000;
+    const hour = (n: number) => new Date(day + n * 3_600_000).toISOString();
+    t.hub.spaces.place(lamp.id, { spaceId: bedroom.id }, { kind: 'person', id: null, name: 'olof' }, hour(8));
+    t.hub.spaces.place(lamp.id, { spaceId: kitchen.id }, { kind: 'person', id: null, name: 'olof' }, hour(12));
+    t.hub.history.addSamples([11, 13].map((n) => ({ deviceId: lamp.id, part: 'main', key: 'on', at: hour(n), value: n === 11 ? 1 : 0, text: null })));
+    const span = { from: hour(9), to: hour(15) };
+
+    const inBedroom = await t.home.spaces.history(bedroom.id, { means: 'on', ...span });
+    expect(inBedroom.series.map((each) => [each.key, each.from, each.to, each.points.map((point) => point.at)])).toEqual([['on', hour(9), hour(12), [hour(11)]]]);
+    const inKitchen = await t.home.spaces.history(kitchen.id, { means: 'on', ...span });
+    expect(inKitchen.series.map((each) => [each.from, each.to, each.points.map((point) => point.value)])).toEqual([[hour(12), hour(15), [0]]]);
+    expect((await t.home.spaces.history(floor.id, { means: 'on', ...span })).series.map((each) => each.spaceId)).toEqual([bedroom.id, kitchen.id]);
+    // What nothing there means is no series.
+    expect((await t.home.spaces.history(kitchen.id, { means: 'temperature', ...span })).series).toEqual([]);
+  });
+
   test('one that is not there is not found', async () => {
     expect((await refusal(t.home.devices.get(savedDeviceId('abc%def')))).kind).toBe('not-found');
     expect((await refusal(t.home.devices.history(savedDeviceId('abc%def'), { key: 'soc' }))).kind).toBe('not-found');

@@ -1,3 +1,5 @@
+import type { SeriesPoint } from './devices.ts';
+
 /*
   A family's homes, as it answers them (docs/PLAN-WORLD-MODEL.md §8.4): a
   house, a cabin — each a place on the globe, with its own clock. Moving
@@ -124,6 +126,23 @@ export type PlacementView = {
   role: 'stands' | 'based';
   since: string;
   until: string | null;
+};
+
+/** `GET /spaces/:id/history?means&hours|from&to&points`: a reading of what it means — `temperature` — in a space and the spaces inside it. */
+export type SpaceHistoryQuery = { means: string; hours?: number; from?: string; to?: string; points?: number };
+
+/**
+ * What was read in a space, by what stood there, while it stood there: one
+ * series for each stay — a device that stood there twice is two, each
+ * clipped to its own span — and none for a device that stood elsewhere.
+ */
+export type SpaceHistory = {
+  spaceId: string;
+  means: string;
+  from: string;
+  to: string;
+  resolution: 'minute' | 'hour';
+  series: { deviceId: string; part: string; key: string; spaceId: string; from: string; to: string; points: SeriesPoint[] }[];
 };
 
 /** A device placed: in a space — a home's site when no room is said — perhaps at an opening, perhaps at coordinates. */
