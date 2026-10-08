@@ -11,6 +11,7 @@ import {
   type DirectMethod,
   memoryHeld,
   methodOf,
+  newId,
   randomHex,
   setupPlan,
   sightingMatches,
@@ -580,7 +581,7 @@ export class SetupService {
 
   #newDraft(start: Pick<Draft, 'by' | 'heldBy' | 'type' | 'method' | 'reach' | 'plan' | 'address' | 'through'> & Partial<Pick<Draft, 'again'>>): Draft {
     const draft: Draft = {
-      id: `s-${randomHex(8)}`,
+      id: newId('setup'),
       again: null,
       carried: new Map(),
       held: new Map(),

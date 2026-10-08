@@ -63,7 +63,7 @@ const SETTINGS: StationSettings = {
   temperatureUnit: 'C',
 };
 
-const health = { status: 'connected' as const, detail: 'Connected', lastReadingAt: AT, node: nodeId('n-00000000000000a1'), transport: 'mqtt' };
+const health = { status: 'connected' as const, detail: 'Connected', lastReadingAt: AT, node: nodeId('n-000000000000000000000000A1'), transport: 'mqtt' };
 
 describe('the station, from its readings', () => {
   test('is what it reported: every figure, every output, every pack and every setting', () => {

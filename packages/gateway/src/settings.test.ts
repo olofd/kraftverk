@@ -31,7 +31,7 @@ function station(stubborn = false) {
   const writes: Record<string, Value>[] = [];
   const at = new Date().toISOString();
   const session: DeviceSession = {
-    health: () => ({ status: 'connected', detail: 'Fine', node: nodeId('n-00000000000000a1'), transport: 'test', lastReadingAt: null }),
+    health: () => ({ status: 'connected', detail: 'Fine', node: nodeId('n-000000000000000000000000A1'), transport: 'test', lastReadingAt: null }),
     readings: () => [{ key: 'soc', value: 80, at }, ...Object.entries(values).map(([key, value]) => ({ key, value, at }))],
     command: async () => ({ accepted: false, error: 'No commands' }),
     write: async (patch) => {
@@ -121,7 +121,7 @@ describe('settings through the gateway', () => {
     const at = new Date().toISOString();
     // It never says its light in its readings; its write answers with the patch it was given.
     const session: DeviceSession = {
-      health: () => ({ status: 'connected', detail: 'Fine', node: nodeId('n-00000000000000a1'), transport: 'test', lastReadingAt: null }),
+      health: () => ({ status: 'connected', detail: 'Fine', node: nodeId('n-000000000000000000000000A1'), transport: 'test', lastReadingAt: null }),
       readings: () => [{ key: 'soc', value: 80, at }],
       command: async () => ({ accepted: false, error: 'No commands' }),
       write: async (patch) => ({ ...patch }),

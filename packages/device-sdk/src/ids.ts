@@ -41,13 +41,35 @@ export const connectionId = (raw: string): ConnectionId => raw as ConnectionId;
 export function randomHex(bytes: number): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
+/** Crockford's base 32: no I, L, O or U, so an id read aloud or copied by hand is not misread. */
+const BASE32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
 /**
- * A new id: what it is, and 64 random bits (`d-1b6f399a3ff1c2d0`). Opaque —
- * an id that says what it names invites code that reads it. A node's is made
- * by the node and shared by every home it joins, so wide enough that two
- * never meet.
+ * A ULID: 48 bits of the time it was made, in milliseconds, then 80 random
+ * bits, as 26 characters of Crockford's base 32. Made anywhere with no one
+ * to ask — a phone offline, a node of a family it has never met — and 128
+ * bits wide, so two never meet; ids made later sort after, so the newest
+ * rows sit together in an index.
  */
-export const newId = (prefix: string): string => `${prefix}-${randomHex(8)}`;
+export function ulid(now = Date.now()): string {
+  let time = '';
+  for (let left = now, index = 0; index < 10; index++, left = Math.floor(left / 32)) time = BASE32[left % 32] + time;
+  // 32 divides 256, so a byte's remainder is as random as the byte: 16 of them are 80 bits.
+  let random = '';
+  for (const byte of crypto.getRandomValues(new Uint8Array(16))) random += BASE32[byte % 32];
+  return time + random;
+}
+
+/** What a ULID looks like, after an id's prefix. */
+export const ULID = '[0-9A-HJKMNP-TV-Z]{26}';
+
+/**
+ * A new id: what it is, and a ULID (`d-01JA8ZK3Q4R7T9V2W5X6Y8Z0AB`,
+ * docs/PLAN-WORLD-MODEL.md §6). Opaque — an id that says what it names
+ * invites code that reads it, so nothing reads the time inside one: it is
+ * there for the order, not to be asked.
+ */
+export const newId = (prefix: string, now?: number): string => `${prefix}-${ulid(now)}`;
 /** A fact about the house between two parts: a row of `device_link`. */
 export type LinkId = Branded<'LinkId'>;
 export const linkId = (raw: string): LinkId => raw as LinkId;

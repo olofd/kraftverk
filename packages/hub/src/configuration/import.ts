@@ -11,7 +11,7 @@ import {
   partsOf,
   isPolicyValueName,
   POLICY_VALUES,
-  randomHex,
+  newId,
   validateConfig,
   type AutomationId,
   type ConfigValues,
@@ -341,7 +341,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     const at = read.problems.length ? null : locate(text, each.path);
     return { ...each, line: at?.line ?? null, column: at?.column ?? null };
   });
-  const id = placed.length ? null : `p-${randomHex(12)}`;
+  const id = placed.length ? null : newId('plan');
   const view: ImportPlan = { id, from: read.from, problems: placed, devices, links, automations, policy, location, needs, notes };
   if (id) deps.pending.set(id, { view, document, mode: options.mode, secrets, by: options.by, expiresAt: Date.now() + PLAN_TTL_MS, turnedOff, lenient: Boolean(options.lenient) });
   return view;

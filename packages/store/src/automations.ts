@@ -5,7 +5,7 @@ import { automationId, savedDeviceId, type AutomationId, type Quantity, type Val
 import type { RoleBinding, Rule } from '@kraftverk/automation';
 
 import type { SqlDatabase } from './database.ts';
-import { newId, randomHex } from '@kraftverk/device-sdk';
+import { newId } from '@kraftverk/device-sdk';
 import type { AutomationMode, AutomationRecord, AutomationStorage, TriggerState } from '@kraftverk/automation-engine';
 
 /**
@@ -356,7 +356,7 @@ export class AutomationStore implements AutomationStorage {
 
   /** A run that takes steps, begun: its row, written again at every step. Throws if one of the automation's already runs. */
   beginRun(automationId: string, run: AutomationRun): string {
-    const id = `r-${randomHex(8)}`;
+    const id = newId('r');
     this.#db
       .query('INSERT INTO automation_run (id, automation_id, started_at, ended_at, outcome, started_by, started_by_run, why, summary, detail) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)')
       .run(id, automationId, run.at, 'running', run.startedBy, run.startedByRun?.id ?? null, run.why, run.summary, detailOf(run));
@@ -381,7 +381,7 @@ export class AutomationStore implements AutomationStorage {
    * with it, and so does this one.
    */
   ran(automationId: string, run: AutomationRun): string | null {
-    const id = `r-${randomHex(8)}`;
+    const id = newId('r');
     const kept = this.#db
       .query(
         'INSERT INTO automation_run (id, automation_id, started_at, ended_at, outcome, started_by, started_by_run, why, summary, detail) SELECT ?, id, ?, ?, ?, ?, ?, ?, ?, ? FROM automation WHERE id = ?'

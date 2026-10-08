@@ -113,12 +113,12 @@ for (const driver of DRIVERS) {
 
     test('the nodes: this database\'s own, once and for good; others joined for a person, and forgotten', () => {
       const nodes = new NodeStore(database);
-      const machine = { id: nodeId('n-00000000000000a1'), name: 'Test machine', platform: 'system' as const, transports: ['mqtt'], alwaysOn: true, reachable: true, trusted: true };
+      const machine = { id: nodeId('n-000000000000000000000000A1'), name: 'Test machine', platform: 'system' as const, transports: ['mqtt'], alwaysOn: true, reachable: true, trusted: true };
       expect(nodes.declareSelf(machine)).toMatchObject({ self: true, accountId: null, alwaysOn: true });
       expect(nodes.declareSelf({ ...machine, transports: ['mqtt', 'lan'] }).transports).toEqual(['mqtt', 'lan']);
-      expect(() => nodes.declareSelf({ ...machine, id: nodeId('n-00000000000000ff') })).toThrow();
+      expect(() => nodes.declareSelf({ ...machine, id: nodeId('n-000000000000000000000000FF') })).toThrow();
 
-      const phone = nodes.join({ id: nodeId('n-00000000000000b2'), name: 'This phone', platform: 'native', transports: ['ble'], alwaysOn: false, reachable: false, trusted: false }, 'u-one');
+      const phone = nodes.join({ id: nodeId('n-000000000000000000000000B2'), name: 'This phone', platform: 'native', transports: ['ble'], alwaysOn: false, reachable: false, trusted: false }, 'u-one');
       expect(nodes.get(phone.id)).toMatchObject({ name: 'This phone', transports: ['ble'], self: false, accountId: 'u-one' });
       expect(() => nodes.join({ ...phone, name: 'Not mine' }, null)).toThrow();
       expect(() => nodes.join({ ...machine }, 'u-one')).toThrow();
@@ -144,7 +144,7 @@ for (const driver of DRIVERS) {
       expect(homes.ensure({ name: 'Another', masterId: master.id }).id).toBe(made.id);
 
       // As a follower keeps it: another node the master, and that one not forgotten while it is.
-      const other = nodes.join({ id: nodeId('n-00000000000000c3'), name: 'Second machine', platform: 'system', transports: [], alwaysOn: true, reachable: true, trusted: true }, null);
+      const other = nodes.join({ id: nodeId('n-000000000000000000000000C3'), name: 'Second machine', platform: 'system', transports: [], alwaysOn: true, reachable: true, trusted: true }, null);
       homes.mirror({ ...made, masterId: other.id });
       nodes.remove(other.id);
       expect(nodes.get(other.id)?.id).toBe(other.id);

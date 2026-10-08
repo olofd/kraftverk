@@ -298,7 +298,7 @@ describe('a device that cannot open is still a device, saying why', () => {
 
   test('a device held only by a phone has no session here, and says who holds it', async () => {
     const userId = 'u-test';
-    const phone = nodes.join({ id: nodeId('n-000000000000aa02'), name: 'Olof’s iPhone', platform: 'native', transports: ['ble'], alwaysOn: false, reachable: false, trusted: false }, userId);
+    const phone = nodes.join({ id: nodeId('n-0000000000000000000000AA02'), name: 'Olof’s iPhone', platform: 'native', transports: ['ble'], alwaysOn: false, reachable: false, trusted: false }, userId);
     const record = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Pocket lamp' });
     connections.add({ deviceId: record.id, method: 'bus', transport: 'bus', heldBy: phone.id, address: 'lamp-7' });
     await sessions.sync(catalog.list());

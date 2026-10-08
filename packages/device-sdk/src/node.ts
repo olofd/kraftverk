@@ -1,5 +1,5 @@
 import type { ConnectionMethod } from './connection.ts';
-import { newId, type Branded } from './ids.ts';
+import { newId, ULID, type Branded } from './ids.ts';
 
 /*
   A kraftverk node: the hub running somewhere — a machine on the network, a
@@ -56,8 +56,8 @@ export type NodeId = Branded<'NodeId'>;
 
 export const nodeId = (raw: string): NodeId => raw as NodeId;
 
-/** What a node's id looks like: `n-` and sixteen hex digits. */
-export const NODE_ID = /^n-[0-9a-f]{16}$/;
+/** What a node's id looks like: `n-` and a ULID. */
+export const NODE_ID = new RegExp(`^n-${ULID}$`);
 
 /** Whether text is a node's id, as a node makes one: what is kept where it runs, or sent by one joining, is checked by this. */
 export const isNodeId = (raw: string): raw is NodeId => NODE_ID.test(raw);

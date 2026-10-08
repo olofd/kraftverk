@@ -26,7 +26,7 @@ describe('the home and its nodes', () => {
   });
 
   test('a node joins by its own id, for the account it joins from; the home lists every node; only its person forgets it', async () => {
-    const phone: NodeJoin = { id: nodeId('n-000000000000aa02'), name: 'Olof’s iPhone', platform: 'native', transports: ['ble'], alwaysOn: false, reachable: false, trusted: false };
+    const phone: NodeJoin = { id: nodeId('n-0000000000000000000000AA02'), name: 'Olof’s iPhone', platform: 'native', transports: ['ble'], alwaysOn: false, reachable: false, trusted: false };
     expect(await t.home.nodes.join(phone)).toMatchObject({ id: phone.id, master: false, yours: true });
     const names = (nodes: NodeView[]) => nodes.map((node) => [node.name, node.master]);
     expect(names(await t.home.nodes.list())).toEqual([[MACHINE_NODE.name, true], ['Olof’s iPhone', false]]);
