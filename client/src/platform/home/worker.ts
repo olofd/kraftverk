@@ -1,7 +1,7 @@
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 
 import { personalApi, type DeviceKeys } from '@kraftverk/hub';
-import { newWebCryptoPair, webCryptoKey, type WebCryptoPair } from '@kraftverk/identity';
+import { keyId, newWebCryptoPair, webCryptoKey, type WebCryptoPair } from '@kraftverk/identity';
 import { apiOver, hear, serveApi, transportOver, type MessageEnd } from '@kraftverk/message-port';
 import { fromSqliteWasm, PERSONAL_SCHEMA, PersonalStore, schemaFingerprint, sealedWithKey, type SqlDatabase, type SqliteWasmDatabase } from '@kraftverk/store';
 
@@ -114,18 +114,20 @@ async function secretsKey(keys: Keyring): Promise<Uint8Array> {
   return key;
 }
 
-/** The accounts' keys: a Web Crypto pair each, not extractable, kept in IndexedDB as the objects they are. */
+/** The accounts' keys: a Web Crypto pair each, not extractable, kept in IndexedDB as the objects they are — each by its own id. */
 const accountKeys = (keys: Keyring): DeviceKeys => ({
-  make: async (personId) => {
+  make: async () => {
     const pair = await newWebCryptoPair();
-    await keys.put('person-keys', personId, pair);
-    return webCryptoKey(pair);
+    const key = await webCryptoKey(pair);
+    const id = keyId(key.publicJwk);
+    await keys.put('person-keys', id, pair);
+    return { id, key };
   },
-  get: async (personId) => {
-    const pair = (await keys.get('person-keys', personId)) as WebCryptoPair | undefined;
+  get: async (id) => {
+    const pair = (await keys.get('person-keys', id)) as WebCryptoPair | undefined;
     return pair ? webCryptoKey(pair) : null;
   },
-  forget: async (personId) => void (await keys.delete('person-keys', personId)),
+  forget: async (id) => void (await keys.delete('person-keys', id)),
 });
 
 type Pool = Awaited<ReturnType<Awaited<ReturnType<typeof sqlite3InitModule>>['installOpfsSAHPoolVfs']>>;

@@ -92,6 +92,7 @@ export function familyRoutes(deps: AppDeps): Hono {
   const CHAIN = z.array(z.record(z.string(), z.unknown())).min(1).max(1000);
   api.get('/people', async (c) => c.json({ people: await familyFor(deps, c).people.list() }));
   api.get('/people/me', async (c) => c.json({ person: await familyFor(deps, c).people.me() }));
+  api.get('/people/me/chain', async (c) => c.json({ chain: await familyFor(deps, c).people.myChain() }));
   api.post('/people/found', async (c) => {
     const input = await body(
       c,

@@ -284,6 +284,8 @@ export interface KraftverkApi {
     list(): Promise<PersonView[]>;
     /** Who asks, as this family knows them; null for one it does not. */
     me(): Promise<PersonView | null>;
+    /** Who asks, as they prove it: their own chain, as this family keeps it — for a device come back with its recovery words. */
+    myChain(): Promise<Statement[]>;
     /** The first person in an empty family founds it: its admin, its name, its first home. */
     found(input: FoundFamily): Promise<PersonView>;
     /** A newer copy of a person — oneself, or anyone by an admin — going on from the one kept. */
@@ -369,6 +371,8 @@ export interface ServerApi {
     challenge(): Promise<Challenge>;
     /** Signed in by a key the family knows this person by. */
     signInWithKey(signIn: SignIn): Promise<Account>;
+    /** Whose a key is, by its id: the person a recovery key's challenge is answered as. Null for a key no member holds. */
+    holder(keyId: string): Promise<string | null>;
     /** The person a password signed in claimed by this device's account: the family knows them by its chain from now. */
     claim(chain: Statement[]): Promise<Account>;
   };

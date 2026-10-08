@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
 
 import type { Caller } from '@kraftverk/api-contract';
-import { checkChain, keyId, newSecret, recoveryKey, softwareKey, type SigningKey } from '@kraftverk/identity';
+import { base64url, checkChain, fromBase64url, keyId, newSecret, recoveryKey, softwareKey, type SigningKey } from '@kraftverk/identity';
 import { createSchema, PERSONAL_SCHEMA, PersonalStore, prepareDatabase, type SqlDatabase } from '@kraftverk/store';
 
 import { changesConfiguration } from '../src/configuration/configuration.ts';
@@ -21,10 +21,10 @@ function memoryKeys(): DeviceKeys & { held: Map<string, SigningKey> } {
   const held = new Map<string, SigningKey>();
   return {
     held,
-    make: async (id) => {
+    make: async () => {
       const key = softwareKey(newSecret());
-      held.set(id, key);
-      return key;
+      held.set(keyId(key.publicJwk), key);
+      return { id: keyId(key.publicJwk), key };
     },
     get: async (id) => held.get(id) ?? null,
     forget: async (id) => void held.delete(id),
@@ -47,7 +47,7 @@ describe('an account on a device, with no server', () => {
     expect(recoveryWords).toHaveLength(12);
     const checked = checkChain(await personal.chain(account.personId));
     if (!checked.ok) throw new Error(checked.problem);
-    expect(checked.person.keys.map((key) => key.id)).toEqual([keyId(keys.held.get(account.personId)!.publicJwk), keyId(recoveryKey(recoveryWords).publicJwk)]);
+    expect(checked.person.keys.map((key): string => key.id)).toEqual([[...keys.held.keys()][0]!, keyId(recoveryKey(recoveryWords).publicJwk)]);
     expect((await personal.confirmRecovery(account.personId)).recoveryConfirmed).toBe(true);
   });
 
@@ -72,13 +72,54 @@ describe('an account on a device, with no server', () => {
     expect(keys.held.size).toBe(2);
     await personal.activate(anna.personId);
     await personal.remove(bo.personId);
-    expect(keys.held.has(bo.personId)).toBe(false);
+    expect(keys.held.size).toBe(1);
     expect((await personal.accounts()).map((each) => each.name)).toEqual(['Anna']);
     // What they say is signed by this device's key; a device that lost the key says so.
     expect((await personal.say(anna.personId, { kind: 'profile', profile: { name: 'Anna', shortName: 'Mum', locale: null, pictureId: null } })).shortName).toBe('Mum');
-    keys.held.delete(anna.personId);
+    keys.held.clear();
     expect((await refusal(personal.say(anna.personId, { kind: 'profile', profile: { name: 'Anna', shortName: null, locale: null, pictureId: null } }))).message).toContain('recovery words');
     expect((await refusal(personal.create({ name: '  ', deviceName: 'Tablet' }))).kind).toBe('invalid');
+  });
+});
+
+describe('another device of one’s own, and coming back', () => {
+  test('a second device makes its key and shows a code; the first signs it in and answers with one; the second is the account too', async () => {
+    const phone = aDevice();
+    const { account } = await phone.personal.create({ name: 'Anna', deviceName: 'Phone' });
+    await phone.personal.keepFamily(account.personId, { familyId: 'f-01JA8ZK3Q4R7T9V2W5X6Y8Z0FF', name: 'The Examples', master: 'server', serverUrl: 'https://home.example.net/api', joinedAt: '2026-10-08T12:00:00.000Z' });
+    const laptop = aDevice();
+    const { keyId: laptopKey, code } = await laptop.personal.linkCode('Laptop');
+    expect((await refusal(phone.personal.addDevice(account.personId, 'not a code'))).kind).toBe('invalid');
+    const { welcome, chain } = await phone.personal.addDevice(account.personId, code);
+    expect(checkChain(chain).ok).toBe(true);
+    const adopted = await laptop.personal.adopt(laptopKey, welcome);
+    expect(adopted).toMatchObject({ personId: account.personId, name: 'Anna', deviceName: 'Laptop', recoveryConfirmed: true, families: [{ name: 'The Examples', master: 'server' }] });
+    // The laptop signs as Anna with its own key: what it says is hers.
+    expect((await laptop.personal.say(account.personId, { kind: 'profile', profile: { name: 'Anna', shortName: 'Mum', locale: null, pictureId: null } })).shortName).toBe('Mum');
+    // A code made with a key it does not hold is refused.
+    const stranger = aDevice();
+    const { code: theirs } = await stranger.personal.linkCode('Stranger');
+    const forged = JSON.parse(new TextDecoder().decode(fromBase64url(theirs)!)) as { p: string };
+    const { code: mine } = await laptop.personal.linkCode('Tablet');
+    const swapped = base64url(new TextEncoder().encode(JSON.stringify({ ...(JSON.parse(new TextDecoder().decode(fromBase64url(mine)!)) as object), p: forged.p })));
+    expect((await refusal(phone.personal.addDevice(account.personId, swapped))).message).toContain('does not prove');
+  });
+
+  test('every device lost: the twelve words sign a new one in, as the same person', async () => {
+    const phone = aDevice();
+    const { account, recoveryWords } = await phone.personal.create({ name: 'Anna', deviceName: 'Phone' });
+    const chain = await phone.personal.chain(account.personId);
+    const fresh = aDevice();
+    const back = await fresh.personal.recover({ words: recoveryWords, chain, deviceName: 'New phone', families: [] });
+    expect(back.account).toMatchObject({ personId: account.personId, deviceName: 'New phone' });
+    expect(checkChain(back.chain).ok).toBe(true);
+    // Its answer to a node's challenge, by the words, names the same person.
+    const challenge = { node: 'n-01JA8ZK3Q4R7T9V2W5X6Y8Z0NN', nonce: 'nonce-of-a-test', issuedAt: '2026-10-08T12:00:00.000Z' };
+    expect((await fresh.personal.recoveryAnswer(recoveryWords, challenge, account.personId)).keyId).toBe(keyId(recoveryKey(recoveryWords).publicJwk));
+    // Other words make another key, which this person never held.
+    const other = aDevice();
+    const { recoveryWords: wrong } = await other.personal.create({ name: 'Bo', deviceName: 'Phone' });
+    expect((await refusal(aDevice().personal.recover({ words: wrong, chain, deviceName: 'X', families: [] }))).kind).toBe('invalid');
   });
 });
 

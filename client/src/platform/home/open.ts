@@ -4,7 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 import { openDatabaseSync } from 'expo-sqlite';
 
 import { personalApi, type DeviceKeys } from '@kraftverk/hub';
-import { newSecret, softwareKey } from '@kraftverk/identity';
+import { keyId, newSecret, softwareKey } from '@kraftverk/identity';
 import { fromExpoSqlite, PERSONAL_SCHEMA, PersonalStore, schemaFingerprint, sealedWithKey } from '@kraftverk/store';
 
 import { TRANSPORT_ENTRIES } from '../../generated/transports';
@@ -31,6 +31,9 @@ if (typeof globalThis.crypto?.getRandomValues !== 'function') {
 const SECRETS_KEY = 'kraftverk.secrets-key';
 const MADE_BY = Constants.expoConfig?.version ?? 'app';
 
+/** A key's name in the secure store, which takes letters, digits, dots, dashes and underscores. */
+const storeName = (id: string) => `kraftverk.key.${id}`;
+
 const hex = (bytes: Uint8Array) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 const bytesOf = (text: string) => Uint8Array.from(text.match(/../g) ?? [], (pair) => parseInt(pair, 16));
 
@@ -50,16 +53,18 @@ async function secretsKey(): Promise<Uint8Array> {
  * (docs/PLAN-WORLD-MODEL.md §10.7).
  */
 const secureStoreKeys: DeviceKeys = {
-  make: async (personId) => {
+  make: async () => {
     const secret = newSecret();
-    await SecureStore.setItemAsync(`kraftverk.person-key.${personId}`, hex(secret));
-    return softwareKey(secret);
+    const key = softwareKey(secret);
+    const id = keyId(key.publicJwk);
+    await SecureStore.setItemAsync(storeName(id), hex(secret));
+    return { id, key };
   },
-  get: async (personId) => {
-    const kept = await SecureStore.getItemAsync(`kraftverk.person-key.${personId}`);
+  get: async (id) => {
+    const kept = await SecureStore.getItemAsync(storeName(id));
     return kept?.length === 64 ? softwareKey(bytesOf(kept)) : null;
   },
-  forget: async (personId) => SecureStore.deleteItemAsync(`kraftverk.person-key.${personId}`),
+  forget: async (id) => SecureStore.deleteItemAsync(storeName(id)),
 };
 
 /** Another file this app keeps, opened only if it is there and of this schema: a home brought in from it is offered, never written over. */

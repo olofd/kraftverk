@@ -46,6 +46,8 @@ export function peopleApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'people'
 
       me: async () => (me ? hub.people.get(me) : null),
 
+      myChain: async () => (me ? hub.people.chainOf(me) : []),
+
       async found(input) {
         if (hub.people.members().length) throw new ApiError('conflict', 'This family has people in it already: ask one of its admins to invite you');
         const checked = checkChain(input.chain);
@@ -79,8 +81,18 @@ export function peopleApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'people'
         if (!checked.ok) throw new ApiError('invalid', `That is not who you say: ${checked.problem}`);
         // Oneself, newer; an admin may bring anyone's.
         if (me !== checked.person.id) asAdmin();
+        const was = hub.people.get(checked.person.id);
         const person = refusing(() => hub.people.present(chain));
-        record('person.changed', 'person', person.id, `${person.name}'s profile changed`);
+        // Said as what changed: a device signed in or let go, their profile, or what they linked.
+        const keys = new Set(was?.keys.map((key) => key.id) ?? []);
+        const added = person.keys.filter((key) => !keys.has(key.id));
+        const gone = (was?.keys ?? []).filter((key) => !person.keys.some((now) => now.id === key.id));
+        const said = [
+          ...added.map((key) => (key.kind === 'recovery' ? 'new recovery words' : `signed in ${key.deviceName ?? 'a device'}`)),
+          ...gone.map((key) => (key.kind === 'recovery' ? 'gave up old recovery words' : `let go of ${key.deviceName ?? 'a device'}`)),
+          ...(was && (was.name !== person.name || was.shortName !== person.shortName || was.pictureId !== person.pictureId) ? ['changed their profile'] : []),
+        ];
+        record('person.changed', 'person', person.id, `${person.name} ${said.length ? said.join(', ') : 'showed who they are'}`);
         return person;
       },
 

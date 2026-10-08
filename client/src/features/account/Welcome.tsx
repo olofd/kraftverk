@@ -9,6 +9,8 @@ import { ErrorText } from '../../components/ErrorText';
 import { Pressable } from '../../components/Pressable';
 import { SIGN_IN } from '../../generated/sign-in';
 import { thisNode } from '../../platform/node';
+import { LinkThisDevice } from './LinkThisDevice';
+import { Recover } from './Recover';
 
 /*
   The app's first screen (docs/PLAN-WORLD-MODEL.md §10.6): an account,
@@ -21,6 +23,9 @@ import { thisNode } from '../../platform/node';
 
 type Step =
   | { at: 'start' }
+  | { at: 'have' }
+  | { at: 'link' }
+  | { at: 'recover' }
   | { at: 'name'; linked: Linked | null; name: string }
   | { at: 'words'; made: AccountMade }
   | { at: 'check'; made: AccountMade; asks: [number, number] };
@@ -70,8 +75,19 @@ export function Welcome({ personal, accounts, onChanged }: { personal: PersonalA
     <ScrollView flex={1} backgroundColor="$background" contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 16 }}>
       <YStack width="100%" maxWidth={440} alignSelf="center" gap="$4" paddingVertical="$6">
         {step.at === 'start' ? (
-          <Start accounts={accounts} providers={providers} busy={busy} onLocal={() => setStep({ at: 'name', linked: null, name: '' })} onProvider={(provider) => void withProvider(provider)} onOpen={(account) => void doing(async () => (await personal.activate(account.personId), await onChanged()), 'That account could not open')} />
+          <Start
+            accounts={accounts}
+            providers={providers}
+            busy={busy}
+            onLocal={() => setStep({ at: 'name', linked: null, name: '' })}
+            onProvider={(provider) => void withProvider(provider)}
+            onOpen={(account) => void doing(async () => (await personal.activate(account.personId), await onChanged()), 'That account could not open')}
+            onHave={() => setStep({ at: 'have' })}
+          />
         ) : null}
+        {step.at === 'have' ? <Have onLink={() => setStep({ at: 'link' })} onRecover={() => setStep({ at: 'recover' })} onBack={() => setStep({ at: 'start' })} /> : null}
+        {step.at === 'link' ? <LinkThisDevice personal={personal} onDone={onChanged} onBack={() => setStep({ at: 'have' })} /> : null}
+        {step.at === 'recover' ? <Recover personal={personal} onDone={onChanged} onBack={() => setStep({ at: 'have' })} /> : null}
         {step.at === 'name' ? (
           <Name
             linked={step.linked}
@@ -136,7 +152,7 @@ function Title({ children, detail }: { children: string; detail: string }) {
 }
 
 /** The ways to begin: an account this device keeps, a provider, a local account. */
-function Start({ accounts, providers, busy, onLocal, onProvider, onOpen }: { accounts: AccountView[]; providers: ProviderSignIn[]; busy: boolean; onLocal: () => void; onProvider: (provider: ProviderSignIn) => void; onOpen: (account: AccountView) => void }) {
+function Start({ accounts, providers, busy, onLocal, onProvider, onOpen, onHave }: { accounts: AccountView[]; providers: ProviderSignIn[]; busy: boolean; onLocal: () => void; onProvider: (provider: ProviderSignIn) => void; onOpen: (account: AccountView) => void; onHave: () => void }) {
   return (
     <>
       {accounts.length ? (
@@ -177,12 +193,38 @@ function Start({ accounts, providers, busy, onLocal, onProvider, onOpen }: { acc
         <Button size="$5" minHeight={52} backgroundColor={providers.length ? '$background' : '$accent'} color={providers.length ? '$color' : '$background'} borderColor="$borderColor" borderWidth={providers.length ? 1 : 0} fontWeight="700" disabled={busy} onPress={onLocal}>
           Create a local account
         </Button>
+        <Button size="$4" minHeight={48} chromeless disabled={busy} onPress={onHave}>
+          I have an account
+        </Button>
         <Text fontSize={12} color="$muted" lineHeight={17}>
           {providers.length
             ? 'Signing in with a provider only links who you are there to your account, as a way back in. Your account and its key stay on this device either way.'
             : 'Your account and its key stay on this device. Twelve recovery words, shown next, are your way back in.'}
         </Text>
       </YStack>
+    </>
+  );
+}
+
+/** An account you have already: on another device, or back with its words. */
+function Have({ onLink, onRecover, onBack }: { onLink: () => void; onRecover: () => void; onBack: () => void }) {
+  return (
+    <>
+      <Title detail="Your account lives on your devices. Bring it to this one from another, or — every device lost — with your twelve recovery words.">You have an account</Title>
+      <Card inset>
+        <Pressable onPress={onLink} label="From my other device">
+          <Row title="From my other device" subtitle="A code each way: this device's, and your other one's answer" />
+        </Pressable>
+        <RowSeparator />
+        <Pressable onPress={onRecover} label="With my recovery words">
+          <Row title="With my recovery words" subtitle="Every device lost: the words, and your family's server" />
+        </Pressable>
+      </Card>
+      <XStack>
+        <Button size="$4" minHeight={44} chromeless onPress={onBack}>
+          Back
+        </Button>
+      </XStack>
     </>
   );
 }

@@ -269,6 +269,7 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
     people: {
       list: async () => (await get<{ people: PersonView[] }>('/people')).people,
       me: async () => (await get<{ person: PersonView | null }>('/people/me')).person,
+      myChain: async () => (await get<{ chain: Parameters<KraftverkApi['people']['present']>[0] }>('/people/me/chain')).chain,
       found: (input) => call('POST', '/people/found', input),
       present: (chain) => call('POST', '/people/present', { chain }),
       update: (id, changes) => call('PATCH', `/people/${enc(id)}`, changes),
@@ -359,6 +360,7 @@ export function serverApi(options: HttpApiOptions): ServerApi {
       changePassword: async (current, next) => void (await call('POST', '/auth/password', { current, next })),
       challenge: () => call('POST', '/auth/challenge', {}),
       signInWithKey: async (signIn) => (await call<{ user: Account }>('POST', '/auth/key', signIn)).user,
+      holder: async (keyId) => (await call<{ person: string | null }>('POST', '/auth/holder', { keyId })).person,
       claim: async (chain) => (await call<{ user: Account }>('POST', '/auth/claim', { chain })).user,
     },
     accounts: {

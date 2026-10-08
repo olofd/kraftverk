@@ -41,7 +41,7 @@ export const SESSION_COOKIE = 'kraftverk_session';
  * the configuration's JSON Schema, which an editor fetches without logging in:
  * the installed types only, nothing you have (`routes/configuration.ts`).
  */
-const OPEN = new Set(['/api/auth/state', '/api/auth/setup', '/api/auth/login', '/api/auth/logout', '/api/auth/challenge', '/api/auth/key', '/api/join', `/api${CONFIG_SCHEMA_PATH}`]);
+const OPEN = new Set(['/api/auth/state', '/api/auth/setup', '/api/auth/login', '/api/auth/logout', '/api/auth/challenge', '/api/auth/key', '/api/auth/holder', '/api/join', `/api${CONFIG_SCHEMA_PATH}`]);
 
 /**
  * The health check, for the container's own healthcheck — which runs inside
@@ -317,6 +317,16 @@ export function createAuth({ proxies, accounts, audit, forgetNodesOf, family, li
     const challenge = newChallenge(family.nodeId(), new Date(at).toISOString());
     challenges.set(challenge.nonce, challenge);
     return c.json(challenge);
+  });
+
+  /**
+   * Whose a key is, by its id: what a device come back with its recovery
+   * words asks, to answer a challenge as that person. A key's id is its
+   * public half's thumbprint: no one asks it who does not hold the key.
+   */
+  auth.post('/holder', async (c) => {
+    const { keyId } = await body(c, z.object({ keyId: z.string().regex(/^k-[A-Za-z0-9_-]{43}$/) }).strict());
+    return c.json({ person: family.keyHolder(keyId)?.personId ?? null });
   });
 
   /** Signed in by a key a member holds: the challenge this node gave, answered once, while young. No password crosses. */

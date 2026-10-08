@@ -361,6 +361,7 @@ export function followerApi(h: Follower): KraftverkApi {
     people: {
       list: () => home.people.list(),
       me: () => home.people.me(),
+      myChain: () => home.people.myChain(),
       found: (input) => home.people.found(input),
       present: (chain) => home.people.present(chain),
       update: (id, changes) => home.people.update(id, changes),

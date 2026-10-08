@@ -31,7 +31,7 @@ const PROVIDER = /^[a-z][a-z0-9-]{0,39}$/;
 /** What a statement says. */
 export type Said =
   | { kind: 'created'; key: PublicJwk; deviceName: string | null; profile: Profile }
-  /** A key added — a second device's, the recovery key — with its own signature over the statement: proof it is held. */
+  /** A key added — a second device's, the recovery key — with its own signature over itself (`keyProof`): proof it is held. */
   | { kind: 'key-added'; key: PublicJwk; keyKind: KeyKind; deviceName: string | null; proof: string }
   | { kind: 'key-revoked'; keyId: string }
   | { kind: 'profile'; profile: Profile }
@@ -71,12 +71,16 @@ export type Person = {
 export const PERSON_ID = /^p-[0-9A-HJKMNP-TV-Z]{26}$/;
 
 const unsigned = (statement: Omit<Statement, 'signature'>): Uint8Array => utf8(canonical(statement as unknown as Json));
-/** What a new key's proof covers: the statement, without the proof and without the signature. */
-const proven = (statement: Omit<Statement, 'signature'>): Uint8Array => {
-  const said = statement.said as Extract<Said, { kind: 'key-added' }>;
-  const { proof: _proof, ...rest } = said;
-  return unsigned({ ...statement, said: rest as unknown as Said });
-};
+
+/**
+ * What a new key signs to prove it is held: itself. Made by the device that
+ * holds it, before any statement adds it — a second device shows it to the
+ * first, which signs it in.
+ */
+export const keyProofBytes = (key: PublicJwk): Uint8Array => utf8(canonical({ kind: 'kraftverk key', key: { crv: key.crv, kty: key.kty, x: key.x, y: key.y } }));
+
+/** A key's proof that it is held, as base64url. */
+export const keyProof = async (key: SigningKey): Promise<string> => base64url(await key.sign(keyProofBytes(key.publicJwk)));
 
 async function signed(chain: readonly Statement[], signer: SigningKey, at: string, said: Said, person?: string): Promise<Statement> {
   const last = chain.at(-1);
@@ -92,11 +96,14 @@ export async function createPerson(input: { id: string; key: SigningKey; deviceN
 
 /** A key added — another device, the recovery key — signed in by one the person has, and proven by its own. */
 export async function addKey(chain: readonly Statement[], input: { signer: SigningKey; key: SigningKey; keyKind: KeyKind; deviceName: string | null; at: string }): Promise<Statement[]> {
-  const last = chain.at(-1)!;
-  const draft = { person: last.person, seq: chain.length, prev: hashOf(last as unknown as Json), at: input.at, signer: keyId(input.signer.publicJwk), said: { kind: 'key-added', key: input.key.publicJwk, keyKind: input.keyKind, deviceName: input.deviceName, proof: '' } as Said };
-  const proof = base64url(await input.key.sign(proven(draft)));
-  const said = { ...(draft.said as Extract<Said, { kind: 'key-added' }>), proof };
-  return [...chain, await signed(chain, input.signer, input.at, said)];
+  return addProvenKey(chain, { ...input, key: input.key.publicJwk, proof: await keyProof(input.key) });
+}
+
+/** A key another device holds added, by its public half and the proof it showed: what the first device does for a second. */
+export async function addProvenKey(chain: readonly Statement[], input: { signer: SigningKey; key: PublicJwk; proof: string; keyKind: KeyKind; deviceName: string | null; at: string }): Promise<Statement[]> {
+  const proof = fromBase64url(input.proof);
+  if (!isPublicJwk(input.key) || !proof || !verify(input.key, keyProofBytes(input.key), proof)) throw new Error('That key does not prove it is held');
+  return [...chain, await signed(chain, input.signer, input.at, { kind: 'key-added', key: input.key, keyKind: input.keyKind, deviceName: input.deviceName, proof: input.proof })];
 }
 
 /** Anything else a person says: a key revoked, their profile, an identity linked or unlinked. */
@@ -173,7 +180,7 @@ export function checkChain(chain: readonly Statement[]): Checked {
         const id = keyId(said.key);
         if (keys.has(id)) return refused('A key added twice', index);
         const proof = fromBase64url(said.proof);
-        if (!proof || !verify(said.key, proven(body), proof)) return refused('A key added that does not prove it is held', index);
+        if (!proof || !verify(said.key, keyProofBytes(said.key), proof)) return refused('A key added that does not prove it is held', index);
         keys.set(id, { id, kind: said.keyKind, publicJwk: said.key, deviceName: said.deviceName, addedAt: statement.at, addedWith: signer.id, revokedAt: null });
         break;
       }

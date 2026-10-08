@@ -53,4 +53,16 @@ export interface PersonalApi {
   keepFamily(personId: string, family: MyFamilyView): Promise<AccountView>;
   /** A node's challenge, answered with this device's key: signing in. */
   answer(personId: string, challenge: Challenge): Promise<SignIn>;
+  /** On a new device: its own new key, and the code to show the first device — what it is called, and its proof it holds the key. */
+  linkCode(deviceName: string): Promise<{ keyId: string; code: string }>;
+  /** On the first device: the new device's code signed in — its key added to the chain — and the code to show it back. */
+  addDevice(personId: string, code: string): Promise<{ account: AccountView; chain: Statement[]; welcome: string }>;
+  /** On the new device: the first device's answer, kept as an account of this device. */
+  adopt(keyId: string, welcome: string): Promise<AccountView>;
+  /** A key made for linking, never used: forgotten. */
+  forgetKey(keyId: string): Promise<void>;
+  /** A node's challenge answered with the recovery key the twelve words make: to find one's chain again where a family keeps it. */
+  recoveryAnswer(words: string[], challenge: Challenge, personId: string): Promise<SignIn>;
+  /** Back with the words: a new key for this device, signed in by the recovery key, kept as an account of it. */
+  recover(input: { words: string[]; chain: Statement[]; deviceName: string; families: MyFamilyView[] }): Promise<{ account: AccountView; chain: Statement[] }>;
 }
