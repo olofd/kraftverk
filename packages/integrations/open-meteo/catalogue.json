@@ -33,16 +33,14 @@
           "latitude": {
             "type": "number",
             "title": "Latitude",
-            "description": "Degrees north; south is negative.",
-            "required": true,
+            "description": "Degrees north; south is negative. Its home’s, when none is said.",
             "min": -90,
             "max": 90
           },
           "longitude": {
             "type": "number",
             "title": "Longitude",
-            "description": "Degrees east; west is negative.",
-            "required": true,
+            "description": "Degrees east; west is negative. Its home’s, when none is said.",
             "min": -180,
             "max": 180
           }

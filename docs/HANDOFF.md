@@ -7,7 +7,7 @@ data model in [`DATA-MODEL.md`](DATA-MODEL.md). This document holds only what
 those cannot: where things stand right now, and what has been learned the hard
 way. Where it describes code that the plan replaces, the plan is the target.
 
-Last updated 2026-10-03.
+Last updated 2026-10-08.
 
 > **Phase: research and development — strict version 1.** Nobody runs
 > kraftverk in production but its owner, so nothing here is kept backward
@@ -30,16 +30,24 @@ the owner's Forgejo checks it and deploys it onto the server it runs on
 empty: the core names no product, and every device is found, not listed.
 
 - **The world model** ([PLAN-WORLD-MODEL.md](PLAN-WORLD-MODEL.md), the work
-  in [PLAN-WORLD-MODEL-WORK.md](PLAN-WORLD-MODEL-WORK.md)): **W1 is built**.
+  in [PLAN-WORLD-MODEL-WORK.md](PLAN-WORLD-MODEL-WORK.md)): **W1 and W2 are
+  built**.
   - Every id is a prefix and a ULID.
   - Who did something is one actor shape everywhere.
   - A server's sign-ins live in `node.db`, apart from the family's database.
   - The root is the **family**, with **homes** inside it, each a place with
     its own clock, and an automation for one of them.
-  - Configuration version 10 holds the family and its homes.
+  - Configuration version 10 holds the family and its homes — and, since
+    W2, their spaces, openings, where each device stands, and labels.
   - Pictures are kept by their content.
+  - Each home is a tree of **spaces** (buildings, floors, rooms) with
+    **openings** between them; a device's **placement** is kept as
+    intervals, so a room's history is what stood there while it did. The
+    home screen groups devices by room and filters by **label**. A device's
+    session asks its own home's place and clock (`ctx.home()`), and the
+    gateway its home's values.
 
-  Next is W2: rooms, and where devices stand.
+  Next is W3: people.
 
 - **The shared core** ([PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md)): the
   home is one hub (`@kraftverk/hub`) behind one interface (`KraftverkApi`),

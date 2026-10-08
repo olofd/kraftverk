@@ -331,6 +331,16 @@ erDiagram
   family ||--o{ place : "names"
   place ||--o| home : "is"
   home ||--o{ home_setting : "keeps"
+  home ||--|{ space : "is a tree of"
+  space |o--o{ space : "holds"
+  space ||--o{ opening : "meets another at"
+  space ||--o{ placement : "is where stood"
+  opening |o--o{ placement : "is watched by"
+  device ||--o{ placement : "has stood"
+  label ||--o{ labelled : "is on"
+  device ||--o{ labelled : "has"
+  space ||--o{ labelled : "has"
+  automation ||--o{ labelled : "has"
   home }o--o| media : "is pictured by"
   device }o--o| media : "is pictured by"
   home ||--o{ automation : "is the clock of"
@@ -424,6 +434,57 @@ erDiagram
     text picture_id FK "a media id · null: none"
     real bearing "0 · degrees: where its floor plans sit on the globe"
     int position "0 · its order among the family's homes"
+  }
+  space {
+    text id PK "s-… · a home's site, made with it, is the root"
+    text home_id FK "h-… · with parent_id, one home: a parent is of the same home"
+    text parent_id FK "s-… · null only for the site"
+    text key "kitchen · unique in its home among those not archived · site: the home itself"
+    text kind "site · building · floor · room · area · stairs · outdoor"
+    text purpose "kitchen · bedroom · … · null: none said"
+    text name "Kitchen"
+    int position "0 · its order among its siblings"
+    int level "0 · a floor's: 0 the ground floor · null for any other"
+    real elevation "0 · a floor's: metres above the ground"
+    real height "2.4 · metres floor to ceiling"
+    real frame_x "null · where its frame sits in its parent's: for coordinates (W6)"
+    text removed_at "null · set when removed: what stood there is history"
+  }
+  opening {
+    text id PK "o-…"
+    text home_id FK "h-…"
+    text key "front-door · unique in its home"
+    text from_id FK "s-… · a space of the home"
+    text to_id FK "s-… · null: the outside"
+    text kind "door · opening · stairs · window · gate · garage-door · elevator"
+    text name "Front door · null: its kind"
+    text removed_at "null · set when removed, or with a space it joins"
+  }
+  placement {
+    text id PK "pl-…"
+    text device_id FK "d-…"
+    text part "main · a part placed apart from its device"
+    text space_id FK "s-… · the site: in the home, room not said"
+    text opening_id FK "o-… · one it watches, of that space · null: none"
+    real x "null · metres in the space's frame, with y and z"
+    real facing "null · degrees"
+    text role "stands · based: where one that moves belongs"
+    text since "2026-10-08T12:00:00Z"
+    text until "null: now · one open row per device and part"
+    text actor_kind "person · … · who placed it, with actor_id and actor_name"
+  }
+  label {
+    text id PK "l-…"
+    text key "heating · unique: its name in configuration"
+    text name "Heating · unique, as a person reads it"
+    text color "#f76b15 · null"
+    text icon "null"
+  }
+  labelled {
+    text label_id FK "l-…"
+    text device_id FK "d-… · exactly one of device, space and automation"
+    text space_id FK "s-…"
+    text automation_id FK "a-…"
   }
   media {
     text id PK "the SHA-256 of its bytes: one picture kept once"
@@ -712,6 +773,9 @@ joined; elsewhere it is plain text, null.
 | `connection_secret` | Credentials belong to a way of reaching the device (the Tuya local key is part of *tuya-local over lan*), not to the device. | step 6 |
 | `family` | The family this database is — one: the people who share its devices, nodes and homes, and its master (docs/PLAN-WORLD-MODEL.md). | when the database is made |
 | `place`, `home` | The family's homes — each a place with its geofence, its clock and its address, and what a home has more: its type, its picture, its order. The first is made with the family; one left is archived. Zones come with presence. | with the family; then in App settings › Homes |
+| `space`, `opening` | A home's buildings, floors, rooms, areas, stairs and outdoors, as a tree from its site — the home itself, made with it — and the doors, stairs and windows where they meet, or meet the outside. Removed, a space is archived with what is inside it and its openings; what stood in it moves out to its parent. | on a home's page; from a file |
+| `placement` | Where a device stands — or, one that moves, where it is based — as intervals: placing it closes the open row and opens the next in one transaction, so a reading is the room's it was read in, and a space's history is what stood there while it stood there. | a device's *Where it is*; from a file |
+| `label`, `labelled` | The family's own groupings, on devices, spaces and automations; the home screen filters by one, a label on a space being on what stands in it. Removed, it comes off everything. | App settings › Labels; a device's settings; from a file |
 | `home_setting`, `node_setting` | A home's values (its policy), by home; and what this node settled about the family it keeps — moved to a server, a server's copy brought in. | when set |
 | `media`, `media_data` | Pictures, kept by their content: a home's, a device's own photo. Let go when nothing names one. | when one is added |
 | `node` | Every kraftverk node of the home — the hub running somewhere: the one this database belongs to (`self`), the home's master, and the nodes that follow it, the always-on machine among them. Each declares what it is — always on, reachable, trusted — which is how the master is chosen, and what a connection's holder names: "Bluetooth, from Olof's iPhone". | when the database is made (its own); when another joins |

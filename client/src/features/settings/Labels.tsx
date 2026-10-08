@@ -11,7 +11,7 @@ import { useFamily } from '../../state/FamilyProvider';
 import { useLabels } from '../../state/useLabels';
 
 /** A few colours to tell labels apart by: none is a colour too. */
-export const LABEL_COLORS: readonly { value: string; label: string }[] = [
+const LABEL_COLORS: readonly { value: string; label: string }[] = [
   { value: 'none', label: 'No colour' },
   { value: '#e5484d', label: 'Red' },
   { value: '#f76b15', label: 'Orange' },

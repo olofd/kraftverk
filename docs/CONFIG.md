@@ -23,6 +23,10 @@ kraftverk: 10                     # the document's version: required
 
 family: { name: The Examples, kind: family, locale: en-GB }
 
+labels:                           # the family's own groupings, by key
+  heating: { name: Heating, color: "#f76b15" }
+  upstairs: { name: Upstairs }
+
 homes:                            # each by its key, in their order
   home:
     name: Home
@@ -30,6 +34,22 @@ homes:                            # each by its key, in their order
     location: { latitude: 51.48, longitude: 0, radius: 150 }   # where it is, and its geofence in metres
     time zone: Europe/London      # what its automations keep time in, unless one says its own
     policy: { loadWatts: 50, reserveSoc: 20 }
+    spaces:                       # a tree, each by a key unique in the home
+      house:
+        kind: building
+        name: House
+        spaces:
+          ground: { kind: floor, name: Ground floor, level: 0 }
+          first:
+            kind: floor
+            name: First floor
+            level: 1
+            labels: [upstairs]    # on what stands in its rooms too
+            spaces:
+              bedroom: { kind: room, name: Bedroom, purpose: bedroom }
+      garage: { kind: room, name: Garage, purpose: garage }
+    openings:                     # where spaces meet, or meet the outside
+      front-door: { kind: door, from: garage, to: outside, name: Front door }
   cabin:
     name: Lake cabin
     type: cabin
@@ -39,6 +59,8 @@ devices:
   garage-station:                 # its key: what everything else names it by
     type: acme.station
     name: Garage station
+    place: { home: home, space: garage }   # where it stands; "based:" for one that moves
+    labels: [heating]
     connect:                      # the ways it is reached, preferred first
       - via: bluetooth
         address: "AA:BB:CC:DD:EE:01"
@@ -107,6 +129,20 @@ secrets:
 **Keys.** Every device and automation has a key — lowercase letters, digits
 and dashes — made from its name when it is added and changeable afterwards. A
 file names things by key; an import matches by key.
+
+**Spaces, places and labels** (docs/PLAN-WORLD-MODEL.md §8.5, §8.7, §8.13).
+A home's `spaces:` are a tree under the home itself — buildings, floors,
+rooms, areas, stairs, the outdoors — each by a key no other space of that
+home has (`site` is the home itself, and taken); only a floor has a `level`
+and an `elevation`. `openings:` join two spaces, or one and `outside`. A
+device's `place:` names a home, perhaps a space of it — none: the home
+itself — perhaps an `opening` it is at; one that moves says `based:`
+instead. `labels:` are the family's, each by key, and a device, a space or
+an automation names the ones it has. An import writes spaces before the
+devices standing in them, and adds or changes by key, never removing: a
+space, an opening or a label the file does not have is left. A device
+without `place:`, or with no `labels:`, is left where it is and as it is —
+one device's YAML in the app says neither.
 
 ## Rules in words
 
@@ -398,7 +434,7 @@ nothing wrong — and write back the same.
 | 7 | As 6; a Zigbee socket is reached through its Tuya gateway, a device of its own (Tuya's migration): one gateway entry per gateway address, its key the one the sockets had, and each socket `via: gateway` by its Zigbee address |
 | 8 | A device may say it is `paused: true`: kept, and not reached, until resumed. Nothing older says so, so nothing changes |
 | 9 | A device may say how long where it has been is kept: `track: 30 days`, 1 to 366. Where it was is never in the file. Nothing older says so, so nothing changes |
-| 10 | A family and its homes (docs/PLAN-WORLD-MODEL.md): `family:` (name, kind, locale) and `homes:`, each by key with its name, type, location and geofence, time zone, address, country and policy. An automation may say the `home:` it is for, and `clock:` only for a clock of its own. Version 9's `home:` becomes the first home, `home`; an automation that said no clock keeps the home's |
+| 10 | A family and its homes (docs/PLAN-WORLD-MODEL.md): `family:` (name, kind, locale) and `homes:`, each by key with its name, type, location and geofence, time zone, address, country and policy. An automation may say the `home:` it is for, and `clock:` only for a clock of its own. Version 9's `home:` becomes the first home, `home`; an automation that said no clock keeps the home's. Added since, with nothing to migrate — every version-10 file reads as it did: a home's `spaces:` and `openings:`, a device's `place:` or `based:`, and `labels:` |
 
 **An integration's own entries.** A change to what a type is reached by —
 a way it no longer has — is not the document's shape, but a home kept

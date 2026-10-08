@@ -257,6 +257,27 @@ home.
 
 ## W2. Spaces, and where devices stand
 
+**Built, 2026-10-08** (commits W2.1 to W2.5). What building it changed:
+
+- **History by space is by meaning**, not by key: a room's temperature is
+  whatever stood there that reads `temperature`, one series per stay,
+  clipped to it, the spaces inside it included (`spaces.history`).
+- **An import adds and changes, never removes,** spaces, openings and
+  labels; a device whose entry says no `place:` or no `labels:` is left as
+  it is, since one device's YAML in the app knows neither.
+- **A room may stand in the home itself**, with no building: an apartment's
+  rooms are the home's own.
+- **Labels have a key** besides their unique name, as everything a file
+  names does; people join them in W3.
+- **W2.5, the device SDK's home port** (from W1): `DeviceContext.home()` —
+  the home a device stands in, or the family's first — asked each time;
+  `identify` is told it too. Open-Meteo forecasts for its home when it has
+  no place of its own. The gateway asks each device's own home for its
+  values. The API's family-wide values (`policy`) are still the first
+  home's: per-home values on a home's page come with W3's screens.
+- **The app keeps no kept-file restore** of its own database: a schema
+  change starts its home afresh, as before.
+
 1. **W2.1 Spaces and openings.**
    - In the store: `space`, `opening`, with the composite keys.
    - In the hub: `api/spaces.ts`, which builds the tree, refuses a parent
