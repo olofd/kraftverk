@@ -1,4 +1,4 @@
-import type { AutomationDraft, Coordinates, Rule } from '@kraftverk/automation';
+import type { AutomationDraft, Rule } from '@kraftverk/automation';
 import type { AutomationId, ConfigValues, ConnectionId, LinkId, NodeId, PolicyValueName, ResourceKind, SavedDeviceId, SetupActionResult, Value } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 import type { Vocabulary } from '@kraftverk/home-file';
@@ -10,6 +10,7 @@ import type { ConfigExported, ConfigExportRequest, ConfigSnapshotView, ImportAns
 import type { MapRegionAsk, MapRegionsView } from './map.ts';
 import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, FamilyElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
+import type { HomeInput, HomeView } from './homes.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, FamilyView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
 import type { CheckOutcome, DraftView, FoundAt, FoundView, HeldSetupInput, KeptView, SaveInput, SightingView } from './setup.ts';
 
@@ -237,10 +238,17 @@ export interface KraftverkApi {
   world(): Promise<WorldView>;
   /** The words the world is said in: capabilities, meanings, link kinds, recipes, the home's values. */
   vocabulary(): Promise<VocabularyView>;
-  /** The home: what its people call it, and which node is its master. */
+  /** The family: what its people call it, and which node is its master. */
   family(): Promise<FamilyView>;
-  /** Where the home is — what sunrise and sunset are told by — or, null, not said. */
-  setHomeLocation(location: Coordinates | null): Promise<FamilyView>;
+  /** Its homes (docs/PLAN-WORLD-MODEL.md §8.4): each a place, with its own clock. Always at least one. */
+  homes: {
+    /** The homes it has, in their order; with those it left, `removed`. */
+    list(options?: { removed?: boolean }): Promise<HomeView[]>;
+    add(input: HomeInput): Promise<HomeView>;
+    update(id: string, changes: Partial<HomeInput>): Promise<HomeView>;
+    /** Left, or moved from: archived, what was recorded there kept. Never its last. */
+    remove(id: string): Promise<HomeView>;
+  };
   /** The nodes of the home: its master, and every node that follows it. */
   nodes: {
     list(): Promise<NodeView[]>;

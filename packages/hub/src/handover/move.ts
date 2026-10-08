@@ -1,7 +1,8 @@
 import { ApiError, type ElsewhereView, type ImportAnswers, type ImportApplied, type ImportPlan } from '@kraftverk/api-contract';
 import { isSimulated, methodOf, randomHex } from '@kraftverk/device-sdk';
 import { writeConfig, type Scalar } from '@kraftverk/home-file';
-import { HomeSettings, FamilyStore, AutomationStore, ConnectionStore, DeviceCatalog, LinkStore, NodeStore, policyValues, setPolicyValue, type HomeSettingKey, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { HomeSettings, NodeSettings, PlaceStore, AutomationStore, ConnectionStore, DeviceCatalog, LinkStore, NodeStore, policyValues, setPolicyValue, type NodeSettingKey, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { ensureFirstHome, firstHomeLocation } from '../homes/homes.ts';
 
 import { exportConfig, type ConfigDeps } from '../configuration/export.ts';
 import type { PassphraseSealing } from '../configuration/seal.ts';
@@ -25,9 +26,9 @@ import type { Follower } from '../follower/follower.ts';
 */
 
 /** Kept in this node's own home, once it has moved: not offered again. */
-const MOVED: HomeSettingKey = 'home.moved';
+const MOVED: NodeSettingKey = 'family.moved';
 /** This node's own home as moving reads it: the stores an export reads, and its own state. */
-type OwnHome = ConfigDeps & { settings: HomeSettings };
+type OwnHome = ConfigDeps & { settings: NodeSettings };
 /** A way that stays with this node: the device it reaches, and what this node needs to hold it for the master. */
 type Staying = { key: string; name: string; typeId: string; method: string; label: string; address: string | null; settings: Record<string, Scalar>; device: Record<string, Scalar>; connection: string | null };
 
@@ -56,8 +57,9 @@ export class MovingToMaster {
   #home(): OwnHome {
     if (this.#own) return this.#own;
     const db = this.#database;
-    const settings = new HomeSettings(db);
-    const familyKept = new FamilyStore(db);
+    const settings = new NodeSettings(db);
+    const places = new PlaceStore(db);
+    const policyHome = new HomeSettings(db, () => ensureFirstHome(places).id);
     const { types, protocols } = this.#follower.installed;
     this.#own = {
       settings,
@@ -69,8 +71,8 @@ export class MovingToMaster {
       self: new NodeStore(db).self()?.id ?? this.#follower.nodeId,
       types,
       protocols,
-      policy: { values: () => policyValues(settings), set: (name, value) => setPolicyValue(settings, name, value) },
-      location: { get: () => familyKept.get()?.location ?? null, set: (location) => void familyKept.locate(location) },
+      policy: { values: () => policyValues(policyHome), set: (name, value) => setPolicyValue(policyHome, name, value) },
+      location: firstHomeLocation(places),
       sealing: this.#sealing,
       kept: this.#secrets,
     };

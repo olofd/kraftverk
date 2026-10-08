@@ -158,24 +158,25 @@ describe('configuration', () => {
   });
 
   test('where the home is: said, kept, on the timeline without its coordinates, exported, and planned and applied from a file', async () => {
-    expect((await t.home.family()).location).toBeNull();
+    const [first] = await t.home.homes.list();
+    expect(first!.location).toBeNull();
     // Made-up coordinates: Greenwich.
     const there = { latitude: 51.4779, longitude: 0 };
-    expect((await t.home.setHomeLocation(there)).location).toEqual(there);
-    expect((await refusal(t.home.setHomeLocation({ latitude: 91, longitude: 0 }))).kind).toBe('invalid');
-    const said = (await t.home.timeline()).find((entry) => entry.kind === 'home.located')!;
-    expect(said.summary).toBe('Said where the home is: sunrise and sunset are told by it');
+    expect((await t.home.homes.update(first!.id, { location: { ...there, radius: 150 } })).location).toEqual({ ...there, radius: 150 });
+    expect((await refusal(t.home.homes.update(first!.id, { location: { latitude: 91, longitude: 0, radius: 150 } }))).kind).toBe('invalid');
+    const said = (await t.home.timeline()).find((entry) => entry.kind === 'home.changed')!;
+    expect(said.summary).toBe('Changed the home "Home": where it is');
     expect(JSON.stringify(said)).not.toContain('51.4779');
 
     const { text } = await t.home.configuration.export({ secrets: 'none' });
     expect(text).toContain('home:\n  location:\n    latitude: 51.4779\n    longitude: 0\n');
     // Forgotten, then planned back from the file: said as a change, and applied.
-    await t.home.setHomeLocation(null);
+    await t.home.homes.update(first!.id, { location: null });
     const plan = await t.home.configuration.plan({ text });
     expect(plan.location).toEqual({ before: null, after: there });
     const applied = await t.home.configuration.apply({ plan: plan.id! });
     expect(applied.location).toBe(true);
-    expect((await t.home.family()).location).toEqual(there);
+    expect((await t.home.homes.list())[0]!.location).toEqual({ ...there, radius: 150 });
     // The same again: nothing to change.
     expect((await t.home.configuration.plan({ text })).location).toBeNull();
   });

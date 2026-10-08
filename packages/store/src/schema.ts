@@ -64,11 +64,55 @@ export const SCHEMA = `
     /* BCP 47: what is said to all of it — an announcement, a speaker. */
     locale     TEXT NOT NULL,
     master_id  TEXT NOT NULL REFERENCES node (id),
-    created_at TEXT NOT NULL,
-    /* Where it is, in degrees — what the sun's times are told by. Both null: not said. */
-    latitude   REAL CHECK (latitude BETWEEN -90 AND 90),
-    longitude  REAL CHECK (longitude BETWEEN -180 AND 180),
-    CHECK ((latitude IS NULL) = (longitude IS NULL))
+    created_at TEXT NOT NULL
+  );
+
+  /*
+    Places on the globe the family names (docs/PLAN-WORLD-MODEL.md §8.4): its
+    homes, and the zones it knows — school, work. Presence asks both the same
+    way, so the geofence lives here once; a home has more, beside it in home.
+    A place history points at is archived (removed_at), never deleted.
+  */
+  CREATE TABLE place (
+    id          TEXT PRIMARY KEY,
+    kind        TEXT NOT NULL CHECK (kind IN ('home', 'zone')),
+    name        TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 60),
+    icon        TEXT,
+    /* Where it is, in degrees: what the sun's times are told by. A home may not have said yet; a zone always has. */
+    latitude    REAL CHECK (latitude BETWEEN -90 AND 90),
+    longitude   REAL CHECK (longitude BETWEEN -180 AND 180),
+    /* Metres: the geofence, a circle round it. */
+    radius      REAL CHECK (radius > 0),
+    /* A GeoJSON Polygon, when drawn: then it is the geofence, and radius its circle's. */
+    outline     TEXT,
+    /* IANA: what its clocks keep. A home's always. */
+    time_zone   TEXT,
+    /* The address, as written: each part optional. */
+    street      TEXT,
+    postal_code TEXT,
+    locality    TEXT,
+    region      TEXT,
+    /* ISO 3166-1 alpha-2: what Maps offers to download for it. */
+    country     TEXT CHECK (country GLOB '[A-Z][A-Z]'),
+    created_at  TEXT NOT NULL,
+    removed_at  TEXT,
+    UNIQUE (id, kind),
+    CHECK ((latitude IS NULL) = (longitude IS NULL)),
+    CHECK ((latitude IS NULL) = (radius IS NULL)),
+    CHECK (kind = 'home' OR latitude IS NOT NULL),
+    CHECK (kind <> 'home' OR time_zone IS NOT NULL)
+  );
+
+  /* A home: a place the family lives in, or spends time at — and what a home has that a zone does not. */
+  CREATE TABLE home (
+    id          TEXT PRIMARY KEY,
+    kind        TEXT NOT NULL DEFAULT 'home' CHECK (kind = 'home'),
+    type        TEXT NOT NULL CHECK (type IN ('house', 'apartment', 'cabin', 'boat', 'caravan', 'office', 'other')),
+    /* Degrees from north to the home's y axis: where its floor plans sit on the globe. */
+    bearing     REAL NOT NULL DEFAULT 0 CHECK (bearing >= 0 AND bearing < 360),
+    /* Its order among the family's homes. */
+    position    INTEGER NOT NULL CHECK (position >= 0),
+    FOREIGN KEY (id, kind) REFERENCES place (id, kind)
   );
 
   /*
@@ -331,7 +375,10 @@ export const SCHEMA = `
     name            TEXT NOT NULL,
     rule            TEXT NOT NULL,
     made_from       TEXT,
-    time_zone       TEXT NOT NULL,
+    /* The home it is for: its clock, and its "home". NULL: the family's, on the first home's clock. */
+    home_id         TEXT REFERENCES home (id),
+    /* IANA, when it keeps a clock of its own; NULL: its home's. */
+    time_zone       TEXT,
     mode            TEXT NOT NULL CHECK (mode IN ('off', 'watch', 'act')),
     recheck_minutes INTEGER CHECK (recheck_minutes IS NULL OR recheck_minutes BETWEEN 1 AND 1440),
     home_place      INTEGER CHECK (home_place IS NULL OR home_place >= 0),
@@ -578,14 +625,25 @@ export const SCHEMA = `
   );
 
   /*
-    What this node has settled for the home it keeps, by name, each one
-    named here: its policy values (how much is a load); and, in an app,
-    whether its own home has moved to a server (home.moved), or the copy it
-    kept of a server's has been brought in (home.kept). Nothing about one
-    device or one automation: those are theirs.
+    A home's own values, by a name listed here: its policy (how much is a
+    load, the reserve). Nothing about one device or one automation: those
+    are theirs.
   */
   CREATE TABLE home_setting (
-    key        TEXT PRIMARY KEY CHECK (key IN ('policy.values', 'home.moved', 'home.kept')),
+    home_id    TEXT NOT NULL REFERENCES home (id),
+    key        TEXT NOT NULL CHECK (key IN ('policy.values')),
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (home_id, key)
+  );
+
+  /*
+    What this node has settled about the family it keeps, by name: in an
+    app, whether its own family has moved to a server (family.moved), or the
+    copy it kept of a server's has been brought in (family.kept).
+  */
+  CREATE TABLE node_setting (
+    key        TEXT PRIMARY KEY CHECK (key IN ('family.moved', 'family.kept')),
     value      TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
@@ -603,7 +661,7 @@ export const SCHEMA = `
     actor_kind    TEXT NOT NULL CHECK (actor_kind IN ('person', 'agent', 'automation', 'node', 'integration', 'system')),
     actor_id      TEXT,
     actor_name    TEXT NOT NULL,
-    resource_kind TEXT CHECK (resource_kind IN ('device', 'node', 'automation', 'account', 'transport')),
+    resource_kind TEXT CHECK (resource_kind IN ('device', 'node', 'automation', 'account', 'transport', 'family', 'home')),
     resource      TEXT,
     summary       TEXT NOT NULL,
     detail        TEXT,

@@ -1,7 +1,7 @@
 import { LINK_KINDS, type AuditRecord, type Clock, type ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, type GatewayDeps } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, type SessionManagerDeps } from '@kraftverk/holder';
-import { AutomationStore, ConnectionStore, databaseLedger, DeviceCatalog, HistoryStore, HomeSettings, integrationKept, LastReadings, LinkStore, NodeStore, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { AutomationStore, ConnectionStore, databaseLedger, DeviceCatalog, HistoryStore, integrationKept, LastReadings, LinkStore, NodeSettings, NodeStore, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import type { Installed } from '../installed/from.ts';
 import { unfitFor } from '../installed/needs.ts';
@@ -56,7 +56,7 @@ export type NodeParts = {
   /** This node, as it declared itself to its own database just now. */
   self: NodeRecord;
   /** What this node has settled for the home it keeps, by name. */
-  settings: HomeSettings;
+  settings: NodeSettings;
   catalog: DeviceCatalog;
   connections: ConnectionStore;
   links: LinkStore;
@@ -72,7 +72,7 @@ export type NodeParts = {
 export function nodeParts(options: NodeOptions, role: NodeRole): NodeParts {
   const db = options.database;
   const { types, protocols, transports } = options.installed;
-  const settings = new HomeSettings(db);
+  const settings = new NodeSettings(db);
   const catalog = new DeviceCatalog(db);
   const connections = new ConnectionStore(db, options.secrets);
   const links = new LinkStore(db);

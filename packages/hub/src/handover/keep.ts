@@ -1,7 +1,7 @@
 import { ApiError, type ElsewhereView, type ImportAnswers, type ImportApplied, type ImportPlan } from '@kraftverk/api-contract';
 import type { Actor } from '@kraftverk/device-sdk';
 import { readConfig } from '@kraftverk/home-file';
-import { ConnectionStore, DeviceCatalog, HomeSettings, LastHeard, type HomeSettingKey, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { ConnectionStore, DeviceCatalog, LastHeard, NodeSettings, type NodeSettingKey, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import type { Hub } from '../node/hub.ts';
 import { HEARD } from '../follower/heard.ts';
@@ -20,11 +20,11 @@ import { nothingToDo } from './nothing.ts';
 */
 
 /** Kept in the copy, once it has been brought in: not offered again. */
-const KEPT: HomeSettingKey = 'home.kept';
+const KEPT: NodeSettingKey = 'family.kept';
 
 export class KeepingCopy {
   readonly #hub: Hub;
-  readonly #settings: HomeSettings;
+  readonly #settings: NodeSettings;
   readonly #heard: LastHeard;
   readonly #catalog: DeviceCatalog;
   readonly #connections: ConnectionStore;
@@ -34,7 +34,7 @@ export class KeepingCopy {
   /** `copy`: the database this node kept for the master it followed last; `secrets`: this node's key, which sealed its ways' secrets there. */
   constructor(hub: Hub, copy: SqlDatabase, secrets: SecretsAtRest) {
     this.#hub = hub;
-    this.#settings = new HomeSettings(copy);
+    this.#settings = new NodeSettings(copy);
     this.#heard = new LastHeard(copy);
     this.#catalog = new DeviceCatalog(copy);
     this.#connections = new ConnectionStore(copy, secrets);

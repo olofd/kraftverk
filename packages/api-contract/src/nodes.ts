@@ -1,4 +1,3 @@
-import type { Coordinates } from '@kraftverk/automation';
 import type { Actor, AuditSubject, Availability, DeviceDescription, DeviceInfo, NodeId, Platform, PolicyValueName, PolicyValueSpec, Reading, ResourceKind, TransportDefinition, Value } from '@kraftverk/device-sdk';
 
 import type { HeldBy, Refused } from './devices.ts';
@@ -65,7 +64,6 @@ export type FamilyView = {
   locale: string;
   master: NodeId;
   createdAt: string;
-  location: Coordinates | null;
 };
 
 /** One line of the server's own log. */

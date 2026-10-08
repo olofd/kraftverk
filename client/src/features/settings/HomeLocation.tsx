@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, type FamilyView } from '@kraftverk/api-client';
+import { describeError, type HomeView } from '@kraftverk/api-client';
 import { sunTimes, type Coordinates } from '@kraftverk/automation';
 import { clockTime, localTime } from '@kraftverk/device-sdk';
 import { Card, formatCoordinates, haptic, Row, SectionLabel } from '@kraftverk/ui';
@@ -34,14 +34,14 @@ const degrees = (typed: string, most: number): number | null => {
  */
 export function HomeLocation() {
   const { api } = useFamily();
-  const [home, setHome] = useState<FamilyView | null>(null);
+  const [home, setHome] = useState<HomeView | null>(null);
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   useEffect(() => {
-    void api
-      .family()
-      .then(setHome)
+    void api.homes
+      .list()
+      .then(([first]) => setHome(first ?? null))
       .catch(() => undefined);
   }, [api]);
 
@@ -51,7 +51,8 @@ export function HomeLocation() {
     haptic();
     setProblem(null);
     try {
-      setHome(await api.setHomeLocation(next));
+      if (!home) return;
+      setHome(await api.homes.update(home.id, { location: next ? { ...next, radius: home.location?.radius ?? 150 } : null }));
       setLatitude('');
       setLongitude('');
     } catch (err) {

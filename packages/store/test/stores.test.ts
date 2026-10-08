@@ -4,6 +4,8 @@ import { MAIN_PART, nodeId, type AuditRecord } from '@kraftverk/device-sdk';
 
 import {
   HomeSettings,
+  NodeSettings,
+  PlaceStore,
   AuditLog,
   AutomationStore,
   FamilyStore,
@@ -67,13 +69,18 @@ for (const driver of DRIVERS) {
       expect(audit.recent({ limit: 1 })).toHaveLength(1);
     });
 
-    test('settings are kept until changed, by the names the schema lists; policy values only within their range', () => {
-      const state = new HomeSettings(database);
-      expect(() => database.query("INSERT INTO home_setting (key, value, updated_at) VALUES ('home.clock', 'x', 'now')").run()).toThrow();
-      expect(state.get('home.moved')).toBeNull();
-      state.set('home.moved', '2026-10-01');
-      state.set('home.moved', '2026-10-02');
-      expect(state.get('home.moved')).toBe('2026-10-02');
+    test('settings are kept until changed, by the names the schema lists; policy values only within their range, and a home’s its own', () => {
+      const node = new NodeSettings(database);
+      expect(() => database.query("INSERT INTO node_setting (key, value, updated_at) VALUES ('home.clock', 'x', 'now')").run()).toThrow();
+      expect(node.get('family.moved')).toBeNull();
+      node.set('family.moved', '2026-10-01');
+      node.set('family.moved', '2026-10-02');
+      expect(node.get('family.moved')).toBe('2026-10-02');
+      const places = new PlaceStore(database);
+      const home = places.addHome({ name: 'Home', type: 'house', timeZone: 'Europe/Stockholm' });
+      const cabin = places.addHome({ name: 'Cabin', type: 'cabin', timeZone: 'Europe/Stockholm' });
+      const state = new HomeSettings(database, home.id);
+      setPolicyValue(new HomeSettings(database, cabin.id), 'reserveSoc', 40);
       expect(setPolicyValue(state, 'reserveSoc', 20)).toMatchObject({ reserveSoc: 20 });
       expect(() => setPolicyValue(state, 'reserveSoc', 500)).toThrow(RangeError);
       expect(policyValues(state)).toMatchObject({ reserveSoc: 20 });

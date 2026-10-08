@@ -6,6 +6,7 @@ import { configurationApi } from './configuration.ts';
 import { connectionsApi } from './connections.ts';
 import { devicesApi } from './devices.ts';
 import { familyWideApi } from './family.ts';
+import { homesApi } from './homes.ts';
 import { integrationsApi } from './integrations.ts';
 import { liveApi } from './live.ts';
 import { nodesApi } from './nodes.ts';
@@ -18,7 +19,7 @@ import { transportsApi } from './transports.ts';
  * Made per caller, and cheap to make: what must outlive one — the tokens a
  * person's yes is sent back with — is the hub's.
  */
-export function homeApi(hub: Hub, caller: Caller): KraftverkApi {
+export function familyApi(hub: Hub, caller: Caller): KraftverkApi {
   return {
     ...devicesApi(hub, caller),
     ...connectionsApi(hub, caller),
@@ -27,6 +28,7 @@ export function homeApi(hub: Hub, caller: Caller): KraftverkApi {
     ...integrationsApi(hub),
     ...automationsApi(hub, caller),
     ...familyWideApi(hub, caller),
+    ...homesApi(hub, caller),
     ...configurationApi(hub, caller),
     ...nodesApi(hub, caller),
     ...liveApi(hub, caller),

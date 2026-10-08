@@ -2,7 +2,7 @@ import { ApiError, HELD_LIMITS, type ConnectionView, type DeviceView, type Kraft
 import { isPolicyValueName, type AuditRecord, type DeviceSession, type DeviceStore, type NodeId, type Platform, type PolicyValues, type Reading, type SavedDeviceId, type ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, Confirmations } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, toHold, toolsOf, withInUse, type DeviceEventMessage } from '@kraftverk/holder';
-import { ConnectionStore, DeviceCatalog, deviceStore, HomeSettings, FamilyStore, LastHeard, LinkStore, NodeStore, SendQueue, type DeviceRecord, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { ConnectionStore, DeviceCatalog, deviceStore, NodeSettings, FamilyStore, LastHeard, LinkStore, NodeStore, SendQueue, type DeviceRecord, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import type { PassphraseSealing } from '../configuration/seal.ts';
 import { MovingToMaster } from '../handover/move.ts';
@@ -92,7 +92,7 @@ export class Follower {
   /** The home as the master has it: its name, and which node is its master. */
   readonly familyKept: FamilyStore;
 
-  readonly settings: HomeSettings;
+  readonly settings: NodeSettings;
   readonly catalog: DeviceCatalog;
   readonly connections: ConnectionStore;
   readonly links: LinkStore;
@@ -319,7 +319,7 @@ export class Follower {
         const { master: _master, yours: _yours, ...record } = node;
         this.nodes.mirror(record);
       }
-      this.familyKept.mirror({ id: home.id, name: home.name, kind: home.kind, locale: home.locale, masterId: home.master, createdAt: home.createdAt, location: home.location });
+      this.familyKept.mirror({ id: home.id, name: home.name, kind: home.kind, locale: home.locale, masterId: home.master, createdAt: home.createdAt });
       const listed = new Set(nodes.map((node) => node.id));
       for (const kept of this.nodes.all()) if (!kept.self && !listed.has(kept.id)) this.nodes.remove(kept.id);
     })();

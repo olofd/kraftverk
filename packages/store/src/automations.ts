@@ -22,7 +22,8 @@ type Row = {
   name: string;
   rule: string;
   made_from: string | null;
-  time_zone: string;
+  home_id: string | null;
+  time_zone: string | null;
   mode: AutomationMode;
   recheck_minutes: number | null;
   home_place: number | null;
@@ -56,7 +57,18 @@ const RUN_SELECT = `SELECT r.*, p.automation_id AS parent_automation, pa.name AS
   LEFT JOIN automation pa ON pa.id = p.automation_id`;
 
 /** What an automation is made of, as it is kept: its rule, and what fills its roles. */
-export type AutomationInput = Pick<AutomationRecord, 'name' | 'rule' | 'madeFrom' | 'roles' | 'groups' | 'starts' | 'timeZone' | 'recheckMinutes'>;
+export type AutomationInput = Pick<AutomationRecord, 'name' | 'rule' | 'madeFrom' | 'roles' | 'groups' | 'starts' | 'recheckMinutes'> & {
+  /** The home it is for; null or left out: the family's. */
+  homeId?: string | null;
+  /** A clock of its own; null: its home's. */
+  timeZone: string | null;
+};
+
+/** What an automation keeps changed: its clock its own (a time zone) or its home's (null). */
+export type AutomationChanges = Partial<Pick<AutomationRecord, 'key' | 'name' | 'rule' | 'roles' | 'groups' | 'starts' | 'mode' | 'recheckMinutes' | 'homeId'>> & { timeZone?: string | null };
+
+/** Where no home says a clock: none kept yet. */
+const NO_CLOCK = 'UTC';
 
 /** What a run keeps beside its columns. */
 type RunDetail = Pick<AutomationRun, 'saw' | 'conditions' | 'steps' | 'answered'>;
@@ -114,6 +126,12 @@ export class AutomationStore implements AutomationStorage {
 
   #records(rows: Row[]): AutomationRecord[] {
     if (!rows.length) return [];
+    // Each home's clock, and the first home's: what one with no clock of its own keeps.
+    const homes = this.#db
+      .query<{ id: string; time_zone: string }, []>("SELECT p.id, p.time_zone FROM place p JOIN home h ON h.id = p.id WHERE p.removed_at IS NULL ORDER BY h.position, p.created_at")
+      .all();
+    const clocks = new Map(homes.map((home) => [home.id, home.time_zone]));
+    const first = homes[0]?.time_zone;
     const ids = rows.map((row) => row.id);
     const marks = ids.map(() => '?').join(', ');
     const roles = new Map<string, Record<string, RoleBinding>>();
@@ -163,7 +181,9 @@ export class AutomationStore implements AutomationStorage {
       roles: roles.get(row.id) ?? {},
       groups: groups.get(row.id) ?? {},
       starts: starts.get(row.id) ?? {},
-      timeZone: row.time_zone,
+      homeId: row.home_id,
+      timeZone: row.time_zone ?? (row.home_id ? clocks.get(row.home_id) : undefined) ?? first ?? NO_CLOCK,
+      ownTimeZone: row.time_zone,
       mode: row.mode,
       recheckMinutes: row.recheck_minutes,
       homePlace: row.home_place,
@@ -245,8 +265,10 @@ export class AutomationStore implements AutomationStorage {
     this.#db.transaction(() => {
       this.#db
         // Not looked at yet: the engine says when it looks, on its own clock.
-        .query('INSERT INTO automation (id, key, name, rule, made_from, time_zone, mode, recheck_minutes, home_place, looked_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)')
-        .run(id, key, input.name, JSON.stringify(input.rule), input.madeFrom, input.timeZone, 'watch', input.recheckMinutes, now, now);
+        .query(
+          'INSERT INTO automation (id, key, name, rule, made_from, home_id, time_zone, mode, recheck_minutes, home_place, looked_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)'
+        )
+        .run(id, key, input.name, JSON.stringify(input.rule), input.madeFrom, input.homeId ?? null, input.timeZone, 'watch', input.recheckMinutes, now, now);
       this.#setRoles(id, input);
     })();
     this.#revision += 1;
@@ -254,17 +276,18 @@ export class AutomationStore implements AutomationStorage {
   }
 
   /** A change: a new rule comes with what fills its roles. */
-  update(id: string, changes: Partial<Pick<AutomationRecord, 'key' | 'name' | 'rule' | 'roles' | 'groups' | 'starts' | 'timeZone' | 'mode' | 'recheckMinutes'>>): AutomationRecord | null {
+  update(id: string, changes: AutomationChanges): AutomationRecord | null {
     const current = this.get(id);
     if (!current) return null;
     if (changes.key !== undefined && changes.key !== current.key && (!KEY.test(changes.key) || this.keyTaken(changes.key, id))) {
       throw new Error(`"${changes.key}" is not a free key: lowercase letters, digits and dashes, and not another automation's`);
     }
-    const next = { ...current, ...changes };
+    const { timeZone, ...rest } = changes;
+    const next = { ...current, ...rest, ownTimeZone: timeZone === undefined ? current.ownTimeZone : timeZone };
     this.#db.transaction(() => {
       this.#db
-        .query('UPDATE automation SET key = ?, name = ?, rule = ?, time_zone = ?, mode = ?, recheck_minutes = ?, updated_at = ? WHERE id = ?')
-        .run(next.key, next.name, JSON.stringify(next.rule), next.timeZone, next.mode, next.recheckMinutes, new Date().toISOString(), id);
+        .query('UPDATE automation SET key = ?, name = ?, rule = ?, home_id = ?, time_zone = ?, mode = ?, recheck_minutes = ?, updated_at = ? WHERE id = ?')
+        .run(next.key, next.name, JSON.stringify(next.rule), next.homeId, next.ownTimeZone, next.mode, next.recheckMinutes, new Date().toISOString(), id);
       if (changes.roles || changes.groups || changes.starts) this.#setRoles(id, next);
     })();
     this.#revision += 1;

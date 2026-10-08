@@ -89,7 +89,7 @@ export class RuleContext {
         return { position: reading.value, label: standardMeaning(means)?.label ?? attribute.label };
       },
       // Where the home is, when it has said.
-      home: () => this.deps.location?.() ?? null,
+      home: () => this.deps.location?.(automation.homeId) ?? null,
       // What the home kept of a reading: the value holding as the time began, each kept since, and the reading now — each a number.
       history: (role, means, seconds) => {
         const binding = automation.roles[role];
@@ -118,7 +118,7 @@ export class RuleContext {
       },
       // Today's, on the automation's clock, where the home is — moved as it says.
       sun: (event, offset) => {
-        const location = this.deps.location?.() ?? null;
+        const location = this.deps.location?.(automation.homeId) ?? null;
         if (!location) return null;
         const today = localTime(now, automation.timeZone);
         const at = sunTimes({ year: today.year, month: today.month, day: today.day }, location)[event];

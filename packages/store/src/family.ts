@@ -1,4 +1,3 @@
-import type { Coordinates } from '@kraftverk/automation';
 import { nodeId, type NodeId } from '@kraftverk/device-sdk';
 
 import type { SqlDatabase } from './database.ts';
@@ -25,11 +24,9 @@ export type FamilyRecord = {
   /** The node whose database is the family's. */
   masterId: NodeId;
   createdAt: string;
-  /** Where it is: what the sun's times are told by. Null: its people have not said. */
-  location: Coordinates | null;
 };
 
-type Row = { id: string; name: string; kind: FamilyKind; locale: string; master_id: string; created_at: string; latitude: number | null; longitude: number | null };
+type Row = { id: string; name: string; kind: FamilyKind; locale: string; master_id: string; created_at: string };
 
 const toRecord = (row: Row): FamilyRecord => ({
   id: row.id,
@@ -38,7 +35,6 @@ const toRecord = (row: Row): FamilyRecord => ({
   locale: row.locale,
   masterId: nodeId(row.master_id),
   createdAt: row.created_at,
-  location: row.latitude !== null && row.longitude !== null ? { latitude: row.latitude, longitude: row.longitude } : null,
 });
 
 export class FamilyStore {
@@ -63,21 +59,15 @@ export class FamilyStore {
     return this.get()!;
   }
 
-  /** Where it is — or, null, not said. */
-  locate(location: Coordinates | null): FamilyRecord {
-    this.#db.query('UPDATE family SET latitude = ?, longitude = ?').run(location?.latitude ?? null, location?.longitude ?? null);
-    return this.get()!;
-  }
-
   /** The family as its master's database has it, kept in a node that follows it. */
   mirror(record: FamilyRecord): void {
     this.#db.transaction(() => {
       this.#db.query('DELETE FROM family WHERE id <> ?').run(record.id);
       this.#db
         .query(
-          'INSERT INTO family (id, name, kind, locale, master_id, created_at, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET name = excluded.name, kind = excluded.kind, locale = excluded.locale, master_id = excluded.master_id, latitude = excluded.latitude, longitude = excluded.longitude'
+          'INSERT INTO family (id, name, kind, locale, master_id, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET name = excluded.name, kind = excluded.kind, locale = excluded.locale, master_id = excluded.master_id'
         )
-        .run(record.id, record.name, record.kind, record.locale, record.masterId, record.createdAt, record.location?.latitude ?? null, record.location?.longitude ?? null);
+        .run(record.id, record.name, record.kind, record.locale, record.masterId, record.createdAt);
     })();
   }
 }

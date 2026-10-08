@@ -7,21 +7,33 @@ import { familyFor, RESOURCE_KIND, type AppDeps } from './context.ts';
 import { body, query } from './parse.ts';
 
 /**
- * The home over HTTP (docs/DATA-MODEL.md §3): what its people call it and
- * which node is its master, the kraftverk nodes that are part of it, the
- * values it decides, and its timeline. What each does is the home's
- * (`KraftverkApi`).
+ * The family over HTTP (docs/PLAN-WORLD-MODEL.md): what its people call it
+ * and which node is its master, its homes, the kraftverk nodes that are part
+ * of it, the values it decides, and its timeline. What each does is the
+ * family's (`KraftverkApi`).
  */
 export function familyRoutes(deps: AppDeps): Hono {
   const api = new Hono();
 
   api.get('/family', async (c) => c.json(await familyFor(deps, c).family()));
 
-  /** Where the home is — what sunrise and sunset are told by — or, null, not said. */
-  api.put('/home/location', async (c) => {
-    const { location } = await body(c, z.object({ location: z.object({ latitude: z.number().finite().min(-90).max(90), longitude: z.number().finite().min(-180).max(180) }).strict().nullable() }).strict());
-    return c.json(await familyFor(deps, c).setHomeLocation(location));
-  });
+  /** Its homes: each a place, with its own clock — the family checks what each says. */
+  const HOME = z
+    .object({
+      name: z.string().trim().min(1).max(60),
+      type: z.enum(['house', 'apartment', 'cabin', 'boat', 'caravan', 'office', 'other']),
+      timeZone: z.string().min(1).max(64),
+      icon: z.string().max(40).nullable(),
+      location: z.object({ latitude: z.number().finite().min(-90).max(90), longitude: z.number().finite().min(-180).max(180), radius: z.number().finite().positive().max(50_000) }).strict().nullable(),
+      address: z.object({ street: z.string().max(120).nullable(), postalCode: z.string().max(20).nullable(), locality: z.string().max(80).nullable(), region: z.string().max(80).nullable() }).strict(),
+      country: z.string().regex(/^[A-Z]{2}$/).nullable(),
+      bearing: z.number().finite().min(0).lt(360),
+    })
+    .strict();
+  api.get('/homes', async (c) => c.json({ homes: await familyFor(deps, c).homes.list({ removed: c.req.query('removed') === 'true' }) }));
+  api.post('/homes', async (c) => c.json(await familyFor(deps, c).homes.add(await body(c, HOME.partial({ icon: true, location: true, address: true, country: true, bearing: true })))));
+  api.patch('/homes/:id', async (c) => c.json(await familyFor(deps, c).homes.update(c.req.param('id'), await body(c, HOME.partial()))));
+  api.delete('/homes/:id', async (c) => c.json(await familyFor(deps, c).homes.remove(c.req.param('id'))));
 
   /**
    * A node joins the home, saying who it is — by its own id — and what it can

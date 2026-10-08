@@ -30,8 +30,12 @@ export type AutomationRecord = {
   groups: Record<string, readonly RoleBinding[]>;
   /** Which automation fills each role a `start` step starts. */
   starts: Record<string, AutomationId>;
-  /** The owner's clock, from the app it was made in: "Europe/Stockholm". */
+  /** The home it is for: its clock, and what "home" is in its rule. Null: the family's, on its first home's clock. */
+  homeId: string | null;
+  /** Its clock: its own, or else its home's — "Europe/Stockholm". */
   timeZone: string;
+  /** A clock of its own, when it keeps one; null when it keeps its home's. */
+  ownTimeZone: string | null;
   mode: AutomationMode;
   /** Every this many minutes, a condition that still holds runs it again, unless what it would do is already so. Null: never. */
   recheckMinutes: number | null;
@@ -83,8 +87,12 @@ export type AutomationEngineDeps = {
   bus?: LiveBus;
   /** What the home kept of each reading: what a rule looks back at (`average(station.charge, 1 h)`). None: unknown. */
   history?: EngineHistory;
-  /** Where the home is, as it is now: what `sunrise` and `sunset` are told by. None, or null: unknown. */
-  location?: () => Coordinates | null;
+  /**
+   * Where a home is, as it is now: what `sunrise` and `sunset` are told by,
+   * and what "home" is in a rule. The home an automation is for, by its id;
+   * null asks for the family's first. None, or null: unknown.
+   */
+  location?: (homeId: string | null) => Coordinates | null;
   /**
    * The home's time: what its triggers, holds, pauses and runs keep, and
    * what it stamps. Real time when not given; a test's own — fixed, or fast.

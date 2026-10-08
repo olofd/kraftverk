@@ -57,6 +57,11 @@ export function followerApi(h: Follower): KraftverkApi {
     return { device, session };
   };
   const intent = () => ({ by: { kind: 'person' as const, id: null, name: h.name } });
+  /** A home changed on the master: the list kept here asked again, so what this node shows is as the master has it. */
+  const keepingHomes = async <T>(answer: T): Promise<T> => {
+    await h.kept(HEARD.homes(false), () => home.homes.list()).catch(() => undefined);
+    return answer;
+  };
 
   // --- setting up a way this node holds ---------------------------------------------
   /** Drafts set up here, and the master's draft each became once read. */
@@ -336,11 +341,12 @@ export function followerApi(h: Follower): KraftverkApi {
     },
 
     family: async () => (await h.kept(HEARD.family, () => home.family())).answer,
-    /** Said on the master, and kept here as it answers: the sun's times here are told by it as well. */
-    setHomeLocation: async (location) => {
-      const view = await home.setHomeLocation(location);
-      h.heard.keep(HEARD.family, view);
-      return view;
+    /** The family's homes, as the master last said them; changed on the master, and its list kept here again. */
+    homes: {
+      list: async (options = {}) => (await h.kept(HEARD.homes(Boolean(options.removed)), () => home.homes.list(options))).answer,
+      add: async (input) => keepingHomes(await home.homes.add(input)),
+      update: async (id, changes) => keepingHomes(await home.homes.update(id, changes)),
+      remove: async (id) => keepingHomes(await home.homes.remove(id)),
     },
     timeline: (query) => home.timeline(query),
     world: () => home.world(),

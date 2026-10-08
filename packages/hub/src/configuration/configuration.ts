@@ -31,7 +31,7 @@ const CHANGES = new RegExp(
       'device\\.(added|restored|removed|renamed|identified|picture|paused|resumed|tracked|untracked|linked|unlinked|connection-added|connection-removed|connection-preferred|secrets-changed|saved-unchecked|keyed|exportable)',
       'automation\\.(created|proposed|changed|let-act|deleted|placed)',
       'policy\\.changed',
-      'home\\.located',
+      'home\\.(added|changed|removed)',
       'config\\.(imported|restored)',
     ].join('|') +
     ')$'

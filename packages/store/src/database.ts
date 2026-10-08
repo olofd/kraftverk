@@ -86,6 +86,8 @@ export function resetDatabase(db: SqlDatabase): { tables: string[]; rows: number
 
   let rows = 0;
   db.transaction(() => {
+    // Every table goes, so the order they go in does not matter: what refers to what is checked at the end, with nothing left.
+    db.exec('PRAGMA defer_foreign_keys = ON');
     for (const table of tables) {
       rows += db.query<{ n: number }, []>(`SELECT COUNT(*) n FROM ${table}`).get()?.n ?? 0;
       db.query(`DELETE FROM ${table}`).run();

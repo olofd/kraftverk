@@ -10,6 +10,8 @@ export const HEARD = {
   transports: 'transports',
   policy: 'policy',
   family: 'family',
+  /** The family's homes: those it has, or with those it left. */
+  homes: (removed: boolean) => `homes:${removed ? 'all' : ''}`,
   nodes: 'nodes',
   /** The home as one file: what this node keeps if its master is gone (`handover/keep.ts`). */
   configuration: 'configuration',

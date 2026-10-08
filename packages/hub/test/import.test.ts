@@ -7,7 +7,7 @@ import type { Coordinates, Rule } from '@kraftverk/automation';
 import { ApiError } from '@kraftverk/api-contract';
 import { AutomationLibrary } from '@kraftverk/automation-engine';
 import type { AuditRecord } from '@kraftverk/device-sdk';
-import { HomeSettings, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, policyValues, setPolicyValue, type SqlDatabase } from '@kraftverk/store';
+import { HomeSettings, PlaceStore, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, policyValues, setPolicyValue, type SqlDatabase } from '@kraftverk/store';
 
 import { drafts } from '../src/automations/drafts.ts';
 import { exportConfig } from '../src/configuration/export.ts';
@@ -68,7 +68,7 @@ beforeEach(() => {
   const engine = { reset: () => {}, poke: () => {}, forget: () => {} };
   const sessions = { sync: async (records: readonly unknown[]) => void sessionsSynced.push(records.length), description: (record: { description: unknown }) => record.description };
   const { checked } = drafts({ history: new HistoryStore(db), events: new EventStore(db), catalog, sessions: sessions as never, library, engine: engine as never, automations });
-  const state = new HomeSettings(db);
+  const state = new HomeSettings(db, new PlaceStore(db).addHome({ name: 'Home', type: 'house', timeZone: 'Europe/Stockholm' }).id);
   // This node, the home's own: what holds the ways a file says.
   new NodeStore(db).declareSelf({ ...MACHINE_NODE, platform: 'system', transports: ['bus'] });
   deps = {

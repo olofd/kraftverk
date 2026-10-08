@@ -10,6 +10,7 @@ import {
   type AccountDetail,
   type NodeView,
   type DeviceEventView,
+  type HomeView,
   type TrackPointView,
   type DeviceView,
   type FoundView,
@@ -227,7 +228,12 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
     world: () => get('/world'),
     vocabulary: () => get('/vocabulary'),
     family: () => get('/family'),
-    setHomeLocation: (location) => call('PUT', '/home/location', { location }),
+    homes: {
+      list: async (options = {}) => (await get<{ homes: HomeView[] }>('/homes', options.removed ? { removed: 'true' } : undefined)).homes,
+      add: (input) => call('POST', '/homes', input),
+      update: (id, changes) => call('PATCH', `/homes/${encodeURIComponent(id)}`, changes),
+      remove: (id) => call('DELETE', `/homes/${encodeURIComponent(id)}`),
+    },
 
     nodes: {
       join: (node) => call('POST', '/nodes', node),

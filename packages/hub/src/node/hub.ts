@@ -9,6 +9,8 @@ import {
   HistoryStore,
   TrackStore,
   HomeSettings,
+  NodeSettings,
+  PlaceStore,
   FamilyStore,
   NodeStore,
   ConnectionStore,
@@ -27,7 +29,8 @@ import {
   type SqlDatabase,
 } from '@kraftverk/store';
 
-import { homeApi } from '../api/index.ts';
+import { familyApi } from '../api/index.ts';
+import { ensureFirstHome, firstHomeLocation, locationOf } from '../homes/homes.ts';
 import { Attention } from '../attention/attention.ts';
 import { keepWatchedFresh } from '../attention/freshness.ts';
 import { homeDevices } from '../automations/devices.ts';
@@ -110,7 +113,10 @@ export class Hub {
 
   // What it keeps.
   readonly audit: AuditLog;
-  readonly settings: HomeSettings;
+  /** What this node settled about the family it keeps: moved, kept. */
+  readonly settings: NodeSettings;
+  /** The family's homes and zones. */
+  readonly places: PlaceStore;
   /** The family this database is, and its master. */
   readonly family: FamilyStore;
   /** This node: what its database is, and what holds the ways it holds. */
@@ -223,14 +229,19 @@ export class Hub {
     // The family, made the first time, its master this node. A hub is the master of what its database keeps: never a copy another node is the master of.
     const family = this.family.ensure({ name: 'Family', masterId: self.id });
     if (family.masterId !== self.id) throw new Error(`This database is kept for another master (${family.masterId}): it is not opened as a family of its own`);
-    this.policy = { values: () => policyValues(this.settings), set: (name, value) => setPolicyValue(this.settings, name, value) };
+    // And its first home, made with it: a family has a home from the start.
+    this.places = new PlaceStore(db);
+    ensureFirstHome(this.places);
+    // The policy is a home's: the first one's, until devices stand in homes.
+    const policyHome = new HomeSettings(db, () => ensureFirstHome(this.places).id);
+    this.policy = { values: () => policyValues(policyHome), set: (name, value) => setPolicyValue(policyHome, name, value) };
     const { catalog, connections, links, nodes, sessions } = this;
 
     /** What the installed packages bring to automations: their recipes and functions. None of the core's own. */
     this.library = new AutomationLibrary(types.contributions(), (message) => this.#log('warn', message));
     // What a package brings to automations comes with its code: when its integration loads.
     this.#stopContributions = types.onContribution((contributed) => this.library.add([contributed]));
-    this.engine = new AutomationEngine({ store: automations, library: this.library, device: homeDevices(catalog, sessions), gateway: this.gateway, record, bus: this.bus, history: this.history, location: () => this.family.get()?.location ?? null, clock: options.clock });
+    this.engine = new AutomationEngine({ store: automations, library: this.library, device: homeDevices(catalog, sessions), gateway: this.gateway, record, bus: this.bus, history: this.history, location: locationOf(this.places), clock: options.clock });
     this.drafts = drafts({ history: this.history, events, catalog, sessions, library: this.library, engine: this.engine, automations });
 
     this.heldReadings = new HeldReadings(this.history);
@@ -256,7 +267,7 @@ export class Hub {
       engine: this.engine,
       checked: this.drafts.checked,
       policy: this.policy,
-      location: { get: () => this.family.get()?.location ?? null, set: (location) => void this.family.locate(location) },
+      location: firstHomeLocation(this.places),
       sealing: options.sealing,
       kept: options.secrets,
       self: self.id,
@@ -302,6 +313,8 @@ export class Hub {
     this.engine.clear();
     await this.sessions.closeAll();
     const { tables, rows } = resetDatabase(this.db);
+    // A family always has a home: the first made again, as when it was new.
+    ensureFirstHome(this.places);
     this.audit.record({ at: new Date().toISOString(), kind: 'database.reset', actor: by, summary: `The database was reset: ${rows} rows across ${tables.length} tables`, detail: { tables } });
     // Back to the state a fresh home starts in: no devices, so no sessions.
     await this.sessions.sync(this.catalog.list());
@@ -312,7 +325,7 @@ export class Hub {
 
   /** Everything this family answers (`KraftverkApi`), for one caller: a person, or an assistant acting for one. */
   as(caller: Caller): KraftverkApi {
-    return homeApi(this, caller);
+    return familyApi(this, caller);
   }
 
   /** Stops everything it started, together, and lets go of what it opened. The database is the place's to close. */
