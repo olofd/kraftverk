@@ -10,7 +10,7 @@ import { Chips } from '@kraftverk/ui';
   under it.
 */
 
-export const SHARING_OPTIONS: readonly { value: SharingLevel; label: string }[] = [
+const SHARING_OPTIONS: readonly { value: SharingLevel; label: string }[] = [
   { value: 'places', label: 'Which place I’m at' },
   { value: 'home-away', label: 'Only whether I’m home' },
   { value: 'precise', label: 'Where I am on the map' },

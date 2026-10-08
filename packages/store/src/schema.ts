@@ -683,6 +683,32 @@ export const SCHEMA = `
   CREATE INDEX device_person_person ON device_person (person_id) WHERE until IS NULL;
 
   /*
+    Where people have been (docs/PLAN-WORLD-MODEL.md §8.9): stays at a home
+    or in a zone — later a room — as intervals; the open ones are where each
+    is now. Worked out from what they carry, as far as they share; kept as
+    long as each says; never on the timeline.
+  */
+  CREATE TABLE presence_stay (
+    id         TEXT PRIMARY KEY,
+    person_id  TEXT NOT NULL REFERENCES person (id),
+    place_id   TEXT,
+    place_kind TEXT CHECK (place_kind IN ('home', 'zone')),
+    space_id   TEXT REFERENCES space (id),
+    since      TEXT NOT NULL,
+    until      TEXT,
+    /* What placed them there: the device they carry that said so. */
+    device_id  TEXT REFERENCES device (id) ON DELETE SET NULL,
+    FOREIGN KEY (place_id, place_kind) REFERENCES place (id, kind),
+    CHECK ((place_id IS NULL) = (place_kind IS NULL)),
+    CHECK ((place_id IS NULL) <> (space_id IS NULL)),
+    CHECK (until IS NULL OR until > since)
+  );
+  /* At one home at a time, and in one room. Zones may overlap: a workplace in a town. */
+  CREATE UNIQUE INDEX presence_stay_home ON presence_stay (person_id) WHERE until IS NULL AND place_kind = 'home';
+  CREATE UNIQUE INDEX presence_stay_room ON presence_stay (person_id) WHERE until IS NULL AND space_id IS NOT NULL;
+  CREATE INDEX presence_stay_place ON presence_stay (place_id, since);
+
+  /*
     Each person's own shortcuts on their home page (docs/PLAN-WORLD-MODEL.md
     §8.3): the automations they start from it, in their order. A person's
     own, never the family's; an automation deleted, or a person erased,

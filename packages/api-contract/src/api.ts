@@ -11,7 +11,7 @@ import type { ConfigExported, ConfigExportRequest, ConfigSnapshotView, ImportAns
 import type { MapRegionAsk, MapRegionsView } from './map.ts';
 import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DevicePeople, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, FamilyElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
-import type { FoundFamily, InvitationInput, InvitationMade, InvitationView, Joined, MemberChanges, PersonView, SharingChanges, SharingLevel } from './people.ts';
+import type { FoundFamily, InvitationInput, InvitationMade, InvitationView, Joined, MemberChanges, PersonView, SharingChanges, SharingLevel, PresenceView } from './people.ts';
 import type { HomeInput, HomeView, ZoneInput, ZoneView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView } from './homes.ts';
 import type { MediaData, MediaView, NewMedia } from './media.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, FamilyView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
@@ -265,6 +265,10 @@ export interface KraftverkApi {
     update(id: string, changes: Partial<HomeInput>): Promise<HomeView>;
     /** Left, or moved from: archived, what was recorded there kept. Never its last. */
     remove(id: string): Promise<HomeView>;
+  };
+  /** Where each member is, as far as each shares (docs/PLAN-WORLD-MODEL.md §8.9, §11). */
+  presence: {
+    list(): Promise<PresenceView[]>;
   };
   /** The family's zones (docs/PLAN-WORLD-MODEL.md §8.4): places it knows that are no home — school, work — where presence says someone is. */
   zones: {

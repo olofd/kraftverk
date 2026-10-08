@@ -242,6 +242,8 @@ export class PeopleStore {
       this.#db.query('DELETE FROM person_identity WHERE person_id = ?').run(personId);
       this.#db.query('DELETE FROM shortcut WHERE person_id = ?').run(personId);
       this.#db.query('DELETE FROM sharing WHERE person_id = ?').run(personId);
+      // Where they have been goes with them.
+      this.#db.query('DELETE FROM presence_stay WHERE person_id = ?').run(personId);
       this.#db.query('UPDATE person_key SET added_with = NULL WHERE person_id = ?').run(personId);
       this.#db.query('DELETE FROM person_key WHERE person_id = ?').run(personId);
       this.#db.query("UPDATE person SET name = ?, short_name = NULL, picture_id = NULL, locale = NULL, chain = NULL, managed_by = NULL, updated_at = ?, erased_at = ? WHERE id = ?").run(SOMEONE_WHO_LEFT, at, at, personId);

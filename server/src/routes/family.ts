@@ -48,6 +48,8 @@ export function familyRoutes(deps: AppDeps): Hono {
       location: z.object({ latitude: z.number().finite().min(-90).max(90), longitude: z.number().finite().min(-180).max(180), radius: z.number().finite().min(10).max(50_000) }).strict(),
     })
     .strict();
+  // Where each member is, as far as each shares: never more.
+  api.get('/presence', async (c) => c.json({ presence: await familyFor(deps, c).presence.list() }));
   api.get('/zones', async (c) => c.json({ zones: await familyFor(deps, c).zones.list({ removed: c.req.query('removed') === 'true' }) }));
   api.post('/zones', async (c) => c.json(await familyFor(deps, c).zones.add(await body(c, ZONE.partial({ key: true, icon: true })))));
   api.patch('/zones/:id', async (c) => c.json(await familyFor(deps, c).zones.update(c.req.param('id'), await body(c, ZONE.partial()))));

@@ -394,6 +394,9 @@ export function followerApi(h: Follower): KraftverkApi {
       update: async (id, changes) => keepingHomes(await home.homes.update(id, changes)),
       remove: async (id) => keepingHomes(await home.homes.remove(id)),
     },
+    presence: {
+      list: () => home.presence.list(),
+    },
     zones: {
       list: (options) => home.zones.list(options),
       add: (input) => home.zones.add(input),

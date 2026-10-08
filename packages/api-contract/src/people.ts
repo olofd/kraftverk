@@ -35,6 +35,22 @@ export type Sharing = {
   changedAt: string | null;
 };
 
+/**
+ * Where a member is, as far as they share (docs/PLAN-WORLD-MODEL.md §11):
+ * never more. At `places` and above, the homes and zones they are at; at
+ * `home-away`, only whether they are at one of the family's homes; at
+ * `off`, nothing.
+ */
+export type PresenceView = {
+  personId: string;
+  /** What they share now: `off` while paused. */
+  sharing: SharingLevel;
+  /** At one of the family's homes; null when they share nothing. */
+  home: boolean | null;
+  /** The homes and zones they are at, since when: at `places` and above, empty below. */
+  places: { id: string; kind: 'home' | 'zone'; name: string; since: string }[];
+};
+
 /** What a person changes of their sharing; an admin a child's. */
 export type SharingChanges = { level?: SharingLevel; keepDays?: number; pausedUntil?: string | null };
 
