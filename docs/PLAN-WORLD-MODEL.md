@@ -1,846 +1,1348 @@
-# The world model: people, families, homes, rooms, and things that move
+# The world model: people, families, homes, rooms, and where things are
 
 The plan for what kraftverk knows about the world beyond its devices, and
-how the database holds it. Devices, integrations and services are there
+how its databases hold it. Devices, integrations and services are there
 today. A home automation suite for families also needs the people, the
 families they make, the homes they live in, the rooms and floors inside
-those homes, and the things that move between them. 2026-10-08.
+those homes, and where every device and person is. 2026-10-08, revised the
+same day after a review of the first draft (§20).
 
 This is discovery and design. Nothing below is built. It decides the shape
 first, because the data model is the expensive thing to change later.
 [DATA-MODEL.md](DATA-MODEL.md) stays the authority for what is built, and
-takes each part in as it is built.
+takes each part in as it is built. Every table here is written out field
+by field. The SQL is the design, to argue over, not yet the schema.
 
 ## 1. What changes, and what it decides
 
 kraftverk has been a hub for devices. It becomes a home automation suite
 for families: people who live in one home or several, share their devices,
 see where each other is when they choose to, and automate their days. That
-puts five new kinds of thing in the model:
+puts new kinds of thing in the model:
 
-- **People.** A person signs up on their own phone and is a person from then on. That
-  happens with no server.
-- **Families.** A group of people who share devices, nodes and homes. A
-  person may be in more than one.
-- **Homes.** A family may have several: a house, a cabin. Each has a place
-  on the map, a time zone, and its own rooms.
-- **Spaces.** Floors, rooms, stairs, a garden, a garage, and the doors
-  and stairs between them. These are what room-to-room presence is worked
-  out from.
-- **Things that move.** A phone, a car, a scooter. They have no room. They
-  have a position over time, a person who carries or drives them, and a
-  home they come back to.
+- **People.** A person signs up on their own phone, and is a person from
+  then on. No server is needed.
+- **Families.** The people who share devices, nodes and homes: a family,
+  a household, friends with a cabin. A person may be in more than one.
+- **Homes.** A family may have several, such as a house and a cabin. Each
+  has a place on the map, a time zone, and its own spaces.
+- **Spaces.** Buildings, floors, rooms, the stairs, the garden, and the
+  doors and windows between them. Room-to-room presence is worked out
+  from them.
+- **Where things are.** Any device can have a position. It may report
+  one: a phone, a car, a robot cleaner on its own map. Or a person may
+  mark where it stands: a plug in the kitchen, a sensor on the front
+  door. Both are kept over time, and both can be coordinates: on the
+  globe, or in metres within a room.
 
 It closes a question left open since 2026-10-02: a home, or places alone?
-**The family is the root, and homes are inside it.** What bounds one
-database, one master node and one configuration file today is the `home`
-row. It becomes the family. A home becomes a property inside the family,
-and a family has as many as it needs.
+**The family is the root, and homes are inside it.** The `home` row that
+bounds one database, one master node and one configuration file today
+becomes the family. A home becomes a property inside it, and a family has
+as many as it needs.
 
 ## 2. Where it stands today
 
 - **One database, one root.** The `home` table holds one row: the root
-  every device and node belongs to, naming the master node, with an
+  every device and node belongs to. It names the master node, and has an
   optional latitude and longitude for the sun's times. "Home" is also the
   word for the root throughout the code (`KraftverkApi` is "everything a
-  home answers", the hub is "a home, running").
-- **Devices are flat.** A device has no room and no home of its own. Where
-  it is is a `position` reading, if it reports one, and its track if its
-  owner keeps it ([PLAN-MAPS.md](PLAN-MAPS.md)).
-- **Nodes** are the hub running somewhere: a server, a phone, a browser.
-  One is the master and the others follow it
-  ([PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md), phase 6).
-- **Accounts belong to a server** (`users`, `login_session` in
-  `server/src/auth/schema.ts`): a username and a password hash, nothing
-  more. They are not people, they are not in the home's schema, and a phone
-  keeping a home of its own has none.
-  [ACCOUNTS.md](ACCOUNTS.md) plans accounts, identities, homes with owners
-  and members, and an operator. Its "home" is what this plan calls the family.
-- **The timeline** (`audit`) records an actor as a name and a resource as a
-  device, a node, an automation, an account or a transport.
-- **Automations** keep their own time zone. "When Sam's phone gets home"
-  measures distance from the home's one location.
-
-Most of the plumbing is right for this. Nodes already make their own ids, so
-the same id holds in every database that knows them. The master and
-follower roles already exist. The configuration file already carries a home
-across a database reset. What's missing is the entities above, not the
-machinery.
+  home answers").
+- **One writer.** The master's database is the family's. A follower keeps
+  what the master's API answered, as JSON by question (`last_heard`,
+  `packages/hub/src/follower/heard.ts`), and a copy of the configuration
+  file. It mirrors in its own database only the devices it holds ways for.
+  Nothing is replicated row by row, and nothing is ever merged
+  ([PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md)).
+- **Devices are flat.** A device has no room and no home. Where it is, is
+  a `position` reading if it reports one, and its track if its track is
+  kept ([PLAN-MAPS.md](PLAN-MAPS.md)).
+- **Accounts belong to a server** (`users`, `login_session`,
+  `server/src/auth/schema.ts`): a username and a password hash. They are
+  not people, and a phone keeping a home of its own has none.
+  [ACCOUNTS.md](ACCOUNTS.md) plans owners, members and an operator. Its
+  "home" is this plan's family.
+- **Who did something** is free text in several places: the timeline's
+  `actor`, `device_switch.switched_by`, `device_write.written_by`,
+  `automation_run.started_by`.
+- **Ids** are a prefix and 64 random bits in hex (`d-3f9a2c61b0e43f9a`),
+  made where the thing is made (`newId`).
+- **The configuration file** names everything by a key, and keeps no ids
+  (CONFIG.md, "Keys").
 
 ## 3. What others model, and what to take
 
 | | What it models | Take | Leave |
 | --- | --- | --- | --- |
-| **Home Assistant** | Persons with the device trackers that place them; zones as circles, the home zone among them; areas, and floors above them; labels | A person placed by the devices they carry; zones; floors grouping areas | A person and an account blurred together; zones as circles only; presence as one state string; no history of where a device was installed |
-| **Apple Home** | Homes, rooms, room groups ("zones"); people invited with permissions; "when the first person arrives, when the last person leaves" | Several homes per person; invitations; first-arrives and last-leaves as built-in ideas | Rooms with no geometry; people only as Apple IDs |
-| **Google Home** | Structures (homes), rooms, household members | A household that is the sharing boundary | |
-| **SmartThings** | Locations with a geofence, rooms, members, modes (home, away, night) | Modes as state with a history; a geofence per home | |
-| **Brick Schema, IFC** | Buildings, storeys, spaces, zones, what is part of what, what feeds what; doors and stairs as elements | A hierarchy of spaces with kinds; openings that connect spaces; elevation per floor | A full building ontology: more than a home needs |
-| **Matter** | Fabrics (who administers a device); service areas for robot cleaners | One device, several controllers; areas a device knows itself | |
+| **Home Assistant** | Persons placed by their device trackers; zones as circles; areas, floors above them; labels | A person placed by what they carry; zones; floors; labels across everything | A person and an account blurred; presence as one state string; no history of where a device was installed |
+| **Apple Home** | Several homes; rooms; people with permissions; "the first arrives, the last leaves" | Several homes per person; invitations; first and last as built-in ideas | Rooms with no geometry; people only as Apple IDs |
+| **Google Home** | Structures, rooms, household members | The household as the sharing boundary | |
+| **SmartThings** | Locations with a geofence; rooms; members; modes | Modes as state with a history; a geofence per home | One mode at a time |
+| **Life360** | Circles: a family, or friends, sharing where each is | That the group sharing location is not always a family | Location shared with a company |
+| **Brick, IFC** | Site, building, storey, space; doors and stairs; what is part of what | A tree of spaces with kinds; openings between spaces; floors with elevations | A whole building ontology |
+| **Robot cleaners, Matter service areas** | A device's own map of a home, its areas, its position on that map | Coordinates within a home, in a frame of its own (§8.7) | A map only one device understands |
 
 What none of them does well, and kraftverk should:
 
-- **People are not accounts.** A child without a phone, or a person still to
-  be invited, is still a person.
-- **Location is the person's to share,** at the detail they choose, and the
-  model says so.
-- **Where a device was installed is history,** so a temperature recorded in
-  the kitchen stays the kitchen's after the sensor moves.
-- **It works with no server.** A person is made on their phone, and a family can live on
-  phones alone.
+- **A person is not an account.** A small child, or someone not yet
+  invited, is still a person.
+- **Location is the person's to share,** and the model enforces it.
+- **Where a device stood is history.** A temperature recorded in the
+  kitchen stays the kitchen's after the sensor moves.
+- **It works with no server.** A person is made on their phone, and a
+  family can live on phones alone.
 
-## 4. Principles
+## 4. The word: family
 
-1. **Definitions in code, records in the database.** As now. A kind of
-   space, a mobility, a role are words the code declares. Which rooms your
-   home has is a record.
-2. **A person is not an account.** A person is someone in the world. How
-   they prove it at a node (a key on their phone, a passkey, a password) is
-   a credential. A person may have several credentials, or none.
-3. **Every fact is kept the way it changes** (§7). Configuration is
+The root needs one word, in code and on screen. The candidates:
+
+| Word | For | Against |
+| --- | --- | --- |
+| **family** | Warm; what most people are in; what was asked for | Strained for flatmates or a group of friends |
+| household | Exact for people living together | Wrong for friends sharing a cabin; colder |
+| group | Neutral | Already taken: a group of parts in the automation language (`GroupRole`, "for each"), Zigbee groups, Home Assistant's groups. Three meanings is two too many |
+| circle | Neutral; Life360's word for the same thing | Unfamiliar; says nothing about a home |
+
+**Recommended: `family` in code, with a kind that changes only the words on
+screen.** A family's kind is `family`, `household`, `friends` or `other`,
+and the app says "your family", "your household", "your friends" or "your
+group". A group of friends can be a family in the model and never see the
+word. The code keeps one noun, and nothing in it depends on the kind.
+
+## 5. Principles
+
+1. **Definitions in code, records in the database.** As now. The kinds of
+   space, the roles, the sharing levels are words the code declares. Your
+   rooms are records.
+2. **A person is not an account.** A person is someone in the world. A key
+   on their device says they are that person. A password or passkey at a
+   server is another way to sign in there.
+3. **One writer per family.** The master writes the family's database.
+   Everyone else asks it. Nothing is merged. This rule is what makes the
+   rest tractable, and the plan keeps it.
+4. **Every fact is kept the way it changes** (§12). Configuration is
    overwritten and audited. Current state is replaced. A series is
    appended and pruned. An event is appended. A stay, a placement or a
-   membership is kept as an interval with a start and an end. Each fact
-   gets exactly one of these, chosen on purpose.
-4. **Data lives with whoever it belongs to** (§9). The family's things are
-   in the family's database. A person's own things are in their personal
-   store on their phone. What crosses from one to the other is what the
-   person shares.
-5. **Privacy is modelled, not bolted on.** Where a person is is shared at
-   the level they chose (§10), and a node that is told less never holds
-   more.
-6. **Made where it is born.** Ids and keys are made by whoever creates the
-   thing, as node ids are now. No central server hands them out, so it all
-   works on phones alone.
-7. **Strict version 1, still.** One schema, changed everywhere at once. The
-   configuration file is the one thing versioned, and it carries a family
-   across a reset.
-8. **Every change has a person behind it.** The timeline names who did it,
-   through which node, or which automation did it for whom.
+   carrier is an interval. Each fact gets exactly one of these, on purpose.
+5. **Normalised to the third normal form, with every exception named.**
+   A fact is stored once. What can be derived is derived, unless it is
+   kept on purpose as current state, and then it is called that (§6).
+6. **Data lives with whoever it belongs to** (§7). The family's things go
+   in the family's database. A person's own things go in their personal
+   store. What crosses between them is what the person shares.
+7. **Privacy is enforced where the data is.** The master answers each
+   reader at what each person shares. A phone that is the source sends no
+   more than that (§11).
+8. **Ask for no more than a feature needs.** No field is added "in case".
+   §16 lists what was considered and left out until something needs it.
+9. **Made where it is born.** Ids and keys are made by whoever creates the
+   thing, as node ids are now, so it all works on phones alone.
+10. **Strict version 1, still.** One schema per kind of database, changed
+    everywhere at once. The configuration file is the one thing
+    versioned, and it carries a family across a reset.
 
-## 5. The entities
+## 6. How every table is kept
 
-Each entity says what it is, what it holds, how it relates to the others,
-and who changes it. Ids stay opaque and prefixed, as `d-` and `n-` are now.
+The rules every table follows, so that each field below needs no special
+explanation.
 
-### 5.1 Person
+**Ids.**
+- New ids are a prefix and a ULID: `p-01JA8ZK3Q4R7T9V2W5X6Y8Z0AB`. That is
+  128 bits, sortable by when it was made, and made anywhere with no
+  coordination.
+- Today's 64-bit hex ids change to the same form everywhere at once
+  (decision 11). A family's ids then stay unique in a hosted service with
+  millions of families, and the newest rows sit together in an index.
+- Prefixes: `f` family, `p` person, `i` invitation, `g` grant, `h` home,
+  `z` zone, `s` space, `o` opening, `l` label, `t` trip, `a` automation,
+  `d` device, `n` node. A mode is a word (`away`) or `m-…`.
+- Two ids are derived, not random:
+  - a key's id is its RFC 7638 thumbprint, so the same key always has the
+    same id;
+  - a picture's id is the SHA-256 of its bytes, so the same picture is
+    kept once.
 
-Someone in the world: a member of a family, a child, someone invited and not
-yet joined. `p-…`.
+**Times.**
+- An instant is ISO 8601 text in UTC, to the millisecond:
+  `2026-10-08T11:10:41.123Z`. Text of that shape sorts by time.
+- A calendar date is `YYYY-MM-DD`, with no time zone: a warranty's end.
+- A length of time is whole seconds.
 
-- **Holds:** a display name, a picture, a colour for the map, a kind
-  (`human` now, maybe `pet` later, §13), and when they were made.
-- **Made by** the person themselves, on their own device, when they sign
-  up. An admin can also make a person who has no device, such as a small
-  child, and hand them a device later.
-- **The same id in every family** the person is in, the way a node's id is
-  its own. The person's public key travels with it (§5.2).
-- **Changes:** name, picture and colour are overwritten, and the timeline
-  records it.
+**Quantities.**
+- One unit per kind of quantity, in the column's comment: metres, degrees,
+  watt-hours, seconds.
+- Money is an integer in the currency's minor unit, with its ISO 4217 code
+  beside it.
 
-### 5.2 Credential
+**Words and codes.**
+- A language is BCP 47 (`sv-SE`), a country ISO 3166-1 alpha-2 (`SE`), a
+  time zone IANA (`Europe/Stockholm`), a colour `#rrggbb`.
+- A vocabulary is text with a CHECK naming every value. A new value is a
+  schema change, as everything is under strict version 1.
+- Names are trimmed text, with a length the CHECK states.
 
-How a person proves they are that person. `c-…`.
+**Geometry.**
+- On the globe it is WGS 84. Latitude and longitude are columns for a
+  point, and GeoJSON (longitude first) for a shape.
+- Within a home it is metres in a frame (§8.7): x east and y north when
+  the frame is unrotated, z up.
 
-| Kind | What is kept | Where |
-| --- | --- | --- |
-| `device-key` | A public key (P-256). The private key never leaves the person's device: non-extractable Web Crypto in a browser, the platform's keystore on a phone | Every family database the person is in, and every node they sign in at |
-| `passkey` | A WebAuthn credential id and public key | The node it was registered with |
-| `password` | An argon2id hash. Today's `users.password_hash` | The node it was set at |
-| `apple`, `google` | The provider's stable subject, never the email | The node, when sign-up is open (ACCOUNTS.md) |
+**Null.** Null means "not said" or "does not apply", and the comment says
+which. It never means "an older row".
 
-- **Signing in** at a node means a challenge signed with a device key, or
-  a passkey, or a password. A node knows a person through a credential.
-  It has no "users" of its own.
-- **Operator** (whoever runs a node) is a flag on the node's record of a
-  person, as ACCOUNTS.md says, not on any family.
-- **Changes:** added and revoked, never edited. A revoked credential keeps
-  its row and when it was revoked, so old sign-ins can still be read.
+**Intervals.** A fact true for a while has `since` and `until`, with
+`until` null while it is true now and `CHECK (until IS NULL OR until >
+since)`. A partial unique index allows one open row where only one may be
+true at a time. "True at t" is `since <= t AND (until IS NULL OR until >
+t)`. Overlapping closed rows cannot be stopped by SQLite. The store closes
+the open row in the same transaction that opens the next, and a test holds
+it to that.
 
-### 5.3 Family
+**Who did it** — the actor — is the same three fields everywhere:
+`actor_kind` (`person`, `automation`, `node`, `integration`, `system`),
+`actor_id`, and `actor_name` as it was called then. That covers the
+timeline, `device_switch`, `device_write`, `automation_run`,
+`placement`, `home_mode` and the rest.
 
-The people who share devices, nodes and homes: a family, a household,
-flatmates. `f-…`. **This is today's `home` row**, the root of one
-database, renamed for what it is.
+**References.**
+- A live relation is a foreign key.
+- A record of what happened (the timeline, run logs) keeps ids and names
+  as they were, with no foreign key, so renaming or removing something
+  never rewrites history.
+- Where two references must agree, a composite foreign key makes them: a
+  space's parent in the same home, a stay's place of the kind it says.
 
-- **Holds:** a name, the master node (as `home.master_id` does now), and
-  when it was made.
-- **Owns** everything shared: its homes, devices, nodes, automations,
-  zones and timeline.
-- **One family is one database is one master is one configuration file.** A
-  person in two families (their own, and a cabin shared with siblings) has
-  two. Their phone follows both.
-- **Changes:** the name is overwritten and audited. The master moves by the
-  rules that already exist (phase 6h).
+**Removing.**
+- Something history points at is archived, with `removed_at`: a device, a
+  place, a space, an opening.
+- Details that mean nothing without their owner go with it, by
+  `ON DELETE CASCADE`.
+- A person is never deleted from a family's database while history names
+  them. Erasing a person anonymises them (§11.6).
 
-### 5.4 Membership and invitation
+**Derived state.**
+- Kept only where reading it must be cheap, and named "current state":
+  `device_reading` now, nothing new.
+- Everything else derived is computed:
+  - which home a placement is in comes from its space;
+  - where a person is comes from their open stays;
+  - a person's position comes from what they carry.
 
-A person in a family, with a role, from a time to a time.
+## 7. Three kinds of database
 
-- **Membership** `(family, person, role, since, until)`. Roles: `admin`
-  (manages people, homes and nodes; at least one at all times), `member`
-  (uses and automates everything), `child` (uses what is allowed; an admin
-  sets what their location shares). A **guest** is not a member: see
-  grants (§5.17).
-- **Kept as intervals.** Joining opens one; a role change closes it and
-  opens the next; leaving closes it. So a timeline from last year can still
-  say who was in the family then, and in what role.
-- **Invitation** `(id, family, role, made by, expires, used)`. A one-time
-  secret is shown as a QR code or a link. The person who opens it presents
-  their device key. An admin may require approval before the membership
-  opens. The invitation also names the master's addresses, so the
-  invited phone knows where to follow.
+Today there is one kind: a home's, the server's accounts beside it. The
+plan has three, each with one schema, and each set aside and started afresh
+when its schema changes. The family's and the person's live in
+`packages/store`, since every node runs them. The node's is the server's,
+in `server/src/auth` as now, because only a node with an HTTP entrance has
+sign-ins (AGENTS.md: accounts are the server's). It moves into a file of
+its own, so resetting a family's database never touches who may sign in.
 
-### 5.5 Home
+| Database | Holds | Where | Written by |
+| --- | --- | --- | --- |
+| **The family's** | Everything the family shares: people as the family knows them, homes, spaces, devices, automations, history, presence at each person's level | On the master. A follower keeps what the master answered, as now | The master only |
+| **A node's** | What one machine is: its sign-ins (passwords, passkeys), its operator, which families it serves and in which role | On every node with an HTTP entrance: a server. Today these are `users` and `login_session` beside the home's tables | The node |
+| **A person's** | The person's own: their private key's handle, which families they are in and where each master is, their private places, their own settings, their own history if they keep it | On each of the person's devices | That device |
 
-A property: where the family lives, or spends time. `h-…` (the prefix the
-root uses now).
+- **A phone in two families** keeps two follower caches. It holds two live
+  streams, one to each master, and has one personal store. A phone that
+  is a family's master keeps that family's database too.
+- **A node serving several families** opens a database for each. A hosted
+  service is that at scale: every family is its own database, so no query
+  can forget to scope itself to one.
+- **The personal store** is in `packages/store`, with its own schema and
+  fingerprint. The hub opens it beside the family's. It runs on a phone
+  and in a browser like everything else.
+- **The node's database** is `node.db` beside the family's on a server,
+  holding `login`, `login_session` and `operator`. It is set aside only
+  when its own schema changes.
 
-- **Holds:** a name ("Home", "Lake cabin"), a location (latitude, longitude),
-  a geofence (a radius in metres, 150 by default, or a polygon), an optional
-  address as the person writes it, a time zone, and its country (what Maps
-  offers to download).
-- **Its settings**, which are today's per-database values, become per home:
-  the energy policy (`loadWatts`, `reserveSoc`), the electricity price
-  area, and the weather's place.
-- **Its frame:** an origin and a bearing. That is what a floor plan's
-  metres are measured from (§5.6), so a plan drawn once lines up with the
-  map.
-- **Contains** spaces, the devices placed in it, and nodes that stand in it.
-- **Changes:** overwritten and audited. **Moving house is a new home**, and
-  the old one is archived (`removed_at`). History recorded at the old house
-  stays the old house's.
+## 8. The family's database, table by table
 
-### 5.6 Space
+### 8.1 The family
 
-A part of a home: a building, a floor, a room, an area within a room, the
-garden, the stairs. `s-…`. One table, a tree by `parent`.
+```sql
+CREATE TABLE family (
+  id          TEXT PRIMARY KEY,               -- f-…, made with it
+  name        TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 60),
+  kind        TEXT NOT NULL DEFAULT 'family' CHECK (kind IN ('family', 'household', 'friends', 'other')),
+                                              -- only the words on screen (§4)
+  picture_id  TEXT REFERENCES media (id),
+  locale      TEXT NOT NULL,                  -- BCP 47: what is said to all of it (an announcement, a speaker)
+  master_id   TEXT NOT NULL REFERENCES node (id) DEFERRABLE INITIALLY DEFERRED,
+  created_at  TEXT NOT NULL,
+  created_by  TEXT NOT NULL REFERENCES person (id) DEFERRABLE INITIALLY DEFERRED
+);
+-- One row: the database is the family.
+```
+
+Today's `home` row becomes this one. Its location moves to the first home.
+
+### 8.2 People
+
+A person as this family knows them. The person owns their profile. The
+family keeps a copy, and the newest copy wins. A person an admin keeps for
+someone who has no device yet, such as a small child, is `managed_by` that
+admin.
+
+```sql
+CREATE TABLE person (
+  id          TEXT PRIMARY KEY,               -- p-…, made where they signed up; the same in every family (§10)
+  kind        TEXT NOT NULL DEFAULT 'human' CHECK (kind IN ('human')),  -- 'pet' when a tag on a collar needs it
+  name        TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 100),
+                                              -- whole, as they write it: no given or family name split
+  short_name  TEXT CHECK (length(short_name) BETWEEN 1 AND 30),
+                                              -- what screens and speakers call them; null: the name
+  picture_id  TEXT REFERENCES media (id),
+  locale      TEXT,                           -- BCP 47: the language they are told things in; null: the family's
+  managed_by  TEXT REFERENCES person (id),    -- the admin who keeps them; null: they keep themselves
+  updated_at  TEXT NOT NULL,                  -- the profile's own time: a newer copy replaces an older
+  erased_at   TEXT                            -- erased (§11.6): name and picture gone, the row kept for history
+);
+
+-- How to reach them outside kraftverk, when they choose to give it.
+CREATE TABLE person_contact (
+  person_id   TEXT NOT NULL REFERENCES person (id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL CHECK (kind IN ('email', 'phone')),
+  value       TEXT NOT NULL,                  -- lower-case email; a phone number in E.164
+  label       TEXT CHECK (length(label) <= 30),   -- "work"
+  verified_at TEXT,
+  PRIMARY KEY (person_id, kind, value)
+);
+
+-- The public keys a person signs with (§10). The private halves never leave their devices.
+CREATE TABLE person_key (
+  id          TEXT PRIMARY KEY,               -- the key's thumbprint
+  person_id   TEXT NOT NULL REFERENCES person (id),
+  kind        TEXT NOT NULL CHECK (kind IN ('device', 'recovery')),
+  public_key  TEXT NOT NULL,                  -- a JWK, P-256
+  device_name TEXT,                           -- "Anna's phone": which device holds it; null for a recovery key
+  added_at    TEXT NOT NULL,
+  added_with  TEXT REFERENCES person_key (id),-- the key that signed it in; null for their first
+  revoked_at  TEXT
+);
+CREATE INDEX person_key_person ON person_key (person_id) WHERE revoked_at IS NULL;
+```
+
+### 8.3 Members, what each shares, invitations, guests
+
+Being in the family is a row, with a role. What a person calls themselves
+belongs to them. What this family calls them, and their colour on its
+map, belongs to the family.
+
+```sql
+CREATE TABLE member (
+  person_id   TEXT PRIMARY KEY REFERENCES person (id),
+  role        TEXT NOT NULL CHECK (role IN ('admin', 'member', 'child')),
+                                              -- changes are on the timeline; at least one admin, always (the store's rule)
+  nickname    TEXT CHECK (length(nickname) <= 30),   -- what this family calls them: "Mum"
+  color       TEXT NOT NULL CHECK (color GLOB '#[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'),
+  joined_at   TEXT NOT NULL,
+  invited_by  TEXT REFERENCES person (id),
+  left_at     TEXT                            -- left, or was removed; the row stays for the history that names them
+);
+CREATE UNIQUE INDEX member_color ON member (color) WHERE left_at IS NULL;
+
+-- What each member shares with the family (§11), and for how long their stays are kept.
+CREATE TABLE sharing (
+  person_id    TEXT PRIMARY KEY REFERENCES member (person_id),
+  level        TEXT NOT NULL CHECK (level IN ('precise', 'places', 'home-away', 'off')),
+  paused_until TEXT,                          -- 'off' until then, and the level after
+  keep_days    INTEGER NOT NULL DEFAULT 90 CHECK (keep_days BETWEEN 1 AND 366),
+                                              -- how long their stays are kept; the family may keep less, never more
+  set_by       TEXT NOT NULL REFERENCES person (id),  -- themselves, or an admin for a child
+  changed_at   TEXT NOT NULL
+);
+
+CREATE TABLE invitation (
+  id             TEXT PRIMARY KEY,            -- i-…
+  offers         TEXT NOT NULL CHECK (offers IN ('member', 'guest')),
+  role           TEXT CHECK (role IN ('admin', 'member', 'child')),  -- for a member
+  grant_id       TEXT REFERENCES access_grant (id),                  -- for a guest: the grant it hands over
+  for_person     TEXT REFERENCES person (id), -- a managed person it lets claim their record (§10.4); null: anyone
+  for_name       TEXT CHECK (length(for_name) <= 60),   -- who it is meant for, as the inviter said
+  secret_hash    TEXT NOT NULL,               -- SHA-256 of the one-time secret in the link
+  needs_approval INTEGER NOT NULL CHECK (needs_approval IN (0, 1)),
+  made_by        TEXT NOT NULL REFERENCES person (id),
+  made_at        TEXT NOT NULL,
+  expires_at     TEXT NOT NULL,
+  used_by        TEXT REFERENCES person (id),
+  used_at        TEXT,
+  approved_by    TEXT REFERENCES person (id),
+  revoked_at     TEXT,
+  CHECK ((offers = 'member') = (role IS NOT NULL)),
+  CHECK ((offers = 'guest') = (grant_id IS NOT NULL))
+);
+
+-- Access for someone who is not a member: the dog-sitter for a week. (GRANT is SQL's word, so access_grant.)
+CREATE TABLE access_grant (
+  id          TEXT PRIMARY KEY,               -- g-…
+  person_id   TEXT REFERENCES person (id),    -- null until an invitation is taken
+  home_id     TEXT NOT NULL REFERENCES home (id),
+  may         TEXT NOT NULL CHECK (may IN ('see', 'use', 'unlock')),  -- each allows the one before
+  since       TEXT NOT NULL,
+  until       TEXT,
+  made_by     TEXT NOT NULL REFERENCES person (id),
+  revoked_at  TEXT,
+  CHECK (until IS NULL OR until > since)
+);
+```
+
+### 8.4 Places: homes and zones
+
+A home and a zone are both places on the globe. Presence asks both the
+same way, so the geofence lives in one table. A home has more than a zone,
+so it has its own table too, one-to-one.
+
+```sql
+CREATE TABLE place (
+  id          TEXT PRIMARY KEY,               -- h-… a home, z-… a zone
+  kind        TEXT NOT NULL CHECK (kind IN ('home', 'zone')),
+  name        TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 60),
+  icon        TEXT,
+  latitude    REAL CHECK (latitude BETWEEN -90 AND 90),
+  longitude   REAL CHECK (longitude BETWEEN -180 AND 180),
+  radius      REAL CHECK (radius > 0),        -- metres: the geofence
+  outline     TEXT,                           -- a GeoJSON Polygon, when drawn: then it is the geofence, and radius its circle
+  time_zone   TEXT,                           -- IANA; a home's always (CHECK below)
+  street      TEXT, postal_code TEXT, locality TEXT, region TEXT,  -- the address, as written; all optional
+  country     TEXT CHECK (country GLOB '[A-Z][A-Z]'),  -- what Maps offers to download
+  created_at  TEXT NOT NULL,
+  removed_at  TEXT,
+  UNIQUE (id, kind),
+  CHECK ((latitude IS NULL) = (longitude IS NULL)),
+  CHECK ((latitude IS NULL) = (radius IS NULL)),       -- a geofence needs a centre, and a centre has one
+  CHECK (kind = 'home' OR latitude IS NOT NULL),       -- a zone is where it is; a home may not have said yet
+  CHECK (kind <> 'home' OR time_zone IS NOT NULL)
+);
+
+CREATE TABLE home (
+  id          TEXT PRIMARY KEY,
+  kind        TEXT NOT NULL DEFAULT 'home' CHECK (kind = 'home'),
+  type        TEXT NOT NULL CHECK (type IN ('house', 'apartment', 'cabin', 'boat', 'caravan', 'office', 'other')),
+  picture_id  TEXT REFERENCES media (id),
+  bearing     REAL NOT NULL DEFAULT 0 CHECK (bearing >= 0 AND bearing < 360),
+                                              -- degrees from north to the home's y axis: its frame on the globe (§8.7)
+  position    INTEGER NOT NULL,               -- its order among the family's homes
+  FOREIGN KEY (id, kind) REFERENCES place (id, kind)
+);
+
+-- A home's own values, by a name the schema lists: today's per-database home_setting, per home.
+CREATE TABLE home_setting (
+  home_id    TEXT NOT NULL REFERENCES home (id),
+  key        TEXT NOT NULL CHECK (key IN ('policy.values', 'prices.area')),
+  value      TEXT NOT NULL,                   -- JSON
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (home_id, key)
+);
+```
+
+- **Moving house is a new home.** The old one is archived. What was
+  recorded there stays the old home's.
+- **A person's private places** ("my therapist") have the same columns,
+  in their personal store, and never reach the family.
+
+### 8.5 Spaces
+
+A tree within a home. The home's `site` is its root. A space's parent is
+in the same home, and a composite foreign key makes it so.
 
 | Kind | What | Parent |
 | --- | --- | --- |
-| `building` | A house, a garage, a guest cottage on the same land | The home |
-| `floor` | A storey: its level (0 ground, 1 up, -1 a basement) and elevation in metres | A building |
-| `room` | A kitchen, a bedroom, a hallway | A floor |
-| `area` | Part of a room: the sofa corner, the desk | A room |
-| `stairs` | A stairwell, joining floors | A building, spanning floors |
-| `outdoor` | The garden, the driveway, a terrace | The home |
+| `site` | The home's ground: where "in the cabin, room not said" is placed | None (one per home) |
+| `building` | The house, a garage, a guest cottage | The site |
+| `floor` | A storey, with its level and elevation | A building |
+| `room` | A kitchen, a hallway | A floor |
+| `area` | Part of a room: the sofa corner | A room |
+| `stairs` | A stairwell. The floors it joins are its openings | A building |
+| `outdoor` | The garden, the driveway, a terrace | The site |
 
-- **Holds:** a name, a kind, a parent, an icon. Optionally an outline (a
-  polygon in metres, in the home's frame) and a height. Rooms without
-  geometry are fine: most people will name rooms long before they draw
-  them.
-- **Openings** connect spaces: `(from, to, kind, device)`, where `to` may
-  be "outside". Kinds: `door`, `opening`, `stairs`, `window`, `gate`,
-  `garage-door`, `elevator`. An opening may name its device: a door's
-  contact sensor or lock, a window's sensor. **The openings are the graph
-  presence moves along.** Someone seen in the hallway and then the kitchen
-  moved through the door between them. A window is open while the heating
-  is on.
-- **Changes:** overwritten and audited. A space with history (placements,
-  occupancy) is archived when removed, not deleted.
+```sql
+CREATE TABLE space (
+  id          TEXT PRIMARY KEY,               -- s-…
+  home_id     TEXT NOT NULL REFERENCES home (id),
+  parent_id   TEXT,
+  kind        TEXT NOT NULL CHECK (kind IN ('site', 'building', 'floor', 'room', 'area', 'stairs', 'outdoor')),
+  purpose     TEXT CHECK (purpose IN ('kitchen', 'living', 'dining', 'bedroom', 'children', 'guest', 'bathroom',
+                                      'toilet', 'hallway', 'office', 'laundry', 'storage', 'utility', 'garage',
+                                      'gym', 'sauna', 'other')),
+                                              -- what a room is for: icons, defaults, "every bathroom"; null: not said
+  name        TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 60),
+  icon        TEXT,
+  picture_id  TEXT REFERENCES media (id),
+  position    INTEGER NOT NULL DEFAULT 0,     -- its order among its siblings
+  level       INTEGER,                        -- a floor's: 0 the ground floor, -1 below it
+  elevation   REAL,                           -- a floor's: metres above the site's ground
+  height      REAL CHECK (height > 0),        -- metres floor to ceiling: with the outline, a room's volume
+  -- Its frame (§8.7): where its origin is, and how it is turned, in its parent's frame. Null: its parent's frame.
+  frame_x     REAL, frame_y REAL,
+  frame_turn  REAL CHECK (frame_turn >= 0 AND frame_turn < 360),
+  outline     TEXT,                           -- a GeoJSON Polygon in metres, in its own frame; not WGS 84
+  created_at  TEXT NOT NULL,
+  removed_at  TEXT,
+  UNIQUE (home_id, id),
+  FOREIGN KEY (home_id, parent_id) REFERENCES space (home_id, id),
+  CHECK ((kind = 'site') = (parent_id IS NULL)),
+  CHECK ((kind = 'floor') = (level IS NOT NULL)),
+  CHECK (kind = 'floor' OR elevation IS NULL),
+  CHECK ((frame_x IS NULL) = (frame_y IS NULL) AND (frame_x IS NULL) = (frame_turn IS NULL))
+);
+CREATE UNIQUE INDEX space_site ON space (home_id) WHERE kind = 'site';
 
-### 5.7 Zone
+-- A drawing of a floor, placed in its frame: what rooms are traced over.
+CREATE TABLE floor_plan (
+  space_id    TEXT PRIMARY KEY REFERENCES space (id),  -- a floor (the store's rule)
+  media_id    TEXT NOT NULL REFERENCES media (id),
+  scale       REAL NOT NULL CHECK (scale > 0),         -- metres per pixel
+  x           REAL NOT NULL, y REAL NOT NULL,          -- where the image's top-left corner falls, in the floor's frame
+  turn        REAL NOT NULL DEFAULT 0
+);
 
-A named place beyond a home: school, work, the gym, grandparents'.
-`z-…`. A family's, shared by all its members.
+-- Where two spaces meet, or a space meets the outside: what presence moves along.
+CREATE TABLE opening (
+  id          TEXT PRIMARY KEY,               -- o-…
+  home_id     TEXT NOT NULL,
+  from_id     TEXT NOT NULL,
+  to_id       TEXT,                           -- null: outside
+  kind        TEXT NOT NULL CHECK (kind IN ('door', 'opening', 'stairs', 'window', 'gate', 'garage-door', 'elevator')),
+  name        TEXT CHECK (length(name) <= 60),-- "Front door"
+  shape       TEXT,                           -- a GeoJSON LineString in metres, in from_id's frame: where in the wall
+  removed_at  TEXT,
+  FOREIGN KEY (home_id, from_id) REFERENCES space (home_id, id),
+  FOREIGN KEY (home_id, to_id) REFERENCES space (home_id, id),
+  CHECK (to_id IS NULL OR to_id <> from_id)
+);
+```
 
-- **Holds:** a name, an icon, and a circle (centre and radius) or a
-  polygon. A home is a zone too: its geofence. Presence asks both the same
-  way.
-- **A person's private zones** ("my therapist") live only in their
-  personal store, and never reach the family (§9).
+- **An opening has no device column.** A door's contact sensor, its lock
+  and its doorbell are each *placed* at the opening (§8.7). That allows
+  any number of devices, each with its own history of standing there, and
+  what each does is its capabilities' to say.
+- **Two openings between the same two spaces are allowed.** A kitchen may
+  have two doors to the hallway.
 
-### 5.8 Device, again
+### 8.6 Devices, again
 
-What changes for a device:
+The `device` table keeps what it has, with three changes:
 
-- **It belongs to the family** because it is in the family's database, as
-  now.
-- **Its mobility is its type's to declare** (a definition, in `meta`):
+- `picture` becomes two columns, `picture_type` (its type's Nth) and
+  `picture_id` (a photo of its own, in `media`), at most one of them set.
+  This is the `own:<id>` reserved today.
+- Who switched and wrote, in `device_switch` and `device_write`, becomes an
+  actor (§6).
+- Its type declares a **mobility** in `meta`: `fixed`, `portable`,
+  `carried`, `vehicle` or `service`. It is a hint and never a rule. It
+  decides what the app offers first: "which room is it in?" for a plug,
+  "who carries it?" for a phone. Any device may still be placed, and any
+  device may still report a position.
 
-  | Mobility | Examples | Where it is |
-  | --- | --- | --- |
-  | `fixed` | A plug, a thermostat, a station | Its placement |
-  | `portable` | A sensor moved now and then, a lamp on a cable | Its placement, which changes |
-  | `carried` | A phone, a watch, earbuds, a tag | Its position, and the person who carries it |
-  | `vehicle` | A car, a scooter, a bike | Its position, and its trips; a home it is based at |
-  | `service` | A weather forecast, electricity prices | No place, only the home its values are for |
+What a household keeps about a thing it bought, one-to-one, only when
+given:
 
-- **A home it is for.** A service such as weather or prices needs a home
-  for its place (§5.5). Placing it in that home says so.
+```sql
+CREATE TABLE device_asset (
+  device_id      TEXT PRIMARY KEY REFERENCES device (id) ON DELETE CASCADE,
+  bought_on      TEXT,                        -- YYYY-MM-DD
+  bought_from    TEXT,
+  price          INTEGER,                     -- minor units
+  currency       TEXT CHECK (currency GLOB '[A-Z][A-Z][A-Z]'),
+  warranty_until TEXT,                        -- YYYY-MM-DD
+  notes          TEXT,
+  CHECK ((price IS NULL) = (currency IS NULL))
+);
+```
 
-### 5.9 Placement
+### 8.7 Where a device is
 
-Where a device stands: in which home, and in which space.
+Every device can be somewhere, in two ways, and a device may have both:
 
-- **Holds** `(device, part, home, space, position, since, until)`:
-  - `space` may be empty ("in the cabin, room not said");
-  - `position` is optional: x, y, z in metres in the home's frame, a sensor's
-    height on the wall;
-  - `part` is `main` unless a part stands elsewhere (an outdoor probe on an
-    indoor station).
-- **Kept as intervals.** Moving the sensor from the bedroom to the kitchen
-  closes one placement and opens the next. Its readings are the kitchen's
-  from then on, and the bedroom's before. Charts, room views and
-  automations ask what the placement was at the time.
-- **A vehicle's placement** is where it is based (the garage), not where it
-  is now.
-- **Carried devices** have no placement. They follow the person.
+- **It says where it is.** A phone, a car or a tracker reports a
+  `position` reading. That is today's `device_reading`, and its `track`
+  when kept. A robot cleaner reports where it is on its own map of the
+  home. That is a position in a home's frame, below.
+- **A person marks where it is.** A plug, a thermostat or a sensor that
+  cannot say where it is gets placed: in a home, in a space, optionally
+  at coordinates in that space, optionally at an opening.
 
-### 5.10 A device and its people
+**Frames.** Coordinates within a home are metres in a frame:
 
-Who a device is with. `(device, person, role, since, until)`:
+- The site's frame is anchored to the globe by the home's place (its
+  origin) and its `bearing` (which way its y axis points).
+- Any space may have a frame of its own: an origin and a turn within its
+  parent's frame. A room drawn square to its own walls stays square
+  however the house sits.
+- A space without one uses its parent's frame.
+- Any point in any space can be turned into any other frame, or into
+  latitude and longitude, by walking up the tree.
 
-| Role | Means | What it gives |
-| --- | --- | --- |
-| `carries` | It goes where they go: a phone, a watch | Its position is the person's (§5.13) |
-| `drives` | Its usual driver: a car | Trips are theirs by default |
-| `owns` | It is theirs: an e-bike, a laptop | Shown as theirs; a later policy may limit others |
-| `uses` | Theirs to use, not to carry: a bedside lamp | Personal shortcuts, "my lamp" |
+Nothing has to be drawn for any of this to work. A device placed "in the
+kitchen" with no coordinates is the common case, and it is enough.
 
-Kept as intervals. A phone handed down to a child closes one row and opens
-another.
+```sql
+CREATE TABLE placement (
+  id          TEXT PRIMARY KEY,
+  device_id   TEXT NOT NULL REFERENCES device (id),
+  part        TEXT NOT NULL DEFAULT 'main',   -- a part standing apart: an outdoor probe
+  space_id    TEXT NOT NULL REFERENCES space (id),
+                                              -- the home is its space's; the site when no room is said
+  opening_id  TEXT REFERENCES opening (id),   -- on the front door, at the bedroom window
+  x REAL, y REAL,                             -- metres, in the space's frame
+  z           REAL,                           -- metres above the floor: a sensor's height on the wall
+  facing      REAL CHECK (facing >= 0 AND facing < 360),  -- degrees in the space's frame: a radar's, a camera's
+  role        TEXT NOT NULL DEFAULT 'stands' CHECK (role IN ('stands', 'based')),
+                                              -- based: where something that moves belongs, a car's garage
+  since       TEXT NOT NULL,
+  until       TEXT,
+  actor_kind  TEXT NOT NULL, actor_id TEXT, actor_name TEXT NOT NULL,   -- who placed it
+  CHECK ((x IS NULL) = (y IS NULL)),
+  CHECK (z IS NULL OR x IS NOT NULL),
+  CHECK (until IS NULL OR until > since)
+);
+CREATE UNIQUE INDEX placement_now ON placement (device_id, part) WHERE until IS NULL;
+```
 
-### 5.11 Node, again
+- **Moving a device** closes one placement and opens the next. Its
+  readings are the old room's before that, and the new room's after.
+  Charts, room views and automations ask what the placement was at the
+  time of each reading.
+- **Where a device is, at a time,** is its reported position if it has a
+  current one. Otherwise it is its placement. For a car that is "based"
+  in the garage, it is the garage until its own position says otherwise.
+- **Coordinates of other kinds**, such as a robot cleaner's map, a UWB
+  anchor's grid or a beacon's estimate, are a position in a space's frame.
+  Today's `position` value is latitude and longitude. When a device first
+  reports positions in a frame, the value gains a `frame` (a space's id)
+  and coordinates in metres. The table above needs no change for that.
 
-As now: the hub running somewhere, with its traits. Two additions:
+### 8.8 A device and its people
 
-- **The home it stands in**, if it is fixed: the server in the house, a
-  node at the cabin. A phone stands in none, because it moves.
-- **Several homes need several nodes.** The master in the house cannot reach the
-  cabin's local network. A node at the cabin holds the cabin's ways and
-  lends them to the master, as phones lend Bluetooth now (phase 6f). Whether
-  the cabin's node may also run the cabin's automations while the link is
-  down is decision 9 (§13).
+```sql
+CREATE TABLE device_person (
+  device_id   TEXT NOT NULL REFERENCES device (id),
+  person_id   TEXT NOT NULL REFERENCES person (id),
+  role        TEXT NOT NULL CHECK (role IN ('carries', 'drives', 'owns', 'uses')),
+                                              -- carries: its position is theirs; drives: its usual driver;
+                                              -- owns: it is theirs; uses: theirs to use, "my lamp"
+  since       TEXT NOT NULL,
+  until       TEXT,
+  PRIMARY KEY (device_id, person_id, role, since),
+  CHECK (until IS NULL OR until > since)
+);
+-- One carrier at a time, and one usual driver.
+CREATE UNIQUE INDEX device_person_one ON device_person (device_id, role) WHERE until IS NULL AND role IN ('carries', 'drives');
+```
 
-### 5.12 Things that move: trips
+### 8.9 Presence
 
-A trip is a vehicle's journey from where it stopped to where it next
-stopped. It is derived from its track: started and ended at, from and to (a
-home, a zone, or coordinates), distance, the driver, and, for an electric
-vehicle, the energy used. `trip`, kept two years by default. The same
-detection serves any `vehicle`. A person's own journeys come from their
-carried devices and are theirs (§9), not the family's.
+Where a person is, is not stored as a value. It comes from three things:
 
-### 5.13 Presence: where a person is
+- **Their position** is the freshest, most certain position of what they
+  carry, at what they share. It is computed, not kept: the device's
+  reading is the fact.
+- **Their stays:** at a home, in a zone, in a room. These are intervals,
+  and their open rows are where the person is now.
+- **What they share** (§11) decides what of either others see.
 
-The question a family asks most often: where is everyone?
+```sql
+CREATE TABLE presence_stay (
+  id          TEXT PRIMARY KEY,
+  person_id   TEXT NOT NULL REFERENCES person (id),
+  place_id    TEXT,                           -- a home or a zone
+  place_kind  TEXT CHECK (place_kind IN ('home', 'zone')),
+  space_id    TEXT REFERENCES space (id),     -- a room, at a home
+  since       TEXT NOT NULL,
+  until       TEXT,
+  device_id   TEXT REFERENCES device (id),    -- what placed them there
+  FOREIGN KEY (place_id, place_kind) REFERENCES place (id, kind),
+  CHECK ((place_id IS NULL) = (place_kind IS NULL)),
+  CHECK ((place_id IS NULL) <> (space_id IS NULL)),
+  CHECK (until IS NULL OR until > since)
+);
+-- At one home at a time, and in one room at a time. Zones may overlap: a workplace inside a town.
+CREATE UNIQUE INDEX presence_stay_home ON presence_stay (person_id) WHERE until IS NULL AND place_kind = 'home';
+CREATE UNIQUE INDEX presence_stay_room ON presence_stay (person_id) WHERE until IS NULL AND space_id IS NOT NULL;
+CREATE INDEX presence_stay_place ON presence_stay (place_id, since);
+```
 
-- **Geographic presence** comes from the devices a person `carries`. The
-  freshest, most certain position among them wins (a watch seen a minute ago
-  beats a phone seen an hour ago). From it: which home or zone they are in,
-  and, only if they share at that level, the coordinates.
-- **Room presence** comes from a home's sensors: motion, mmWave, a door
-  opening. When a person can be told apart (their watch over BLE, a phone
-  on UWB), it is theirs. Otherwise it is anonymous occupancy (§5.14).
-- **Current state** `(person, home, zone, space, latitude, longitude,
-  accuracy, at, source, confidence)` is replaced as it changes. Coordinates
-  are written only when the person shares precisely.
-- **Stays** `(person, scope, since, until, source)` are intervals: at home
-  from 17:42 to 08:10, at work, in the kitchen. They answer "who is home",
-  "when did Sam get home", "the last person left".
-- **What counts as "at home"** has hysteresis: arriving needs a fix inside
-  the geofence, leaving needs fixes outside it for a few minutes, so a GPS
-  wobble at the edge is not a departure. That is the rule's to say, and is
-  tuned per home.
+- **"Away"** is no open home stay.
+- **Arriving** needs a position inside the geofence. **Leaving** needs
+  positions outside it for some minutes. A GPS wobble at the edge is not a
+  departure. Each home tunes this.
+- **A room stay** needs a signal that tells people apart, such as their
+  watch heard by a room's receiver. Anything less is occupancy.
 
-### 5.14 Occupancy: whether a space has someone in it
+```sql
+-- Whether a space has someone in it, whoever they are: "the bathroom is empty".
+CREATE TABLE occupancy (
+  id          TEXT PRIMARY KEY,
+  space_id    TEXT NOT NULL REFERENCES space (id),
+  since       TEXT NOT NULL,                  -- occupied from …
+  until       TEXT,                           -- … to; null: still
+  peak        INTEGER CHECK (peak > 0),       -- the most there at once, when a sensor counts; a new count is not a new interval
+  CHECK (until IS NULL OR until > since)
+);
+CREATE UNIQUE INDEX occupancy_now ON occupancy (space_id) WHERE until IS NULL;
 
-Anonymous: whether a room is occupied, perhaps how many, since when, and
-from what evidence. `(space, since, until, count, evidence)` as intervals.
-Rooms with a person-level signal also feed presence (§5.13). Rooms without
-one stay anonymous, which is often all an automation needs ("the bathroom is
-empty, turn the fan off").
+CREATE TABLE occupancy_evidence (
+  occupancy_id TEXT NOT NULL REFERENCES occupancy (id) ON DELETE CASCADE,
+  device_id    TEXT NOT NULL REFERENCES device (id),
+  PRIMARY KEY (occupancy_id, device_id)
+);
+```
 
-### 5.15 Home mode
+### 8.10 Modes
 
-The state a home is in: `home`, `away`, `night`, `vacation`, or one the
-family adds. Set by a person, an automation, or presence ("the last person
-left"). Kept as intervals, so "how long were we away" and "vacation since
-the 3rd" are answers, not guesses. One mode per home at a time.
+A home is in a mode on each of two axes at once. Presence is `home`,
+`away` or `vacation`. The day is `day`, `evening` or `night`. So "on
+vacation, and it is night" is two open rows. A family may add its own
+modes to either axis.
 
-### 5.16 Automations, again
+```sql
+CREATE TABLE mode (
+  id          TEXT PRIMARY KEY,               -- 'home', 'away', 'vacation', 'day', 'evening', 'night'; m-… a family's own
+  axis        TEXT NOT NULL CHECK (axis IN ('presence', 'day')),
+  name        TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 30),
+  icon        TEXT,
+  built_in    INTEGER NOT NULL CHECK (built_in IN (0, 1)),
+  UNIQUE (id, axis)
+);
 
-- **An automation belongs to the family**, and **may be for one home**. If
-  it is, its clock and its "home" are that home's. "Home page" shortcuts
-  become per home.
-- **Roles can be filled by** a person, a group of people ("anyone in the
-  family"), a home, a space, a zone, and devices as now. Triggers and
-  conditions follow: arrives, leaves, the first arrives, the last leaves, a
-  space becomes empty, a mode changes. These wait on the automation
-  language, paused since 2026-10-06
-  ([AUTOMATION-LANGUAGE-STATUS.md](AUTOMATION-LANGUAGE-STATUS.md)). The
-  model is ready for them before the language is.
-- **"For whom":** an automation acting on a person's behalf ("my morning")
-  names them, and the timeline says so.
+CREATE TABLE home_mode (
+  home_id     TEXT NOT NULL REFERENCES home (id),
+  mode_id     TEXT NOT NULL,
+  axis        TEXT NOT NULL,
+  since       TEXT NOT NULL,                  -- may lie ahead: vacation from Saturday
+  until       TEXT,
+  actor_kind  TEXT NOT NULL, actor_id TEXT, actor_name TEXT NOT NULL,
+  PRIMARY KEY (home_id, axis, since),
+  FOREIGN KEY (mode_id, axis) REFERENCES mode (id, axis),
+  CHECK (until IS NULL OR until > since)
+);
+CREATE UNIQUE INDEX home_mode_now ON home_mode (home_id, axis) WHERE until IS NULL;
+```
 
-### 5.17 Grants
+### 8.11 Trips
 
-Access for someone who is not a member: the dog-sitter for a week, a
-neighbour with a key. `(person, home, what, since, until)`. What it gives:
-see, use the devices of one home, open its locks. It is time-bound,
-audited, and gives no location of anyone. A device shared on its own with
-another family is the same idea, later (§13).
+A vehicle's journey, from where it stopped to where it next stopped. Trips
+are found from positions as they arrive, whether or not the track is kept:
+the trip keeps the summary. Its path is in `track` when the track is kept,
+and is never copied.
 
-## 6. One picture
+```sql
+CREATE TABLE trip (
+  id          TEXT PRIMARY KEY,               -- t-…
+  device_id   TEXT NOT NULL REFERENCES device (id),
+  driver_id   TEXT REFERENCES person (id),    -- its usual driver, unless someone says otherwise
+  started_at  TEXT NOT NULL,
+  ended_at    TEXT,                           -- null: under way
+  from_place  TEXT REFERENCES place (id),     -- a home or zone it left, when it was in one
+  to_place    TEXT REFERENCES place (id),
+  from_lat REAL, from_lon REAL, to_lat REAL, to_lon REAL,
+  distance    REAL CHECK (distance >= 0),     -- metres
+  energy      REAL,                           -- Wh, when the vehicle says
+  CHECK (ended_at IS NULL OR ended_at > started_at)
+);
+CREATE INDEX trip_device ON trip (device_id, started_at);
+```
+
+### 8.12 Pictures and files
+
+Pictures of people, homes, rooms and devices, and floor plans. They are
+kept by their content.
+
+```sql
+CREATE TABLE media (
+  id           TEXT PRIMARY KEY,              -- the SHA-256 of its bytes, hex
+  type         TEXT NOT NULL CHECK (type IN ('image/webp', 'image/jpeg', 'image/png')),
+                                              -- no SVG: a picture never runs script
+  bytes        INTEGER NOT NULL CHECK (bytes BETWEEN 1 AND 2097152),
+  width        INTEGER NOT NULL CHECK (width > 0),
+  height       INTEGER NOT NULL CHECK (height > 0),
+  derived_from TEXT REFERENCES media (id) ON DELETE CASCADE,  -- a smaller copy of
+  variant      TEXT CHECK (variant IN ('thumb', 'screen')),   -- 256 px, 1280 px; null: as given
+  added_at     TEXT NOT NULL,
+  CHECK ((derived_from IS NULL) = (variant IS NULL))
+);
+
+-- The bytes apart, so listing pictures never reads them.
+CREATE TABLE media_data (
+  media_id TEXT PRIMARY KEY REFERENCES media (id) ON DELETE CASCADE,
+  data     BLOB NOT NULL
+);
+```
+
+- **Made small, and stripped, where they are added.** The phone or
+  browser re-encodes a picture as WebP, at most 2048 pixels on a side,
+  with its metadata removed: a photo's EXIF can say where it was taken,
+  and that must not leak.
+- **A picture nobody points at is collected.**
+- **Served** at `/api/media/<hash>`, cached for ever, since the name is
+  the content.
+- **Across a reset,** the configuration file names pictures by hash, and
+  the files beside it hold them (`config/media/<hash>.webp`).
+- **A receipt or a manual** (a PDF) would be a type more and a table
+  joining a device to its documents. Not yet (§16).
+
+### 8.13 Labels and shortcuts
+
+```sql
+-- Any grouping the family wants: "upstairs", "the kids", "heating". Across devices, spaces, people and automations.
+CREATE TABLE label (
+  id     TEXT PRIMARY KEY,                    -- l-…
+  name   TEXT NOT NULL UNIQUE CHECK (length(name) BETWEEN 1 AND 30),
+  color  TEXT,
+  icon   TEXT
+);
+
+CREATE TABLE labelled (
+  label_id      TEXT NOT NULL REFERENCES label (id) ON DELETE CASCADE,
+  device_id     TEXT REFERENCES device (id) ON DELETE CASCADE,
+  space_id      TEXT REFERENCES space (id) ON DELETE CASCADE,
+  person_id     TEXT REFERENCES person (id) ON DELETE CASCADE,
+  automation_id TEXT REFERENCES automation (id) ON DELETE CASCADE,
+  CHECK ((device_id IS NOT NULL) + (space_id IS NOT NULL) + (person_id IS NOT NULL) + (automation_id IS NOT NULL) = 1)
+);
+CREATE UNIQUE INDEX labelled_device ON labelled (label_id, device_id) WHERE device_id IS NOT NULL;
+CREATE UNIQUE INDEX labelled_space ON labelled (label_id, space_id) WHERE space_id IS NOT NULL;
+CREATE UNIQUE INDEX labelled_person ON labelled (label_id, person_id) WHERE person_id IS NOT NULL;
+CREATE UNIQUE INDEX labelled_automation ON labelled (label_id, automation_id) WHERE automation_id IS NOT NULL;
+
+-- Each person's own shortcuts on a home's page: replaces automation.home_place, which is one list for everyone.
+CREATE TABLE shortcut (
+  person_id     TEXT NOT NULL REFERENCES person (id),
+  home_id       TEXT REFERENCES home (id),    -- on that home's page; null: on every page
+  device_id     TEXT REFERENCES device (id) ON DELETE CASCADE,
+  automation_id TEXT REFERENCES automation (id) ON DELETE CASCADE,
+  space_id      TEXT REFERENCES space (id) ON DELETE CASCADE,
+  position      INTEGER NOT NULL CHECK (position >= 0),
+  CHECK ((device_id IS NOT NULL) + (automation_id IS NOT NULL) + (space_id IS NOT NULL) = 1)
+);
+CREATE UNIQUE INDEX shortcut_place ON shortcut (person_id, coalesce(home_id, ''), position);
+```
+
+### 8.14 Notifications
+
+"Tell Sam" needs Sam's devices, and a record of what was said.
+
+```sql
+-- Where a node can be woken with a message: a phone's push token. Replaced as the platform renews it.
+CREATE TABLE push_endpoint (
+  node_id     TEXT PRIMARY KEY REFERENCES node (id) ON DELETE CASCADE,
+  provider    TEXT NOT NULL CHECK (provider IN ('apns', 'fcm', 'webpush')),
+  token       TEXT NOT NULL,                  -- a secret in effect: kept as connection secrets are
+  updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE notification (
+  id          TEXT PRIMARY KEY,
+  person_id   TEXT NOT NULL REFERENCES person (id),
+  home_id     TEXT REFERENCES home (id),      -- the home it is about, if one
+  level       TEXT NOT NULL CHECK (level IN ('info', 'warning', 'alarm')),
+  title       TEXT NOT NULL,
+  body        TEXT,
+  actor_kind  TEXT NOT NULL, actor_id TEXT, actor_name TEXT NOT NULL,   -- who said it: an automation, a device's event
+  at          TEXT NOT NULL,
+  delivered_at TEXT,
+  read_at     TEXT
+);
+CREATE INDEX notification_person ON notification (person_id, at);
+```
+
+Which notifications a person wants, and their quiet hours, are their own
+settings, in their personal store.
+
+### 8.15 Nodes, the timeline, automations, again
+
+- **`node`** gains `person_id` (whose phone it is, null for the family's
+  own machines) and `home_id` (the home a fixed node stands in, null for
+  one that moves). Neither decides who may do anything. **A request
+  carries its person through sign-in, never through the node**, so a
+  shared laptop is no one's.
+- **`node_address`** `(node_id, url, reach: 'lan' | 'public', last_ok_at)`
+  holds where a node can be reached. An invitation hands these out, and a
+  phone in two families keeps them per family.
+- **`audit`** has these fields:
+  - `at`, `kind`;
+  - the actor (§6), `for_person` (whom an automation acted for), and
+    `via_node`;
+  - `home_id`, the home it is about, if one, so a guest sees only their
+    home's;
+  - `resource_kind`, which also allows `family`, `person`, `member`,
+    `home`, `zone`, `space`, `opening`, `invitation`, `grant`, `label` and
+    `mode`;
+  - `resource`, `summary`, `detail`.
+
+  It has no foreign keys, as a record of what happened (§6).
+- **`automation`** gains:
+  - `home_id`, the home it is for. Its clock is that home's unless it
+    says its own, so `time_zone` may be null and then means the home's.
+    CHECK that it has one or the other.
+  - `owner_id`, the person whose own automation it is ("my morning").
+    Null means it is the family's.
+
+  `home_place` goes to `shortcut`. `automation_run.started_by` becomes
+  an actor.
+
+## 9. One picture
 
 ```mermaid
 erDiagram
-  person ||--o{ credential : "proves itself with"
-  person ||--o{ membership : "is in"
-  family ||--o{ membership : "has"
+  person ||--o{ person_key : "signs with"
+  person ||--o{ person_contact : "is reached at"
+  person ||--o| member : "is"
+  member ||--o| sharing : "shares"
+  family ||--o{ member : "has"
   family ||--o{ invitation : "invites with"
-  family ||--o{ home : "has"
-  family ||--o{ zone : "names"
-  family ||--o{ node : "runs on"
-  family ||--o{ device : "has"
-  family ||--o{ automation : "has"
-  family |o--|| node : "is mastered by"
+  place ||--o| home : "is"
+  home ||--o{ home_setting : "keeps"
   home ||--o{ space : "contains"
   space ||--o{ space : "contains"
-  space ||--o{ opening : "opens to"
-  opening }o--o| device : "is sensed by"
-  home ||--o{ placement : "places"
-  space ||--o{ placement : "places"
-  device ||--o{ placement : "stands, over time"
+  space ||--o| floor_plan : "is drawn by"
+  space ||--o{ opening : "opens"
+  device ||--o{ placement : "stood, over time"
+  space ||--o{ placement : "holds"
+  opening ||--o{ placement : "is sensed by"
   device ||--o{ device_person : "is with"
   person ||--o{ device_person : "carries, drives, owns, uses"
-  node }o--o| home : "stands in"
   device ||--o{ track : "has been"
   device ||--o{ trip : "travelled"
-  person ||--o| presence : "is now"
-  person ||--o{ presence_stay : "has been"
+  person ||--o{ presence_stay : "stayed"
+  place ||--o{ presence_stay : "was stayed at"
+  space ||--o{ presence_stay : "was stayed in"
   space ||--o{ occupancy : "was occupied"
-  home ||--o{ home_mode : "was in mode"
-  person ||--o{ grant : "is granted"
-  home ||--o{ grant : "grants"
+  home ||--o{ home_mode : "was in"
+  mode ||--o{ home_mode : "is"
+  person ||--o{ access_grant : "is granted"
+  home ||--o{ access_grant : "grants"
+  label ||--o{ labelled : "marks"
+  person ||--o{ shortcut : "keeps"
+  person ||--o{ notification : "is told"
+  node ||--o| push_endpoint : "is woken at"
+  node }o--o| home : "stands in"
+  node }o--o| person : "is the phone of"
   automation }o--o| home : "is for"
-
-  person {
-    text id PK "p-… · made on their own device"
-    text name
-    text kind "human"
-    text color
-  }
-  family {
-    text id PK "f-… · today's home row"
-    text name
-    text master_id FK
-  }
-  membership {
-    text family_id FK
-    text person_id FK
-    text role "admin · member · child"
-    text since
-    text until "null: now"
-  }
-  home {
-    text id PK "h-…"
-    text name "Home · Lake cabin"
-    real latitude
-    real longitude
-    real radius "metres"
-    text time_zone
-    text removed_at
-  }
-  space {
-    text id PK "s-…"
-    text home_id FK
-    text parent_id FK
-    text kind "building · floor · room · area · stairs · outdoor"
-    int level "floors"
-  }
-  placement {
-    text device_id FK
-    text part "main"
-    text home_id FK
-    text space_id FK
-    text since
-    text until
-  }
+  media ||--o{ media : "is made smaller as"
 ```
 
-## 7. Time: what changes, and how each is kept
+## 10. Identity: keys, devices, loss and recovery
 
-| Fact | Kept as | Where | Retention | In the configuration file |
-| --- | --- | --- | --- | --- |
-| A person's name, picture, colour | Overwritten, audited | `person` | Always | Yes |
-| A credential | Added, revoked | `credential` | Always, revoked kept | Public keys yes; hashes never |
-| Who is in the family, in what role | Intervals | `membership` | Always | The current ones |
-| What each person shares | Overwritten, audited | `sharing` | Always | No: each person's own, given again on joining |
-| A home's name, place, geofence, zone | Overwritten, audited | `home` | Always; archived when left | Yes |
-| Rooms, floors, openings | Overwritten, audited | `space`, `opening` | Archived when removed | Yes |
-| Where a device stands | Intervals | `placement` | Always | The current one |
-| Who a device is with | Intervals | `device_person` | Always | The current ones |
-| What a device reads | Series | `sample`, `sample_hour`, `sample_change` (as now) | 14 days, 2 years (as now) | No |
-| What a device last said | Current state | `device_reading` (as now) | Replaced | No |
-| Where a device has been | Series | `track` (as now) | Its owner's days | Only "kept, for so long" |
-| Where a person is now | Current state | `presence` | Replaced | No |
-| Where a person has been: home, zone, room | Intervals | `presence_stay` | 90 days, the family's to change; less if the person says so | No |
-| Whether a room is occupied | Intervals | `occupancy` | 30 days | No |
-| A home's mode | Intervals | `home_mode` | 2 years | No |
-| A vehicle's trips | Derived intervals | `trip` | 2 years | No |
-| What a device said happened | Events | `device_event` (as now) | 1 year | No |
-| Who did what | Events | `audit` (§8) | 1 year | No |
-| Automations, their memory and runs | As now | `automation…` | As now | The automations |
+### 10.1 A person is their first key
 
-The interval pattern is the same everywhere: `since` and `until`, with
-`until` null for what is true now, and a partial unique index allowing at
-most one open row per subject. Asking "what was true at t" is
-`since <= t AND (until IS NULL OR until > t)`.
+Signing up on a phone makes a key pair there. The private half is
+non-extractable: Web Crypto in a browser, the platform's keystore on a
+phone. It also makes a person id, and the **person record**: the id, the
+first key, the name and when. The first key signs it. Every later change
+to the profile, and every key added or revoked, is a statement signed by a
+key the person already has, kept in order. A family that is shown a person
+checks the chain. Whoever joins cannot present someone else's id, because
+they cannot sign as them.
 
-## 8. Logs
+The id is not the key's fingerprint. That would make the id change when the
+key does. The id stays, and the keys come and go under it.
 
-Five logs, each with one job:
+### 10.2 A second device, and a recovery key
 
-| Log | Says | Who sees it | Kept |
-| --- | --- | --- | --- |
-| **The timeline** (`audit`) | Who changed what: a device switched, a room renamed, a person invited | Admins and members. A child sees what concerns them | 1 year |
-| **Device events** (`device_event`) | What a device said happened: a trip, a button | Everyone in the family | 1 year |
-| **Presence** (`presence_stay`, `occupancy`) | Arrived, left, which room | Per the person's sharing (§10). Never in the timeline | §7 |
-| **Automation runs** (`automation_run…`) | Each run, its steps and the values it saw | Everyone in the family | As now |
-| **The node's own log** (files, the broker's journal) | What the process did: connections, errors | The node's operator | 2 weeks (as now) |
+- **A second device** makes its own key. An existing device signs it in,
+  for example by scanning a code. Private keys never move between devices.
+- **A recovery key** is made at sign-up and shown once, as words to write
+  down. Its public half is a key like any other (`kind: 'recovery'`).
+  With it, a person who has lost every device signs in a new one and
+  revokes the rest.
 
-The timeline needs more than it has:
+### 10.3 A lost phone
 
-- **The actor**, as a reference rather than a name: `(actor_kind, actor_id)`.
-  The kind is `person`, `automation`, `node`, `integration` or `system`.
-  Also `on_behalf_of`: the person an automation acted for. And `via_node`:
-  where it was done (the phone in someone's hand, the server).
-- **More resources:** `family`, `home`, `space`, `zone`, `person`,
-  `membership`, `grant`, beside today's.
-- **Scope:** the home an entry is about, if any, so a home's timeline is
-  one query, and a guest with a grant sees only that home's entries.
-- **No presence on the timeline.** "Sam arrived home" is presence, kept
-  and shown by its own rules. The timeline records "Sam changed what Sam
-  shares", not where Sam went.
+Any remaining key of the person signs a revocation. Their phone sends it
+to every family they are in. Each master marks the key revoked, and that
+key's sign-ins end. With no key left and no recovery key, each family's
+admins vouch for a new key in their own family. That is weaker by design,
+and the timeline says so.
 
-## 9. Where each thing lives
+### 10.4 A person someone else keeps
 
-Two kinds of store, and what may cross between them:
+A small child is made by an admin, with no key, `managed_by` that admin. In
+a second family (the other parent's), they are a second managed record. The
+day the child has a phone, they sign up as themselves. Each family invites
+them with `for_person` naming its managed record. Taking the invitation
+**claims** the record: in one transaction in that family's database, the
+managed id becomes the child's own id everywhere it is used. Their history
+in each family becomes theirs.
 
-- **The family's database:** one per family, on its master, copied to every
-  node that follows it (as now). It holds the family, its members and
-  their public keys, homes, spaces, zones, devices, placements, automations,
-  the timeline, and the presence each member shares at the level they share it.
-- **A person's personal store:** on their own phone, and in their browser if
-  they sign in there. It holds:
-  - their private key (sealed by the platform);
-  - which families they are in, and the masters' addresses;
-  - their own settings;
-  - their private zones;
-  - their own location history, if they keep it for themselves;
-  - invitations they have been sent.
+### 10.5 Signing in at a node
 
-  It is a small database of its own, with a schema of its own, beside the
-  family copies a phone already keeps.
+A node knows a person by a key it can challenge, a passkey registered
+there, or a password set there. Those are the node's, in its own database
+(§7):
 
-What crosses:
+- `login` holds `(id, person_id, kind: 'password' | 'passkey' | 'apple' |
+  'google', subject, secret, sign_count, added_at, last_used_at,
+  revoked_at)`, unique on `(kind, subject)` within that node.
+- `login_session` names the person.
+- `operator` is `(person_id, since)`.
 
-- **Person to family:** the person record and public key when joining; then
-  presence, at the level shared. **Nothing more precise than they share ever
-  leaves their phone.** The level is applied on the phone, before sending,
-  not by the master after receiving.
-- **Family to person:** the family's copy, as followers get now.
-- **Across a reset:** the configuration file carries the family, its
-  members (ids, names, roles, public keys), homes, spaces, openings, zones,
-  current placements and who carries what. It never carries presence, tracks,
-  passwords or private keys. Server passwords are carried as accounts now
-  are: copied from the set-aside database (DATA-MODEL.md §5).
+Today's `users` become these. A passkey is bound to the node's address by
+WebAuthn, so it could never be anything but the node's.
 
-**A phone alone is a whole kraftverk.** Someone with no server signs up on
-their phone, makes a family of one, adds their home, and their phone is the
-master. When a partner joins with their phone, the more fitting node stays
-master (phase 6j). Adding a server later moves the master to it, as now.
+## 11. Privacy and presence
 
-## 10. Access and privacy
+### 11.1 The levels
 
-**Roles** (membership) say what someone may do:
-
-| | Admin | Member | Child | Guest (a grant) |
-| --- | --- | --- | --- | --- |
-| Use devices | All | All | What admins allow | One home's, as granted |
-| Change devices, rooms, automations | Yes | Yes | No | No |
-| Invite, remove people; nodes; homes | Yes | No | No | No |
-| See the timeline | All | All | What concerns them | One home's |
-| See where others are | As each shares | As each shares | As each shares | Never |
-
-**Location sharing** is the person's, per family, at one of four levels:
-
-| Level | The family sees |
+| Level | Others see |
 | --- | --- |
-| `precise` | The position on the map, and their trail if kept |
+| `precise` | The position on the map, and the trail of what they carry when kept |
 | `places` | Which home, zone or room they are in, never coordinates |
 | `home-away` | Only whether they are at one of the family's homes |
 | `off` | Nothing. Automations cannot see them either |
 
-- The person chooses when they join, and can change it at any time. Changing it is
-  on the timeline, and the switch is shown to them where they would expect it.
-- For a child, an admin sets the level, and the child's own screen says
-  what is shared and with whom.
-- Pausing ("don't share for the next 2 hours") is a level with an end.
-- An automation sees a person at their level. "When Sam gets home" works
-  with `home-away`. "When Sam is 10 minutes away" needs `precise`, and
-  says so when written.
+### 11.2 Where it is enforced
 
-## 11. From today's schema
+- **The master answers each reader** at what each person shares:
+  - a device a person carries shows its position only to readers who may
+    see it;
+  - stays show only at `places` or above;
+  - a person at `off` has nothing to show.
+
+  This is the guarantee, since the master is where everything is asked.
+- **What the family's database keeps** follows the level too. For a
+  device a person carries:
+  - at `precise`, its position is kept as a reading, and as a track when
+    its track is on;
+  - below `precise`, a position is used as it arrives, to open and close
+    stays, and is never stored. When a person's level falls, their
+    carried devices' tracks are deleted.
+- **A phone that is the source** sends no more than its person shares, so
+  the master never has more. That is an extra guarantee, not the only
+  one. A carried device reporting through a vendor's cloud (Find My, a
+  car, a scooter) reaches the master in full, whatever the level. The two
+  rules above are what protect it.
+
+### 11.3 One level per family, for now
+
+Apple and Google let a person share differently with each person. Here,
+the master filters per reader, so that is possible later: `sharing` would
+gain an audience. It starts as one level for the whole family, because
+that is the choice a person can understand. When the phone is the source,
+it then sends the most precise level any audience gets.
+
+### 11.4 A person's own history
+
+A person's journeys, beyond what the family keeps, are theirs. Their phone
+can keep its own trail in their personal store, for them alone, whatever
+they share.
+
+### 11.5 Children
+
+An admin sets a child's level. The child's own screen says what is shared,
+and with whom.
+
+### 11.6 Erasure
+
+A person who leaves can ask to be forgotten. In each family:
+
+- their name becomes "Someone who left", and their picture and contacts
+  are deleted;
+- their stays, their keys' public halves, and their tracks are deleted;
+- the timeline's `actor_name` for them is replaced.
+
+Their id stays, so history still adds up and points at no one.
+
+## 12. Time: what changes, and how each is kept
+
+| Fact | Kept as | Table | Retention | In the configuration file |
+| --- | --- | --- | --- | --- |
+| The family's name, kind, picture | Overwritten, audited | `family` | Always | Yes |
+| A person's profile | Overwritten by a newer copy | `person` | Until erased | Yes, ids verbatim |
+| A person's keys | Added, revoked | `person_key` | Always | Public halves, yes |
+| Membership, role, nickname, colour | Overwritten, audited; role changes on the timeline | `member` | Always | Yes |
+| What each shares, how long stays are kept | Overwritten, audited | `sharing` | Always | Yes: a reset must not share more than was chosen |
+| Homes, zones, addresses | Overwritten, audited; archived when left | `place`, `home` | Always | Yes |
+| Spaces, floor plans, openings | Overwritten, audited; archived | `space`, `floor_plan`, `opening` | Always | Yes |
+| Where a device stands | Intervals | `placement` | Always | The open one |
+| Who a device is with | Intervals | `device_person` | Always | The open ones |
+| What a device reads, as now | Series | `sample` and the rest | 14 days, 2 years | No |
+| Where a device has been | Series | `track` | Its own days; for a carried one, only at `precise` | Only "kept, for so long" |
+| Where people have been | Intervals | `presence_stay` | Each person's `keep_days` | No |
+| Whether a room is occupied | Intervals | `occupancy` | 30 days | No |
+| A home's modes | Intervals | `home_mode` | 2 years | The family's own modes |
+| Trips | Derived intervals | `trip` | 2 years | No |
+| Notifications | Events | `notification` | 90 days | No |
+| Who did what | Events | `audit` | 1 year | No |
+
+## 13. Logs
+
+| Log | Says | Who sees it | Kept |
+| --- | --- | --- | --- |
+| **The timeline** (`audit`) | Who changed what: a device switched, a room renamed, a person invited | Admins and members. A child sees what concerns them. A guest sees their home's | 1 year |
+| **Device events** | What a device said happened | Everyone in the family | 1 year |
+| **Presence** (`presence_stay`, `occupancy`) | Arrived, left, which room | Per each person's level. Never on the timeline | §12 |
+| **Notifications** | What was said to whom | The person told | 90 days |
+| **Automation runs** | Each run, its steps, the values it saw | Everyone in the family | As now |
+| **A node's own log** (files, the broker's journal) | What the process did | The node's operator | 2 weeks |
+
+The timeline records "Sam changed what Sam shares", never where Sam went.
+
+## 14. The configuration file, version 10
+
+The one versioned contract, so every new entity needs a key or an id in it:
+
+- **Keys** (lowercase, digits, dashes, changeable): homes, zones, spaces
+  (unique within their home), openings (unique within their home),
+  labels, and a family's own modes. Placements and automations refer to
+  them by key, as they refer to devices now.
+- **People are keyed by a key for the file**, and carry their **id
+  verbatim**, with their public keys. After a reset, a phone that signs
+  as that id is that person again.
+- **Pictures** are named by hash, with the files beside it.
+- **Never in it:** stays, occupancy, tracks, trips, notifications,
+  passwords, private keys.
+
+```yaml
+kraftverk: 10
+family: { name: The Examples, kind: family, locale: en-GB }
+
+people:
+  anna:
+    id: p-01JA8ZK3Q4R7T9V2W5X6Y8Z0AB
+    name: Anna Example
+    short name: Anna
+    role: admin
+    color: "#3b82f6"
+    sharing: { level: places, keep: 90 days }
+    keys:
+      - { id: k-…, kind: device, public: { kty: EC, crv: P-256, x: …, y: … } }
+  sam:
+    id: p-01JA8ZM0D2E4F6G8H0J2K4M6N8
+    name: Sam
+    role: child
+    managed by: anna
+    color: "#f59e0b"
+    sharing: { level: precise, keep: 30 days }
+
+homes:
+  home:
+    name: Home
+    type: house
+    location: { latitude: 51.48, longitude: 0, radius: 150 }
+    time zone: Europe/London
+    spaces:
+      house:
+        kind: building
+        spaces:
+          ground-floor:
+            kind: floor
+            level: 0
+            spaces:
+              hallway: { kind: room, purpose: hallway }
+              kitchen: { kind: room, purpose: kitchen }
+      garage: { kind: building, purpose: garage }
+    openings:
+      front-door: { kind: door, from: hallway, to: outside }
+
+zones:
+  school: { name: School, location: { latitude: 51.49, longitude: 0.01, radius: 200 } }
+
+devices:
+  front-door-sensor:
+    type: acme.contact
+    name: Front door
+    place: { home: home, space: hallway, opening: front-door }
+  car:
+    type: acme.car
+    name: Car
+    based: { home: home, space: garage }
+    people: { drives: anna }
+  annas-phone:
+    type: acme.phone
+    name: Anna's phone
+    people: { carries: anna }
+```
+
+## 15. Scaling
+
+- **A family is a database.**
+  - The hosted service is many small databases. Isolation holds by
+    construction, and a family's data can be moved or deleted as one file.
+  - ACCOUNTS.md's rule that every route names its home becomes every
+    route naming its family. Homes are scoped inside it.
+- **The big tables are the series:** samples, tracks, presence stays. They
+  are narrow, indexed by subject and time, pruned on a timer, and bounded
+  by one family's devices and people. A family with 200 devices and a
+  minute's samples is millions of rows a fortnight, which SQLite handles.
+  The hourly roll-ups carry the long view.
+- **Indexes follow the questions asked:**
+  - by subject and time for every interval and series;
+  - partial unique indexes for "now";
+  - by place and time for "who was here".
+- **Ids made anywhere** (ULIDs) mean a follower, a phone or a second
+  master can make rows offline, and nothing collides if two writers are
+  ever allowed (decision 9).
+- **Pictures** are capped and deduplicated, with their bytes kept apart.
+  Where SQLite blobs grow too large, the bytes move to files, by hash,
+  without the table changing.
+- **Many homes** (a family renting out ten cabins) scale as homes, each with
+  its own spaces, modes, settings and nodes. Nothing assumes one.
+- **Many people** (an office as a "family") are members and labels, and
+  the per-reader filter at the master is per request, not per row.
+
+## 16. Considered, and left out until a feature needs it
+
+| Field or table | Why not now |
+| --- | --- |
+| A person's birth date | Only a child's age would use it, and the role says enough. It is personal data with no purpose yet |
+| Gender, pronouns | The app writes "they" and names people. Nothing needs it |
+| A given and family name split | Names are not split the same way everywhere. One name and a short name serve every screen |
+| Health, routines, calendars | Each comes with its integration, as data that integration owns |
+| Documents (receipts, manuals) | A PDF type in `media`, and a device-document table, when the asset view is built |
+| A person-to-person sharing audience | §11.3: possible later, without changing the levels |
+| Two writers per family (a cabin's node running the cabin) | Decision 9 |
+| Pets as members | `person.kind` gains `pet` when a tag on a collar needs it |
+| A home's energy tariff in tables | `home_setting` until it has a shape of its own |
+
+## 17. From today's schema
 
 | Today | Becomes |
 | --- | --- |
-| `home` (the root: id, name, master, location) | `family` (id, name, master). Its location moves to the first `home` |
-| — | `home` (properties), `space`, `opening`, `zone`, `placement`, `device_person` |
-| `users`, `login_session` (the server's) | `credential` of kind `password`, of a `person`; `login_session` names the person. Operator a flag on the node's record of a person |
-| — | `person`, `membership`, `sharing`, `invitation`, `grant` |
-| `node` (account_id) | `node` (person_id: whose phone it is, null for the family's own nodes; home_id: where it stands) |
-| `home_setting` (policy, moved, kept) | Policy and price area per home; moved and kept stay the node's |
-| `automation` (time_zone, home_place) | Adds `home_id`; the time zone is the home's unless said; shortcuts per home |
-| `audit` (actor as a name) | Actor kind and id, on behalf of, via node, home scope, more resource kinds |
-| `track` | As built. Read alongside who carries the device |
-| — | `presence`, `presence_stay`, `occupancy`, `home_mode`, `trip` |
-| The configuration file, version 9 | Version 10: `family:`, `people:`, `homes:` each with `spaces:` and `openings:`, `zones:`, and on each device `home:`, `space:` and `people:` |
+| `home` (the root) | `family`. Its latitude and longitude become the first `place` and `home` |
+| `home_setting` (policy, moved, kept) | `home_setting` per home (policy). "Moved" and "kept" are about the node, and go to the node's database |
+| `users`, `login_session` | The node's database: `login`, `login_session` naming a person, `operator` |
+| `node.account_id` | `node.person_id`, `node.home_id`; `node_address`, `push_endpoint` |
+| `device.picture` | `picture_type` or `picture_id` |
+| `device_switch.switched_by`, `device_write.written_by`, `automation_run.started_by`, `audit.actor` | The actor's three fields (§6) |
+| `automation.time_zone`, `home_place` | `home_id`, `owner_id`, `time_zone` nullable; shortcuts per person |
+| Every id | Prefix and ULID |
+| — | `person`, `person_contact`, `person_key`, `member`, `sharing`, `invitation`, `access_grant`, `place`, `space`, `floor_plan`, `opening`, `device_asset`, `placement`, `device_person`, `presence_stay`, `occupancy`, `occupancy_evidence`, `mode`, `home_mode`, `trip`, `media`, `media_data`, `label`, `labelled`, `shortcut`, `notification` |
+| The configuration file, version 9 | Version 10 (§14) |
+| The device SDK | A device can ask for its home's place and time zone: what weather and prices are for. That is a port on its session |
 
-And in the code, at once (strict version 1): "home" as the root becomes
-"family" in the store, the hub, `KraftverkApi`, the configuration
-document, the app and the docs. "Home" from then on always means a
-property. It is a large rename, but a mechanical one, and leaving it would
-mean two meanings of the most common word in the code.
+"Home" as the root becomes "family" in the store, the hub, `KraftverkApi`,
+the configuration file, the app and the docs, all at once. "Home" then
+always means a property.
 
-## 12. The order of work
+## 18. The order of work
 
-Each step is green and pushed. The schema changes each time, so each sets
-the database aside and restores from the configuration file.
+The steps in brief. Each is cut into slices, with what changes where, the
+tests and when it is done, in
+[PLAN-WORLD-MODEL-WORK.md](PLAN-WORLD-MODEL-WORK.md). Each step is green,
+and pushed once, when it is done. The family's schema changes each time,
+so each push sets the family's database aside and restores it from the
+configuration file. From W1.3 on, sign-ins live apart and survive that.
 
-1. **W1. The root is the family.** The rename (§11). `family` and `home`
-   tables. Today's location becomes the first home. The policy goes per
-   home. Configuration version 10 with `family:` and `homes:`. In the app:
-   the home's settings become Homes (one, for now) under the family.
-   *Done when* nothing names the root a home, and a family has a home with
-   a place and a time zone.
-2. **W2. Rooms and where devices stand.** `space`, `opening`, `placement`.
-   In the configuration, and through the API. In the app: rooms and floors
-   of a home, a device's room in its settings, the home page grouped by
-   room, readings asked by where the device stood at the time. *Done when*
-   moving a sensor between rooms keeps each room's history right.
-3. **W3. People** (the next step the owner named): `person`, `credential`,
-   `membership`, `invitation`, and a person's personal store with a key made
-   on their device. Signing up makes a person. A person makes a family and
-   its first home. A node's users become people's credentials. The timeline
-   names people. *Done when* someone signs up on a phone with no server,
-   makes a family and a home, and invites a second person who joins from
-   theirs.
-4. **W4. Who carries what, and where everyone is.** `device_person`, zones,
-   presence and stays, sharing levels applied on the person's phone. In the
-   app: a family map, "where everyone is", and each person's page. *Done
-   when* a phone's owner chooses `places` and the family sees "at work"
-   and never the coordinates, on every node.
-5. **W5. Things that move.** Mobility in the type's `meta`. A vehicle's base
-   home. Trips from tracks. *Done when* a car's trips are listed with their
-   driver and distance.
-6. **W6. Rooms and presence.** Occupancy from sensors, presence moving
-   along openings, a person's room when it can be told. *Done when* a
-   home's map shows which rooms are occupied, from real sensors.
-7. **W7. Automating people and places.** Home modes. Roles filled by
-   people, homes, spaces and zones. Arrives, leaves, first and last,
-   room empty. This waits on the automation language resuming. *Done
-   when* "when the last person leaves, set away" is a recipe.
-8. **W8. Several homes, several nodes.** A node per home holding that
-   home's ways. Whether a home's automations run on its own node is
-   decision 9. *Done when* the cabin's devices work from the house's
-   master through the cabin's node.
+1. **W1. The foundation.**
+   - The conventions (§6): ULIDs and the actor shape.
+   - The root renamed to the family.
+   - `place` and `home`; today's location becomes the first home, the
+     policy per home.
+   - `media`, and the node's own database with `login`.
+   - Configuration version 10 with `family:` and `homes:`.
 
-## 13. Decisions for the owner
+   *Done when* nothing names the root a home, a family has a home with a
+   place and a time zone, and a server's sign-ins live in its node's
+   database.
+2. **W2. Spaces and where devices stand.**
+   - `space`, `floor_plan`, `opening`, `placement`, labels.
+   - In the app: a home's floors and rooms, a device's room, the home page
+     by room.
+   - History asked by where a device stood at the time.
 
-Each has a recommendation. The ones marked *before W1* shape the rename
-and the first schema.
+   *Done when* moving a sensor between rooms keeps each room's history
+   right.
+3. **W3. People** (the next step the owner named).
+   - `person`, `person_key`, `member`, `sharing`, `invitation`, and the
+     personal store.
+   - Signing up makes a person and their keys, and a recovery key.
+   - A person makes a family and its first home.
+   - Invitations; a second device; a node's logins tied to people;
+     shortcuts per person; pictures of people.
 
-1. **The root is called the family** *(before W1)*. The screens may say
-   "Family" and mean flatmates too. Recommended. The alternative,
-   "household", is more exact and colder.
-2. **One family, one database, one master** *(before W1)*. A person in two
-   families has two, side by side on their phone. Recommended: it keeps
-   every rule that holds today (one writer, one file) and makes sharing a
-   cabin with siblings a second family, not a special case.
-3. **A person's identity is a key made on their device** *(before W3)*.
-   Passwords and passkeys are other ways to sign in at a node. Recommended:
-   it is the only identity that works with no server, and the one a
-   passkey already is.
-4. **A device belongs to one family** *(before W2)*. Showing it to
-   another family is a grant, later. Recommended.
-5. **The default sharing level for an adult** *(before W4)*.
-   Recommended: asked when joining, with `places` offered first.
-6. **Children's location** *(before W4)*. Recommended: an admin sets it,
-   and the child's screen says so.
-7. **A person without a device; pets** *(before W3)*. Recommended: a
-   person may have no credentials (a small child), and `kind: pet` comes
-   later for a tag on a dog's collar.
-8. **Moving house is a new home** *(before W1)*, the old one archived.
+   *Done when* someone signs up on a phone with no server, makes a family
+   and a home, and invites a second person who joins from their own.
+4. **W4. Who carries what, and where everyone is.**
+   - `device_person`, zones and stays.
+   - The levels enforced at the master per reader, and at the phone when
+     it is the source.
+   - A family map; a person's page; notifications to a person.
+
+   *Done when* a person at `places` is shown "at work" and never their
+   coordinates, whoever asks and from whichever node.
+5. **W5. Things that move.**
+   - Mobility in a type's `meta`, a vehicle's base, trips.
+
+   *Done when* a car's trips are listed with driver and distance.
+6. **W6. Rooms and presence.**
+   - Occupancy from sensors, presence along openings, a person's room
+     when it can be told, a robot cleaner's position in a frame.
+
+   *Done when* a home's map shows which rooms are occupied, from real
+   sensors.
+7. **W7. Automating people and places.**
+   - Modes on two axes.
+   - Roles filled by people, homes, spaces and zones.
+   - Arrives, leaves, the first and the last, a room empty.
+
+   This waits on the automation language resuming. *Done when* "when the
+   last person leaves, set away" is a recipe.
+8. **W8. Several homes, several nodes.**
+   - A node per home holding that home's ways.
+
+   *Done when* the cabin's devices work from the house's master through
+   the cabin's node.
+
+## 19. Decisions for the owner
+
+Each has a recommendation. Those marked *before W1* shape the rename and
+the first schema.
+
+1. **The word** *(before W1)*: `family` in code and on screen, with a kind
+   (`family`, `household`, `friends`, `other`) that changes only the words
+   shown (§4). Recommended.
+2. **One family, one database, one master, one writer** *(before W1)*.
    Recommended.
-9. **A home's own automations on its own node** *(before W8)*. Two writers
-   in one family, one per home. Recommended: not yet. Keep one master, and
-   revisit when a cabin's link is actually seen to drop.
-10. **ACCOUNTS.md's "home" becomes "family"** *(with W1)*. Its owner,
-    members and operator map onto §5.3, §5.4 and §5.2, and it is updated
-    with W1.
+3. **A person is a signed chain of keys under a stable id** *(before W3,
+   shapes W1)*. An existing device adds another device. A recovery key is
+   made at sign-up. Admins may vouch in their own family when everything
+   is lost (§10). Recommended.
+4. **A device belongs to one family** *(before W2)*. Another family seeing
+   it is a grant, later. Recommended.
+5. **The default sharing level** *(before W4)*: asked when joining, with
+   `places` offered first. Recommended.
+6. **Children's sharing** *(before W4)*: set by an admin, and shown to the
+   child. Recommended.
+7. **A carried device's track** *(before W4)*: kept in the family's
+   database only at `precise`, and deleted when the level falls. A
+   person's own trail lives in their personal store. Recommended.
+8. **Moving house is a new home** *(before W1)*. Recommended.
+9. **Two writers** *(before W8)*: a home's node running that home's
+   automations. Recommended: not yet.
+10. **The personal store** *(before W3)*: a third schema in
+    `packages/store`, opened by the hub (§7). Recommended.
+11. **New ids everywhere are prefix and ULID** *(before W1)*, today's
+    included. Recommended.
+12. **One sharing level per family** *(before W4)*, with an audience
+    possible later (§11.3). Recommended.
+13. **The configuration file's keys** *(before W1)*: keys for homes, zones,
+    spaces, openings, labels and modes; people by a key in the file with
+    their id verbatim (§14). Recommended.
+14. **ACCOUNTS.md's "home" becomes "family"** *(with W1)*. It is updated
+    then.
 
-## Appendix: a first sketch of the new tables
+## 20. The review, and what it changed
 
-A sketch to argue over, not the schema: the tables W1 to W4 need. `trip`,
-`grant` and `invitation` come with their steps. The real schema is written
-in `packages/store/src/schema.ts` as each step is built.
+A separate review of the first draft (2026-10-08) was taken as input, not
+as a ruling.
 
-```sql
-CREATE TABLE family (
-  id         TEXT PRIMARY KEY,                  -- f-…
-  name       TEXT NOT NULL,
-  master_id  TEXT NOT NULL REFERENCES node (id),
-  created_at TEXT NOT NULL
-);
-
-CREATE TABLE person (
-  id         TEXT PRIMARY KEY,                  -- p-…, made on the person's device
-  name       TEXT NOT NULL,
-  kind       TEXT NOT NULL DEFAULT 'human' CHECK (kind IN ('human')),
-  color      TEXT,
-  picture    TEXT,
-  created_at TEXT NOT NULL
-);
-
-CREATE TABLE credential (
-  id         TEXT PRIMARY KEY,                  -- c-…
-  person_id  TEXT NOT NULL REFERENCES person (id),
-  kind       TEXT NOT NULL CHECK (kind IN ('device-key', 'passkey', 'password', 'apple', 'google')),
-  subject    TEXT NOT NULL,                     -- a public key, a credential id, a username, a provider's sub
-  secret     TEXT,                              -- a password's hash; null for the rest
-  added_at   TEXT NOT NULL,
-  revoked_at TEXT,
-  UNIQUE (kind, subject)
-);
-
--- In the family's database: the family is the database, so no family_id.
-CREATE TABLE membership (
-  person_id TEXT NOT NULL REFERENCES person (id),
-  role      TEXT NOT NULL CHECK (role IN ('admin', 'member', 'child')),
-  since     TEXT NOT NULL,
-  until     TEXT,
-  PRIMARY KEY (person_id, since)
-);
-CREATE UNIQUE INDEX membership_now ON membership (person_id) WHERE until IS NULL;
-
--- What each person shares with this family: overwritten and audited, not an
--- interval, since a two-hour pause is not a change of membership.
-CREATE TABLE sharing (
-  person_id    TEXT PRIMARY KEY REFERENCES person (id),
-  level        TEXT NOT NULL CHECK (level IN ('precise', 'places', 'home-away', 'off')),
-  paused_until TEXT,                            -- 'off' until then, and back after
-  set_by       TEXT NOT NULL,                   -- the person, or an admin for a child
-  changed_at   TEXT NOT NULL
-);
-
-CREATE TABLE home (
-  id          TEXT PRIMARY KEY,                 -- h-…
-  name        TEXT NOT NULL,
-  latitude    REAL CHECK (latitude BETWEEN -90 AND 90),
-  longitude   REAL CHECK (longitude BETWEEN -180 AND 180),
-  radius      REAL NOT NULL DEFAULT 150,        -- the geofence, in metres
-  outline     TEXT,                             -- a GeoJSON polygon, when drawn
-  address     TEXT,
-  time_zone   TEXT NOT NULL,
-  country     TEXT,
-  bearing     REAL NOT NULL DEFAULT 0,          -- the floor plan's frame: north is 0
-  created_at  TEXT NOT NULL,
-  removed_at  TEXT,
-  CHECK ((latitude IS NULL) = (longitude IS NULL))
-);
-
-CREATE TABLE space (
-  id         TEXT PRIMARY KEY,                  -- s-…
-  home_id    TEXT NOT NULL REFERENCES home (id),
-  parent_id  TEXT REFERENCES space (id),
-  kind       TEXT NOT NULL CHECK (kind IN ('building', 'floor', 'room', 'area', 'stairs', 'outdoor')),
-  name       TEXT NOT NULL,
-  level      INTEGER,                           -- floors: 0 ground, -1 below
-  elevation  REAL,                              -- metres above the home's ground
-  outline    TEXT,                              -- a polygon in metres, in the home's frame
-  icon       TEXT,
-  removed_at TEXT
-);
-
-CREATE TABLE opening (
-  id        TEXT PRIMARY KEY,
-  from_id   TEXT NOT NULL REFERENCES space (id),
-  to_id     TEXT REFERENCES space (id),         -- null: outside
-  kind      TEXT NOT NULL CHECK (kind IN ('door', 'opening', 'stairs', 'window', 'gate', 'garage-door', 'elevator')),
-  device_id TEXT REFERENCES device (id)         -- what senses or locks it
-);
-
-CREATE TABLE zone (
-  id        TEXT PRIMARY KEY,                   -- z-…
-  name      TEXT NOT NULL,
-  latitude  REAL NOT NULL,
-  longitude REAL NOT NULL,
-  radius    REAL NOT NULL,
-  outline   TEXT,
-  icon      TEXT
-);
-
-CREATE TABLE placement (
-  device_id TEXT NOT NULL REFERENCES device (id),
-  part      TEXT NOT NULL DEFAULT 'main',
-  home_id   TEXT NOT NULL REFERENCES home (id),
-  space_id  TEXT REFERENCES space (id),
-  x REAL, y REAL, z REAL,                       -- metres, in the home's frame
-  since     TEXT NOT NULL,
-  until     TEXT,
-  PRIMARY KEY (device_id, part, since)
-);
-CREATE UNIQUE INDEX placement_now ON placement (device_id, part) WHERE until IS NULL;
-
-CREATE TABLE device_person (
-  device_id TEXT NOT NULL REFERENCES device (id),
-  person_id TEXT NOT NULL REFERENCES person (id),
-  role      TEXT NOT NULL CHECK (role IN ('carries', 'drives', 'owns', 'uses')),
-  since     TEXT NOT NULL,
-  until     TEXT,
-  PRIMARY KEY (device_id, person_id, role, since)
-);
-
-CREATE TABLE presence (
-  person_id  TEXT PRIMARY KEY REFERENCES person (id),
-  home_id    TEXT REFERENCES home (id),
-  zone_id    TEXT REFERENCES zone (id),
-  space_id   TEXT REFERENCES space (id),
-  latitude   REAL, longitude REAL, accuracy REAL, -- only when shared precisely
-  at         TEXT NOT NULL,
-  source     TEXT,                               -- the device it came from
-  confidence REAL
-);
-
-CREATE TABLE presence_stay (
-  person_id  TEXT NOT NULL REFERENCES person (id),
-  scope_kind TEXT NOT NULL CHECK (scope_kind IN ('home', 'zone', 'space')),
-  scope_id   TEXT NOT NULL,
-  since      TEXT NOT NULL,
-  until      TEXT,
-  source     TEXT,
-  PRIMARY KEY (person_id, scope_kind, scope_id, since)
-);
-
-CREATE TABLE occupancy (
-  space_id TEXT NOT NULL REFERENCES space (id),
-  since    TEXT NOT NULL,
-  until    TEXT,
-  count    INTEGER,
-  evidence TEXT,                                -- which devices said so
-  PRIMARY KEY (space_id, since)
-);
-
-CREATE TABLE home_mode (
-  home_id TEXT NOT NULL REFERENCES home (id),
-  mode    TEXT NOT NULL,
-  since   TEXT NOT NULL,
-  until   TEXT,
-  set_by  TEXT NOT NULL,                        -- an actor, as the timeline names one
-  PRIMARY KEY (home_id, since)
-);
-CREATE UNIQUE INDEX home_mode_now ON home_mode (home_id) WHERE until IS NULL;
-```
+| It said | Taken? | What changed |
+| --- | --- | --- |
+| Followers do not replicate the database; they keep the master's answers | Yes, and checked | §2 and §7 say what a follower keeps. Privacy is enforced at the master per reader (§11.2) |
+| Nothing binds a person's id to their key; loss and recovery are missing | Yes | §10: a signed chain under a stable id, second devices, a recovery key, revocation, claiming a managed record |
+| One credential table mixes the family's with the node's | Yes | `person_key` in the family's database; `login` in the node's |
+| Vendor clouds bypass a phone-side filter | Yes | The level governs what the master stores and shows. The phone's filter is an extra guarantee |
+| The configuration file needs keys and ids | Yes | §14 |
+| Home and zone in separate tables | Yes | One `place`, with `home` beside it |
+| No open-row rule for stays | Yes | One home and one room at a time. Zones may overlap, which the review did not allow for |
+| One carrier at a time | Yes | `device_person_one` |
+| Placement's home and space can disagree | Yes | The home is the space's |
+| An opening needs a child table of devices with roles | Partly | Devices are *placed* at an opening instead. That allows any number, each with its own history, and what each does is its capabilities'. Two openings between the same spaces stay allowed: a room can have two doors |
+| Occupancy counts undefined | Yes | An interval is occupied time; `peak` is the most at once |
+| One mode at a time | Yes | Two axes |
+| Actors are free text in several tables | Yes | One actor shape everywhere |
+| Filtering at the source forces one level per family | No | Filtering at the master per reader allows audiences later. One level is a choice for clarity (§11.3) |
+| Weather and prices need the home's place; notifications; trips need a track; a shared laptop; retention per person; "owner" overloaded | Yes | §17's SDK port, §8.14, §8.11 (trips from positions as they arrive), §8.15, `sharing.keep_days`, §12's wording |
