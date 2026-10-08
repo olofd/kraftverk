@@ -62,6 +62,11 @@ export class TrackStore {
       .all(deviceId, since, limit);
   }
 
+  /** Everything kept of where a device has been, let go: its carrier shares less than where they are. */
+  forget(deviceId: string): void {
+    this.#db.query('DELETE FROM track WHERE device_id = ?').run(deviceId);
+  }
+
   /** What each device keeps longer than its owner said, let go. Returns how many points went. */
   prune(now = Date.now()): number {
     const devices = this.#db.query<{ id: string; track_days: number }, []>('SELECT id, track_days FROM device WHERE track_days IS NOT NULL').all();

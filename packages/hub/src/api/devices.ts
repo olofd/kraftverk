@@ -1,4 +1,5 @@
 import { DEVICE_ROLES } from '@kraftverk/store';
+import { forgetCarriedTrails, positionHidden, readerOf } from '../presence/levels.ts';
 import { ApiError, type Caller, type ChangesQuery, type DeviceTypeListing, type HistoryQuery, type KraftverkApi } from '@kraftverk/api-contract';
 import { capabilityIn, CATEGORIES, describeDeviceType, isBridgedMethod, isSimulated, methodsOf, placementsOf, platformsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
 import { deviceReader } from '@kraftverk/holder';
@@ -43,7 +44,7 @@ type DevicesApi = Pick<KraftverkApi, 'deviceTypes' | 'devices' | 'problems' | 'n
 export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
   const { catalog, sessions, views, gateway, events } = hub;
   const { types, protocols, transports } = hub.installed;
-  const { actor, record, changed, deviceOf, viewOf } = scopeOf(hub, caller);
+  const { actor, record, changed, deviceOf, viewOf, shown } = scopeOf(hub, caller);
 
   /**
    * Whether this home can hold a connection over a method: a simulated one
@@ -115,7 +116,7 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
     },
 
     devices: {
-      list: async () => views.all(),
+      list: async () => views.all().map(shown),
       removed: async () => views.removed(),
       get: async (id) => viewOf(deviceOf(id, { removed: true }).id),
 
@@ -239,6 +240,8 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
           const before = role === 'carries' || role === 'drives' ? (was[role] ? [was[role]!] : []) : was[role];
           if (before.join() === ids.join()) continue;
           hub.devicePeople.set(device.id, role, ids, at);
+          // Carried now by someone who shares less than where they are: what was kept of where it has been goes.
+          if (role === 'carries' && ids[0]) forgetCarriedTrails(hub, ids[0]);
           const who = ids.length ? ids.map(nameOf).join(' and ') : 'Nobody';
           said.push({ carries: `${who} carries it`, drives: `${who} drives it`, owns: `${who} owns it`, uses: `${who} uses it` }[role]);
         }
@@ -253,7 +256,8 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
       async track(id, since) {
         const device = deviceOf(id);
         if (!Number.isFinite(Date.parse(since))) throw new ApiError('invalid', 'Since when: a time, as ISO 8601');
-        return device.trackDays ? hub.tracks.points(device.id, new Date(since).toISOString()) : [];
+        // Where it has been, only as far as its carrier shares.
+        return device.trackDays && !positionHidden(hub, device.id, readerOf(caller)) ? hub.tracks.points(device.id, new Date(since).toISOString()) : [];
       },
 
       /** Removes a device, keeping its history. Its connections and links go; adding the same device again offers to bring it all back. */

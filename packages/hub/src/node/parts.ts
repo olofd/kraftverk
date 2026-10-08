@@ -1,4 +1,4 @@
-import { LINK_KINDS, type AuditRecord, type Clock, type DeviceHome, type SavedDeviceId, type ScopedHttp } from '@kraftverk/device-sdk';
+import { LINK_KINDS, type AuditRecord, type Clock, type DeviceHome, type Reading, type SavedDeviceId, type ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, type GatewayDeps } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, type SessionManagerDeps } from '@kraftverk/holder';
 import { AutomationStore, ConnectionStore, databaseLedger, DeviceCatalog, HistoryStore, integrationKept, LastReadings, LinkStore, NodeSettings, NodeStore, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
@@ -16,6 +16,12 @@ import { SetupService } from '../setup/service.ts';
   things their role decides handed in (\`NodeRole\`) — not two builds of the
   same thing.
 */
+
+/** What a device last said, kept — only what its role keeps of it. */
+function keptAs(last: LastReadings, keeps: NodeRole['keeps']): NonNullable<SessionManagerDeps['lastReadings']> {
+  if (!keeps) return last;
+  return { of: (deviceId) => last.of(deviceId), keep: (deviceId, readings) => last.keep(deviceId, readings.filter((reading) => keeps(deviceId, reading))) };
+}
 
 /** What only the place a node runs can give it. */
 export type NodeOptions = {
@@ -43,6 +49,8 @@ export type NodeRole = {
   tag: string;
   /** Where its timeline goes: the home's own, or owed to the master. */
   record(entry: AuditRecord): void;
+  /** What of a device's readings is kept as what it last said; everything when not said. */
+  keeps?(deviceId: SavedDeviceId, reading: Reading): boolean;
   /** The home a device is for — the one it stands in, or the family's first; for one not yet added, the first. None on a node that keeps no homes. */
   home?(deviceId: SavedDeviceId | null): DeviceHome | null;
   /** Which of the home's ways its sessions hold, and their secrets. */
@@ -108,7 +116,7 @@ export function nodeParts(options: NodeOptions, role: NodeRole): NodeParts {
     record: (entry) => role.record(entry),
     bus,
     // What each device last said: what it shows, as it was, until it says again after a restart.
-    lastReadings: new LastReadings(db),
+    lastReadings: keptAs(new LastReadings(db), role.keeps),
     log: (message) => options.log('info', `[${role.tag}] ${message}`),
   });
 

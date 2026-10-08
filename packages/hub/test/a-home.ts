@@ -5,7 +5,7 @@ import { plainSecrets, type SqlDatabase } from '@kraftverk/store';
 
 import { createHub, installedFrom, type Hub } from '../src/index.ts';
 import { busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE, makeHubType, relayedLampType, testIntegration, type HubWatch } from '../src/testing.ts';
-import { forecastContribution, forecastType, plugType, stationType } from './kinds.ts';
+import { forecastContribution, forecastType, phoneType, plugType, stationType } from './kinds.ts';
 import { testDatabase } from './home.ts';
 
 /*
@@ -63,7 +63,7 @@ export async function aHome(options: { readOnly?: boolean; bridges?: boolean; ba
   const bridging = options.bridges ? [{ type: hubType.type }, { type: relayedLampType }] : [];
   const installed = installedFrom(
     {
-      integrations: [{ ...testIntegration({ type: lampType }, { type: stationType }, { type: plugType }, { type: forecastType, automation: forecastContribution }, ...bridging), protocols: [lampProtocol] }],
+      integrations: [{ ...testIntegration({ type: lampType }, { type: stationType }, { type: plugType }, { type: phoneType }, { type: forecastType, automation: forecastContribution }, ...bridging), protocols: [lampProtocol] }],
 
       // The bus as a radio that must scan; or, with `background`, as something that costs nothing to watch.
       transports: [{ definition: { ...busDefinition, background: options.background ?? false }, create: () => bus }],

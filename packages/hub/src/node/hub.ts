@@ -1,5 +1,5 @@
 import { AutomationEngine, AutomationLibrary } from '@kraftverk/automation-engine';
-import { SYSTEM, type Actor, type AuditRecord, type Clock, type PolicyValueName, type PolicyValues, type ScopedHttp } from '@kraftverk/device-sdk';
+import { isPosition, SYSTEM, type Actor, type AuditRecord, type Clock, type PolicyValueName, type PolicyValues, type ScopedHttp } from '@kraftverk/device-sdk';
 import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
 import { ActionGateway, Confirmations, type GatewayPolicy } from '@kraftverk/gateway';
 import { LiveBus, SessionManager } from '@kraftverk/holder';
@@ -51,6 +51,7 @@ import { HeldReadings } from '../nodes/held-readings.ts';
 import { ChangeLog } from '../history/changes.ts';
 import { Sampler } from '../history/sampler.ts';
 import { Presence } from '../presence/presence.ts';
+import { positionHidden } from '../presence/levels.ts';
 import { startTransports, type Installed } from '../installed/from.ts';
 import { KeepingCopy } from '../handover/keep.ts';
 import { nodeParts } from './parts.ts';
@@ -223,6 +224,8 @@ export class Hub {
         tag: 'devices',
         record,
         home: (deviceId) => deviceHomeOf(this.places, this.spaces)(deviceId),
+        // A carried device's position, kept as its last reading only at what its carrier shares.
+        keeps: (deviceId, reading) => !isPosition(reading.value) || !positionHidden(this, deviceId, null),
         ways: ({ connections, self }) => holding(connections, self.id),
         sessions: {
           store: (deviceId) => deviceStore(db, deviceId),
@@ -275,14 +278,14 @@ export class Hub {
     this.library = new AutomationLibrary(types.contributions(), (message) => this.#log('warn', message));
     // What a package brings to automations comes with its code: when its integration loads.
     this.#stopContributions = types.onContribution((contributed) => this.library.add([contributed]));
-    this.engine = new AutomationEngine({ store: automations, library: this.library, device: homeDevices(catalog, sessions), gateway: this.gateway, record, bus: this.bus, history: this.history, location: locationOf(this.places), clock: options.clock });
+    this.engine = new AutomationEngine({ store: automations, library: this.library, device: homeDevices(catalog, sessions, (deviceId) => positionHidden(this, deviceId, null)), gateway: this.gateway, record, bus: this.bus, history: this.history, location: locationOf(this.places), clock: options.clock });
     this.drafts = drafts({ history: this.history, events, catalog, sessions, library: this.library, engine: this.engine, automations });
 
     this.heldReadings = new HeldReadings(this.history);
     this.views = new DeviceViews({ catalog, types, sessions, connections, links, nodes, transports, heldReadings: this.heldReadings, self: self.id, master: () => this.family.get()!.masterId, readOnly: options.readOnly, placement: (id) => this.spaces.placement(id), labels: (id) => this.labels.on({ device: id }).map((label) => label.id), people: (id) => this.devicePeople.of(id) });
     this.ignored = new IgnoredSightings(this.db);
     this.nearby = new Nearby({ types, protocols, transports, connections, catalog, sessions, ignored: this.ignored });
-    this.sampler = new Sampler({ history: this.history, audit: this.audit, events, tracks: this.tracks }, this.views);
+    this.sampler = new Sampler({ history: this.history, audit: this.audit, events, tracks: this.tracks }, this.views, (deviceId) => positionHidden(this, deviceId, null));
     this.stays = new PresenceStore(db);
     this.presence = new Presence({ people: this.people, devicePeople: this.devicePeople, places: this.places, stays: this.stays, views: this.views, bus: this.bus, clock: options.clock });
     this.changeLog = new ChangeLog(this.history, this.bus, (id) => {

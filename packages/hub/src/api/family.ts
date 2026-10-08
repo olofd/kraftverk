@@ -4,6 +4,7 @@ import { type CapabilitySpec } from '@kraftverk/device-sdk';
 
 import { vocabularyOf, worldOf } from '../assistant/world.ts';
 import type { Hub } from '../node/hub.ts';
+import { readerOf, shownTo } from '../presence/levels.ts';
 
 /*
   The family as a whole, as everything that uses it asks: what it is called
@@ -16,7 +17,7 @@ type FamilyWideApi = Pick<KraftverkApi, 'family' | 'timeline' | 'world' | 'vocab
 /** The family as everything that asks sees it. */
 const viewOf = (family: FamilyRecord): FamilyView => ({ id: family.id, name: family.name, kind: family.kind, locale: family.locale, master: family.masterId, createdAt: family.createdAt });
 
-export function familyWideApi(hub: Hub, _caller: Caller): FamilyWideApi {
+export function familyWideApi(hub: Hub, caller: Caller): FamilyWideApi {
   return {
     /** The family: what its people call it, and its master. */
     async family() {
@@ -26,7 +27,7 @@ export function familyWideApi(hub: Hub, _caller: Caller): FamilyWideApi {
     timeline: async (query = {}) => hub.audit.recent(query),
 
     /** The house now: every device, its parts, what each offers and reports and how fresh, and the links. */
-    world: async () => worldOf(hub.views.all(), { readOnly: hub.readOnly() }),
+    world: async () => worldOf(hub.views.all().map(shownTo(hub, readerOf(caller))), { readOnly: hub.readOnly() }),
 
     /** The words the world is said in: capabilities — the library's and the devices' own — meanings, link kinds, recipes, and the values the home has set. */
     vocabulary: async () =>

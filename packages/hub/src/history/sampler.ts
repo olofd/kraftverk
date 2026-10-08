@@ -71,7 +71,8 @@ export class Sampler {
 
   constructor(
     private readonly kept: { history: HistoryStore; audit: AuditLog; events: EventStore; tracks: TrackStore },
-    private readonly views: DeviceViews
+    private readonly views: DeviceViews,
+    private readonly positionHidden: (deviceId: string) => boolean = () => false
   ) {}
 
   start(): void {
@@ -96,7 +97,8 @@ export class Sampler {
     const at = new Date(now).toISOString();
     const samples: Sample[] = [];
     for (const device of this.views.all()) {
-      if (device.trackDays) {
+      // Where a carried device has been, only as far as its carrier shares: their view of it says so.
+      if (device.trackDays && !this.positionHidden(device.id)) {
         const position = device.readings.find((reading) => isPosition(reading.value));
         if (position?.at && isPosition(position.value)) {
           const { latitude, longitude, accuracy } = position.value;

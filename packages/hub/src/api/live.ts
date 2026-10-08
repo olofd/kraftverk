@@ -2,6 +2,7 @@ import type { Caller, KraftverkApi, LiveUpdate } from '@kraftverk/api-contract';
 
 import { coalesced } from '../live/stream.ts';
 import type { Hub } from '../node/hub.ts';
+import { positionHidden, readerOf, withoutPosition } from '../presence/levels.ts';
 import { actorOf } from './caller.ts';
 
 /*
@@ -16,7 +17,17 @@ export function liveApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'live'> {
   return {
     live(listener: (update: LiveUpdate) => void, options = {}) {
       const viewer = hub.attention.open(actorOf(caller).name);
-      const stop = coalesced(hub.bus, listener, options.draining);
+      // What a carried device says of where it is, only as far as its carrier shares.
+      const reader = readerOf(caller);
+      const stop = coalesced(
+        hub.bus,
+        (update) => {
+          if (update.type !== 'readings' || !positionHidden(hub, update.deviceId, reader)) return listener(update);
+          const readings = withoutPosition(update.readings);
+          if (readings.length) listener({ ...update, readings });
+        },
+        options.draining
+      );
       // In the process, it is up at once.
       options.onState?.('live');
       listener({ type: 'hello', at: new Date().toISOString() });

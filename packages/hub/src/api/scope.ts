@@ -4,6 +4,7 @@ import type { DeviceRecord } from '@kraftverk/store';
 
 import type { Hub } from '../node/hub.ts';
 import { actorOf } from './caller.ts';
+import { readerOf, shownTo } from '../presence/levels.ts';
 
 /**
  * Refuses a name in configuration that is not one, or is another's: what a
@@ -39,10 +40,12 @@ export function scopeOf(hub: Hub, caller: Caller) {
     if (!found) throw new ApiError('not-found', 'No such device');
     return found;
   };
+  /** A device as this caller may see it: a carried one's position only at what its carrier shares. */
+  const shown = shownTo(hub, readerOf(caller));
   const viewOf = (id: SavedDeviceId) => {
     const view = hub.views.find(id);
     if (!view) throw new ApiError('not-found', 'No such device');
-    return view;
+    return shown(view);
   };
   const connectionOf = (deviceId: string, connectionId: string) => {
     const device = deviceOf(deviceId);
@@ -51,5 +54,5 @@ export function scopeOf(hub: Hub, caller: Caller) {
     return { device, connection };
   };
 
-  return { actor, record, changed, deviceOf, viewOf, connectionOf };
+  return { actor, record, changed, deviceOf, viewOf, connectionOf, shown };
 }

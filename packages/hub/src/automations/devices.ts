@@ -1,10 +1,15 @@
 import type { RoleBinding } from '@kraftverk/automation';
-import { capabilitiesOf, partName, partsOf } from '@kraftverk/device-sdk';
+import { capabilitiesOf, isPosition, partName, partsOf, type DeviceReader } from '@kraftverk/device-sdk';
 import type { EngineDevice } from '@kraftverk/automation-engine';
 import { deviceReader } from '@kraftverk/holder';
 
 import type { DeviceCatalog } from '@kraftverk/store';
 import type { SessionManager } from '@kraftverk/holder';
+
+/** A device's reader, without its position while that is not shared. */
+function hidingPosition(reader: DeviceReader, hidden: () => boolean): DeviceReader {
+  return { ...reader, readings: () => (hidden() ? reader.readings().filter((reading) => !isPosition(reading.value)) : reader.readings()) };
+}
 
 /**
  * Parts of devices as a home holds them, for the engine: a removed device
@@ -13,7 +18,7 @@ import type { SessionManager } from '@kraftverk/holder';
  * is. A part is named with its device: "Garage station — AC outlets".
  */
 export const homeDevices =
-  (catalog: Pick<DeviceCatalog, 'get'>, sessions: Pick<SessionManager, 'get' | 'health' | 'description'>) =>
+  (catalog: Pick<DeviceCatalog, 'get'>, sessions: Pick<SessionManager, 'get' | 'health' | 'description'>, positionHidden: (deviceId: string) => boolean = () => false) =>
   (binding: RoleBinding): EngineDevice | null => {
     const record = catalog.get(binding.device);
     if (!record) return null;
@@ -30,7 +35,8 @@ export const homeDevices =
       part: binding.part,
       description,
       // What a function may see: readings, health and checked queries — never the session itself.
-      device: session ? deviceReader(session, () => sessions.description(record)) : null,
+      // A carried device's position only as far as its carrier shares: the family's automations see what the family does.
+      device: session ? hidingPosition(deviceReader(session, () => sessions.description(record)), () => positionHidden(record.id)) : null,
       offline: removed ? 'It has been removed' : sessions.health(record).detail,
       capabilities: part ? capabilitiesOf(description, part.id) : [],
       reachable: () => {

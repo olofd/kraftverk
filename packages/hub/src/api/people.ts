@@ -3,6 +3,8 @@ import { isTimeZone } from '@kraftverk/device-sdk';
 import { checkChain } from '@kraftverk/identity';
 import { SOMEONE_WHO_LEFT } from '@kraftverk/store';
 
+import { forgetCarriedTrails } from '../presence/levels.ts';
+
 import type { Hub } from '../node/hub.ts';
 import { scopeOf } from './scope.ts';
 
@@ -173,6 +175,8 @@ export function peopleApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'people'
         if (changes.pausedUntil != null && !(Number.isFinite(Date.parse(changes.pausedUntil)) && Date.parse(changes.pausedUntil) > Date.now())) throw new ApiError('invalid', 'A pause ends later than now');
         const by = me ?? hub.people.members().find((each) => each.member?.role === 'admin')?.id ?? id;
         const sharing = hub.people.setSharing(id, changes, by, new Date().toISOString());
+        // Less than where they are: the trails of what they carry are let go.
+        forgetCarriedTrails(hub, id);
         const said = [
           ...(changes.level !== undefined ? [SHARING_WORDS[changes.level]] : []),
           ...(changes.keepDays !== undefined ? [`keeps where they have been ${changes.keepDays === 1 ? '1 day' : `${changes.keepDays} days`}`] : []),

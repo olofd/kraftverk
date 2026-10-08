@@ -1,5 +1,5 @@
 import { defineContribution, defineFunction, defineRecipe } from '@kraftverk/automation';
-import { defineDeviceType, MAIN_PART, type DeviceDescription, type DeviceSession, type Value } from '@kraftverk/device-sdk';
+import { defineDeviceType, MAIN_PART, POSITION_SHAPE, type DeviceDescription, type DeviceSession, type Value } from '@kraftverk/device-sdk';
 
 /*
   Kinds of device of the hub's tests' own, beside the lamp (`src/testing.ts`):
@@ -144,6 +144,31 @@ export const plugType = defineDeviceType({
       switched: (_part, on) => void (state.watts = on ? 240 : 0),
       tools: { resetEnergy: async () => true, rotateScreen: async () => true },
     });
+  },
+});
+
+// --- a phone -------------------------------------------------------------------------
+
+/** Where the test phone says it is: each test moves it. */
+export const phoneAt: { latitude: number; longitude: number } = { latitude: 51.48, longitude: 0 };
+
+const PHONE: DeviceDescription = {
+  parts: [{ id: MAIN_PART, label: 'Phone', kind: 'device' }],
+  attributes: [{ key: 'position', label: 'Where it is', value: POSITION_SHAPE, means: 'position' }],
+};
+
+/** A phone that says where it is, and nothing else: what someone carries. */
+export const phoneType = defineDeviceType({
+  id: 'test.phone',
+  kind: 'hardware',
+  meta: { name: 'Test phone', category: 'phone', support: 'experimental', icon: 'smartphone' },
+  describe: () => PHONE,
+  config: { fields: {} },
+  connections: overTheBus,
+  ...neverOverTheBus,
+  async createSimulator() {
+    const session = simulator({}, {});
+    return { ...session, readings: () => [{ key: 'position', value: { latitude: phoneAt.latitude, longitude: phoneAt.longitude, accuracy: 10 }, at: new Date().toISOString() }] };
   },
 });
 
