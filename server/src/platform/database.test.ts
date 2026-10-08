@@ -53,11 +53,11 @@ describe('the schema', () => {
   test('a database made by it is used as it is, data and all', () => {
     const path = scratch();
     const first = openSchema(path);
-    first.query("INSERT INTO home_setting (key, value, updated_at) VALUES ('home.kept', 'yes', '2026-09-29T00:00:00Z')").run();
+    first.query("INSERT INTO node_setting (key, value, updated_at) VALUES ('family.kept', 'yes', '2026-09-29T00:00:00Z')").run();
     first.close();
 
     const again = openSchema(path);
-    expect(again.query<{ value: string }, []>("SELECT value FROM home_setting WHERE key = 'home.kept'").get()?.value).toBe('yes');
+    expect(again.query<{ value: string }, []>("SELECT value FROM node_setting WHERE key = 'family.kept'").get()?.value).toBe('yes');
     expect(again.setAside).toBeUndefined();
     again.close();
   });
