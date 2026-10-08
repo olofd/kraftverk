@@ -13,7 +13,7 @@
 import type { FileMigration, FileTypes } from '@kraftverk/device-sdk';
 
 /** The version this kraftverk writes. */
-export const CURRENT_VERSION = 10;
+export const CURRENT_VERSION = 11;
 
 /** Each version's document, as data, made into the next version's. */
 export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unknown>) => Record<string, unknown>>> = {
@@ -32,7 +32,36 @@ export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unkno
   8: (document) => document,
   // Version 10 has a family and its homes (docs/PLAN-WORLD-MODEL.md): `home:` becomes the first home.
   9: (document) => homesFromHome(document),
+  // Version 11 keeps shortcuts per person: an automation's `home page:` becomes everyone's shortcut to it.
+  10: (document) => shortcutsPerPerson(document),
 };
+
+/**
+ * Version 11 keeps each person's own shortcuts, not one list for everyone:
+ * the automations version 10 put on "the home page", in their places, are
+ * every person's shortcuts. A file with no people keeps none.
+ */
+function shortcutsPerPerson(document: Record<string, unknown>): Record<string, unknown> {
+  const automations = (document.automations && typeof document.automations === 'object' ? document.automations : {}) as Record<string, Record<string, unknown>>;
+  const placed = Object.entries(automations)
+    .filter(([, automation]) => typeof automation?.['home page'] === 'number')
+    .sort(([, a], [, b]) => (a['home page'] as number) - (b['home page'] as number))
+    .map(([key]) => key);
+  const people = (document.people && typeof document.people === 'object' ? document.people : {}) as Record<string, Record<string, unknown>>;
+  return {
+    ...document,
+    automations: Object.fromEntries(
+      Object.entries(automations).map(([key, automation]) => {
+        if (!automation || typeof automation !== 'object') return [key, automation];
+        const { 'home page': _place, ...rest } = automation;
+        return [key, rest];
+      })
+    ),
+    ...(document.people && typeof document.people === 'object'
+      ? { people: Object.fromEntries(Object.entries(people).map(([key, person]) => [key, person && typeof person === 'object' && placed.length ? { ...person, shortcuts: placed } : person])) }
+      : {}),
+  };
+}
 
 /**
  * Version 10 names homes: the one `home:` of version 9 — its clock, where it

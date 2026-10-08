@@ -72,7 +72,6 @@ const automation = {
   homeId: null,
   timeZone: 'Europe/Stockholm',
   recheckMinutes: null,
-  homePlace: 2,
 };
 
 describe('an automation as YAML, in the app', () => {
@@ -82,12 +81,11 @@ describe('an automation as YAML, in the app', () => {
     // It reads the plug's power as well as switching it: what it needs is said.
     expect(text).toContain('  charger:\n    part: scooter-plug\n    needs:\n      - switch\n      - powerMeter\n');
     expect(text).toContain('wait until: charger.power > 50 W');
-    expect(text).toContain('home page: 2');
     const read = readAutomationText(text, 'charge', VOCABULARY);
     expect(read.problems).toEqual([]);
     const { draft, settings } = draftOfEntry(read.entry!, [plug], []);
     expect(draft).toEqual({ name: 'Charge', rule, roles: automation.roles, groups: {}, starts: {} });
-    expect(settings).toEqual({ mode: 'act', homeId: null, timeZone: 'Europe/Stockholm', recheckMinutes: null, homePlace: 2 });
+    expect(settings).toEqual({ mode: 'act', homeId: null, timeZone: 'Europe/Stockholm', recheckMinutes: null });
   });
 
   test('a key naming no device here is a problem at its line; an automation it starts is found by its key', () => {

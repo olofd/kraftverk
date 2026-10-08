@@ -21,7 +21,6 @@ export type AutomationSource = {
   /** A clock of its own; null: its home's. */
   ownTimeZone: string | null;
   recheckMinutes: number | null;
-  homePlace: number | null;
   madeFrom: string | null;
   /** Its labels' keys, when whoever writes it knows them: the server's export does; one automation's YAML in the app leaves them out. */
   labels?: string[];
@@ -71,7 +70,6 @@ export function automationEntryFrom(
       home: source.homeId ? (keyOf.home?.(source.homeId) ?? null) : null,
       clock: source.ownTimeZone,
       recheckMinutes: source.recheckMinutes,
-      homePlace: source.homePlace,
       madeFrom: source.madeFrom,
       labels: source.labels ?? [],
       uses,

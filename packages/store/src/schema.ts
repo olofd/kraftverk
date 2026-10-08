@@ -628,8 +628,7 @@ export const SCHEMA = `
     owner's clock, and whether it acts on its own. recheck_minutes: how
     often a condition that still holds is looked at again, to keep things
     so; NULL, never. looked_at: when it last did, or started afresh; NULL,
-    not yet. home_place: its place among the shortcuts on the home page;
-    NULL, not there.
+    not yet. Whose home page it is on is each person's: shortcut.
   */
   CREATE TABLE automation (
     id              TEXT PRIMARY KEY,
@@ -644,12 +643,24 @@ export const SCHEMA = `
     time_zone       TEXT,
     mode            TEXT NOT NULL CHECK (mode IN ('off', 'watch', 'act')),
     recheck_minutes INTEGER CHECK (recheck_minutes IS NULL OR recheck_minutes BETWEEN 1 AND 1440),
-    home_place      INTEGER CHECK (home_place IS NULL OR home_place >= 0),
     looked_at       TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
   );
-  CREATE UNIQUE INDEX automation_home ON automation (home_place) WHERE home_place IS NOT NULL;
+
+  /*
+    Each person's own shortcuts on their home page (docs/PLAN-WORLD-MODEL.md
+    §8.3): the automations they start from it, in their order. A person's
+    own, never the family's; an automation deleted, or a person erased,
+    takes theirs with it, and the others close up.
+  */
+  CREATE TABLE shortcut (
+    person_id     TEXT NOT NULL REFERENCES person (id) ON DELETE CASCADE,
+    automation_id TEXT NOT NULL REFERENCES automation (id) ON DELETE CASCADE,
+    position      INTEGER NOT NULL CHECK (position >= 0),
+    PRIMARY KEY (person_id, automation_id),
+    UNIQUE (person_id, position)
+  );
 
   /*
     What fills each of an automation's roles: a part of a device, or —

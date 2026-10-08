@@ -126,6 +126,36 @@ automations:
       '"track" is how long where it has been is kept: "30 days", from 1 day to 366',
     ]);
   });
+
+  test('version 10’s one home page becomes every person’s own shortcuts, in its order: version 11 keeps them per person', () => {
+    const text = `kraftverk: 10
+people:
+  ada:
+    id: p-01JZ0000000000000000000000
+    name: Ada
+    role: admin
+    chain: e30
+automations:
+  away:
+    name: Away
+    home page: 1
+    do: []
+  morning:
+    name: Morning
+    home page: 0
+    do: []
+  quiet:
+    name: Quiet
+    do: []
+`;
+    const read = readConfig(text);
+    expect(read.problems).toEqual([]);
+    expect(read.document!.people.ada!.shortcuts).toEqual(['morning', 'away']);
+    expect(writeConfig(read.document!)).not.toContain('home page');
+    expect(writeConfig(read.document!)).toContain('shortcuts:\n      - morning\n      - away\n');
+    // One that is no automation in the file is said.
+    expect(readConfig(`kraftverk: 11\npeople:\n  ada:\n    id: p-01JZ0000000000000000000000\n    name: Ada\n    chain: e30\n    shortcuts: [gone]\n`).problems.map((problem) => problem.message)).toEqual(['There is no automation "gone" in this file']);
+  });
 });
 
 describe("an integration's own migrations", () => {

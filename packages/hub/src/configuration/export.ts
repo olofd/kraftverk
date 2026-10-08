@@ -12,7 +12,7 @@ import {
   type WaySource,
 } from '@kraftverk/home-file';
 import { keyFrom, methodsOf, partsOf, type NodeId, type PolicyValueName, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
-import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, FamilyStore, LinkStore, MediaStore, LabelStore, PeopleStore, PlaceStore, SecretsAtRest, SpaceStore } from '@kraftverk/store';
+import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, FamilyStore, LinkStore, MediaStore, LabelStore, PeopleStore, PlaceStore, SecretsAtRest, ShortcutStore, SpaceStore } from '@kraftverk/store';
 import { base64url } from '@kraftverk/identity';
 import type { SpaceView } from '@kraftverk/api-contract';
 
@@ -47,6 +47,8 @@ export type ConfigDeps = {
   labels: LabelStore;
   /** Its people: who each is, as they prove it, and what the family calls them. */
   people: PeopleStore;
+  /** Each person's own shortcuts on their home page. */
+  shortcuts: ShortcutStore;
   /** Pictures, by their content: what a home or a device in a file names. */
   media: MediaStore;
   /** A home's own values: how much is a load, the reserve. */
@@ -171,7 +173,11 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
       if (!chain.length || !person.member) continue;
       const key = keyFrom(person.name, (candidate) => taken.has(candidate), 'person');
       taken.add(key);
-      document.people[key] = { id: person.id, name: person.name, role: person.member.role, nickname: person.member.nickname, color: person.member.color, chain: base64url(new TextEncoder().encode(JSON.stringify(chain))) };
+      const shortcuts = deps.shortcuts.of(person.id).flatMap((id) => {
+        const automation = deps.automations.get(id);
+        return automation ? [automation.key] : [];
+      });
+      document.people[key] = { id: person.id, name: person.name, role: person.member.role, nickname: person.member.nickname, color: person.member.color, chain: base64url(new TextEncoder().encode(JSON.stringify(chain))), shortcuts };
     }
     for (const home of deps.places.homes()) {
       document.homes[home.key] = {

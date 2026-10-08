@@ -23,8 +23,8 @@ import type { AutomationView, DeviceView, ImportItem, ImportPlan } from '@kraftv
   master checks with.
 */
 
-/** What the form edits, and what it does not: its mode, the home it is for, a clock of its own, how often it keeps things so, its place on the home page. */
-export type AutomationSettings = { mode: AutomationMode; homeId: string | null; timeZone: string | null; recheckMinutes: number | null; homePlace: number | null };
+/** What the form edits, and what it does not: its mode, the home it is for, a clock of its own, how often it keeps things so. */
+export type AutomationSettings = { mode: AutomationMode; homeId: string | null; timeZone: string | null; recheckMinutes: number | null };
 
 /** The family's homes, as a file names them: by key. */
 type HomeKeys = readonly { id: string; key: string }[];
@@ -79,7 +79,7 @@ export function draftOfEntry(
       groups: Object.fromEntries(Object.entries(fills.groups).map(([role, parts]) => [role, parts.map((binding) => ({ device: savedDeviceId(binding.device), part: binding.part }))])),
       starts: fills.starts as Record<string, AutomationId>,
     },
-    settings: { mode: entry.mode, homeId: entry.home ? (homes.find((home) => home.key === entry.home)?.id ?? null) : null, timeZone: entry.clock, recheckMinutes: entry.recheckMinutes, homePlace: entry.homePlace },
+    settings: { mode: entry.mode, homeId: entry.home ? (homes.find((home) => home.key === entry.home)?.id ?? null) : null, timeZone: entry.clock, recheckMinutes: entry.recheckMinutes },
   };
 }
 

@@ -29,6 +29,7 @@ export * from './spaces.ts';
 export * from './labels.ts';
 export * from './people.ts';
 export * from './invitations.ts';
+export * from './shortcuts.ts';
 export * from './personal.ts';
 export * from './media.ts';
 export * from './device-store.ts';

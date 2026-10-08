@@ -1,4 +1,4 @@
-import { ApiError, type Caller, type KraftverkApi, type RecipeView } from '@kraftverk/api-contract';
+import { ApiError, type AutomationView, type Caller, type KraftverkApi, type RecipeView } from '@kraftverk/api-contract';
 import { describeSteps, hasConditions, keepsSo, takesSteps, type AutomationDraft, type RuleSteps } from '@kraftverk/automation';
 import { RunRefusal, type AutomationRecord } from '@kraftverk/automation-engine';
 import { isTimeZone, type AutomationId, type Value } from '@kraftverk/device-sdk';
@@ -37,8 +37,12 @@ const refusing = <T>(work: () => T): T => {
 
 export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'automations'> {
   const { automations, engine, library } = hub;
-  const { view, checked, draftView, rehearsed, copied } = hub.drafts;
+  const { checked, draftView, rehearsed, copied } = hub.drafts;
   const actor = actorOf(caller);
+  /** Who asks, by their person id: their own shortcuts. None for an assistant, or a server's account not yet anyone's. */
+  const me = caller.kind === 'person' ? (caller.id ?? null) : null;
+  /** An automation as this caller sees it: with its place on their own home page. */
+  const view = (automation: AutomationRecord): AutomationView => ({ ...hub.drafts.view(automation), homePlace: me ? hub.shortcuts.placeOf(me, automation.id) : null });
   const intent = intentOf(caller);
 
   const record = (kind: string, automation: AutomationId, summary: string, detail?: unknown) =>
@@ -125,6 +129,20 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
 
       async update(id, input) {
         const current = automationOf(id);
+        // Its place on the caller's own home page: theirs alone, and no change to the automation.
+        if (input.homePlace !== undefined) {
+          if (!me) throw new ApiError('forbidden', 'Only a person has a home page of their own');
+          const was = hub.shortcuts.placeOf(me, current.id);
+          hub.shortcuts.place(me, current.id, input.homePlace);
+          if ((was === null) !== (input.homePlace === null))
+            record('automation.placed', current.id, `${input.homePlace === null ? 'Taken off' : 'Put on'} ${hub.people.get(me)?.name ?? 'their'}'s home page: "${current.name}"`, { before: { homePlace: was }, after: { homePlace: input.homePlace } });
+          const { homePlace: _homePlace, ...rest } = input;
+          if (!Object.values(rest).some((value) => value !== undefined)) {
+            moved(current.id);
+            return view(current);
+          }
+          input = rest;
+        }
         if (input.timeZone) zoned(input.timeZone);
         if (input.homeId && !hub.places.home(input.homeId)) throw new ApiError('invalid', 'No such home');
         if (input.key !== undefined && input.key !== current.key) checkKey(input.key, automations.keyTaken(input.key, current.id), 'automation', 'start-charging');
@@ -163,10 +181,10 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
         }
 
         // What it watches, or how it may act, changed: its conditions start afresh, and one already true is its edge.
-        // A new name, its place on the home page, or how often it keeps things so, changes neither: what it did stands.
+        // A new name, or how often it keeps things so, changes neither: what it did stands.
         const startsAfresh = changedRule !== null || (input.mode !== undefined && input.mode !== current.mode);
         if (startsAfresh) engine.reset(current.id);
-        let updated = automations.update(current.id, {
+        const updated = automations.update(current.id, {
           ...(input.name ? { name: input.name } : {}),
           ...(input.key ? { key: input.key } : {}),
           ...(changedRule ?? {}),
@@ -175,20 +193,15 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
           ...(input.mode ? { mode: input.mode } : {}),
           ...(input.recheckMinutes !== undefined ? { recheckMinutes: input.recheckMinutes } : {}),
         })!;
-        if (input.homePlace !== undefined) updated = automations.placeOnHome(current.id, input.homePlace)!;
         const said =
           input.mode && input.mode !== current.mode
             ? { off: 'Turned off', watch: 'Set to only watch on its own', act: 'Let act on its own' }[input.mode]
             : input.key !== undefined && input.key !== current.key && !changedRule && !input.name
               ? `Known in configuration as ${input.key}`
-              : input.homePlace !== undefined && !changedRule && !input.name
-                ? input.homePlace === null
-                  ? 'Taken off the home page'
-                  : 'Put on the home page'
-                : 'Changed';
+              : 'Changed';
         record(input.mode === 'act' && current.mode !== 'act' ? 'automation.let-act' : 'automation.changed', updated.id, `${said}: "${updated.name}"`, {
-          before: { key: current.key, mode: current.mode, rule: current.rule, roles: current.roles, starts: current.starts, recheckMinutes: current.recheckMinutes, homePlace: current.homePlace },
-          after: { key: updated.key, mode: updated.mode, rule: updated.rule, roles: updated.roles, starts: updated.starts, recheckMinutes: updated.recheckMinutes, homePlace: updated.homePlace },
+          before: { key: current.key, mode: current.mode, rule: current.rule, roles: current.roles, starts: current.starts, recheckMinutes: current.recheckMinutes },
+          after: { key: updated.key, mode: updated.mode, rule: updated.rule, roles: updated.roles, starts: updated.starts, recheckMinutes: updated.recheckMinutes },
         });
         // Its conditions, looked at now, after the change is on the timeline: let act while one holds, it acts at once.
         if (startsAfresh) engine.poke(updated.id);

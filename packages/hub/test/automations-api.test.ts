@@ -271,30 +271,41 @@ describe('automations', () => {
     expect(left).toMatchObject({ id: morning.id, groups: {}, starts: {}, problems: ['The charging: nothing to start — the automation it started is gone'] });
   }, 30_000);
 
-  test('on the home page, in their places: put there, moved, taken off — the others closing up', async () => {
+  test('on each person’s own home page, in their places: put there, moved, taken off — the others closing up', async () => {
     const { weather, plug } = await forecastAndPlug();
     const ids: AutomationId[] = [];
     for (const name of ['One', 'Two', 'Three']) ids.push((await create(name, 'test.forecast.forecast-switch', { forecast: whole(weather), switch: whole(plug) }, { day: 'tomorrow' })).id);
-    const place = (id: AutomationId, homePlace: number | null) => t.home.automations.update(id, { homePlace });
-    const onHome = (all: AutomationView[]) =>
-      all
-        .filter((one) => one.homePlace !== null)
+    const at = new Date().toISOString();
+    for (const [id, name] of [['p-01JA8ZK3Q4R7T9V2W5X6Y8Z0AA', 'Anna'], ['p-01JA8ZK3Q4R7T9V2W5X6Y8Z0AB', 'Bo']] as const) t.hub.people.ensureKeyless(id, name, at);
+    const anna = t.as({ kind: 'person', name: 'anna', account: 'u-anna', id: 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0AA' });
+    const bo = t.as({ kind: 'person', name: 'bo', account: 'u-bo', id: 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0AB' });
+    const place = (who: typeof anna, id: AutomationId, homePlace: number | null) => who.automations.update(id, { homePlace });
+    const onHome = async (who: typeof anna) =>
+      (await who.automations.list())
+        .filter((one: AutomationView) => one.homePlace !== null)
         .sort((a, b) => a.homePlace! - b.homePlace!)
         .map((one) => one.name);
-    await place(ids[0]!, 0);
-    await place(ids[1]!, 1);
-    expect(onHome(await t.home.automations.list())).toEqual(['One', 'Two']);
+    await place(anna, ids[0]!, 0);
+    await place(anna, ids[1]!, 1);
+    expect(await onHome(anna)).toEqual(['One', 'Two']);
+    // Each their own: Bo's page has none of Anna's.
+    expect(await onHome(bo)).toEqual([]);
+    await place(bo, ids[2]!, 0);
+    expect(await onHome(bo)).toEqual(['Three']);
     // First among them: the others move along.
-    expect((await place(ids[2]!, 0)).homePlace).toBe(0);
-    expect(onHome(await t.home.automations.list())).toEqual(['Three', 'One', 'Two']);
-    await place(ids[0]!, null);
-    expect(onHome(await t.home.automations.list())).toEqual(['Three', 'Two']);
-    // Deleted, the rest close up behind it.
+    expect((await place(anna, ids[2]!, 0)).homePlace).toBe(0);
+    expect(await onHome(anna)).toEqual(['Three', 'One', 'Two']);
+    await place(anna, ids[0]!, null);
+    expect(await onHome(anna)).toEqual(['Three', 'Two']);
+    // Deleted, the rest close up behind it, on every page.
     await t.home.automations.delete(ids[2]!);
-    expect((await t.home.automations.list()).find((one) => one.name === 'Two')?.homePlace).toBe(0);
+    expect((await anna.automations.list()).find((one) => one.name === 'Two')?.homePlace).toBe(0);
+    expect(await onHome(bo)).toEqual([]);
     // Its place is no change to what it does: it asks nothing, even when it acts.
     await arm(ids[1]!);
-    expect((await place(ids[1]!, null)).homePlace).toBeNull();
+    expect((await place(anna, ids[1]!, null)).homePlace).toBeNull();
+    // An assistant has no home page of its own.
+    await expect(t.as({ kind: 'agent', for: 'olof' }).automations.update(ids[1]!, { homePlace: 0 })).rejects.toThrow('Only a person has a home page of their own');
   });
 
   test('checks what it would do now without doing it, and is deleted', async () => {

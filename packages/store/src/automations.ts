@@ -10,8 +10,7 @@ import type { AutomationMode, AutomationRecord, AutomationStorage, TriggerState 
 
 /**
  * The automations you made — each with its own rule — what fills their
- * roles, what their triggers last saw, their places on the home page, and
- * every run (docs/DATA-MODEL.md, docs/SEQUENCES.md,
+ * roles, what their triggers last saw, and every run (docs/DATA-MODEL.md, docs/SEQUENCES.md,
  * docs/AUTOMATION-EDITOR.md). Validation is the caller's: this only keeps
  * them.
  */
@@ -26,7 +25,6 @@ type Row = {
   time_zone: string | null;
   mode: AutomationMode;
   recheck_minutes: number | null;
-  home_place: number | null;
   looked_at: string | null;
   created_at: string;
   updated_at: string;
@@ -186,7 +184,6 @@ export class AutomationStore implements AutomationStorage {
       ownTimeZone: row.time_zone,
       mode: row.mode,
       recheckMinutes: row.recheck_minutes,
-      homePlace: row.home_place,
       lookedAt: row.looked_at,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -231,11 +228,6 @@ export class AutomationStore implements AutomationStorage {
     }
   }
 
-  /** The automations on the home page, in their places. */
-  onHome(): AutomationRecord[] {
-    return this.#records(this.#db.query<Row, []>('SELECT * FROM automation WHERE home_place IS NOT NULL ORDER BY home_place').all());
-  }
-
   #setRoles(id: string, fills: Pick<AutomationRecord, 'roles' | 'groups' | 'starts'>): void {
     this.#db.query('DELETE FROM automation_role WHERE automation_id = ?').run(id);
     this.#db.query('DELETE FROM automation_group_part WHERE automation_id = ?').run(id);
@@ -266,7 +258,7 @@ export class AutomationStore implements AutomationStorage {
       this.#db
         // Not looked at yet: the engine says when it looks, on its own clock.
         .query(
-          'INSERT INTO automation (id, key, name, rule, made_from, home_id, time_zone, mode, recheck_minutes, home_place, looked_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)'
+          'INSERT INTO automation (id, key, name, rule, made_from, home_id, time_zone, mode, recheck_minutes, looked_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)'
         )
         .run(id, key, input.name, JSON.stringify(input.rule), input.madeFrom, input.homeId ?? null, input.timeZone, 'watch', input.recheckMinutes, now, now);
       this.#setRoles(id, input);
@@ -294,40 +286,9 @@ export class AutomationStore implements AutomationStorage {
     return this.get(id);
   }
 
-  /**
-   * Puts it on the home page at `place` — the others moving along to make
-   * room — or takes it off (null). Places stay 0, 1, 2… in order.
-   */
-  placeOnHome(id: string, place: number | null): AutomationRecord | null {
-    if (!this.get(id)) return null;
-    this.#db.transaction(() => {
-      const order = this.#db
-        .query<{ id: string }, [string]>('SELECT id FROM automation WHERE home_place IS NOT NULL AND id <> ? ORDER BY home_place')
-        .all(id)
-        .map((row) => row.id);
-      if (place !== null) order.splice(Math.max(0, Math.min(place, order.length)), 0, id);
-      // Cleared first: the unique index holds every place to one automation, even between two updates.
-      this.#db.query('UPDATE automation SET home_place = NULL WHERE home_place IS NOT NULL OR id = ?').run(id);
-      const put = this.#db.query('UPDATE automation SET home_place = ? WHERE id = ?');
-      order.forEach((one, index) => put.run(index, one));
-    })();
-    this.#revision += 1;
-    return this.get(id);
-  }
-
   delete(id: string): boolean {
     this.#revision += 1;
-    const deleted = this.#db.query('DELETE FROM automation WHERE id = ?').run(id).changes > 0;
-    // The shortcuts close up behind it.
-    if (deleted) {
-      const order = this.#db.query<{ id: string }, []>('SELECT id FROM automation WHERE home_place IS NOT NULL ORDER BY home_place').all();
-      this.#db.transaction(() => {
-        this.#db.query('UPDATE automation SET home_place = NULL WHERE home_place IS NOT NULL').run();
-        const put = this.#db.query('UPDATE automation SET home_place = ? WHERE id = ?');
-        order.forEach((one, index) => put.run(index, one.id));
-      })();
-    }
-    return deleted;
+    return this.#db.query('DELETE FROM automation WHERE id = ?').run(id).changes > 0;
   }
 
   // --- what its triggers last saw ---------------------------------------------------

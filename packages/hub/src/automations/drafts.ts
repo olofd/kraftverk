@@ -121,7 +121,8 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
     });
   };
 
-  const view = (automation: AutomationRecord): AutomationView => {
+  /** An automation as everyone sees it: where it is on one person's home page is theirs to add. */
+  const view = (automation: AutomationRecord): Omit<AutomationView, 'homePlace'> => {
     const { lookedAt: _lookedAt, madeFrom, ...shown } = automation;
     return {
       ...shown,

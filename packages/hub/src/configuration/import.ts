@@ -338,6 +338,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     if (entry.role !== existing.member.role) changes.push(`${existing.member.role} → ${entry.role}`);
     if (entry.nickname !== null && entry.nickname !== existing.member.nickname) changes.push(`called ${entry.nickname}`);
     if (entry.color !== null && entry.color !== existing.member.color) changes.push('their colour');
+    if (entry.shortcuts.join() !== deps.shortcuts.of(entry.id).map((id) => deps.automations.get(id)?.key).join()) changes.push('their shortcuts');
     return [{ key, name: entry.name, action: changes.length ? 'change' : 'same', changes }];
   });
 
@@ -564,7 +565,6 @@ function automationChanges(deps: ImportDeps, existing: AutomationRecord, entry: 
   if (homeKey !== entry.home) changes.push(entry.home === null ? "for the family's homes, not one" : `for ${entry.home}`);
   if (existing.recheckMinutes !== entry.recheckMinutes) changes.push('how often it keeps things so');
   if (labelsDiffer(deps, { automation: existing.id }, entry.labels)) changes.push(`its labels: ${entry.labels.join(', ')}`);
-  if (existing.homePlace !== entry.homePlace) changes.push(entry.homePlace === null ? 'off the home page' : 'its place on the home page');
   return changes.length ? { action: 'change', changes } : { action: 'same', changes };
 }
 
@@ -614,7 +614,6 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
   const applied: ImportApplied = { devices: { added: [], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, family: false, people: { added: [], changed: [] }, homes: { added: [], changed: [] }, labels: { added: [], changed: [] }, policy: [], notes: [] };
   const touched: AutomationId[] = [];
   /** Where each automation goes on the home page: placed after all are written, by place, so each lands where the file says. */
-  const placing: { id: AutomationId; place: number | null }[] = [];
   /** Restoring, each in a savepoint of its own: what fails is undone alone, said, and the rest goes on. */
   const each = (what: string, work: () => void) => {
     if (!options.lenient) return work();
@@ -745,7 +744,6 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
         each(`"${entry.name}"`, () => {
           const homeId = entry.home ? (deps.places.homeByKey(entry.home)?.id ?? null) : null;
           deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, groups: result.groups, starts: result.starts, homeId, timeZone: entry.clock, mode: why.length ? 'off' : entry.mode, recheckMinutes: entry.recheckMinutes });
-          if (entry.homePlace !== (existing?.homePlace ?? null)) placing.push({ id, place: entry.homePlace });
           writeLabels(deps, { automation: id }, entry.labels);
           (existing ? applied.automations.changed : applied.automations.added).push(key);
           if (why.length) applied.notes.push(`"${entry.name}" is restored turned off: ${why.join('; ')}`);
@@ -753,9 +751,12 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
         });
       }
 
-      // The home page, in the order of its places: one put first, then the next after it, each where the file says.
-      for (const { id } of placing.filter((each) => each.place === null)) deps.automations.placeOnHome(id, null);
-      for (const { id, place } of placing.filter((each) => each.place !== null).sort((a, b) => a.place! - b.place!)) deps.automations.placeOnHome(id, place);
+      // Each person's own shortcuts, once their automations are: as the file has them, those it names that are here.
+      for (const item of view.people) {
+        const entry = document.people[item.key]!;
+        if (!deps.people.get(entry.id)) continue;
+        deps.shortcuts.set(entry.id, entry.shortcuts.flatMap((key) => deps.automations.byKey(key)?.id ?? []));
+      }
 
       // Each home's values.
       for (const change of view.policy) {

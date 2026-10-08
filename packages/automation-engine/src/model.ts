@@ -39,8 +39,6 @@ export type AutomationRecord = {
   mode: AutomationMode;
   /** Every this many minutes, a condition that still holds runs it again, unless what it would do is already so. Null: never. */
   recheckMinutes: number | null;
-  /** Its place among the shortcuts on the home page; null when it is not there. */
-  homePlace: number | null;
   /** When it last looked again to keep things so, or started afresh. */
   lookedAt: string | null;
   createdAt: string;

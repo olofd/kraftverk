@@ -8,7 +8,7 @@ import type { Rule } from '@kraftverk/automation';
 import { ApiError } from '@kraftverk/api-contract';
 import { AutomationLibrary } from '@kraftverk/automation-engine';
 import type { AuditRecord } from '@kraftverk/device-sdk';
-import { FamilyStore, LabelStore, MediaStore, PeopleStore, PlaceStore, SpaceStore, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
+import { FamilyStore, LabelStore, MediaStore, PeopleStore, ShortcutStore, PlaceStore, SpaceStore, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
 import { policyOf } from '../src/homes/homes.ts';
 
 import { drafts } from '../src/automations/drafts.ts';
@@ -92,6 +92,7 @@ beforeEach(() => {
     spaces: new SpaceStore(db),
     labels: new LabelStore(db),
     people: new PeopleStore(db),
+    shortcuts: new ShortcutStore(db),
     media: new MediaStore(db),
     policyOf: policyOf(db),
     sealing: testSealing,
@@ -107,7 +108,7 @@ const lampRule: Rule = {
   then: [{ command: { role: 'lamp', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
 };
 
-/** A home: two lamps — one with its PIN — and an automation that acts, on the home page. */
+/** A home: two lamps — one with its PIN — and an automation that acts. */
 function aHome() {
   const hall = deps.catalog.add({ typeId: 'test.lamp', name: 'Hall lamp', identity: 'test-lamp:HALL', config: { room: 'Hall' }, description: LAMP });
   const way = deps.connections.add({ deviceId: hall.id, method: 'bus', transport: 'bus', heldBy: MACHINE_NODE.id, address: 'lamp-hall' });
@@ -116,7 +117,6 @@ function aHome() {
   deps.connections.add({ deviceId: porch.id, method: 'bus', transport: 'bus', heldBy: MACHINE_NODE.id, address: 'lamp-porch' });
   const morning = deps.automations.create({ name: 'Morning', rule: lampRule, madeFrom: null, roles: { lamp: { device: hall.id, part: 'main' } }, groups: {}, starts: {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
   deps.automations.update(morning.id, { mode: 'act' });
-  deps.automations.placeOnHome(morning.id, 0);
   return { hall, porch, morning };
 }
 
@@ -148,7 +148,7 @@ describe('a server’s own export, into a database wiped', () => {
     expect(way).toMatchObject({ method: 'bus', address: 'lamp-hall' });
     expect(deps.connections.secret(way.id, 'pin')).toBe('pin-of-a-test');
     const morning = deps.automations.byKey('morning')!;
-    expect(morning).toMatchObject({ mode: 'act', homePlace: 0, rule: lampRule, roles: { lamp: { device: hall.id, part: 'main' } } });
+    expect(morning).toMatchObject({ mode: 'act', rule: lampRule, roles: { lamp: { device: hall.id, part: 'main' } } });
     expect(sessionsSynced.at(-1)).toBe(2);
 
     // Read again over what it made: nothing to do.
@@ -205,17 +205,20 @@ describe('a server’s own export, into a database wiped', () => {
     expect(nowhere.problems.map((problem) => [problem.message, problem.path])).toEqual([['Home has no space "cellar"', ['devices', 'hall-lamp', 'place']]]);
   });
 
-  test('its people, by their ids: each chain checked again, their role, nickname and colour back', async () => {
+  test('its people, by their ids: each chain checked again, their role, nickname, colour and own shortcuts back', async () => {
+    const { morning } = aHome();
     const key = softwareKey(newSecret());
     const id = 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0AB';
     const chain = await createPerson({ id, key, deviceName: 'Phone', profile: { name: 'Anna Example', shortName: null, locale: null, pictureId: null }, at: '2026-10-08T12:00:00.000Z' });
     deps.people.present(chain);
     deps.people.addMember(id, { role: 'admin', invitedBy: null, at: '2026-10-08T12:00:00.000Z' });
     deps.people.updateMember(id, { nickname: 'Mum', color: '#10b981' });
+    deps.shortcuts.set(id, [morning.id]);
     const text = await exported();
     expect(text).toContain('anna-example:');
+    expect(text).toContain('shortcuts:\n      - morning\n');
 
-    db.exec('DELETE FROM member; DELETE FROM person_identity; DELETE FROM person_key; DELETE FROM person;');
+    db.exec('DELETE FROM shortcut; DELETE FROM member; DELETE FROM person_identity; DELETE FROM person_key; DELETE FROM person;');
     const plan = await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') });
     expect(plan.problems).toEqual([]);
     expect(plan.people).toEqual([{ key: 'anna-example', name: 'Anna Example', action: 'add', changes: [] }]);
@@ -223,6 +226,7 @@ describe('a server’s own export, into a database wiped', () => {
     expect(applied.people.added).toEqual(['anna-example']);
     expect(deps.people.get(id)).toMatchObject({ name: 'Anna Example', shownAs: 'Mum', member: { role: 'admin', color: '#10b981' } });
     expect(deps.people.chainOf(id)).toEqual(chain);
+    expect(deps.shortcuts.of(id)).toEqual([morning.id]);
     expect((await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: actor('person', 'olof') })).people[0]!.action).toBe('same');
 
     // A chain changed by hand is no one: a problem, at its line.
@@ -550,7 +554,7 @@ describe('the snapshot kept beside the database', () => {
     expect(restored!.applied!.devices.added).toEqual(['hall-lamp', 'porch-lamp']);
     const hall = deps.catalog.byKey('hall-lamp')!;
     expect(deps.connections.secret(deps.connections.forDevice(hall.id)[0]!.id, 'pin')).toBe('pin-of-a-test');
-    expect(deps.automations.byKey('morning')).toMatchObject({ mode: 'act', homePlace: 0 });
+    expect(deps.automations.byKey('morning')).toMatchObject({ mode: 'act' });
   });
 
   test('restores item by item: an automation naming a removed device kept turned off, a device it cannot read left out — the rest restored', async () => {
@@ -569,7 +573,7 @@ describe('the snapshot kept beside the database', () => {
     const restored = await restoreFrom(deps, withGone, 'kraftverk.before-a-test.yaml');
     expect(restored!.applied!.devices.added).toEqual(['hall-lamp']);
     expect(deps.catalog.byKey('hall-lamp')!.identity).toBe(hall.identity);
-    expect(deps.automations.byKey('morning')).toMatchObject({ mode: 'act', homePlace: 0 });
+    expect(deps.automations.byKey('morning')).toMatchObject({ mode: 'act' });
     // Kept, turned off, its rule whole: its owner gives it a lamp again.
     expect(deps.automations.byKey('evening')).toMatchObject({ mode: 'off', rule: lampRule, roles: {} });
     expect(restored!.problems).toEqual([

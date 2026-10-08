@@ -82,8 +82,6 @@ export type AutomationEntry = {
   clock: string | null;
   /** How often it looks again to keep things so; null for never. */
   recheckMinutes: number | null;
-  /** Its place among the home page's shortcuts; null when it is not there. */
-  homePlace: number | null;
   /** The recipe it was copied from; null when built from nothing. */
   madeFrom: string | null;
   /** Its labels, by key. */
@@ -144,10 +142,11 @@ export type SpaceEntry = {
 /**
  * A person in the family, by a key for the file: their id verbatim, and
  * their chain — who they are, as they prove it, base64url of its JSON — with
- * what this family calls them, their colour and their role. A restore checks
- * the chain again; nothing private is in it.
+ * what this family calls them, their colour and their role, and their own
+ * shortcuts on their home page: automations by key, in order. A restore
+ * checks the chain again; nothing private is in it.
  */
-export type PersonEntry = { id: string; name: string; role: 'admin' | 'member' | 'child'; nickname: string | null; color: string | null; chain: string };
+export type PersonEntry = { id: string; name: string; role: 'admin' | 'member' | 'child'; nickname: string | null; color: string | null; chain: string; shortcuts: string[] };
 
 export const PERSON_ID = /^p-[0-9A-HJKMNP-TV-Z]{26}$/;
 
@@ -237,7 +236,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
           problem('Expected a person: their id, name, role and chain', path);
           continue;
         }
-        for (const field of Object.keys(entry)) if (!['id', 'name', 'role', 'nickname', 'color', 'chain'].includes(field)) problem(`"${field}" is not part of a person: they have id, name, role, nickname, color and chain`, [...path, field]);
+        for (const field of Object.keys(entry)) if (!['id', 'name', 'role', 'nickname', 'color', 'chain', 'shortcuts'].includes(field)) problem(`"${field}" is not part of a person: they have id, name, role, nickname, color, chain and shortcuts`, [...path, field]);
         const id = typeof entry.id === 'string' && PERSON_ID.test(entry.id) ? entry.id : (problem('"id" is a person’s id: p- and 26 letters and digits', [...path, 'id']), null);
         if (id && ids.has(id)) problem('Another person in this file has that id', [...path, 'id']);
         if (id) ids.add(id);
@@ -246,7 +245,13 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         const nickname = entry.nickname === undefined || entry.nickname === null ? null : text(entry.nickname, [...path, 'nickname'], 'what the family calls them');
         const color = entry.color === undefined || entry.color === null ? null : typeof entry.color === 'string' && /^#[0-9a-f]{6}$/.test(entry.color) ? entry.color : (problem('"color" is "#rrggbb", in lowercase', [...path, 'color']), null);
         const chain = typeof entry.chain === 'string' && /^[A-Za-z0-9_-]+$/.test(entry.chain) ? entry.chain : (problem('"chain" is who they are, as they prove it: as the file was written', [...path, 'chain']), null);
-        if (id && name && role && chain) people[key] = { id, name, role, nickname, color, chain };
+        const shortcuts =
+          entry.shortcuts === undefined || entry.shortcuts === null
+            ? []
+            : Array.isArray(entry.shortcuts)
+              ? entry.shortcuts.flatMap((each, index) => (typeof each === 'string' && KEY.test(each) ? [each] : (problem('A shortcut is an automation, by its key', [...path, 'shortcuts', index]), [])))
+              : (problem('"shortcuts" is a list of automation keys, in order: [good-morning, away]', [...path, 'shortcuts']), []);
+        if (id && name && role && chain) people[key] = { id, name, role, nickname, color, chain, shortcuts };
       }
     }
   }
@@ -471,7 +476,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         problem('Expected an automation: its name, what it uses and what it does', path);
         continue;
       }
-      const own = ['name', 'mode', 'home', 'clock', 'recheck', 'home page', 'made from', 'labels'];
+      const own = ['name', 'mode', 'home', 'clock', 'recheck', 'made from', 'labels'];
       const rules = ['uses', 'settings', 'memory', 'inputs', 'result', 'when', 'while running', 'only if', 'do', 'if a step fails'];
       for (const field of Object.keys(entry)) if (![...own, ...rules].includes(field)) problem(`"${field}" is not part of an automation: it has ${[...own, ...rules].join(', ')}`, [...path, field]);
       const name = text(entry.name, [...path, 'name'], 'its name');
@@ -481,12 +486,17 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
       const clock = entry.clock === undefined || entry.clock === null ? null : text(entry.clock, [...path, 'clock'], 'its clock: the time zone its times are in ("clock: Europe/Stockholm")');
       const recheck = entry.recheck === undefined || entry.recheck === null ? null : durationSeconds(entry.recheck);
       if (entry.recheck !== undefined && entry.recheck !== null && (recheck === null || recheck % 60 !== 0)) problem('"recheck" is how often it looks again, in whole minutes ("15 min")', [...path, 'recheck']);
-      const homePlace = entry['home page'] === undefined || entry['home page'] === null ? null : Number.isInteger(entry['home page']) ? (entry['home page'] as number) : (problem('"home page" is its place among the shortcuts: 0, 1, 2 …', [...path, 'home page']), null);
       const madeFrom = typeof entry['made from'] === 'string' ? entry['made from'] : null;
       const read = ruleFromConfig(entry, path);
       issues.push(...read.issues);
-      if (name && read.rule) automations[key] = { name, mode, home, clock, recheckMinutes: recheck === null ? null : recheck / 60, homePlace, madeFrom, labels: labelKeys(entry.labels, [...path, 'labels']), uses: read.uses, rule: read.rule };
+      if (name && read.rule) automations[key] = { name, mode, home, clock, recheckMinutes: recheck === null ? null : recheck / 60, madeFrom, labels: labelKeys(entry.labels, [...path, 'labels']), uses: read.uses, rule: read.rule };
     }
+
+  // A shortcut is to an automation in the file.
+  for (const [key, person] of Object.entries(people))
+    person.shortcuts.forEach((shortcut, index) => {
+      if (isRecord(automationsData) && !(shortcut in automationsData)) problem(`There is no automation "${shortcut}" in this file`, ['people', key, 'shortcuts', index]);
+    });
 
   // Secrets by name.
   const secrets: Record<string, string> = {};
@@ -576,7 +586,6 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
         ...(automation.home !== null ? { home: automation.home } : {}),
         ...(automation.clock !== null ? { clock: automation.clock } : {}),
         ...(automation.recheckMinutes !== null ? { recheck: durationText(automation.recheckMinutes * 60) } : {}),
-        ...(automation.homePlace !== null ? { 'home page': automation.homePlace } : {}),
         ...(automation.madeFrom !== null ? { 'made from': automation.madeFrom } : {}),
         ...(automation.labels.length ? { labels: automation.labels } : {}),
         ...ruleToConfig(automation.rule, automation.uses),
@@ -599,7 +608,7 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
           people: Object.fromEntries(
             Object.entries(document.people).map(([key, person]) => [
               key,
-              { id: person.id, name: person.name, role: person.role, ...(person.nickname !== null ? { nickname: person.nickname } : {}), ...(person.color !== null ? { color: person.color } : {}), chain: person.chain },
+              { id: person.id, name: person.name, role: person.role, ...(person.nickname !== null ? { nickname: person.nickname } : {}), ...(person.color !== null ? { color: person.color } : {}), chain: person.chain, ...(person.shortcuts.length ? { shortcuts: person.shortcuts } : {}) },
             ])
           ),
         }

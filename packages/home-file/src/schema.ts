@@ -253,7 +253,6 @@ function automationSchema(vocabulary: Vocabulary): Schema {
       home: { type: 'string', description: 'The key of the home it is for: its clock, and its "home". The family’s, when it says none.' },
       clock: { type: 'string', description: 'A clock of its own: the time zone its times of day are in, "Europe/Stockholm". Its home’s, when it says none.' },
       recheck: { $ref: '#/$defs/duration' },
-      'home page': { type: 'integer', minimum: 0, description: 'Its place among the home page’s shortcuts.' },
       'made from': { type: 'string', description: 'The recipe it was copied from.' },
       labels: LABELS,
       settings: {
@@ -359,6 +358,7 @@ export function configJsonSchema(vocabulary: Vocabulary): Schema {
             nickname: { type: 'string', minLength: 1, maxLength: 30, description: 'What this family calls them.' },
             color: { type: 'string', pattern: '^#[0-9a-f]{6}$' },
             chain: { type: 'string', description: 'Who they are, as they prove it: their signed statements, as the file was written. Not to be edited.' },
+            shortcuts: { type: 'array', items: { type: 'string' }, description: 'Their own shortcuts on their home page: automations by key, in order.' },
           },
         },
       },

@@ -127,7 +127,7 @@ function Editing({
   // What the form does not edit, and its YAML does: its mode, clock, keeping it so, its place on the home page.
   const before = useMemo<AutomationSettings>(
     // A new one keeps its home's clock: the family's first home's, until it is for another.
-    () => (existing ? { mode: existing.mode, homeId: existing.homeId, timeZone: existing.ownTimeZone, recheckMinutes: existing.recheckMinutes, homePlace: existing.homePlace } : { mode: 'watch', homeId: null, timeZone: null, recheckMinutes: null, homePlace: null }),
+    () => (existing ? { mode: existing.mode, homeId: existing.homeId, timeZone: existing.ownTimeZone, recheckMinutes: existing.recheckMinutes } : { mode: 'watch', homeId: null, timeZone: null, recheckMinutes: null }),
     [existing]
   );
   const [settings, setSettings] = useState<AutomationSettings>(before);
@@ -200,10 +200,10 @@ function Editing({
       });
       if (!existing) {
         const made = await api.automations.create({ ...body, ...(key ? { key } : {}), madeFrom: recipe, timeZone: settings.timeZone, recheckMinutes: settings.recheckMinutes });
-        // A new one only watches, off the home page: what its YAML says beyond that, set as it would be on its page.
-        const { mode, homePlace } = changes as Partial<AutomationSettings>;
-        if (mode === undefined && homePlace === undefined) return onSaved(made);
-        const { answer } = await withConfirmation((confirmation) => changeAutomation(api, made.id, { ...(mode !== undefined ? { mode } : {}), ...(homePlace !== undefined ? { homePlace } : {}), confirmation }), question(made.name), ask);
+        // A new one only watches: what its YAML says beyond that, set as it would be on its page.
+        const { mode } = changes as Partial<AutomationSettings>;
+        if (mode === undefined) return onSaved(made);
+        const { answer } = await withConfirmation((confirmation) => changeAutomation(api, made.id, { mode, confirmation }), question(made.name), ask);
         onSaved('automation' in answer ? answer.automation : made);
         return;
       }
