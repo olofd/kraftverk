@@ -98,6 +98,7 @@ export const PATHS = {
     connectivity: '/settings/connectivity',
     configuration: (open: { import?: boolean; from?: string } = {}) => `/settings/configuration${query({ import: open.import ? '1' : undefined, from: open.from })}`,
     serverLog: '/settings/server-log',
+    maps: '/settings/maps',
   },
 } as const;
 

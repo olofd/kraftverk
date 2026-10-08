@@ -64,6 +64,10 @@ export function AppSettings() {
           {active ? (
             <>
               <RowSeparator />
+              <Pressable onPress={() => router.push(PATHS.settings.maps)}>
+                <Row title="Maps" subtitle="The map your server holds: the world, and the countries you download — before a journey, say" accessory={chevron} />
+              </Pressable>
+              <RowSeparator />
               <Pressable onPress={() => router.push(PATHS.settings.serverLog)}>
                 <Row title="Server log" subtitle="What the server has said lately — where to look when something is wrong" accessory={chevron} />
               </Pressable>
