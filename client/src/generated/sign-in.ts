@@ -7,4 +7,8 @@
 
 import type { ProviderSignIn } from '@kraftverk/identity';
 
-export const SIGN_IN: readonly ProviderSignIn[] = [];
+import { appleSignIn as signInAppleClient } from '@kraftverk/sign-in-apple/client';
+
+export const SIGN_IN: readonly ProviderSignIn[] = [
+  signInAppleClient,
+];

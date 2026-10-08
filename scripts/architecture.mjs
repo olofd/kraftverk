@@ -111,6 +111,8 @@ const packageRoot = (file, parents) => {
 const INTEGRATION_PARENTS = ['packages/integrations/'];
 const DEVICE_PARENTS = ['packages/devices/'];
 const TRANSPORT_PARENTS = ['packages/transports/'];
+/** A sign-in provider's package: who a person is there, and asking the platform for its token (docs/PLAN-WORLD-MODEL.md §10.6). */
+const SIGN_IN_PARENTS = ['packages/sign-in/'];
 
 function areaOf(file) {
   if (GENERATED.some((prefix) => file.startsWith(prefix))) return { kind: 'generated' };
@@ -121,6 +123,8 @@ function areaOf(file) {
   if (device) return { kind: 'device', root: device };
   const transport = packageRoot(file, TRANSPORT_PARENTS);
   if (transport) return { kind: 'transport', root: transport };
+  const signIn = packageRoot(file, SIGN_IN_PARENTS);
+  if (signIn) return { kind: 'sign-in', root: signIn };
   return { kind: 'other' };
 }
 
@@ -130,7 +134,7 @@ function areaOf(file) {
  * Transports are not here: Bluetooth and MQTT are technologies the core may
  * name. A platform or a product is one the core must not.
  */
-const WORD_PARENTS = [...INTEGRATION_PARENTS, ...DEVICE_PARENTS];
+const WORD_PARENTS = [...INTEGRATION_PARENTS, ...DEVICE_PARENTS, ...SIGN_IN_PARENTS];
 
 const escape = (word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Case-insensitive; a hyphen may be written or left out (`open-meteo`, `OpenMeteo`). */
@@ -188,7 +192,7 @@ for (const product of PRODUCTS) {
 /** The words a file may not use: those of every product package it neither is nor depends on. */
 function forbiddenFor(file, area) {
   if (area.kind === 'core') return PRODUCTS;
-  if (area.kind !== 'integration' && area.kind !== 'device') return [];
+  if (area.kind !== 'integration' && area.kind !== 'device' && area.kind !== 'sign-in') return [];
   const own = PRODUCTS.find((product) => product.root === area.root);
   return PRODUCTS.filter((product) => product.root !== area.root && !own?.dependencies.has(product.name));
 }
@@ -294,6 +298,16 @@ function violation(file, area, specifier) {
       if (serverSafe && target && target.startsWith(`${area.root}ui/`)) return "server-side device code imports its package's screens";
       if (serverSafe && shipped && BUILT_IN.test(specifier)) return 'device code imports a platform built-in: it runs in the app too';
       // The SDK, and its integration — its builders, its link, its protocol — by name.
+      return null;
+    }
+
+    case 'sign-in': {
+      if (target && !target.startsWith(area.root)) return 'a sign-in provider reaches outside its package';
+      if (/^@kraftverk\/(server|client)(\/|$)/.test(specifier)) return 'a sign-in provider imports the app';
+      if (PRODUCT_PACKAGE.test(specifier)) return 'a sign-in provider imports a product package';
+      // Of the core, who a person is: the provider's shape, and checking its token.
+      const core = /^@kraftverk\/([^/]+)/.exec(specifier)?.[1];
+      if (core && core in MAY_IMPORT && core !== 'identity') return `a sign-in provider imports ${core}: of the core, only identity`;
       return null;
     }
 

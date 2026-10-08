@@ -1,0 +1,28 @@
+{
+  "name": "@kraftverk/sign-in-apple",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sign in with Apple, as a provider a kraftverk account may link: Apple's issuer and keys, and asking the platform for its token — iOS's own sheet on an iPhone, Apple's page in a browser where this app is registered with it.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts"
+  },
+  "scripts": {
+    "test": "node ../../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "kraftverk": {
+    "signIn": { "id": "apple" }
+  },
+  "dependencies": {
+    "@kraftverk/identity": "*",
+    "expo-apple-authentication": "~57.0.2"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

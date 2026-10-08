@@ -16,6 +16,9 @@
  *   transports.web.ts  each transport's entry for a browser's page
  *   registry.ts        the screens and pictures device types ship, and the
  *                      screens integrations ship for their own pages
+ *   sign-in.ts         the sign-in providers an account may link, each its
+ *                      package's (packages/sign-in/*): asking the platform
+ *                      for a token, a phone's or a browser's as Metro picks
  *
  * The app runs the same code the server does, and these are the only files
  * in it that import an integration, a device package or a transport. A
@@ -60,6 +63,8 @@ type Manifest = {
     integration?: IntegrationManifest;
     device?: DeviceManifest;
     transport?: { definition?: string; system?: string; web?: string; native?: string };
+    /** A sign-in provider: its id, and its client at the `./client` export. */
+    signIn?: { id: string };
   };
 };
 
@@ -142,6 +147,7 @@ const installed: Written = { file: 'installed.ts', what: 'What a hub installs, w
 const screens: Written = { file: 'registry.ts', what: 'The screens and pictures device types ship, and the screens integrations ship.', imports: [], body: [] };
 const onPhone: Written = { file: 'transports.ts', what: 'Each transport as a phone runs it.', imports: [], body: [] };
 const onPage: Written = { file: 'transports.web.ts', what: "Each transport as a browser's page runs it.", imports: [], body: [] };
+const signIn: Written = { file: 'sign-in.ts', what: "The sign-in providers this app offers, each its package's (packages/sign-in/*).", imports: [], body: [] };
 
 const platforms: string[] = [];
 let typeCount = 0;
@@ -278,6 +284,17 @@ installed.body = [
   '',
 ];
 
+// Sign-in providers: each package's client, a phone's or a browser's file as Metro picks it.
+const providers: string[] = [];
+for (const { manifest } of packages('packages/sign-in')) {
+  const id = manifest.kraftverk?.signIn?.id ?? fail(`${manifest.name} must say its sign-in provider's id: "kraftverk": { "signIn": { "id": … } }`);
+  if (!manifest.exports?.['./client']) fail(`${manifest.name} must export its client as "./client"`);
+  const name = local(manifest.name, 'Client');
+  signIn.imports.push(`import { ${id}SignIn as ${name} } from '${manifest.name}/client';`);
+  providers.push(`  ${name},`);
+}
+signIn.body = ["import type { ProviderSignIn } from '@kraftverk/identity';", '', ...signIn.imports, '', 'export const SIGN_IN: readonly ProviderSignIn[] = [', ...providers, '];', ''];
+
 screens.body = [
   "import type { DeviceAssets, DeviceUi } from '../features/devices/registry';",
   "import type { IntegrationUi } from '../features/integrations/registry';",
@@ -316,10 +333,10 @@ for (const [platform, written] of [['native', onPhone], ['web', onPage]] as cons
 }
 
 const files = [
-  ...[installed, screens, onPhone, onPage].map((written) => ({ path: resolve(GENERATED, written.file), source: [...HEADER(written.what), ...written.body].join('\n') })),
+  ...[installed, screens, onPhone, onPage, signIn].map((written) => ({ path: resolve(GENERATED, written.file), source: [...HEADER(written.what), ...written.body].join('\n') })),
   ...catalogues,
 ].map((file) => ({ ...file, file: relative(ROOT, file.path).replaceAll('\\', '/') }));
-const summary = `${platforms.length} integration(s), ${typeCount} device type(s), ${uis.length} with screens, ${pictures.length} with a picture, ${protocolCount} protocol(s), ${definitions.length} transport(s)`;
+const summary = `${platforms.length} integration(s), ${typeCount} device type(s), ${uis.length} with screens, ${pictures.length} with a picture, ${protocolCount} protocol(s), ${definitions.length} transport(s), ${providers.length} sign-in provider(s)`;
 
 if (process.argv.includes('--check')) {
   const stale = files.filter(({ path, source }) => {
