@@ -982,6 +982,95 @@ there, or a password set there. Those are the node's, in its own database
 Today's `users` become these. A passkey is bound to the node's address by
 WebAuthn, so it could never be anything but the node's.
 
+**A passkey and a device key** (W3.1). A browser that runs the app is a
+device like a phone: it has its own key, made by Web Crypto and never
+readable, and signs in at a server by that key's challenge. A passkey, a
+password and a provider are the *node's* ways in, for a browser that is not
+one of the person's devices — a borrowed laptop. They name the person in
+`login`, and never sign the person's chain: a WebAuthn assertion signs what
+the authenticator says, not a statement, so it cannot vouch for a key.
+
+### 10.6 Accounts: on a device, with no server
+
+Owner's decision, 2026-10-08: **an account works with no server**, and is
+made in one of two ways — **with a sign-in provider** (Apple first, and
+only Apple for now) or as **a local account**. Both make the same thing.
+
+**Making one.** The app's first screen asks for an account before anything
+else:
+
+1. *Continue with Apple*, where this device offers it, or *Create a local
+   account*.
+2. Your name — filled in from the provider when it gives one — and a
+   picture if you want.
+3. Your twelve recovery words, shown once; two of them asked back, so they
+   were written down.
+4. Then your family (its name and kind), and your first home and where it
+   is. This device is the family's master: a family of one, with no server.
+
+Either way the device makes the person id, the device key and the recovery
+key, and signs the chain's first statements. With a provider the chain
+also says `linked` — the provider and the subject it gives this app, and
+the email if one was given. The provider adds a way back; it never holds
+the key, and nothing is sent anywhere.
+
+**On the device.** The personal store keeps `me`: the person, their chain,
+and where the key is. Opening the app opens it as them, with nothing to
+type: the device's own lock is what guards a phone. A device can hold more
+than one account — a family's tablet — each with its own personal store,
+and *Switch account* lists them. *Sign out* returns to that list and keeps
+the key; *Remove from this device* forgets the key and the personal store.
+
+**Coming back** to an account a device no longer holds:
+
+- **With the recovery words**, always: the recovery key signs a new device
+  key into the chain, and the person is themselves again, everywhere.
+- **With the provider**, where a family they are in agrees: its master
+  sees a token whose subject is the one the person linked, and vouches for
+  the new key *in that family* — `person_key` keeps a key the family
+  vouched for beside the chain's. That is weaker than the chain, as an
+  admin's vouching is (§10.3), and the timeline says so; typing the
+  recovery words later signs the key into the chain properly.
+
+**Providers are packages** (`packages/sign-in/*`), as integrations are: the
+core names no product. A provider's package declares its id, name, issuer
+and key set, and holds the code that asks the platform for a token —
+Apple's: iOS's own sheet on a phone, Apple's JS in a browser served over
+HTTPS where a Services ID is configured. The app offers a provider only
+where its package says the platform can. A phone that is its family's
+master takes the token as its system handed it, straight from the
+provider; a server checks it (`verifyIdToken`: the provider's signature,
+this app's id, its age, the nonce it asked for).
+
+### 10.7 Keys on each platform (W3.1)
+
+- **The algorithm**: ECDSA on P-256 over SHA-256, signatures as r ‖ s
+  (64 bytes, as Web Crypto makes them), public keys as JWKs. Every node
+  checks signatures with `@noble/curves` (pure JS, audited, MIT), so a
+  phone needs no Web Crypto to check one; it accepts high-s signatures,
+  since Web Crypto does not normalise them.
+- **A browser**: a Web Crypto pair whose private half is not extractable,
+  kept in IndexedDB as the object it is, as the sealing key is now.
+- **A phone**: Expo has no signing API and Hermes has no Web Crypto. Three
+  ways were weighed:
+  - `react-native-quick-crypto`: a native build for OpenSSL in JSI, and its
+    keys are bytes in JS anyway — no gain over the next;
+  - a small native module over the Secure Enclave and Android's Keystore:
+    the only truly non-extractable key on a phone, but a custom native
+    build, and an implementation per OS;
+  - **taken**: the private scalar kept in `expo-secure-store` (the
+    Keychain, Android's Keystore-encrypted storage) and read into memory
+    only to sign, with `@noble/curves`. The same protection at rest as the
+    secrets' sealing key has today, and it runs in every build. The native
+    module is the upgrade, behind the same `SigningKey` port, when the app
+    has a native build of its own.
+- **A server** signs nothing for a person; tests use Web Crypto.
+- **The recovery key**: 128 bits shown as twelve words of BIP 39's English
+  list (`@scure/bip39`, MIT; the list is the BIP's), checksummed, so a word
+  mistyped is caught. The key is made from the words each time — HKDF over
+  their entropy, mapped onto the curve — and kept nowhere.
+- **A key's id** is `k-` and its RFC 7638 thumbprint.
+
 ## 11. Privacy and presence
 
 ### 11.1 The levels

@@ -1,0 +1,25 @@
+{
+  "name": "@kraftverk/identity",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Who a person is, as kraftverk knows them: a stable id, and a chain of statements each signed by a key they hold — keys added and revoked, the profile changed, a sign-in provider linked — checked anywhere; recovery words; the challenge a node signs a person in with.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node ../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
+    "@scure/bip39": "^2.4.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}
