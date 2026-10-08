@@ -23,9 +23,10 @@ checks are.
    - `npm run test:e2e`: Playwright, in Chromium, drives the web build against
      a read-only server of its own, every device simulated
      ([DEVELOPING.md](DEVELOPING.md#end-to-end-in-a-browser)) — in two
-     shards side by side in one job (`--shards=2`): one install and one build
-     of the app, each shard with servers of its own. On a failure the report,
-     the screenshots and the traces are kept for a week.
+     shards, each a job with a server of its own — and its own share of the
+     machine: run side by side in one job (`--shards=2`, quick on a
+     developer's machine), they starve each other there. On a failure the
+     report, the screenshots and the traces are kept for a week.
 2. **stack** — both images built from the `Dockerfile`, the three services
    started from `docker-compose.yml`, and `scripts/ci/smoke-docker.sh` run
    against them. It uses the stack the way someone at home would, and attacks
