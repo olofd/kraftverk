@@ -506,7 +506,7 @@ function measure() {
   property inside it, never the database, its master or what it answers. The
   names the root had before can never come back.
 */
-const OLD_ROOT_NAMES = /\b(HomeStore|HomeElsewhere|HomeWideApi|homeWideApi|homeRoutes|homeFor|HomeProvider|HomeValue|HomeOpening|homeKept)\b|\buseHome\b(?!Place)|CREATE TABLE home\b/;
+const OLD_ROOT_NAMES = /\b(HomeStore|HomeElsewhere|HomeWideApi|homeWideApi|homeRoutes|homeFor|HomeProvider|HomeValue|HomeOpening|homeKept)\b|\buseHome\b(?!Place)/;
 
 function oldRootNames() {
   return sourceFiles()

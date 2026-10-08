@@ -5,7 +5,7 @@ import { Button, Input, Text, XStack, YStack } from 'tamagui';
 import { changesOf, planReadiness, rebindAnswerKey, secretAnswerKey } from '@kraftverk/api-client/config';
 import { applyPlan, describeError, withConfirmation, type ElsewhereView, type FamilyElsewhere, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-client';
 import { checkDocument, configJsonSchema, CURRENT_VERSION, holdsSealed, readConfig, type Vocabulary } from '@kraftverk/home-file';
-import { Card, formatCoordinates, haptic, Icon, RowSeparator, SectionLabel, SegmentedControl, Toggle, toggled } from '@kraftverk/ui';
+import { Card, haptic, Icon, RowSeparator, SectionLabel, SegmentedControl, Toggle, toggled } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { Picker } from '../../components/Picker';
@@ -275,27 +275,35 @@ function PlanView({ plan, onAgain, onApplied }: { plan: ImportPlan; onAgain: () 
           ))}
         </Card>
       ) : null}
+      {plan.family.length || plan.homes.some((home) => home.action !== 'same') ? (
+        <Card gap="$1.5">
+          <Text fontSize={15} fontWeight="600" color="$color">
+            The family and its homes
+          </Text>
+          {plan.family.map((change) => (
+            <Text key={change} fontSize={13} color="$color" lineHeight={19}>
+              The family’s {change}
+            </Text>
+          ))}
+          {plan.homes
+            .filter((home) => home.action !== 'same')
+            .map((home) => (
+              <Text key={home.key} fontSize={13} color="$color" lineHeight={19}>
+                {home.action === 'add' ? `New home: ${home.name}` : `${home.name}: ${home.changes.join(', ')}`}
+              </Text>
+            ))}
+        </Card>
+      ) : null}
       {plan.policy.length ? (
         <Card gap="$1.5">
           <Text fontSize={15} fontWeight="600" color="$color">
-            The home’s values
+            A home’s values
           </Text>
           {plan.policy.map((change) => (
-            <Text key={change.name} fontSize={13} color="$color" lineHeight={19}>
-              {change.label}: {change.before ?? 'its default'} → {change.after}
+            <Text key={`${change.home}.${change.name}`} fontSize={13} color="$color" lineHeight={19}>
+              {plan.homes.find((home) => home.key === change.home)?.name ?? change.home}, {change.label.toLowerCase()}: {change.before ?? 'its default'} → {change.after}
             </Text>
           ))}
-        </Card>
-      ) : null}
-      {plan.location ? (
-        <Card gap="$1.5">
-          <Text fontSize={15} fontWeight="600" color="$color">
-            Where the home is
-          </Text>
-          <Text fontSize={13} color="$color" lineHeight={19}>
-            {plan.location.before ? `${formatCoordinates(plan.location.before)} → ` : 'Not said yet → '}
-            {formatCoordinates(plan.location.after)}
-          </Text>
         </Card>
       ) : null}
 
@@ -476,8 +484,10 @@ function AppliedView({ applied }: { applied: ImportApplied }) {
     count(applied.automations.removed.length, 'automation', 'deleted'),
     count(applied.links.added, 'link', 'added'),
     count(applied.links.removed, 'link', 'removed'),
-    applied.policy.length ? `${applied.policy.length} of the home’s values set` : null,
-    applied.location ? 'where the home is set' : null,
+    count(applied.homes.added.length, 'home', 'added'),
+    count(applied.homes.changed.length, 'home', 'changed'),
+    applied.family ? 'the family’s name or language set' : null,
+    applied.policy.length ? `${applied.policy.length} of the homes’ values set` : null,
   ].filter(Boolean);
   return (
     <Card gap="$2" borderColor="$success" role="status">

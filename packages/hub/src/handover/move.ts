@@ -1,8 +1,8 @@
 import { ApiError, type ElsewhereView, type ImportAnswers, type ImportApplied, type ImportPlan } from '@kraftverk/api-contract';
 import { isSimulated, methodOf, randomHex } from '@kraftverk/device-sdk';
 import { writeConfig, type Scalar } from '@kraftverk/home-file';
-import { HomeSettings, NodeSettings, PlaceStore, AutomationStore, ConnectionStore, DeviceCatalog, LinkStore, NodeStore, policyValues, setPolicyValue, type NodeSettingKey, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
-import { ensureFirstHome, firstHomeLocation } from '../homes/homes.ts';
+import { FamilyStore, NodeSettings, PlaceStore, AutomationStore, ConnectionStore, DeviceCatalog, LinkStore, NodeStore, type NodeSettingKey, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { ensureFirstHome, policyOf } from '../homes/homes.ts';
 
 import { exportConfig, type ConfigDeps } from '../configuration/export.ts';
 import type { PassphraseSealing } from '../configuration/seal.ts';
@@ -59,7 +59,7 @@ export class MovingToMaster {
     const db = this.#database;
     const settings = new NodeSettings(db);
     const places = new PlaceStore(db);
-    const policyHome = new HomeSettings(db, () => ensureFirstHome(places).id);
+    ensureFirstHome(places);
     const { types, protocols } = this.#follower.installed;
     this.#own = {
       settings,
@@ -71,8 +71,9 @@ export class MovingToMaster {
       self: new NodeStore(db).self()?.id ?? this.#follower.nodeId,
       types,
       protocols,
-      policy: { values: () => policyValues(policyHome), set: (name, value) => setPolicyValue(policyHome, name, value) },
-      location: firstHomeLocation(places),
+      family: new FamilyStore(db),
+      places,
+      policyOf: policyOf(db),
       sealing: this.#sealing,
       kept: this.#secrets,
     };

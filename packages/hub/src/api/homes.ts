@@ -1,5 +1,5 @@
 import { ApiError, type Caller, type HomeInput, type HomeView, type KraftverkApi } from '@kraftverk/api-contract';
-import { isTimeZone } from '@kraftverk/device-sdk';
+import { isTimeZone, KEY } from '@kraftverk/device-sdk';
 import { HOME_RADIUS, HOME_TYPES, type HomeRecord } from '@kraftverk/store';
 
 import type { Hub } from '../node/hub.ts';
@@ -12,7 +12,7 @@ import { actorOf } from './caller.ts';
   never its coordinates.
 */
 
-export const homeView = (home: HomeRecord): HomeView => ({ ...home });
+const homeView = (home: HomeRecord): HomeView => ({ ...home });
 
 /** What a home given says, checked: a refusal names what is wrong, in words. */
 function checked(input: Partial<HomeInput>): void {
@@ -40,6 +40,7 @@ export function homesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'homes'> 
 
       async add(input) {
         checked(input);
+        if (input.key !== undefined && (!KEY.test(input.key) || hub.places.homeKeyTaken(input.key))) throw new ApiError('conflict', `"${input.key}" is not a free key: lowercase letters, digits and dashes, and not another home's`);
         const home = hub.places.addHome({ ...input, name: input.name.trim(), location: input.location ?? null });
         record('home.added', home, `Added the home "${home.name}"`);
         return homeView(home);
@@ -48,6 +49,7 @@ export function homesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'homes'> 
       async update(id, changes) {
         const was = homeOf(id);
         checked(changes);
+        if (changes.key !== undefined && changes.key !== was.key && (!KEY.test(changes.key) || hub.places.homeKeyTaken(changes.key, was.id))) throw new ApiError('conflict', `"${changes.key}" is not a free key: lowercase letters, digits and dashes, and not another home's`);
         const location = changes.location === undefined ? undefined : changes.location ? { ...changes.location, radius: changes.location.radius ?? HOME_RADIUS } : null;
         const home = hub.places.updateHome(was.id, { ...changes, ...(changes.name !== undefined ? { name: changes.name.trim() } : {}), ...(location !== undefined ? { location } : {}) })!;
         // Where it is goes on the timeline as said or forgotten: never the coordinates.

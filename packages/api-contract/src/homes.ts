@@ -15,6 +15,8 @@ export type HomeAddress = { street: string | null; postalCode: string | null; lo
 
 export type HomeView = {
   id: string;
+  /** Its name in configuration: what a file and an import know it by. */
+  key: string;
   name: string;
   type: HomeType;
   icon: string | null;
@@ -36,6 +38,8 @@ export type HomeView = {
 
 /** A home made, or changed: what is given; a location of null says it is not said. */
 export type HomeInput = {
+  /** Made from its name when not given. */
+  key?: string;
   name: string;
   type: HomeType;
   timeZone: string;

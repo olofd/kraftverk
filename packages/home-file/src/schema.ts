@@ -217,7 +217,8 @@ function automationSchema(vocabulary: Vocabulary): Schema {
     properties: {
       name: { type: 'string', minLength: 1 },
       mode: { enum: ['off', 'watch', 'act'], enumDescriptions: ['Off: it does nothing on its own', 'Watch only: it says what it would have done', 'Act: it acts on its own'], default: 'watch' },
-      clock: { type: 'string', description: 'The time zone its times of day are in: "Europe/Stockholm". The home’s, when it says none.' },
+      home: { type: 'string', description: 'The key of the home it is for: its clock, and its "home". The family’s, when it says none.' },
+      clock: { type: 'string', description: 'A clock of its own: the time zone its times of day are in, "Europe/Stockholm". Its home’s, when it says none.' },
       recheck: { $ref: '#/$defs/duration' },
       'home page': { type: 'integer', minimum: 0, description: 'Its place among the home page’s shortcuts.' },
       'made from': { type: 'string', description: 'The recipe it was copied from.' },
@@ -299,22 +300,47 @@ export function configJsonSchema(vocabulary: Vocabulary): Schema {
     additionalProperties: false,
     properties: {
       kraftverk: { const: CURRENT_VERSION, description: 'The document’s version.' },
-      home: {
+      family: {
         type: 'object',
+        description: 'The family itself: the people who share its devices, nodes and homes.',
         additionalProperties: false,
         properties: {
-          clock: { type: 'string', description: 'The time zone the home’s automations keep time in, when one says none of its own: "Europe/Stockholm".' },
-          location: {
-            type: 'object',
-            description: 'Where the home is, in degrees: what sunrise and sunset are told by.',
-            required: ['latitude', 'longitude'],
-            additionalProperties: false,
-            properties: { latitude: { type: 'number', minimum: -90, maximum: 90 }, longitude: { type: 'number', minimum: -180, maximum: 180 } },
-          },
-          policy: {
-            type: 'object',
-            additionalProperties: false,
-            properties: Object.fromEntries(Object.entries(vocabulary.policy).map(([name, spec]) => [name, { type: 'number', minimum: spec.min, maximum: spec.max, description: `${spec.label}, in ${spec.unit}.` }])),
+          name: { type: 'string', minLength: 1, maxLength: 60 },
+          kind: { enum: ['family', 'household', 'friends', 'other'], description: 'Only the words on screen: "your family", "your household", "your friends", "your group".' },
+          locale: { type: 'string', description: 'The language what is said to all of it is said in: "en-GB", "sv-SE".' },
+        },
+      },
+      homes: {
+        type: 'object',
+        ...keys,
+        description: 'Its homes, by key, in their order.',
+        additionalProperties: {
+          type: 'object',
+          title: 'A home',
+          required: ['name', 'time zone'],
+          additionalProperties: false,
+          properties: {
+            name: { type: 'string', minLength: 1, maxLength: 60 },
+            type: { enum: ['house', 'apartment', 'cabin', 'boat', 'caravan', 'office', 'other'], default: 'house' },
+            location: {
+              type: 'object',
+              description: 'Where it is, in degrees: what sunrise and sunset are told by. And its geofence, in metres.',
+              required: ['latitude', 'longitude'],
+              additionalProperties: false,
+              properties: { latitude: { type: 'number', minimum: -90, maximum: 90 }, longitude: { type: 'number', minimum: -180, maximum: 180 }, radius: { type: 'number', exclusiveMinimum: 0, maximum: 50000 } },
+            },
+            'time zone': { type: 'string', description: 'What its clocks keep, and its automations unless one says its own: "Europe/Stockholm".' },
+            address: {
+              type: 'object',
+              additionalProperties: false,
+              properties: { street: { type: 'string' }, 'postal code': { type: 'string' }, locality: { type: 'string' }, region: { type: 'string' } },
+            },
+            country: { type: 'string', pattern: '^[A-Z]{2}$', description: 'Its two letters: SE, GB.' },
+            policy: {
+              type: 'object',
+              additionalProperties: false,
+              properties: Object.fromEntries(Object.entries(vocabulary.policy).map(([name, spec]) => [name, { type: 'number', minimum: spec.min, maximum: spec.max, description: `${spec.label}, in ${spec.unit}.` }])),
+            },
           },
         },
       },

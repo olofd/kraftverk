@@ -13,7 +13,7 @@
 import type { FileMigration, FileTypes } from '@kraftverk/device-sdk';
 
 /** The version this kraftverk writes. */
-export const CURRENT_VERSION = 9;
+export const CURRENT_VERSION = 10;
 
 /** Each version's document, as data, made into the next version's. */
 export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unknown>) => Record<string, unknown>>> = {
@@ -30,7 +30,34 @@ export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unkno
   7: (document) => document,
   // Version 9 may say how long where a device has been is kept (`track: 30 days`): nothing older does, so nothing changes.
   8: (document) => document,
+  // Version 10 has a family and its homes (docs/PLAN-WORLD-MODEL.md): `home:` becomes the first home.
+  9: (document) => homesFromHome(document),
 };
+
+/**
+ * Version 10 names homes: the one `home:` of version 9 — its clock, where it
+ * is, its values — becomes the family's first, `home`. An automation that
+ * said no clock kept the home's, and keeps it: it is its home's clock now.
+ * Where the file said no clock, the first automation's is the home's, or UTC.
+ */
+function homesFromHome(document: Record<string, unknown>): Record<string, unknown> {
+  const { home, ...rest } = document;
+  const was = (home && typeof home === 'object' ? home : {}) as { clock?: unknown; location?: unknown; policy?: unknown };
+  const automations = (document.automations && typeof document.automations === 'object' ? Object.values(document.automations) : []) as { clock?: unknown }[];
+  const clock = typeof was.clock === 'string' ? was.clock : (automations.find((automation) => typeof automation.clock === 'string')?.clock as string | undefined) ?? 'UTC';
+  return {
+    ...rest,
+    homes: {
+      home: {
+        name: 'Home',
+        type: 'house',
+        ...(was.location !== undefined ? { location: was.location } : {}),
+        'time zone': clock,
+        ...(was.policy !== undefined ? { policy: was.policy } : {}),
+      },
+    },
+  };
+}
 
 /** What an integration brings to a file's migration: its own steps, and what is installed for them to find their entries by. */
 export type PackageMigrations = { migrations: readonly FileMigration[]; installed: FileTypes };

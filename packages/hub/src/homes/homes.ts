@@ -1,15 +1,16 @@
 import type { Coordinates } from '@kraftverk/automation';
-import { HOME_RADIUS, type HomeRecord, type PlaceStore } from '@kraftverk/store';
+import type { PolicyValueName, PolicyValues } from '@kraftverk/device-sdk';
+import { HomeSettings, policyValues, setPolicyValue, type HomeRecord, type PlaceStore, type SqlDatabase } from '@kraftverk/store';
 
 /*
   A family's homes, as the hub uses them (docs/PLAN-WORLD-MODEL.md §8.4):
-  the first made with the family, where each is, and — until devices stand
-  in homes (PLAN-WORLD-MODEL-WORK.md, W2) — the first one as the family's own
-  place, policy and clock.
+  the first made with the family, where each is, and each one's values.
+  Until devices stand in homes (PLAN-WORLD-MODEL-WORK.md, W2), the first is
+  the family's own place, policy and clock.
 */
 
 /** The time zone where this node runs: what a family's first home keeps until its people say otherwise. */
-export const localTimeZone = (): string => {
+const localTimeZone = (): string => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   } catch {
@@ -30,11 +31,10 @@ export const locationOf =
     return home?.location ? { latitude: home.location.latitude, longitude: home.location.longitude } : null;
   };
 
-/** The family's first home's place, read and said: what the configuration file's \`home.location\` is until it names homes. */
-export const firstHomeLocation = (places: PlaceStore) => ({
-  get: (): Coordinates | null => locationOf(places)(null),
-  set: (location: Coordinates | null): void => {
-    const first = places.first();
-    if (first) places.updateHome(first.id, { location: location ? { ...location, radius: first.location?.radius ?? HOME_RADIUS } : null });
-  },
-});
+/** A home's values — how much is a load, the reserve — read and set within their bounds. */
+export const policyOf =
+  (db: SqlDatabase) =>
+  (homeId: string): { values(): PolicyValues; set(name: PolicyValueName, value: number | null): PolicyValues } => {
+    const settings = new HomeSettings(db, homeId);
+    return { values: () => policyValues(settings), set: (name, value) => setPolicyValue(settings, name, value) };
+  };

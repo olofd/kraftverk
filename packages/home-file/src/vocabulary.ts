@@ -42,6 +42,8 @@ export type Vocabulary = {
   devices: { key: string; type: string; name: string; parts: string[] }[];
   /** The automations the server has now, by key. */
   automations: { key: string; name: string }[];
+  /** The family's homes now, by key: what an automation may be for. */
+  homes: { key: string; name: string }[];
 };
 
 const split = (schema: ConfigSchema | undefined, secret: boolean): ConfigSchema => ({
@@ -56,7 +58,7 @@ const split = (schema: ConfigSchema | undefined, secret: boolean): ConfigSchema 
 export function vocabularyOf(
   types: readonly TypeEntry[],
   protocol: (id: string) => Pick<ProtocolDeclaration, 'credentials'> | null,
-  have: { devices?: Vocabulary['devices']; automations?: Vocabulary['automations'] } = {}
+  have: { devices?: Vocabulary['devices']; automations?: Vocabulary['automations']; homes?: Vocabulary['homes'] } = {}
 ): Vocabulary {
   return {
     types: types.map((type) => ({
@@ -81,5 +83,6 @@ export function vocabularyOf(
     policy: Object.fromEntries(Object.entries(POLICY_VALUES).map(([name, spec]) => [name, { label: spec.label, min: spec.min, max: spec.max, unit: spec.unit }])),
     devices: have.devices ?? [],
     automations: have.automations ?? [],
+    homes: have.homes ?? [],
   };
 }

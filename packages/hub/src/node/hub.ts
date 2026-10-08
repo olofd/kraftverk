@@ -30,7 +30,7 @@ import {
 } from '@kraftverk/store';
 
 import { familyApi } from '../api/index.ts';
-import { ensureFirstHome, firstHomeLocation, locationOf } from '../homes/homes.ts';
+import { ensureFirstHome, locationOf, policyOf } from '../homes/homes.ts';
 import { Attention } from '../attention/attention.ts';
 import { keepWatchedFresh } from '../attention/freshness.ts';
 import { homeDevices } from '../automations/devices.ts';
@@ -266,8 +266,9 @@ export class Hub {
       library: this.library,
       engine: this.engine,
       checked: this.drafts.checked,
-      policy: this.policy,
-      location: firstHomeLocation(this.places),
+      family: this.family,
+      places: this.places,
+      policyOf: policyOf(db),
       sealing: options.sealing,
       kept: options.secrets,
       self: self.id,

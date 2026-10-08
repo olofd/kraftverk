@@ -76,6 +76,8 @@ export const SCHEMA = `
   CREATE TABLE place (
     id          TEXT PRIMARY KEY,
     kind        TEXT NOT NULL CHECK (kind IN ('home', 'zone')),
+    /* Its name in configuration, as a device's key is: one home, or one zone, to a key. */
+    key         TEXT NOT NULL CHECK (key GLOB '[a-z0-9]*' AND key NOT GLOB '*[^a-z0-9-]*' AND length(key) <= 63),
     name        TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 60),
     icon        TEXT,
     /* Where it is, in degrees: what the sun's times are told by. A home may not have said yet; a zone always has. */
@@ -102,6 +104,7 @@ export const SCHEMA = `
     CHECK (kind = 'home' OR latitude IS NOT NULL),
     CHECK (kind <> 'home' OR time_zone IS NOT NULL)
   );
+  CREATE UNIQUE INDEX place_key ON place (kind, key) WHERE removed_at IS NULL;
 
   /* A home: a place the family lives in, or spends time at — and what a home has that a zone does not. */
   CREATE TABLE home (

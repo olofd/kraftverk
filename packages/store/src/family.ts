@@ -59,6 +59,14 @@ export class FamilyStore {
     return this.get()!;
   }
 
+  /** What it is called, its kind, its language: what is given, the rest as it was. */
+  update(changes: Partial<Pick<FamilyRecord, 'name' | 'kind' | 'locale'>>): FamilyRecord {
+    const was = this.get()!;
+    const next = { ...was, ...changes };
+    this.#db.query('UPDATE family SET name = ?, kind = ?, locale = ? WHERE id = ?').run(next.name, next.kind, next.locale, was.id);
+    return this.get()!;
+  }
+
   /** The family as its master's database has it, kept in a node that follows it. */
   mirror(record: FamilyRecord): void {
     this.#db.transaction(() => {

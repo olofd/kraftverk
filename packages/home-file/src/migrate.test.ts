@@ -44,14 +44,21 @@ describe('every version of the document', () => {
     });
   }
 
-  test('the home\'s clock keeps time for an automation that says none of its own', () => {
+  test('the home\'s clock keeps time for an automation that says none of its own: version 9\'s home is version 10\'s first', () => {
     const document = readConfig(readFileSync(fixture(1), 'utf8')).document!;
-    expect(document.home.clock).toBe('Europe/Stockholm');
-    expect(document.automations['stop-charging']!.clock).toBe('Europe/Stockholm');
-    // Without one, an automation says its own.
-    expect(readConfig('kraftverk: 4\nautomations:\n  a:\n    name: A\n    do: []\n').problems.map((problem) => problem.message)).toEqual([
-      'Expected its clock: the time zone its times are in ("clock: Europe/Stockholm"), or the home\'s ("home: { clock: … }")',
-    ]);
+    expect(Object.keys(document.homes)).toEqual(['home']);
+    expect(document.homes.home!.timeZone).toBe('Europe/Stockholm');
+    // It said none: it keeps its home's.
+    expect(document.automations['stop-charging']!.clock).toBeNull();
+    // With no home's clock said, the first automation's is the home's.
+    const own = readConfig('kraftverk: 4\nautomations:\n  a:\n    name: A\n    clock: Europe/London\n    do: []\n');
+    expect(own.problems).toEqual([]);
+    expect(own.document!.homes.home!.timeZone).toBe('Europe/London');
+    expect(own.document!.automations.a!.clock).toBe('Europe/London');
+    // And an automation says the home it is for, by its key.
+    const cabin = readConfig(readFileSync(fixture(10), 'utf8')).document!;
+    expect(cabin.homes.cabin!.type).toBe('cabin');
+    expect(cabin.automations['start-charging']!.home).toBe('home');
   });
 
   test('a role’s description, which version 2 kept from the recipe, is left with the recipe: what fills it, its label and what it needs stay', () => {

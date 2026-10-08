@@ -68,13 +68,17 @@ export const VOCABULARY: Vocabulary = {
   policy: { loadWatts: { label: 'A load worth confirming', min: 0, max: 5000, unit: 'W' }, reserveSoc: { label: 'A reserve to keep', min: 0, max: 100, unit: '%' } },
   devices: [{ key: 'hall-lamp', type: 'acme.plug', name: 'Hall lamp', parts: ['main'] }],
   automations: [{ key: 'night', name: 'Night' }],
+  homes: [{ key: 'home', name: 'Home' }],
 };
 
 /** A whole document, as the owner's charging chain would be written. */
-export const DOCUMENT = `kraftverk: 9
+export const DOCUMENT = `kraftverk: 10
 
-home:
-  policy: { loadWatts: 50, reserveSoc: 20 }
+homes:
+  home:
+    name: Home
+    time zone: Europe/Stockholm
+    policy: { loadWatts: 50, reserveSoc: 20 }
 
 devices:
   garage-station:

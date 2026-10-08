@@ -72,8 +72,10 @@ export type LinkEntry = { kind: string; from: { device: string; part: string }; 
 export type AutomationEntry = {
   name: string;
   mode: AutomationMode;
-  /** Its clock: the time zone its times of day are in. */
-  clock: string;
+  /** The home it is for, by its key: its clock and its "home". Null: the family's. */
+  home: string | null;
+  /** A clock of its own: the time zone its times of day are in. Null: its home's. */
+  clock: string | null;
   /** How often it looks again to keep things so; null for never. */
   recheckMinutes: number | null;
   /** Its place among the home page's shortcuts; null when it is not there. */
@@ -84,10 +86,35 @@ export type AutomationEntry = {
   rule: Rule;
 };
 
+/** What a family's kind is: only the words on screen. */
+export const FAMILY_KINDS = ['family', 'household', 'friends', 'other'] as const;
+export type FamilyKindEntry = (typeof FAMILY_KINDS)[number];
+
+/** What the file says of the family itself; null for what it does not say, which an import leaves as it is. */
+export type FamilyEntry = { name: string | null; kind: FamilyKindEntry | null; locale: string | null };
+
+export const HOME_TYPES = ['house', 'apartment', 'cabin', 'boat', 'caravan', 'office', 'other'] as const;
+export type HomeTypeEntry = (typeof HOME_TYPES)[number];
+
+/** A home (docs/PLAN-WORLD-MODEL.md §8.4): where it is, its clock, and its values. */
+export type HomeEntry = {
+  name: string;
+  type: HomeTypeEntry;
+  /** Where it is, and its geofence in metres; the radius null when the file does not say. Null: not said. */
+  location: (Coordinates & { radius: number | null }) | null;
+  /** IANA: what its clocks keep, and what an automation for it keeps time in unless it says its own. */
+  timeZone: string;
+  address: { street: string | null; postalCode: string | null; locality: string | null; region: string | null };
+  country: string | null;
+  /** Its values: how much is a load, the reserve. */
+  policy: Record<string, number>;
+};
+
 export type ConfigDocument = {
   version: number;
-  /** The home's values, and its clock: the time zone an automation that says none of its own keeps time in. */
-  home: { policy: Record<string, number>; clock: string | null; location: Coordinates | null };
+  family: FamilyEntry;
+  /** Its homes, by key, in their order. */
+  homes: Record<string, HomeEntry>;
   devices: Record<string, DeviceEntry>;
   links: LinkEntry[];
   automations: Record<string, AutomationEntry>;
@@ -112,8 +139,8 @@ const isRecord = (data: unknown): data is Record<string, unknown> => typeof data
 export function documentFromData(data: unknown, options: { partial?: boolean } = {}): { document: ConfigDocument | null; issues: Issue[] } {
   const issues: Issue[] = [];
   const problem = (message: string, path: Path) => void issues.push({ message, path });
-  if (!isRecord(data)) return { document: null, issues: [{ message: 'A configuration is a map: kraftverk, home, devices, links, automations', path: [] }] };
-  for (const key of Object.keys(data)) if (!['kraftverk', 'home', 'devices', 'links', 'automations', 'secrets'].includes(key)) problem(`"${key}" is not part of a configuration: it has kraftverk, home, devices, links, automations and secrets`, [key]);
+  if (!isRecord(data)) return { document: null, issues: [{ message: 'A configuration is a map: kraftverk, family, homes, devices, links, automations', path: [] }] };
+  for (const key of Object.keys(data)) if (!['kraftverk', 'family', 'homes', 'devices', 'links', 'automations', 'secrets'].includes(key)) problem(`"${key}" is not part of a configuration: it has kraftverk, family, homes, devices, links, automations and secrets`, [key]);
 
   const text = (value: unknown, path: Path, what: string): string | null => {
     if (typeof value === 'string' && value.trim()) return value.trim();
@@ -131,30 +158,65 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
     return out;
   };
 
-  // The home.
-  const policy: Record<string, number> = {};
-  let homeClock: string | null = null;
-  let location: Coordinates | null = null;
-  if (data.home !== undefined) {
-    if (!isRecord(data.home)) problem('"home" is a map', ['home']);
+  // The family itself: what the file says of it.
+  const family: FamilyEntry = { name: null, kind: null, locale: null };
+  if (data.family !== undefined) {
+    if (!isRecord(data.family)) problem('"family" is a map: its name, kind and locale', ['family']);
     else {
-      for (const field of Object.keys(data.home)) if (!['policy', 'clock', 'location'].includes(field)) problem(`"${field}" is not part of the home: it has policy, clock and location`, ['home', field]);
-      if (data.home.clock !== undefined) homeClock = text(data.home.clock, ['home', 'clock'], 'its clock: the time zone its automations keep time in ("clock: Europe/Stockholm")');
-      // Where it is: what sunrise and sunset are told by.
-      if (data.home.location !== undefined) {
-        const given = data.home.location;
-        const fits = (value: unknown, most: number) => typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= most;
-        if (!isRecord(given) || Object.keys(given).some((key) => key !== 'latitude' && key !== 'longitude')) problem('"location" is its latitude and longitude, in degrees: { latitude: 59.3, longitude: 18.1 }', ['home', 'location']);
-        else if (!fits(given.latitude, 90)) problem('A latitude is a number from -90 to 90', ['home', 'location', 'latitude']);
-        else if (!fits(given.longitude, 180)) problem('A longitude is a number from -180 to 180', ['home', 'location', 'longitude']);
-        else location = { latitude: given.latitude as number, longitude: given.longitude as number };
-      }
-      if (data.home.policy !== undefined) {
-        if (!isRecord(data.home.policy)) problem('"policy" is a map of the home\'s values', ['home', 'policy']);
-        else for (const [name, value] of Object.entries(data.home.policy)) typeof value === 'number' ? (policy[name] = value) : problem('A policy value is a number', ['home', 'policy', name]);
-      }
+      for (const field of Object.keys(data.family)) if (!['name', 'kind', 'locale'].includes(field)) problem(`"${field}" is not part of the family: it has name, kind and locale`, ['family', field]);
+      if (data.family.name !== undefined) family.name = text(data.family.name, ['family', 'name'], 'its name');
+      if (data.family.kind !== undefined) family.kind = FAMILY_KINDS.includes(data.family.kind as FamilyKindEntry) ? (data.family.kind as FamilyKindEntry) : (problem(`"kind" is one of ${FAMILY_KINDS.join(', ')}`, ['family', 'kind']), null);
+      if (data.family.locale !== undefined) family.locale = text(data.family.locale, ['family', 'locale'], 'its language: "en-GB", "sv-SE"');
     }
   }
+
+  // The homes, in the order the file has them.
+  const homes: Record<string, HomeEntry> = {};
+  const homesData = data.homes ?? {};
+  const fits = (value: unknown, most: number) => typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= most;
+  const optionalText = (value: unknown, path: Path, what: string): string | null => (value === undefined || value === null ? null : text(value, path, what));
+  if (!isRecord(homesData)) problem('"homes" is a map: each home by its key', ['homes']);
+  else
+    for (const [key, entry] of Object.entries(homesData)) {
+      const path = ['homes', key];
+      if (!KEY.test(key)) problem(`"${key}" is not a key: lowercase letters, digits and dashes`, path);
+      if (!isRecord(entry)) {
+        problem('Expected a home: its name, type, where it is and its time zone', path);
+        continue;
+      }
+      for (const field of Object.keys(entry)) if (!['name', 'type', 'location', 'time zone', 'address', 'country', 'policy'].includes(field)) problem(`"${field}" is not part of a home: it has name, type, location, time zone, address, country and policy`, [...path, field]);
+      const name = text(entry.name, [...path, 'name'], 'its name');
+      const type = entry.type === undefined ? 'house' : HOME_TYPES.includes(entry.type as HomeTypeEntry) ? (entry.type as HomeTypeEntry) : (problem(`"type" is one of ${HOME_TYPES.join(', ')}`, [...path, 'type']), 'house');
+      const timeZone = text(entry['time zone'], [...path, 'time zone'], 'its time zone: "Europe/Stockholm"');
+      // Where it is: what sunrise and sunset are told by, and its geofence.
+      let location: HomeEntry['location'] = null;
+      if (entry.location !== undefined && entry.location !== null) {
+        const given = entry.location;
+        if (!isRecord(given) || Object.keys(given).some((field) => !['latitude', 'longitude', 'radius'].includes(field))) problem('"location" is its latitude and longitude, in degrees, and a radius in metres: { latitude: 59.3, longitude: 18.1, radius: 150 }', [...path, 'location']);
+        else if (!fits(given.latitude, 90)) problem('A latitude is a number from -90 to 90', [...path, 'location', 'latitude']);
+        else if (!fits(given.longitude, 180)) problem('A longitude is a number from -180 to 180', [...path, 'location', 'longitude']);
+        else if (given.radius !== undefined && !(typeof given.radius === 'number' && given.radius > 0 && given.radius <= 50_000)) problem('A radius is metres, from 1 to 50 000', [...path, 'location', 'radius']);
+        else location = { latitude: given.latitude as number, longitude: given.longitude as number, radius: typeof given.radius === 'number' ? given.radius : null };
+      }
+      const address: HomeEntry['address'] = { street: null, postalCode: null, locality: null, region: null };
+      if (entry.address !== undefined && entry.address !== null) {
+        if (!isRecord(entry.address)) problem('"address" is a map: street, postal code, locality, region', [...path, 'address']);
+        else {
+          for (const field of Object.keys(entry.address)) if (!['street', 'postal code', 'locality', 'region'].includes(field)) problem(`"${field}" is not part of an address: it has street, postal code, locality and region`, [...path, 'address', field]);
+          address.street = optionalText(entry.address.street, [...path, 'address', 'street'], 'a street');
+          address.postalCode = optionalText(entry.address['postal code'], [...path, 'address', 'postal code'], 'a postal code');
+          address.locality = optionalText(entry.address.locality, [...path, 'address', 'locality'], 'a town');
+          address.region = optionalText(entry.address.region, [...path, 'address', 'region'], 'a region');
+        }
+      }
+      const country = entry.country === undefined || entry.country === null ? null : typeof entry.country === 'string' && /^[A-Z]{2}$/.test(entry.country) ? entry.country : (problem('"country" is its two letters: SE, GB', [...path, 'country']), null);
+      const policy: Record<string, number> = {};
+      if (entry.policy !== undefined) {
+        if (!isRecord(entry.policy)) problem('"policy" is a map of the home\'s values', [...path, 'policy']);
+        else for (const [value, each] of Object.entries(entry.policy)) typeof each === 'number' ? (policy[value] = each) : problem('A policy value is a number', [...path, 'policy', value]);
+      }
+      if (name && timeZone) homes[key] = { name, type, location, timeZone, address, country, policy };
+    }
 
   // The devices.
   const devices: Record<string, DeviceEntry> = {};
@@ -238,20 +300,21 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         problem('Expected an automation: its name, what it uses and what it does', path);
         continue;
       }
-      const own = ['name', 'mode', 'clock', 'recheck', 'home page', 'made from'];
+      const own = ['name', 'mode', 'home', 'clock', 'recheck', 'home page', 'made from'];
       const rules = ['uses', 'settings', 'memory', 'inputs', 'result', 'when', 'while running', 'only if', 'do', 'if a step fails'];
       for (const field of Object.keys(entry)) if (![...own, ...rules].includes(field)) problem(`"${field}" is not part of an automation: it has ${[...own, ...rules].join(', ')}`, [...path, field]);
       const name = text(entry.name, [...path, 'name'], 'its name');
       const mode = entry.mode === undefined ? 'watch' : AUTOMATION_MODES.includes(entry.mode as AutomationMode) ? (entry.mode as AutomationMode) : (problem('"mode" is off, watch or act', [...path, 'mode']), 'watch');
-      // Its own clock, or the home's.
-      const clock = entry.clock === undefined && homeClock ? homeClock : text(entry.clock, [...path, 'clock'], 'its clock: the time zone its times are in ("clock: Europe/Stockholm"), or the home\'s ("home: { clock: … }")');
+      // The home it is for, and a clock of its own — or its home's.
+      const home = entry.home === undefined || entry.home === null ? null : typeof entry.home === 'string' && KEY.test(entry.home) ? entry.home : (problem('"home" is the key of the home it is for', [...path, 'home']), null);
+      const clock = entry.clock === undefined || entry.clock === null ? null : text(entry.clock, [...path, 'clock'], 'its clock: the time zone its times are in ("clock: Europe/Stockholm")');
       const recheck = entry.recheck === undefined || entry.recheck === null ? null : durationSeconds(entry.recheck);
       if (entry.recheck !== undefined && entry.recheck !== null && (recheck === null || recheck % 60 !== 0)) problem('"recheck" is how often it looks again, in whole minutes ("15 min")', [...path, 'recheck']);
       const homePlace = entry['home page'] === undefined || entry['home page'] === null ? null : Number.isInteger(entry['home page']) ? (entry['home page'] as number) : (problem('"home page" is its place among the shortcuts: 0, 1, 2 …', [...path, 'home page']), null);
       const madeFrom = typeof entry['made from'] === 'string' ? entry['made from'] : null;
       const read = ruleFromConfig(entry, path);
       issues.push(...read.issues);
-      if (name && clock && read.rule) automations[key] = { name, mode, clock, recheckMinutes: recheck === null ? null : recheck / 60, homePlace, madeFrom, uses: read.uses, rule: read.rule };
+      if (name && read.rule) automations[key] = { name, mode, home, clock, recheckMinutes: recheck === null ? null : recheck / 60, homePlace, madeFrom, uses: read.uses, rule: read.rule };
     }
 
   // Secrets by name.
@@ -263,7 +326,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
 
   // Partial: what could be read, beside every problem — whose entries the reader leaves out (`readConfig`).
   if (issues.length && !options.partial) return { document: null, issues };
-  return { document: { version: CURRENT_VERSION, home: { policy, clock: homeClock, location }, devices, links, automations, secrets }, issues };
+  return { document: { version: CURRENT_VERSION, family, homes, devices, links, automations, secrets }, issues };
 }
 
 
@@ -310,7 +373,8 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
       {
         name: automation.name,
         mode: automation.mode,
-        clock: automation.clock,
+        ...(automation.home !== null ? { home: automation.home } : {}),
+        ...(automation.clock !== null ? { clock: automation.clock } : {}),
         ...(automation.recheckMinutes !== null ? { recheck: durationText(automation.recheckMinutes * 60) } : {}),
         ...(automation.homePlace !== null ? { 'home page': automation.homePlace } : {}),
         ...(automation.madeFrom !== null ? { 'made from': automation.madeFrom } : {}),
@@ -320,13 +384,34 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
   );
   return {
     kraftverk: document.version,
-    ...(Object.keys(document.home.policy).length || document.home.clock !== null || document.home.location !== null
+    ...(document.family.name !== null || document.family.kind !== null || document.family.locale !== null
       ? {
-          home: {
-            ...(document.home.clock !== null ? { clock: document.home.clock } : {}),
-            ...(document.home.location !== null ? { location: { latitude: document.home.location.latitude, longitude: document.home.location.longitude } } : {}),
-            ...(Object.keys(document.home.policy).length ? { policy: document.home.policy } : {}),
+          family: {
+            ...(document.family.name !== null ? { name: document.family.name } : {}),
+            ...(document.family.kind !== null ? { kind: document.family.kind } : {}),
+            ...(document.family.locale !== null ? { locale: document.family.locale } : {}),
           },
+        }
+      : {}),
+    ...(Object.keys(document.homes).length
+      ? {
+          homes: Object.fromEntries(
+            Object.entries(document.homes).map(([key, home]) => {
+              const address = Object.entries({ street: home.address.street, 'postal code': home.address.postalCode, locality: home.address.locality, region: home.address.region }).filter(([, value]) => value !== null);
+              return [
+                key,
+                {
+                  name: home.name,
+                  type: home.type,
+                  ...(home.location ? { location: { latitude: home.location.latitude, longitude: home.location.longitude, ...(home.location.radius !== null ? { radius: home.location.radius } : {}) } } : {}),
+                  'time zone': home.timeZone,
+                  ...(address.length ? { address: Object.fromEntries(address) } : {}),
+                  ...(home.country !== null ? { country: home.country } : {}),
+                  ...(Object.keys(home.policy).length ? { policy: home.policy } : {}),
+                },
+              ];
+            })
+          ),
         }
       : {}),
     ...(Object.keys(document.devices).length ? { devices } : {}),
@@ -337,4 +422,4 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
 }
 
 /** An empty document of this version. */
-export const emptyDocument = (): ConfigDocument => ({ version: CURRENT_VERSION, home: { policy: {}, clock: null, location: null }, devices: {}, links: [], automations: {}, secrets: {} });
+export const emptyDocument = (): ConfigDocument => ({ version: CURRENT_VERSION, family: { name: null, kind: null, locale: null }, homes: {}, devices: {}, links: [], automations: {}, secrets: {} });

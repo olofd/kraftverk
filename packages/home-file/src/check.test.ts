@@ -32,15 +32,15 @@ describe('what a file means', () => {
     const { document, problems } = readConfig(text, check);
     expect(document).toBeNull();
     expect(problems.map(({ message, line }) => `${line}: ${message}`)).toEqual([
-      '4: A load worth confirming is from 0 to 5000 W',
-      '11: Bluetooth needs an address: where it is found',
-      '18: Home network has no setting "colour": it has deviceId, protocolVersion',
-      '18: Protocol version must be one of: 3.3, 3.4',
-      '19: There is no secret called "no-such-key": under "secrets", or in the secrets kept beside the file',
-      '21: No installed device type is called "acme.toaster"',
-      '28: Garage station has no part "input.dc": it has main, outlet.ac, input.ac',
-      '34: "Europe/Atlantis" is not a time zone: "Europe/Stockholm"',
-      '38: There is no automation "dawn", in the file or on the server',
+      '7: A load worth confirming is from 0 to 5000 W',
+      '14: Bluetooth needs an address: where it is found',
+      '21: Home network has no setting "colour": it has deviceId, protocolVersion',
+      '21: Protocol version must be one of: 3.3, 3.4',
+      '22: There is no secret called "no-such-key": under "secrets", or in the secrets kept beside the file',
+      '24: No installed device type is called "acme.toaster"',
+      '31: Garage station has no part "input.dc": it has main, outlet.ac, input.ac',
+      '37: "Europe/Atlantis" is not a time zone: "Europe/Stockholm"',
+      '41: There is no automation "dawn", in the file or on the server',
     ]);
   });
 

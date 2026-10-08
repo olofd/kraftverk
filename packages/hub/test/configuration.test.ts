@@ -169,16 +169,16 @@ describe('configuration', () => {
     expect(JSON.stringify(said)).not.toContain('51.4779');
 
     const { text } = await t.home.configuration.export({ secrets: 'none' });
-    expect(text).toContain('home:\n  location:\n    latitude: 51.4779\n    longitude: 0\n');
+    expect(text).toContain('homes:\n  home:\n    name: Home\n    type: house\n    location:\n      latitude: 51.4779\n      longitude: 0\n      radius: 150\n');
     // Forgotten, then planned back from the file: said as a change, and applied.
     await t.home.homes.update(first!.id, { location: null });
     const plan = await t.home.configuration.plan({ text });
-    expect(plan.location).toEqual({ before: null, after: there });
+    expect(plan.homes).toEqual([{ key: 'home', name: 'Home', action: 'change', changes: ['where it is, said', 'its geofence: 150 m'] }]);
     const applied = await t.home.configuration.apply({ plan: plan.id! });
-    expect(applied.location).toBe(true);
+    expect(applied.homes.changed).toEqual(['home']);
     expect((await t.home.homes.list())[0]!.location).toEqual({ ...there, radius: 150 });
     // The same again: nothing to change.
-    expect((await t.home.configuration.plan({ text })).location).toBeNull();
+    expect((await t.home.configuration.plan({ text })).homes).toEqual([{ key: 'home', name: 'Home', action: 'same', changes: [] }]);
   });
 
   test('a group: exported as the list of its parts, in order, and imported back so', async () => {
@@ -206,7 +206,7 @@ describe('configuration', () => {
     expect(changesConfiguration('device.control')).toBe(false);
     expect(changesConfiguration('device.added')).toBe(true);
     expect(changesConfiguration('automation.let-act')).toBe(true);
-    // Where the home is: kept beside the database, so a reset keeps it.
-    expect(changesConfiguration('home.located')).toBe(true);
+    // A home added or changed: kept beside the database, so a reset keeps it.
+    expect(changesConfiguration('home.changed')).toBe(true);
   });
 });

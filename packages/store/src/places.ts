@@ -1,4 +1,5 @@
-import { newId } from '@kraftverk/device-sdk';
+import type { HomeInput, HomeType } from '@kraftverk/api-contract';
+import { KEY, keyFrom, newId } from '@kraftverk/device-sdk';
 
 import type { SqlDatabase } from './database.ts';
 
@@ -9,8 +10,7 @@ import type { SqlDatabase } from './database.ts';
  * archived, never deleted: moving house is a new home.
  */
 
-export const HOME_TYPES = ['house', 'apartment', 'cabin', 'boat', 'caravan', 'office', 'other'] as const;
-export type HomeType = (typeof HOME_TYPES)[number];
+export const HOME_TYPES = ['house', 'apartment', 'cabin', 'boat', 'caravan', 'office', 'other'] as const satisfies readonly HomeType[];
 
 /** Where a place is, and its geofence: a circle of so many metres round it. */
 export type PlaceLocation = { latitude: number; longitude: number; radius: number };
@@ -20,6 +20,8 @@ export type Address = { street: string | null; postalCode: string | null; locali
 
 export type HomeRecord = {
   id: string;
+  /** Its name in configuration: what a file and an import know it by. */
+  key: string;
   name: string;
   type: HomeType;
   icon: string | null;
@@ -40,10 +42,10 @@ export type HomeRecord = {
 };
 
 /** What a home is made with, or changed to. */
-export type HomeInput = Pick<HomeRecord, 'name' | 'type' | 'timeZone'> & Partial<Pick<HomeRecord, 'icon' | 'location' | 'address' | 'country' | 'bearing'>>;
 
 type Row = {
   id: string;
+  key: string;
   name: string;
   icon: string | null;
   latitude: number | null;
@@ -69,6 +71,7 @@ export const HOME_RADIUS = 150;
 
 const toRecord = (row: Row): HomeRecord => ({
   id: row.id,
+  key: row.key,
   name: row.name,
   type: row.type,
   icon: row.icon,
@@ -105,6 +108,17 @@ export class PlaceStore {
     return row ? toRecord(row) : null;
   }
 
+  /** A home the family has, by its key. */
+  homeByKey(key: string): HomeRecord | null {
+    const row = this.#db.query<Row, [string]>(`${HOME_SELECT} WHERE p.key = ? AND p.removed_at IS NULL`).get(key);
+    return row ? toRecord(row) : null;
+  }
+
+  /** Whether a home the family has holds a key: one other than `except`. */
+  homeKeyTaken(key: string, except?: string): boolean {
+    return this.#db.query<{ id: string }, [string]>("SELECT id FROM place WHERE kind = 'home' AND key = ? AND removed_at IS NULL").all(key).some((row) => row.id !== except);
+  }
+
   /** The family's first home: what the family's own clock and place are, until devices and automations say whose they are. */
   first(): HomeRecord | null {
     return this.homes()[0] ?? null;
@@ -112,9 +126,11 @@ export class PlaceStore {
 
   /** A home added, after the others. */
   addHome(input: HomeInput, id = newId('h')): HomeRecord {
+    if (input.key !== undefined && (!KEY.test(input.key) || this.homeKeyTaken(input.key))) throw new Error(`"${input.key}" is not a free key: lowercase letters, digits and dashes, and not another home's`);
+    const key = input.key ?? keyFrom(input.name, (taken) => this.homeKeyTaken(taken), 'home');
     const position = this.#db.query<{ next: number }, []>('SELECT coalesce(max(position) + 1, 0) AS next FROM home').get()!.next;
     this.#db.transaction(() => {
-      this.#writePlace(id, input, new Date().toISOString(), null);
+      this.#writePlace(id, { ...input, key }, new Date().toISOString(), null);
       this.#db.query('INSERT INTO home (id, type, bearing, position) VALUES (?, ?, ?, ?)').run(id, input.type, input.bearing ?? 0, position);
     })();
     return this.home(id)!;
@@ -124,14 +140,16 @@ export class PlaceStore {
   updateHome(id: string, changes: Partial<HomeInput>): HomeRecord | null {
     const was = this.home(id);
     if (!was) return null;
+    if (changes.key !== undefined && changes.key !== was.key && (!KEY.test(changes.key) || this.homeKeyTaken(changes.key, id))) throw new Error(`"${changes.key}" is not a free key: lowercase letters, digits and dashes, and not another home's`);
     const next = { ...was, ...changes };
     this.#db.transaction(() => {
       this.#db
         .query(
-          `UPDATE place SET name = ?, icon = ?, latitude = ?, longitude = ?, radius = ?, time_zone = ?, street = ?, postal_code = ?, locality = ?, region = ?, country = ?
+          `UPDATE place SET key = ?, name = ?, icon = ?, latitude = ?, longitude = ?, radius = ?, time_zone = ?, street = ?, postal_code = ?, locality = ?, region = ?, country = ?
            WHERE id = ?`
         )
         .run(
+          next.key,
           next.name,
           next.icon,
           next.location?.latitude ?? null,
@@ -171,15 +189,16 @@ export class PlaceStore {
     })();
   }
 
-  #writePlace(id: string, input: HomeInput, createdAt: string, removedAt: string | null): void {
+  #writePlace(id: string, input: HomeInput & { key: string }, createdAt: string, removedAt: string | null): void {
     const address = input.address ?? NO_ADDRESS;
     this.#db
       .query(
-        `INSERT INTO place (id, kind, name, icon, latitude, longitude, radius, time_zone, street, postal_code, locality, region, country, created_at, removed_at)
-         VALUES (?, 'home', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO place (id, kind, key, name, icon, latitude, longitude, radius, time_zone, street, postal_code, locality, region, country, created_at, removed_at)
+         VALUES (?, 'home', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
+        input.key,
         input.name,
         input.icon ?? null,
         input.location?.latitude ?? null,

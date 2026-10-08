@@ -23,19 +23,27 @@ import type { AutomationView, DeviceView, ImportItem, ImportPlan } from '@kraftv
   master checks with.
 */
 
-/** What the form edits, and what it does not: its mode, clock, how often it keeps things so, its place on the home page. */
-export type AutomationSettings = { mode: AutomationMode; timeZone: string; recheckMinutes: number | null; homePlace: number | null };
+/** What the form edits, and what it does not: its mode, the home it is for, a clock of its own, how often it keeps things so, its place on the home page. */
+export type AutomationSettings = { mode: AutomationMode; homeId: string | null; timeZone: string | null; recheckMinutes: number | null; homePlace: number | null };
+
+/** The family's homes, as a file names them: by key. */
+type HomeKeys = readonly { id: string; key: string }[];
 
 /** An automation as YAML text: its rule, what fills its roles, and its settings. */
 export function automationYaml(
   automation: { name: string; rule: Rule; roles: Readonly<Record<string, RoleBinding>>; groups: Readonly<Record<string, readonly RoleBinding[]>>; starts: Readonly<Record<string, string>>; madeFrom: string | null } & AutomationSettings,
   devices: readonly DeviceView[],
-  automations: readonly Pick<AutomationView, 'id' | 'key'>[]
+  automations: readonly Pick<AutomationView, 'id' | 'key'>[],
+  homes: HomeKeys = []
 ): string {
-  const { entry } = automationEntryFrom(automation, {
-    device: (id) => devices.find((device) => device.id === id)?.key ?? null,
-    automation: (id) => automations.find((each) => each.id === id)?.key ?? null,
-  });
+  const { entry } = automationEntryFrom(
+    { ...automation, ownTimeZone: automation.timeZone },
+    {
+      device: (id) => devices.find((device) => device.id === id)?.key ?? null,
+      automation: (id) => automations.find((each) => each.id === id)?.key ?? null,
+      home: (id) => homes.find((home) => home.id === id)?.key ?? null,
+    }
+  );
   return writeAutomationYaml(entry);
 }
 
@@ -53,7 +61,12 @@ export function readAutomationText(text: string, key: string, vocabulary: Vocabu
  * and what fills each role by id, and its settings. A key naming nothing here
  * is a problem the meaning check has already said.
  */
-export function draftOfEntry(entry: AutomationEntry, devices: readonly DeviceView[], automations: readonly Pick<AutomationView, 'id' | 'key'>[]): { draft: { name: string; rule: Rule } & RoleFills; settings: AutomationSettings } {
+export function draftOfEntry(
+  entry: AutomationEntry,
+  devices: readonly DeviceView[],
+  automations: readonly Pick<AutomationView, 'id' | 'key'>[],
+  homes: HomeKeys = []
+): { draft: { name: string; rule: Rule } & RoleFills; settings: AutomationSettings } {
   const fills = fillsFrom(entry.uses, {
     device: (key) => devices.find((device) => device.key === key && !device.removedAt)?.id ?? null,
     automation: (key) => automations.find((each) => each.key === key)?.id ?? null,
@@ -66,7 +79,7 @@ export function draftOfEntry(entry: AutomationEntry, devices: readonly DeviceVie
       groups: Object.fromEntries(Object.entries(fills.groups).map(([role, parts]) => [role, parts.map((binding) => ({ device: savedDeviceId(binding.device), part: binding.part }))])),
       starts: fills.starts as Record<string, AutomationId>,
     },
-    settings: { mode: entry.mode, timeZone: entry.clock, recheckMinutes: entry.recheckMinutes, homePlace: entry.homePlace },
+    settings: { mode: entry.mode, homeId: entry.home ? (homes.find((home) => home.key === entry.home)?.id ?? null) : null, timeZone: entry.clock, recheckMinutes: entry.recheckMinutes, homePlace: entry.homePlace },
   };
 }
 
@@ -126,7 +139,7 @@ export function planReadiness(
   answers: { secrets: Readonly<Record<string, string>>; rebind: Readonly<Record<string, string>> }
 ): { nothing: boolean; secretsMissing: ImportPlan['needs']['secrets']; rebindMissing: ImportPlan['needs']['rebind']; ready: boolean; everything: boolean } {
   const changes = changesOf(plan);
-  const nothing = !changes.devices.length && !changes.automations.length && !plan.links.some((link) => link.action !== 'same') && !plan.policy.length && !plan.location;
+  const nothing = !changes.devices.length && !changes.automations.length && !plan.links.some((link) => link.action !== 'same') && !plan.policy.length && !plan.family.length && !plan.homes.some((home) => home.action !== 'same');
   const secretsMissing = plan.needs.secrets.filter((need) => chosen.devices.has(need.device) && !answers.secrets[secretAnswerKey(need)]);
   const rebindMissing = plan.needs.rebind.filter((need) => chosen.automations.has(need.automation) && !answers.rebind[rebindAnswerKey(need)]);
   return {

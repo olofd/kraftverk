@@ -49,6 +49,7 @@ const VOCABULARY: Vocabulary = {
   policy: {},
   devices: [{ key: 'scooter-plug', type: 'acme.plug', name: 'Scooter plug', parts: ['main'] }],
   automations: [{ key: 'night', name: 'Night' }],
+  homes: [],
 };
 
 const rule: Rule = {
@@ -68,6 +69,7 @@ const automation = {
   groups: {}, starts: {},
   madeFrom: null,
   mode: 'act' as const,
+  homeId: null,
   timeZone: 'Europe/Stockholm',
   recheckMinutes: null,
   homePlace: 2,
@@ -85,7 +87,7 @@ describe('an automation as YAML, in the app', () => {
     expect(read.problems).toEqual([]);
     const { draft, settings } = draftOfEntry(read.entry!, [plug], []);
     expect(draft).toEqual({ name: 'Charge', rule, roles: automation.roles, groups: {}, starts: {} });
-    expect(settings).toEqual({ mode: 'act', timeZone: 'Europe/Stockholm', recheckMinutes: null, homePlace: 2 });
+    expect(settings).toEqual({ mode: 'act', homeId: null, timeZone: 'Europe/Stockholm', recheckMinutes: null, homePlace: 2 });
   });
 
   test('a key naming no device here is a problem at its line; an automation it starts is found by its key', () => {

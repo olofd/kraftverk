@@ -19,6 +19,7 @@ import {
   type ConfigValues,
   type NodeId,
   type PolicyValueName,
+  type PolicyValues,
   type SavedDeviceId,
   transportOf,
 } from '@kraftverk/device-sdk';
@@ -33,7 +34,7 @@ import {
   type SecretValue,
   isSealed,
 } from '@kraftverk/home-file';
-import { isConstraintError, type ConnectionRecord, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
+import { HOME_RADIUS, isConstraintError, type ConnectionRecord, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
 
 import type { Checked } from '../automations/drafts.ts';
 import { bySource, secretFieldsOf } from '../installed/connection-schema.ts';
@@ -153,7 +154,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
   // A restore reads what it can: an entry it cannot read is left out and said, never the whole home lost for it.
   // A file kept before an installed integration's entries changed comes back as they are now.
   const read = readConfig(text, (document) => checkDocument(document, vocabulary, { hasSecret: () => true, uses: 'leave' }), { partial: options.lenient, migrations: deps.types.fileMigrations() });
-  const empty: ImportPlan = { id: null, from: read.from, problems: read.problems.map((each) => ({ ...each, path: [...each.path] })), devices: [], links: [], automations: [], policy: [], location: null, needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
+  const empty: ImportPlan = { id: null, from: read.from, problems: read.problems.map((each) => ({ ...each, path: [...each.path] })), devices: [], links: [], automations: [], family: [], homes: [], policy: [], needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
   if (!read.document) return empty;
   const document = read.document;
   // What a device it brings is, with its settings, is its type's code to say: each type it names is loaded now.
@@ -291,36 +292,61 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     automations.push(existing ? { key, name: entry.name, ...automationChanges(deps, existing, entry) } : { key, name: entry.name, action: 'add', changes: [] });
   }
 
-  // The home's values.
-  const now = deps.policy.values();
+  // The family itself: what the file says of it, where that is not so.
+  const familyNow = deps.family.get();
+  const family: string[] = [];
+  if (familyNow && document.family.name !== null && document.family.name !== familyNow.name) family.push(`name: ${familyNow.name} → ${document.family.name}`);
+  if (familyNow && document.family.kind !== null && document.family.kind !== familyNow.kind) family.push(`kind: ${familyNow.kind} → ${document.family.kind}`);
+  if (familyNow && document.family.locale !== null && document.family.locale !== familyNow.locale) family.push(`language: ${familyNow.locale} → ${document.family.locale}`);
+
+  // Its homes, by key: added, or changed where the file says otherwise. What a file does not say — where one is, its address — is left as it is.
+  const homes: ImportItem[] = Object.entries(document.homes).map(([key, entry]) => {
+    const existing = deps.places.homeByKey(key);
+    if (!existing) return { key, name: entry.name, action: 'add', changes: [] };
+    const changes: string[] = [];
+    if (existing.name !== entry.name) changes.push(`name: ${existing.name} → ${entry.name}`);
+    if (existing.type !== entry.type) changes.push(`a ${entry.type}, not a ${existing.type}`);
+    if (existing.timeZone !== entry.timeZone) changes.push(`clock: ${existing.timeZone} → ${entry.timeZone}`);
+    const said = entry.location;
+    if (said && (said.latitude !== existing.location?.latitude || said.longitude !== existing.location?.longitude)) changes.push(existing.location ? 'where it is' : 'where it is, said');
+    if (said && said.radius !== null && said.radius !== existing.location?.radius) changes.push(`its geofence: ${said.radius} m`);
+    const address = entry.address;
+    if ((Object.keys(address) as (keyof typeof address)[]).some((part) => address[part] !== null && address[part] !== existing.address[part])) changes.push('its address');
+    if (entry.country !== null && entry.country !== existing.country) changes.push(`its country: ${entry.country}`);
+    return changes.length ? { key, name: entry.name, action: 'change', changes } : { key, name: entry.name, action: 'same', changes };
+  });
+
+  // Each home's values.
   /*
     Each value is one this version knows, within its bounds: a file from another
     version may name one renamed or gone, or one whose bounds have narrowed.
     A restore leaves it out and says so; an import a person reads stops at it.
   */
+  let homeKey = '';
   const fits = ([name, value]: [string, number | null]): boolean => {
     if (!isPolicyValueName(name)) {
-      if (options.lenient) notes.push(`The home's value "${name}" is left out: this version has no such value`);
-      else problems.push({ message: `The home has no value called "${name}"`, path: ['home', 'policy', name], line: null, column: null });
+      if (options.lenient) notes.push(`A home's value "${name}" is left out: this version has no such value`);
+      else problems.push({ message: `A home has no value called "${name}"`, path: ['homes', homeKey, 'policy', name], line: null, column: null });
       return false;
     }
     const spec = POLICY_VALUES[name];
     if (value !== null && !(value >= spec.min && value <= spec.max)) {
       const said = `${spec.label} is from ${spec.min} to ${spec.max} ${spec.unit}, not ${value}`;
-      if (options.lenient) notes.push(`The home's value "${name}" is left out: ${said}`);
-      else problems.push({ message: said, path: ['home', 'policy', name], line: null, column: null });
+      if (options.lenient) notes.push(`A home's value "${name}" is left out: ${said}`);
+      else problems.push({ message: said, path: ['homes', homeKey, 'policy', name], line: null, column: null });
       return false;
     }
     return true;
   };
-  const policy = Object.entries(document.home.policy)
-    .filter(fits)
-    .filter(([name, value]) => now[name as PolicyValueName] !== value)
-    .map(([name, value]) => ({ name, label: POLICY_VALUES[name as PolicyValueName].label, before: now[name as PolicyValueName] ?? null, after: value }));
-  // Where the home is: set when the file says it, and it is not so already. A file that says none leaves it as it is.
-  const here = deps.location.get();
-  const said = document.home.location;
-  const location = said && (said.latitude !== here?.latitude || said.longitude !== here?.longitude) ? { before: here, after: said } : null;
+  const policy = Object.entries(document.homes).flatMap(([key, entry]) => {
+    homeKey = key;
+    const existing = deps.places.homeByKey(key);
+    const now: PolicyValues = existing ? deps.policyOf(existing.id).values() : {};
+    return Object.entries(entry.policy)
+      .filter(fits)
+      .filter(([name, value]) => now[name as PolicyValueName] !== value)
+      .map(([name, value]) => ({ home: key, name, label: POLICY_VALUES[name as PolicyValueName].label, before: now[name as PolicyValueName] ?? null, after: value }));
+  });
 
   // Replacing: what the file does not have goes.
   if (options.mode === 'replace') {
@@ -344,7 +370,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     return { ...each, line: at?.line ?? null, column: at?.column ?? null };
   });
   const id = placed.length ? null : newId('plan');
-  const view: ImportPlan = { id, from: read.from, problems: placed, devices, links, automations, policy, location, needs, notes };
+  const view: ImportPlan = { id, from: read.from, problems: placed, devices, links, automations, family, homes, policy, needs, notes };
   if (id) deps.pending.set(id, { view, document, mode: options.mode, secrets, by: options.by, expiresAt: Date.now() + PLAN_TTL_MS, turnedOff, lenient: Boolean(options.lenient) });
   return view;
 }
@@ -474,7 +500,9 @@ function automationChanges(deps: ImportDeps, existing: AutomationRecord, entry: 
     if ('device' in use && (!had || keyOf(had.device) !== use.device || had.part !== use.part)) changes.push(`${role}: ${had ? useText({ device: keyOf(had.device), part: had.part }) : 'nothing'} → ${useText(use)}`);
     if ('automation' in use && (!hadAutomation || deps.automations.get(hadAutomation)?.key !== use.automation)) changes.push(`${role}: starts ${use.automation}`);
   }
-  if (existing.timeZone !== entry.clock) changes.push(`clock: ${existing.timeZone} → ${entry.clock}`);
+  if (existing.ownTimeZone !== entry.clock) changes.push(entry.clock === null ? `clock: its home's, not ${existing.ownTimeZone}` : `clock: ${existing.ownTimeZone ?? "its home's"} → ${entry.clock}`);
+  const homeKey = existing.homeId ? (deps.places.home(existing.homeId)?.key ?? null) : null;
+  if (homeKey !== entry.home) changes.push(entry.home === null ? "for the family's homes, not one" : `for ${entry.home}`);
   if (existing.recheckMinutes !== entry.recheckMinutes) changes.push('how often it keeps things so');
   if (existing.homePlace !== entry.homePlace) changes.push(entry.homePlace === null ? 'off the home page' : 'its place on the home page');
   return changes.length ? { action: 'change', changes } : { action: 'same', changes };
@@ -523,7 +551,7 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
   if (!options.lenient) for (const need of view.needs.rebind) if (automationsIn(need.automation) && !choices.rebind?.[`${need.automation}.${need.role}`]) missing.push(`"${document.automations[need.automation]?.name}": a device for ${need.label}`);
   if (missing.length) throw new ApiError('invalid', `It still needs ${missing.join('; ')}`, { problems: missing });
 
-  const applied: ImportApplied = { devices: { added: [], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, policy: [], location: false, notes: [] };
+  const applied: ImportApplied = { devices: { added: [], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, family: false, homes: { added: [], changed: [] }, policy: [], notes: [] };
   const touched: AutomationId[] = [];
   /** Where each automation goes on the home page: placed after all are written, by place, so each lands where the file says. */
   const placing: { id: AutomationId; place: number | null }[] = [];
@@ -540,6 +568,21 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
 
   try {
     deps.db.transaction(() => {
+      // The family, and its homes: first, since automations are for them.
+      if (view.family.length) {
+        deps.family.update({ ...(document.family.name !== null ? { name: document.family.name } : {}), ...(document.family.kind !== null ? { kind: document.family.kind } : {}), ...(document.family.locale !== null ? { locale: document.family.locale } : {}) });
+        applied.family = true;
+      }
+      for (const item of view.homes) {
+        if (item.action === 'same') continue;
+        const entry = document.homes[item.key]!;
+        const existing = deps.places.homeByKey(item.key);
+        const location = entry.location ? { latitude: entry.location.latitude, longitude: entry.location.longitude, radius: entry.location.radius ?? existing?.location?.radius ?? HOME_RADIUS } : undefined;
+        const address = existing ? Object.fromEntries(Object.entries(entry.address).map(([part, value]) => [part, value ?? existing.address[part as keyof typeof entry.address]])) : entry.address;
+        const given = { name: entry.name, type: entry.type, timeZone: entry.timeZone, address: address as typeof entry.address, ...(location ? { location } : {}), ...(entry.country !== null ? { country: entry.country } : {}) };
+        if (existing) (deps.places.updateHome(existing.id, given), applied.homes.changed.push(item.key));
+        else (deps.places.addHome({ ...given, key: item.key }), applied.homes.added.push(item.key));
+      }
       // Devices: added, changed, removed — a bridge before what is reached through it.
       for (const item of bridgesFirst(view.devices, document)) {
         if (!devicesIn(item.key)) continue;
@@ -583,7 +626,8 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
         if (item.action === 'same') continue;
         const entry = document.automations[item.key]!;
         const existing = deps.automations.byKey(item.key);
-        const id = existing?.id ?? deps.automations.create({ key: item.key, name: entry.name, rule: entry.rule, madeFrom: entry.madeFrom, roles: {}, groups: {}, starts: {}, timeZone: entry.clock, recheckMinutes: entry.recheckMinutes }).id;
+        const homeId = entry.home ? (deps.places.homeByKey(entry.home)?.id ?? null) : null;
+        const id = existing?.id ?? deps.automations.create({ key: item.key, name: entry.name, rule: entry.rule, madeFrom: entry.madeFrom, roles: {}, groups: {}, starts: {}, homeId, timeZone: entry.clock, recheckMinutes: entry.recheckMinutes }).id;
         written.push({ key: item.key, entry, id, existing });
       }
       for (const { key, entry, id, existing } of written) {
@@ -613,7 +657,8 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
         const why = [...new Set([...(kept.turnedOff.get(key) ?? []), ...result.problems])];
         if (why.length && !options.lenient) throw new ApiError('invalid', `"${entry.name}" cannot be kept as it is`, { problems: why.map((said) => `"${entry.name}": ${said}`) });
         each(`"${entry.name}"`, () => {
-          deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, groups: result.groups, starts: result.starts, timeZone: entry.clock, mode: why.length ? 'off' : entry.mode, recheckMinutes: entry.recheckMinutes });
+          const homeId = entry.home ? (deps.places.homeByKey(entry.home)?.id ?? null) : null;
+          deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, groups: result.groups, starts: result.starts, homeId, timeZone: entry.clock, mode: why.length ? 'off' : entry.mode, recheckMinutes: entry.recheckMinutes });
           if (entry.homePlace !== (existing?.homePlace ?? null)) placing.push({ id, place: entry.homePlace });
           (existing ? applied.automations.changed : applied.automations.added).push(key);
           if (why.length) applied.notes.push(`"${entry.name}" is restored turned off: ${why.join('; ')}`);
@@ -625,14 +670,12 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
       for (const { id } of placing.filter((each) => each.place === null)) deps.automations.placeOnHome(id, null);
       for (const { id, place } of placing.filter((each) => each.place !== null).sort((a, b) => a.place! - b.place!)) deps.automations.placeOnHome(id, place);
 
-      // The home's values.
+      // Each home's values.
       for (const change of view.policy) {
-        deps.policy.set(change.name as PolicyValueName, change.after);
-        applied.policy.push(change.name);
-      }
-      if (view.location) {
-        deps.location.set(view.location.after);
-        applied.location = true;
+        const home = deps.places.homeByKey(change.home);
+        if (!home) continue;
+        deps.policyOf(home.id).set(change.name as PolicyValueName, change.after);
+        applied.policy.push(`${change.home}.${change.name}`);
       }
     })();
   } catch (error) {

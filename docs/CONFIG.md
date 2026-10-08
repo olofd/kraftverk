@@ -389,6 +389,7 @@ nothing wrong — and write back the same.
 | 7 | As 6; a Zigbee socket is reached through its Tuya gateway, a device of its own (Tuya's migration): one gateway entry per gateway address, its key the one the sockets had, and each socket `via: gateway` by its Zigbee address |
 | 8 | A device may say it is `paused: true`: kept, and not reached, until resumed. Nothing older says so, so nothing changes |
 | 9 | A device may say how long where it has been is kept: `track: 30 days`, 1 to 366. Where it was is never in the file. Nothing older says so, so nothing changes |
+| 10 | A family and its homes (docs/PLAN-WORLD-MODEL.md): `family:` (name, kind, locale) and `homes:`, each by key with its name, type, location and geofence, time zone, address, country and policy. An automation may say the `home:` it is for, and `clock:` only for a clock of its own. Version 9's `home:` becomes the first home, `home`; an automation that said no clock keeps the home's |
 
 **An integration's own entries.** A change to what a type is reached by —
 a way it no longer has — is not the document's shape, but a home kept

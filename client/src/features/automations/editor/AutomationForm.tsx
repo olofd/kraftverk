@@ -126,7 +126,8 @@ function Editing({
   const kept = useMemo(() => pruned(draft), [draft]);
   // What the form does not edit, and its YAML does: its mode, clock, keeping it so, its place on the home page.
   const before = useMemo<AutomationSettings>(
-    () => (existing ? { mode: existing.mode, timeZone: existing.timeZone, recheckMinutes: existing.recheckMinutes, homePlace: existing.homePlace } : { mode: 'watch', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, recheckMinutes: null, homePlace: null }),
+    // A new one keeps its home's clock: the family's first home's, until it is for another.
+    () => (existing ? { mode: existing.mode, homeId: existing.homeId, timeZone: existing.ownTimeZone, recheckMinutes: existing.recheckMinutes, homePlace: existing.homePlace } : { mode: 'watch', homeId: null, timeZone: null, recheckMinutes: null, homePlace: null }),
     [existing]
   );
   const [settings, setSettings] = useState<AutomationSettings>(before);

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import { NODE_ID, nodeId, type PolicyValueName } from '@kraftverk/device-sdk';
+import { KEY, NODE_ID, nodeId, type PolicyValueName } from '@kraftverk/device-sdk';
 
 import { familyFor, RESOURCE_KIND, type AppDeps } from './context.ts';
 import { body, query } from './parse.ts';
@@ -20,6 +20,7 @@ export function familyRoutes(deps: AppDeps): Hono {
   /** Its homes: each a place, with its own clock — the family checks what each says. */
   const HOME = z
     .object({
+      key: z.string().regex(KEY),
       name: z.string().trim().min(1).max(60),
       type: z.enum(['house', 'apartment', 'cabin', 'boat', 'caravan', 'office', 'other']),
       timeZone: z.string().min(1).max(64),
@@ -31,7 +32,7 @@ export function familyRoutes(deps: AppDeps): Hono {
     })
     .strict();
   api.get('/homes', async (c) => c.json({ homes: await familyFor(deps, c).homes.list({ removed: c.req.query('removed') === 'true' }) }));
-  api.post('/homes', async (c) => c.json(await familyFor(deps, c).homes.add(await body(c, HOME.partial({ icon: true, location: true, address: true, country: true, bearing: true })))));
+  api.post('/homes', async (c) => c.json(await familyFor(deps, c).homes.add(await body(c, HOME.partial({ key: true, icon: true, location: true, address: true, country: true, bearing: true })))));
   api.patch('/homes/:id', async (c) => c.json(await familyFor(deps, c).homes.update(c.req.param('id'), await body(c, HOME.partial()))));
   api.delete('/homes/:id', async (c) => c.json(await familyFor(deps, c).homes.remove(c.req.param('id'))));
 

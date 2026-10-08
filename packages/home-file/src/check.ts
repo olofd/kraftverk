@@ -44,13 +44,17 @@ export function checkDocument(document: ConfigDocument, vocabulary: Vocabulary, 
     if (!valid.ok) for (const issue of valid.issues) problem(issue.message, issue.field in values ? [...path, issue.field] : path);
   };
 
-  // The home.
-  if (document.home.clock !== null && !isTimeZone(document.home.clock)) problem(`"${document.home.clock}" is not a time zone: "Europe/Stockholm"`, ['home', 'clock']);
-  for (const [name, value] of Object.entries(document.home.policy)) {
-    const spec = vocabulary.policy[name];
-    if (!spec) problem(`"${name}" is not one of the home's values: ${Object.keys(vocabulary.policy).join(', ')}`, ['home', 'policy', name]);
-    else if (value < spec.min || value > spec.max) problem(`${spec.label} is from ${spec.min} to ${spec.max} ${spec.unit}`, ['home', 'policy', name]);
+  // Each home: its clock, and its values.
+  for (const [key, home] of Object.entries(document.homes)) {
+    if (!isTimeZone(home.timeZone)) problem(`"${home.timeZone}" is not a time zone: "Europe/Stockholm"`, ['homes', key, 'time zone']);
+    for (const [name, value] of Object.entries(home.policy)) {
+      const spec = vocabulary.policy[name];
+      if (!spec) problem(`"${name}" is not one of a home's values: ${Object.keys(vocabulary.policy).join(', ')}`, ['homes', key, 'policy', name]);
+      else if (value < spec.min || value > spec.max) problem(`${spec.label} is from ${spec.min} to ${spec.max} ${spec.unit}`, ['homes', key, 'policy', name]);
+    }
   }
+  // A home by its key — in the file, or one the family has.
+  const homeKnown = (key: string) => key in document.homes || vocabulary.homes.some((home) => home.key === key);
 
   // A device by its key — in the file, or one the server has — its type, and whether it has a part.
   const deviceOf = (key: string): { name: string; type: string; parts: string[] } | null => {
@@ -119,7 +123,8 @@ export function checkDocument(document: ConfigDocument, vocabulary: Vocabulary, 
   // Each automation.
   for (const [key, automation] of Object.entries(document.automations)) {
     const path: Path = ['automations', key];
-    if (!isTimeZone(automation.clock)) problem(`"${automation.clock}" is not a time zone: "Europe/Stockholm"`, [...path, 'clock']);
+    if (automation.clock !== null && !isTimeZone(automation.clock)) problem(`"${automation.clock}" is not a time zone: "Europe/Stockholm"`, [...path, 'clock']);
+    if (automation.home !== null && !homeKnown(automation.home)) problem(`No home is called "${automation.home}"`, [...path, 'home']);
     for (const [role, use] of Object.entries(automation.uses)) {
       if ('device' in use) {
         if (options.uses !== 'leave') part(use, [...path, 'uses', role]);

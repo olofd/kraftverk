@@ -69,10 +69,11 @@ export type AutomationDraftView = {
 
 /**
  * `POST /automations`. `key`: its name in configuration; made from its name
- * when not given. `timeZone` is the app's own clock: "Europe/Stockholm".
- * `madeFrom`: the recipe it was copied from.
+ * when not given. `homeId`: the home it is for — its clock, and its "home";
+ * none, the family's. `timeZone`: a clock of its own, "Europe/Stockholm";
+ * none, its home's. `madeFrom`: the recipe it was copied from.
  */
-export type NewAutomation = AutomationDraft & { name: string; key?: string; madeFrom?: string | null; timeZone: string; recheckMinutes?: number | null };
+export type NewAutomation = AutomationDraft & { name: string; key?: string; madeFrom?: string | null; homeId?: string | null; timeZone?: string | null; recheckMinutes?: number | null };
 
 /**
  * `PATCH /automations/:id`. A new rule comes with what fills its roles. Letting
@@ -83,7 +84,10 @@ export type AutomationChanges = Partial<AutomationDraft> & {
   name?: string;
   /** Its name in configuration: lowercase letters, digits and dashes, no other automation's. */
   key?: string;
-  timeZone?: string;
+  /** The home it is for; null, the family's. */
+  homeId?: string | null;
+  /** A clock of its own; null, its home's. */
+  timeZone?: string | null;
   mode?: AutomationMode;
   recheckMinutes?: number | null;
   homePlace?: number | null;
@@ -182,7 +186,12 @@ export type AutomationView = RoleFills & {
   when: string[];
   /** Each role's name as its steps say it: "Scooter plug", "“Charge the scooter”". */
   names: Record<string, string>;
+  /** The home it is for: its clock, and its "home". Null: the family's. */
+  homeId: string | null;
+  /** Its clock: its own, or its home's. */
   timeZone: string;
+  /** A clock of its own; null when it keeps its home's. */
+  ownTimeZone: string | null;
   /** Its place among the shortcuts on the home page; null when it is not there. */
   homePlace: number | null;
   mode: AutomationMode;

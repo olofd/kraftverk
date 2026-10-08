@@ -1,5 +1,3 @@
-import type { Coordinates } from '@kraftverk/automation';
-
 /*
   A home's configuration (docs/CONFIG.md): an export, an import's plan with
   what it needs, its answers and what it applied, and the copy kept beside
@@ -27,9 +25,12 @@ export type ImportPlan = {
   devices: ImportItem[];
   links: { kind: string; from: string; to: string; action: 'add' | 'same' | 'remove' }[];
   automations: ImportItem[];
-  policy: { name: string; label: string; before: number | null; after: number }[];
-  /** Where the home is, as the file says it — when that is not where it is now. */
-  location: { before: Coordinates | null; after: Coordinates } | null;
+  /** What the file changes of the family itself — its name, kind, language — each in words; empty when nothing. */
+  family: string[];
+  /** Its homes, by key: added, changed — where it is, its clock — or the same. One the file does not name is left as it is: leaving a home is a person's to do. */
+  homes: ImportItem[];
+  /** Each home's values the file changes, by the home's key. */
+  policy: { home: string; name: string; label: string; before: number | null; after: number }[];
   needs: {
     /** It carries secrets sealed with a passphrase, and none was given — or the one given does not open them. */
     passphrase: 'missing' | 'wrong' | null;
@@ -48,9 +49,11 @@ export type ImportApplied = {
   devices: { added: string[]; restored: string[]; changed: string[]; removed: string[] };
   automations: { added: string[]; changed: string[]; removed: string[] };
   links: { added: number; removed: number };
+  /** Whether the family's name, kind or language was set from the file. */
+  family: boolean;
+  homes: { added: string[]; changed: string[] };
+  /** Each value set, as "home-key.name". */
   policy: string[];
-  /** Whether where the home is was set from the file. */
-  location: boolean;
   /** What was done otherwise than the file says — restoring, an automation kept turned off, a device left out — each in words. */
   notes: string[];
 };

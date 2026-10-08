@@ -84,7 +84,7 @@ describe('a configuration file', () => {
     const { document, problems, from } = readConfig(EXAMPLE);
     expect(problems).toEqual([]);
     expect(from).toBe(4);
-    expect(document!.home.policy).toEqual({ loadWatts: 50, reserveSoc: 20 });
+    expect(document!.homes.home!.policy).toEqual({ loadWatts: 50, reserveSoc: 20 });
     expect(document!.devices['smart-plug']!.connect[0]).toEqual({
       via: 'lan',
       through: null,
@@ -138,21 +138,24 @@ automations:
     ]);
   });
 
-  test('where the home is: its latitude and longitude, written back as they were — and each held to the globe', () => {
+  test('where a home is: its latitude, longitude and geofence, written back as they were — and each held to the globe', () => {
     const located = readConfig('kraftverk: 4\nhome:\n  location: { latitude: 51.4779, longitude: -0.0015 }\n');
     expect(located.problems).toEqual([]);
-    expect(located.document!.home.location).toEqual({ latitude: 51.4779, longitude: -0.0015 });
-    expect(readConfig(writeConfig(located.document!)).document!.home.location).toEqual({ latitude: 51.4779, longitude: -0.0015 });
-    const wrong = (location: string) => readConfig(`kraftverk: 4\nhome:\n  location: ${location}\n`).problems.map((problem) => problem.message);
+    expect(located.document!.homes.home!.location).toEqual({ latitude: 51.4779, longitude: -0.0015, radius: null });
+    expect(readConfig(writeConfig(located.document!)).document!.homes.home!.location).toEqual({ latitude: 51.4779, longitude: -0.0015, radius: null });
+    const home = (location: string) => `kraftverk: 10\nhomes:\n  home:\n    name: Home\n    time zone: Europe/London\n    location: ${location}\n`;
+    expect(readConfig(home('{ latitude: 51.4779, longitude: -0.0015, radius: 200 }')).document!.homes.home!.location).toEqual({ latitude: 51.4779, longitude: -0.0015, radius: 200 });
+    const wrong = (location: string) => readConfig(home(location)).problems.map((problem) => problem.message);
     expect(wrong('{ latitude: 95, longitude: 0 }')).toEqual(['A latitude is a number from -90 to 90']);
     expect(wrong('{ latitude: 51, longitude: "east" }')).toEqual(['A longitude is a number from -180 to 180']);
-    expect(wrong('{ lat: 51, lon: 0 }')).toEqual(['"location" is its latitude and longitude, in degrees: { latitude: 59.3, longitude: 18.1 }']);
+    expect(wrong('{ latitude: 51, longitude: 0, radius: 0 }')).toEqual(['A radius is metres, from 1 to 50 000']);
+    expect(wrong('{ lat: 51, lon: 0 }')).toEqual(['"location" is its latitude and longitude, in degrees, and a radius in metres: { latitude: 59.3, longitude: 18.1, radius: 150 }']);
   });
 
   test('YAML that is not YAML, a missing version, and one written by a newer kraftverk', () => {
     expect(readConfig('devices: [').problems[0]).toMatchObject({ line: 1 });
-    expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 9" at its top');
-    expect(readConfig('kraftverk: 10').problems[0]).toMatchObject({ message: 'It was written by a newer kraftverk (version 10); this one reads up to version 9', line: 1, column: 12 });
+    expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 10" at its top');
+    expect(readConfig('kraftverk: 11').problems[0]).toMatchObject({ message: 'It was written by a newer kraftverk (version 11); this one reads up to version 10', line: 1, column: 12 });
   });
 });
 

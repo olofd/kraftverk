@@ -65,7 +65,7 @@ export type AutomationInput = Pick<AutomationRecord, 'name' | 'rule' | 'madeFrom
 };
 
 /** What an automation keeps changed: its clock its own (a time zone) or its home's (null). */
-export type AutomationChanges = Partial<Pick<AutomationRecord, 'key' | 'name' | 'rule' | 'roles' | 'groups' | 'starts' | 'mode' | 'recheckMinutes' | 'homeId'>> & { timeZone?: string | null };
+export type AutomationUpdate = Partial<Pick<AutomationRecord, 'key' | 'name' | 'rule' | 'roles' | 'groups' | 'starts' | 'mode' | 'recheckMinutes' | 'homeId'>> & { timeZone?: string | null };
 
 /** Where no home says a clock: none kept yet. */
 const NO_CLOCK = 'UTC';
@@ -276,7 +276,7 @@ export class AutomationStore implements AutomationStorage {
   }
 
   /** A change: a new rule comes with what fills its roles. */
-  update(id: string, changes: AutomationChanges): AutomationRecord | null {
+  update(id: string, changes: AutomationUpdate): AutomationRecord | null {
     const current = this.get(id);
     if (!current) return null;
     if (changes.key !== undefined && changes.key !== current.key && (!KEY.test(changes.key) || this.keyTaken(changes.key, id))) {

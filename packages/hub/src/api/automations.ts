@@ -89,7 +89,8 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
       get: async (id) => view(automationOf(id)),
 
       async create(input) {
-        zoned(input.timeZone);
+        if (input.timeZone) zoned(input.timeZone);
+        if (input.homeId && !hub.places.home(input.homeId)) throw new ApiError('invalid', 'No such home');
         if (input.madeFrom && !library.recipe(input.madeFrom)) throw new ApiError('invalid', `There is no recipe called "${input.madeFrom}"`);
         if (input.key !== undefined) checkKey(input.key, automations.keyTaken(input.key), 'automation', 'start-charging');
         const result = checked(input, null);
@@ -103,7 +104,8 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
           roles: result.roles,
           groups: result.groups,
           starts: result.starts,
-          timeZone: input.timeZone,
+          homeId: input.homeId ?? null,
+          timeZone: input.timeZone ?? null,
           recheckMinutes: input.recheckMinutes ?? null,
         });
         // An assistant's is a proposal: it watches until a person lets it act.
@@ -124,6 +126,7 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
       async update(id, input) {
         const current = automationOf(id);
         if (input.timeZone) zoned(input.timeZone);
+        if (input.homeId && !hub.places.home(input.homeId)) throw new ApiError('invalid', 'No such home');
         if (input.key !== undefined && input.key !== current.key) checkKey(input.key, automations.keyTaken(input.key, current.id), 'automation', 'start-charging');
         // A new rule comes with what fills its roles: all of them together, or none.
         const rebuilt = input.rule !== undefined || input.roles !== undefined || input.groups !== undefined || input.starts !== undefined;
@@ -167,7 +170,8 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
           ...(input.name ? { name: input.name } : {}),
           ...(input.key ? { key: input.key } : {}),
           ...(changedRule ?? {}),
-          ...(input.timeZone ? { timeZone: input.timeZone } : {}),
+          ...(input.timeZone !== undefined ? { timeZone: input.timeZone } : {}),
+          ...(input.homeId !== undefined ? { homeId: input.homeId } : {}),
           ...(input.mode ? { mode: input.mode } : {}),
           ...(input.recheckMinutes !== undefined ? { recheckMinutes: input.recheckMinutes } : {}),
         })!;

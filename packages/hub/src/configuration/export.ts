@@ -9,8 +9,7 @@ import {
   type WaySource,
 } from '@kraftverk/home-file';
 import { methodsOf, partsOf, type NodeId, type PolicyValueName, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
-import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, LinkStore, SecretsAtRest } from '@kraftverk/store';
-import type { Coordinates } from '@kraftverk/automation';
+import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, FamilyStore, LinkStore, PlaceStore, SecretsAtRest } from '@kraftverk/store';
 
 import type { ProtocolRegistry } from '../installed/protocols.ts';
 import type { DeviceTypeRegistry } from '../installed/types.ts';
@@ -33,10 +32,12 @@ export type ConfigDeps = {
   automations: AutomationStore;
   types: DeviceTypeRegistry;
   protocols: ProtocolRegistry;
-  /** The home's own values: how much is a load, the reserve. */
-  policy: { values(): PolicyValues; set(name: PolicyValueName, value: number | null): PolicyValues };
-  /** Where the home is: what sunrise and sunset are told by. */
-  location: { get(): Coordinates | null; set(location: Coordinates | null): void };
+  /** The family itself: its name, kind and language. */
+  family: FamilyStore;
+  /** Its homes: where each is, its clock. */
+  places: PlaceStore;
+  /** A home's own values: how much is a load, the reserve. */
+  policyOf(homeId: string): { values(): PolicyValues; set(name: PolicyValueName, value: number | null): PolicyValues };
   /** How a passphrase seals a secret, and opens it: the place's. */
   sealing: PassphraseSealing;
   /** How the home seals its own secrets at rest: what the snapshot keeps them in. */
@@ -74,10 +75,11 @@ export type Exported = {
 };
 
 /** What a configuration may name in this home: its installed types, and the keys it has. */
-export function homeVocabulary(deps: Pick<ConfigDeps, 'catalog' | 'automations' | 'types' | 'protocols'>): Vocabulary {
+export function homeVocabulary(deps: Pick<ConfigDeps, 'catalog' | 'automations' | 'types' | 'protocols' | 'places'>): Vocabulary {
   return vocabularyOf(deps.types.all(), (id) => deps.protocols.get(id), {
     devices: deps.catalog.list().map((device) => ({ key: device.key, type: device.typeId, name: device.name, parts: partsOf(device.description).map((part) => part.id) })),
     automations: deps.automations.list().map((automation) => ({ key: automation.key, name: automation.name })),
+    homes: deps.places.homes().map((home) => ({ key: home.key, name: home.name })),
   });
 }
 
@@ -94,8 +96,19 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
   if (options.automations) for (const key of options.automations) if (!automations.some((automation) => automation.key === key)) notes.push(`There is no automation "${key}"`);
 
   if (everything) {
-    document.home.policy = { ...deps.policy.values() };
-    document.home.location = deps.location.get();
+    const family = deps.family.get();
+    if (family) document.family = { name: family.name, kind: family.kind, locale: family.locale };
+    for (const home of deps.places.homes()) {
+      document.homes[home.key] = {
+        name: home.name,
+        type: home.type,
+        location: home.location,
+        timeZone: home.timeZone,
+        address: home.address,
+        country: home.country,
+        policy: { ...deps.policyOf(home.id).values() },
+      };
+    }
   }
 
   // The secrets, as asked.
@@ -161,7 +174,14 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
 
   // Automations: what fills each role, by key.
   // A device you removed fills nothing in a file: its role is written empty, and said.
-  const keyOf = { device: (id: string) => { const device = deps.catalog.get(id as SavedDeviceId); return device && !device.removedAt ? device.key : null; }, automation: (id: string) => deps.automations.get(id)?.key ?? null };
+  const keyOf = {
+    device: (id: string) => {
+      const device = deps.catalog.get(id as SavedDeviceId);
+      return device && !device.removedAt ? device.key : null;
+    },
+    automation: (id: string) => deps.automations.get(id)?.key ?? null,
+    home: (id: string) => deps.places.home(id)?.key ?? null,
+  };
   const elsewhere = new Set<string>();
   for (const automation of automations) {
     const { entry, gone } = automationEntryFrom(automation, keyOf);

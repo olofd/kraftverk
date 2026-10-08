@@ -16,7 +16,10 @@ import type { Use } from '@kraftverk/automation';
 export type AutomationSource = {
   name: string;
   mode: AutomationMode;
-  timeZone: string;
+  /** The home it is for, by its id; null: the family's. */
+  homeId: string | null;
+  /** A clock of its own; null: its home's. */
+  ownTimeZone: string | null;
   recheckMinutes: number | null;
   homePlace: number | null;
   madeFrom: string | null;
@@ -34,7 +37,10 @@ export type AutomationSource = {
  * whose device or automation has gone is left unfilled — written as such —
  * and said, by role, in `gone`.
  */
-export function automationEntryFrom(source: AutomationSource, keyOf: { device: (id: string) => string | null; automation: (id: string) => string | null }): { entry: AutomationEntry; gone: string[] } {
+export function automationEntryFrom(
+  source: AutomationSource,
+  keyOf: { device: (id: string) => string | null; automation: (id: string) => string | null; home?: (id: string) => string | null }
+): { entry: AutomationEntry; gone: string[] } {
   const uses: Record<string, Use> = {};
   const gone: string[] = [];
   for (const [role, binding] of Object.entries(source.roles)) {
@@ -60,7 +66,8 @@ export function automationEntryFrom(source: AutomationSource, keyOf: { device: (
     entry: {
       name: source.name,
       mode: source.mode,
-      clock: source.timeZone,
+      home: source.homeId ? (keyOf.home?.(source.homeId) ?? null) : null,
+      clock: source.ownTimeZone,
       recheckMinutes: source.recheckMinutes,
       homePlace: source.homePlace,
       madeFrom: source.madeFrom,
