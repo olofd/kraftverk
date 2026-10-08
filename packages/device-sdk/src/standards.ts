@@ -193,6 +193,11 @@ export const MEANING_PROJECTIONS: Readonly<Record<StandardMeaningId, MeaningProj
     homeAssistant: { platform: 'sensor', deviceClass: null },
     matter: { none: 'Matter does not count the people in a room' },
   },
+  'spot': {
+    // Home Assistant has no place within a home: its x and y are a sensor's attributes.
+    homeAssistant: { platform: 'sensor', deviceClass: null },
+    matter: { none: 'Matter describes a robot cleaner’s areas, not where on its map it is' },
+  },
 };
 
 // --- capabilities -------------------------------------------------------------

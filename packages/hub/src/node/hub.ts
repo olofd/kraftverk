@@ -302,9 +302,9 @@ export class Hub {
     this.sampler = new Sampler({ history: this.history, audit: this.audit, events, tracks: this.tracks, notifications: this.notifications }, this.views, (deviceId) => positionHidden(this, deviceId, null));
     this.stays = new PresenceStore(db);
     this.push = options.push ?? null;
-    this.presence = new Presence({ people: this.people, devicePeople: this.devicePeople, places: this.places, stays: this.stays, views: this.views, bus: this.bus, clock: options.clock });
+    this.presence = new Presence({ people: this.people, devicePeople: this.devicePeople, places: this.places, stays: this.stays, spaces: this.spaces, views: this.views, bus: this.bus, clock: options.clock });
     this.occupancies = new OccupancyStore(db);
-    this.occupancy = new Occupancy({ places: this.places, spaces: this.spaces, store: this.occupancies, views: this.views, history: this.history, bus: this.bus, clock: options.clock });
+    this.occupancy = new Occupancy({ places: this.places, spaces: this.spaces, store: this.occupancies, views: this.views, history: this.history, bus: this.bus, roomStays: (homeId) => this.stays.rooms(homeId), clock: options.clock });
     this.changeLog = new ChangeLog(this.history, this.bus, (id) => {
       const device = catalog.active(id);
       return device ? sessions.description(device) : null;

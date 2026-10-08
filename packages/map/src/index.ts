@@ -19,6 +19,7 @@ export {
   type MapZone,
 } from './shapes.ts';
 export {
+  anchoredSpot,
   between,
   drawingCorners,
   fromGlobe,

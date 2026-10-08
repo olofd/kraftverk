@@ -29,7 +29,7 @@ export type OccupancyDeps = {
   places: Pick<PlaceStore, 'homes'>;
   spaces: Pick<SpaceStore, 'spaces' | 'openings' | 'placement'>;
   store: OccupancyStore;
-  views: { all(): DeviceView[] };
+  views: { all(): DeviceView[]; find(id: SavedDeviceId): DeviceView | null };
   history: Pick<HistoryStore, 'changes'>;
   bus: Pick<LiveBus, 'subscribe' | 'publish'>;
   /** Who is in which room of a home, by a signal that tells people apart. */
@@ -47,6 +47,8 @@ export class Occupancy {
   #sensing = new Set<string>();
   /** When each sensor was last seen to turn true, by device and key: what history has not kept yet. */
   readonly #rose = new Map<string, number>();
+  /** A look asked for and not yet taken: several readings at once are one look. */
+  #asked = false;
 
   constructor(deps: OccupancyDeps) {
     this.#deps = deps;
@@ -56,10 +58,10 @@ export class Occupancy {
   start(): void {
     this.#timer ??= this.#clock.setInterval(() => this.look(), LOOK_EVERY_MS);
     this.#pruneTimer ??= this.#clock.setInterval(() => this.prune(), PRUNE_EVERY_MS);
-    // A sensor that says something: its home looked at now.
+    // A sensor that says something — one new too — a device placed, someone in a room: looked at now.
     this.#unsubscribe ??= this.#deps.bus.subscribe((message) => {
-      if (message.kind === 'readings' && this.#sensing.has(message.deviceId)) this.look();
-      else if (message.kind === 'presence' && message.place.kind === 'space') this.look();
+      if (message.kind === 'readings' && (this.#sensing.has(message.deviceId) || this.#senses(message.deviceId))) this.#soon();
+      else if (message.kind === 'changed' || (message.kind === 'presence' && message.place.kind === 'space')) this.#soon();
     });
     this.look();
   }
@@ -71,6 +73,21 @@ export class Occupancy {
     this.#timer = null;
     this.#pruneTimer = null;
     this.#unsubscribe = null;
+  }
+
+  /** A look in a moment, once for everything said meanwhile. */
+  #soon(): void {
+    if (this.#asked) return;
+    this.#asked = true;
+    queueMicrotask(() => {
+      this.#asked = false;
+      this.look();
+    });
+  }
+
+  /** Whether a device says anything that tells someone is there. */
+  #senses(deviceId: SavedDeviceId): boolean {
+    return this.#deps.views.find(deviceId)?.description.attributes.some((attribute) => typeof attribute.means === 'string' && Object.hasOwn(SENSES, attribute.means)) ?? false;
   }
 
   /** Every home looked at: occupancy opened and closed as what stands there says. */

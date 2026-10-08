@@ -88,6 +88,15 @@ export const toGlobe = (anchor: Anchor, spaces: readonly FramedSpace[], spaceId:
 /** A place on the Earth, in a space's frame. */
 export const fromGlobe = (anchor: Anchor, spaces: readonly FramedSpace[], spaceId: string, place: LngLat): Point => fromSite(spaces, spaceId, globeToSite(anchor, place));
 
+/**
+ * Where a device's own map puts something — a robot cleaner, a watch a
+ * room's beacons hear — in the frame of the space the device is placed in:
+ * its map's origin at the placement's x and y, its y axis turned by its
+ * facing. Placed with no coordinates: its map's origin is the space's.
+ */
+export const anchoredSpot = (placement: { x: number | null; y: number | null; facing: number | null }, spot: Point): Point =>
+  intoParent({ x: placement.x ?? 0, y: placement.y ?? 0, turn: placement.facing ?? 0 }, spot);
+
 /** A space's outline on the Earth, its ring closed; none when it is not drawn. */
 export function outlineOnGlobe(anchor: Anchor, spaces: readonly FramedSpace[], space: FramedSpace & { outline: readonly Point[] | null }): LngLat[] | null {
   if (!space.outline || space.outline.length < 3) return null;

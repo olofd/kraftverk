@@ -61,7 +61,7 @@ beforeEach(() => {
     places,
     spaces,
     store,
-    views: { all: () => [view(PIR, [attribute('occupancy', 'motion')], { spaceId: ids.bath! }), view(CONTACT, [attribute('contact', 'open')], { spaceId: ids.bath!, openingId: ids.door! })] },
+    views: { all: () => [view(PIR, [attribute('occupancy', 'motion')], { spaceId: ids.bath! }), view(CONTACT, [attribute('contact', 'open')], { spaceId: ids.bath!, openingId: ids.door! })], find: () => null },
     history: new HistoryStore(db),
     bus: { subscribe: () => () => {}, publish: (message) => void said.push(message) },
     clock: { now: () => now, setTimeout: () => ({ clock: 'timer' }), setInterval: () => ({ clock: 'timer' }), clear: () => {}, rate: 1 },

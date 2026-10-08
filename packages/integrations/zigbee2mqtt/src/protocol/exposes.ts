@@ -413,7 +413,11 @@ export function shapeOf(exposes: readonly Expose[], options: { /** Zigbee2MQTT c
   }
 
   // A plug's power leads its outlet's card; a sensor's temperature, the device's.
-  const lead = fields.find((field) => field.spec.means === 'power') ?? fields.find((field) => field.spec.means === 'temperature' || field.spec.quantity === 'temperature' && field.spec.category !== 'diagnostic');
+  const lead =
+    fields.find((field) => field.spec.means === 'power') ??
+    fields.find((field) => field.spec.means === 'temperature' || (field.spec.quantity === 'temperature' && field.spec.category !== 'diagnostic')) ??
+    // A motion sensor's motion, a radar's someone there, a contact's open.
+    fields.find((field) => field.spec.means === 'motion' || field.spec.means === 'occupied' || field.spec.means === 'open');
   if (lead) (lead.spec as { category?: string }).category = 'primary';
 
   const hasPower = fields.some((field) => field.spec.means === 'power');

@@ -62,7 +62,7 @@ const MAY_IMPORT = {
   'device-sdk': [],
   // Who a person is: a stable id and a chain of signed statements, checked anywhere. Knows no platform.
   identity: [],
-  // Where things are, drawn: a map's style, what it shows, and the regions a home may hold. Knows no platform.
+  // Where things are, drawn: a map's style, what it shows, a home's frames, and the regions a home may hold. Knows no platform.
   map: ['device-sdk'],
   automation: ['device-sdk'],
   gateway: ['device-sdk'],
@@ -71,7 +71,7 @@ const MAY_IMPORT = {
   holder: ['device-sdk', 'gateway', 'api-contract'],
   'automation-engine': ['device-sdk', 'automation', 'gateway', 'api-contract', 'holder'],
   store: ['device-sdk', 'identity', 'automation', 'gateway', 'home-file', 'api-contract', 'holder', 'automation-engine'],
-  hub: ['device-sdk', 'identity', 'automation', 'gateway', 'home-file', 'api-contract', 'holder', 'automation-engine', 'store'],
+  hub: ['device-sdk', 'identity', 'map', 'automation', 'gateway', 'home-file', 'api-contract', 'holder', 'automation-engine', 'store'],
   // A home and a transport over a message port: served on one side, the same interface on the other.
   'message-port': ['device-sdk', 'identity', 'automation', 'gateway', 'home-file', 'api-contract'],
   // The edges: the API over HTTP, and the React kit.

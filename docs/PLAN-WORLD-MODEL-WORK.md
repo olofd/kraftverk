@@ -481,6 +481,33 @@ see the same devices.
 
 ## W6. Rooms and presence
 
+**Built, 2026-10-09** (commits W6.1 to W6.5). What building it changed:
+
+- **What says someone is there** is four standard meanings: `motion`,
+  `occupied` (a radar), `open` (a contact) and `people` (a count).
+  Zigbee2MQTT's `occupancy` is motion, its `presence` someone there. A
+  simulated Zigbee sensor is a room someone walks into now and then.
+- **Geometry** is on the space: its `frame`, `outline` and a floor's
+  `plan` (a picture, its scale, its corner and turn), set by the space's
+  own update; an opening's `shape`; a device `at` a point, its `height`
+  and `facing`. Frames walk to the Earth in `packages/map` (`frames.ts`).
+  The file is version 13.
+- **Occupancy** (`packages/hub/src/occupancy`): a radar while it says so;
+  motion and five minutes after, unless a radar there says nobody is; a
+  count; a closed room — every way in a door whose contact is shut — with
+  motion that began after, until a door opens; a person's room stay. A
+  floor, a building and the site while a space within is. Presence and
+  occupancy are said on the bus; the live stream says only that the world
+  moved.
+- **The home's map** is `/rooms`: a floor at a time, its rooms filled
+  while someone is in them, its drawing beneath, what stands at
+  coordinates; rooms traced by tapping their corners, devices placed by a
+  tap, a drawing sized, turned and laid by its corner.
+- **A position in a frame** is a `spot`: metres on a device's own map,
+  anchored where the device is placed (its origin at x, y; its turn its
+  facing). A carried one puts its person in a room; a robot cleaner is
+  drawn where it says. A spot is a position for the sharing levels.
+
 - **Geometry:** `floor_plan` and frames. A floor's plan is traced into
   rooms, and a device is placed at coordinates. This is the home's map in
   the app, on the same MapLibre view, in the home's frame.

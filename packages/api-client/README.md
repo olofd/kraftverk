@@ -32,7 +32,11 @@ slots.
   what, by part (`fedBy`, `feedsTo`); a run's log made into what its
   page draws (`run-chart.ts`); and a home's spaces said in words — where a
   device stands, the spaces a room is in, devices grouped by the room each
-  stands in (`placeLine`, `trailOf`, `byRoom`). The index holds what is light: a device's
+  stands in (`placeLine`, `trailOf`, `byRoom`); and a home's map, a level
+  at a time — its drawn rooms on the Earth, filled while occupied, what
+  stands at coordinates, a robot cleaner where its own map says, a floor's
+  drawing by its corners — and corners or a device tapped there kept in a
+  room's frame (`home-map.ts`, over `@kraftverk/map/frames`). The index holds what is light: a device's
   screens import it and bundle neither the HTTP client nor YAML. The
   contract's types are re-exported for those screens, which reach the API
   through this package alone; the app imports the contract itself.

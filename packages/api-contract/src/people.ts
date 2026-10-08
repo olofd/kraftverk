@@ -49,6 +49,8 @@ export type PresenceView = {
   home: boolean | null;
   /** The homes and zones they are at, since when: at `places` and above, empty below. */
   places: { id: string; kind: 'home' | 'zone'; name: string; since: string }[];
+  /** The room they are in, when a signal tells them apart — a watch a room's beacons hear: at `places` and above, none below. */
+  room: { id: string; homeId: string; name: string; since: string } | null;
 };
 
 /** Something a person was told (docs/PLAN-WORLD-MODEL.md §8.14): in their inbox, and pushed to their apps. */

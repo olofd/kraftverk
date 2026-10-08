@@ -1,4 +1,4 @@
-import { LIGHT_EXPOSES, PLUG_EXPOSES, SENSOR_EXPOSES, SWITCH_EXPOSES } from './played.ts';
+import { LIGHT_EXPOSES, MOTION_EXPOSES, PLUG_EXPOSES, SENSOR_EXPOSES, SWITCH_EXPOSES } from './played.ts';
 import type { Expose } from './protocol/index.ts';
 import { defineZigbeeType } from './zigbee-type.ts';
 
@@ -71,7 +71,29 @@ export const zigbeeSensor = defineZigbeeType({
   icon: 'activity',
   description: 'A Zigbee sensor or button paired with the dongle on this server: what it measures, and each press as it happens.',
   typical: SENSOR_EXPOSES,
+  /*
+    A simulated one is a sensor in a room someone uses: its temperature and
+    humidity, and motion — someone comes in as it starts, and again every
+    few minutes, each time moving for a minute.
+  */
+  simulated: {
+    exposes: [...SENSOR_EXPOSES.filter((expose) => expose.name !== 'linkquality'), ...MOTION_EXPOSES.filter((expose) => expose.name === 'occupancy')],
+    plays(say, clock) {
+      let quiet: ReturnType<typeof clock.setTimeout> | null = null;
+      const walk = () => {
+        say({ occupancy: true });
+        quiet = clock.setTimeout(() => say({ occupancy: false }), WALK_MS);
+      };
+      walk();
+      const again = clock.setInterval(walk, WALK_EVERY_MS);
+      return () => (clock.clear(quiet), clock.clear(again));
+    },
+  },
 });
+
+/** How long a simulated someone moves for, and how often they come back. */
+const WALK_MS = 60_000;
+const WALK_EVERY_MS = 4 * 60_000;
 
 export const zigbeeClimate = defineZigbeeType({
   id: 'zigbee2mqtt.climate',

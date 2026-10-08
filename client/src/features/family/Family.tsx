@@ -56,7 +56,8 @@ function whereWords(presence: PresenceView | undefined, carriesAnything: boolean
   if (presence.sharing === 'home-away') return presence.home ? 'At home' : 'Away';
   if (!presence.places.length) return 'Away: at none of the family’s places';
   const first = presence.places[0]!;
-  return `At ${presence.places.map((place) => place.name).join(', ')} since ${clock(first.since)}`;
+  const room = presence.room ? `, in the ${presence.room.name.toLowerCase()} since ${clock(presence.room.since)}` : '';
+  return `At ${presence.places.map((place) => place.name).join(', ')} since ${clock(first.since)}${room}`;
 }
 
 /** Where each device someone carries says it is — only those the family shows this reader. */

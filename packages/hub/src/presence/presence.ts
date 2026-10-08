@@ -1,9 +1,11 @@
-import { isPosition, REAL_CLOCK, type Clock, type ClockTimer } from '@kraftverk/device-sdk';
+import { isPosition, isSpot, REAL_CLOCK, type Clock, type ClockTimer } from '@kraftverk/device-sdk';
+import type { SharingLevel } from '@kraftverk/api-contract';
 import type { LiveBus } from '@kraftverk/holder';
-import type { DevicePeopleStore, PeopleStore, PlaceStore, PresenceStore } from '@kraftverk/store';
+import type { DevicePeopleStore, PeopleStore, PlaceStore, PresenceStore, SpaceStore } from '@kraftverk/store';
 
 import type { DeviceViews } from '../devices/views.ts';
-import { decide, freshest, type Fix, type Geofence } from './rules.ts';
+import { decideRoom, roomOf, spotOf, type RoomFix } from './rooms.ts';
+import { decide, freshest, keptKinds, type Fix, type Geofence } from './rules.ts';
 
 /*
   Presence, kept (docs/PLAN-WORLD-MODEL.md §8.9): each member's stays at the
@@ -23,6 +25,8 @@ export type PresenceDeps = {
   devicePeople: DevicePeopleStore;
   places: PlaceStore;
   stays: PresenceStore;
+  /** A home's spaces, drawn: what a room is found in. */
+  spaces: Pick<SpaceStore, 'spaces'>;
   views: Pick<DeviceViews, 'find'>;
   bus: Pick<LiveBus, 'subscribe' | 'publish'>;
   clock?: Clock;
@@ -47,7 +51,7 @@ export class Presence {
     this.#pruneTimer ??= this.#clock.setInterval(() => this.prune(), PRUNE_EVERY_MS);
     // A carried device that says where it is: its person looked at now.
     this.#unsubscribe ??= this.#deps.bus.subscribe((message) => {
-      if (message.kind !== 'readings' || !message.readings.some((reading) => isPosition(reading.value))) return;
+      if (message.kind !== 'readings' || !message.readings.some((reading) => isPosition(reading.value) || isSpot(reading.value))) return;
       const carrier = this.#deps.devicePeople.of(message.deviceId).carries;
       if (carrier) this.lookAt(carrier);
     });
@@ -93,6 +97,42 @@ export class Presence {
       this.#deps.bus.publish({ kind: 'presence', personId, place: { id: place.id, kind: place.kind }, change: 'arrived', at: new Date(now).toISOString() });
     }
     this.#outside.set(personId, decision.outsideSince);
+    this.#lookAtRoom(personId, level, now);
+  }
+
+  /** Which room they are in: by the freshest spot of what they carry, as far as they share. */
+  #lookAtRoom(personId: string, level: SharingLevel, now: number): void {
+    const { devicePeople, stays, views, spaces, bus } = this.#deps;
+    let fix: RoomFix | null = null;
+    const homesSpaces = new Map<string, ReturnType<SpaceStore['spaces']>>();
+    for (const deviceId of devicePeople.carriedBy(personId)) {
+      const device = views.find(deviceId as never);
+      const said = device ? spotOf(device.description, device.readings) : null;
+      if (!device || !said || !device.placement || (fix && fix.at >= said.at)) continue;
+      const tree = homesSpaces.get(device.placement.homeId) ?? spaces.spaces(device.placement.homeId);
+      homesSpaces.set(device.placement.homeId, tree);
+      fix = { deviceId, roomId: roomOf(tree, device.placement, said.spot), at: said.at };
+    }
+    const kept = stays.room(personId);
+    const open = kept ? { id: kept.id, spaceId: kept.spaceId, since: Date.parse(kept.since) } : null;
+    const decision = decideRoom({ open, fix, keeps: keptKinds(level).includes('zone'), now });
+    const homeOf = (spaceId: string) => [...homesSpaces.entries()].find(([, tree]) => tree.some((space) => space.id === spaceId))?.[0] ?? null;
+    if (decision.end && kept) {
+      stays.end(decision.end.stayId, new Date(decision.end.until).toISOString());
+      const homeId = homeOf(kept.spaceId) ?? this.#homeOfSpace(kept.spaceId);
+      if (homeId) bus.publish({ kind: 'presence', personId, place: { id: kept.spaceId, kind: 'space', homeId }, change: 'left', at: new Date(now).toISOString() });
+    }
+    if (decision.begin) {
+      stays.enterRoom(personId, decision.begin.spaceId, new Date(decision.begin.since).toISOString(), decision.begin.deviceId);
+      const homeId = homeOf(decision.begin.spaceId);
+      if (homeId) bus.publish({ kind: 'presence', personId, place: { id: decision.begin.spaceId, kind: 'space', homeId }, change: 'arrived', at: new Date(now).toISOString() });
+    }
+  }
+
+  /** The home a space is of, among the family's. */
+  #homeOfSpace(spaceId: string): string | null {
+    for (const home of this.#deps.places.homes()) if (this.#deps.spaces.spaces(home.id).some((space) => space.id === spaceId)) return home.id;
+    return null;
   }
 
   /** Each person's ended stays kept no longer than they say. */

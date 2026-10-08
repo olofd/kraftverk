@@ -49,6 +49,25 @@ export const POSITION_SHAPE = {
 /** A position as it travels. */
 export type Position = { readonly latitude: number; readonly longitude: number; readonly accuracy?: number | null };
 
+/**
+ * Where something is on a device's own map of a home — a robot cleaner's, a
+ * radar's, a room's beacons' — in metres along its x and y axes, and how far
+ * it may be from there. Its map is anchored by where the device is placed:
+ * its origin at the placement's x and y, its y axis turned by its facing.
+ */
+export const SPOT_SHAPE = {
+  type: 'object',
+  fields: {
+    x: { type: 'number', unit: 'm' },
+    y: { type: 'number', unit: 'm' },
+    accuracy: { type: 'number', unit: 'm', min: 0 },
+  },
+  required: ['x', 'y'],
+} as const satisfies ObjectValue;
+
+/** A spot as it travels. */
+export type Spot = { readonly x: number; readonly y: number; readonly accuracy?: number | null };
+
 const number = (units: readonly Unit[]): QuantityValue => ({ type: 'number', units });
 
 /** Every quantity, by its name. */
@@ -77,6 +96,8 @@ export const QUANTITY_SPECS = {
   count: { label: 'Count', value: number([]), precision: 0, axis: 'zero', homeAssistant: null },
   /** Where something is: a phone, a scooter, a tag (`POSITION_SHAPE`). Home Assistant tracks one as a device tracker, not a sensor. */
   position: { label: 'Position', value: { type: 'object', shape: POSITION_SHAPE }, precision: 5, axis: null, homeAssistant: null },
+  /** Where something is on a device's own map of a home, in metres (`SPOT_SHAPE`). */
+  spot: { label: 'Where in the home', value: { type: 'object', shape: SPOT_SHAPE }, precision: 2, axis: null, homeAssistant: null },
 } as const satisfies Record<string, QuantitySpec>;
 
 export type Quantity = keyof typeof QUANTITY_SPECS;
@@ -136,6 +157,13 @@ export function isPosition(value: unknown): value is Position {
     Math.abs(longitude) <= 180 &&
     (accuracy === undefined || accuracy === null || (typeof accuracy === 'number' && accuracy >= 0))
   );
+}
+
+/** Whether a value is a spot: metres along a device's own map's axes, and an accuracy if any. */
+export function isSpot(value: unknown): value is Spot {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const { x, y, accuracy } = value as Record<string, unknown>;
+  return typeof x === 'number' && Number.isFinite(x) && typeof y === 'number' && Number.isFinite(y) && (accuracy === undefined || accuracy === null || (typeof accuracy === 'number' && accuracy >= 0));
 }
 
 /** The Earth's mean radius, in metres: what a distance over its surface is measured on. */

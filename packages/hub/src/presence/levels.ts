@@ -1,5 +1,5 @@
 import type { Caller, DeviceView } from '@kraftverk/api-contract';
-import { isPosition, type Reading } from '@kraftverk/device-sdk';
+import { isPosition, isSpot, type Reading } from '@kraftverk/device-sdk';
 import type { DevicePeopleStore, PeopleStore, TrackStore } from '@kraftverk/store';
 
 /*
@@ -28,8 +28,8 @@ export function positionHidden(stores: Stores, deviceId: string, reader: string 
   return stores.people.sharing(carrier).now !== 'precise';
 }
 
-/** A device's readings, without its position where it is left out. */
-export const withoutPosition = <T extends Pick<Reading, 'value'>>(readings: readonly T[]): T[] => readings.filter((reading) => !isPosition(reading.value));
+/** A device's readings, without its position where it is left out — on the Earth, or on a map of a home (a spot): either says where its carrier is. */
+export const withoutPosition = <T extends Pick<Reading, 'value'>>(readings: readonly T[]): T[] => readings.filter((reading) => !isPosition(reading.value) && !isSpot(reading.value));
 
 /** A device as a reader may see it. */
 export function shownTo(stores: Stores, reader: string | null): (view: DeviceView) => DeviceView {

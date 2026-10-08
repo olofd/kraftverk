@@ -103,6 +103,8 @@ type DevicesContextValue = {
    * how to stop hearing.
    */
   onAutomation: (listener: (id: string) => void) => () => void;
+  /** Hears that where the family is, which rooms have someone in them, or a home's mode moved — at a home, when it was one. */
+  onWorld: (listener: (what: 'presence' | 'occupancy' | 'mode', homeId: string | null) => void) => () => void;
   /** What the screen shows, told to the home (`useShowing`, `views.ts`). */
   views: Views;
 };
@@ -129,6 +131,12 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   const onAutomation = useCallback((listener: (id: string) => void) => {
     automationListeners.current.add(listener);
     return () => void automationListeners.current.delete(listener);
+  }, []);
+  /** Who hears that the world moved: the screens showing where people are, rooms, modes. */
+  const worldListeners = useRef(new Set<(what: 'presence' | 'occupancy' | 'mode', homeId: string | null) => void>());
+  const onWorld = useCallback((listener: (what: 'presence' | 'occupancy' | 'mode', homeId: string | null) => void) => {
+    worldListeners.current.add(listener);
+    return () => void worldListeners.current.delete(listener);
   }, []);
   // Opening at first: the stream reads the list when it opens, and says so if it cannot.
   const [live, setLive] = useState<LiveState>('connecting');
@@ -234,6 +242,10 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       if (update.type === 'event') return setHeard((last) => ({ count: last.count + 1, byDevice: { ...last.byDevice, [update.deviceId]: (last.byDevice[update.deviceId] ?? 0) + 1 } }));
       if (update.type === 'automation') {
         for (const listener of automationListeners.current) listener(update.id);
+        return;
+      }
+      if (update.type === 'world') {
+        for (const listener of worldListeners.current) listener(update.what, update.homeId);
         return;
       }
       if (update.type !== 'readings' && update.type !== 'health') return;
@@ -378,9 +390,10 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       removeLink: (link) => mutate(() => api.links.remove(link.id as LinkId)),
       heard,
       onAutomation,
+      onWorld,
       views,
     }),
-    [actionsFor, api, away, devices, error, heard, live, load, loading, mutate, onAutomation, removed, screenProps, unreachable, version, views]
+    [actionsFor, api, away, devices, error, heard, live, load, loading, mutate, onAutomation, onWorld, removed, screenProps, unreachable, version, views]
   );
 
   return <DevicesContext.Provider value={value}>{children}</DevicesContext.Provider>;

@@ -15,9 +15,14 @@ export function presenceApi(hub: Hub, _caller: Caller): Pick<KraftverkApi, 'pres
     presence: {
       async list() {
         const names = new Map<string, string>([...hub.places.homes().map((home) => [home.id, home.name] as const), ...hub.places.zones().map((zone) => [zone.id, zone.name] as const)]);
+        const roomOf = (personId: string): PresenceView['room'] => {
+          const stay = hub.stays.room(personId);
+          const space = stay ? hub.spaces.space(stay.spaceId) : null;
+          return stay && space && !space.removedAt ? { id: space.id, homeId: space.homeId, name: space.name, since: stay.since } : null;
+        };
         return hub.people.members().map((person): PresenceView => {
           const sharing = person.member!.sharing.now;
-          if (sharing === 'off') return { personId: person.id, sharing, home: null, places: [] };
+          if (sharing === 'off') return { personId: person.id, sharing, home: null, places: [], room: null };
           const kinds = keptKinds(sharing);
           // What is kept is no more than they share; what they share now may be less than when it was kept.
           const open = hub.stays.open(person.id).filter((stay) => kinds.includes(stay.kind) && names.has(stay.placeId));
@@ -26,6 +31,7 @@ export function presenceApi(hub: Hub, _caller: Caller): Pick<KraftverkApi, 'pres
             sharing,
             home: open.some((stay) => stay.kind === 'home'),
             places: sharing === 'home-away' ? [] : open.map((stay) => ({ id: stay.placeId, kind: stay.kind, name: names.get(stay.placeId)!, since: stay.since })),
+            room: sharing === 'home-away' ? null : roomOf(person.id),
           };
         });
       },

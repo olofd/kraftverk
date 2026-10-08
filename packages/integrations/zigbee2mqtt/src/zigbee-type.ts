@@ -48,6 +48,12 @@ export type ZigbeeTypeSpec = {
   typical: readonly Expose[];
   /** A group, reached by its group number: its simulator plays a group of two of `typical`. */
   group?: boolean;
+  /**
+   * What a simulated one is, when not a typical one: what it exposes, and
+   * how it moves on the simulation's clock — given how to say its values.
+   * Returns how to stop.
+   */
+  simulated?: { exposes: readonly Expose[]; plays?: (say: (values: Record<string, unknown>) => void, clock: DeviceContext<Config>['clock']) => () => void };
 };
 
 const THROUGH = 'Zigbee2MQTT is reached through this server’s broker, and its devices through it';
@@ -226,7 +232,7 @@ function simulated(spec: ZigbeeTypeSpec, ctx: DeviceContext<Config>): { open: Op
     friendly_name: ieee(n),
     supported: true,
     interview_state: 'SUCCESSFUL',
-    definition: { model: 'SIMULATED', vendor: 'Simulated', description: spec.name, source: 'native', exposes: spec.typical },
+    definition: { model: 'SIMULATED', vendor: 'Simulated', description: spec.name, source: 'native', exposes: spec.simulated?.exposes ?? spec.typical },
   });
   const played = playedZigbee2Mqtt({
     devices: spec.group ? [member(1), member(2)] : [member(1)],
@@ -235,6 +241,7 @@ function simulated(spec: ZigbeeTypeSpec, ctx: DeviceContext<Config>): { open: Op
   });
   const network = new ZigbeeNetwork(played.channel, { changed: () => {}, log: () => {}, now: () => ctx.clock.now() });
   network.start();
+  const stopPlaying = spec.simulated?.plays?.((values) => played.say(ieee(1).slice(2), values), ctx.clock) ?? (() => {});
   return {
     open: async (changed) => {
       // What it keeps arrives a moment after subscribing, as from a broker: its member is known then.
@@ -242,6 +249,7 @@ function simulated(spec: ZigbeeTypeSpec, ctx: DeviceContext<Config>): { open: Op
       return network.link(spec.group ? groupKey(1) : ieee(1).slice(2), changed);
     },
     stop: () => {
+      stopPlaying();
       network.close();
       played.stop();
     },

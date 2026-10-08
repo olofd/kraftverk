@@ -30,11 +30,17 @@ describe('standard meanings', () => {
     }
   });
 
-  test('an on/off is a binary sensor or a switch, a number is a sensor — or, a setting, a number — and a position is a device tracker', () => {
+  test('an on/off is a binary sensor or a switch, a number is a sensor — or, a setting, a number — a position is a device tracker, and a spot in a home a sensor', () => {
     for (const id of meanings) {
       const platform = MEANING_PROJECTIONS[id].homeAssistant.platform;
-      const type = STANDARD_MEANINGS[id].type;
-      const fits = type === 'boolean' ? platform === 'binary_sensor' || platform === 'switch' : type === 'object' ? platform === 'device_tracker' : platform === 'sensor' || platform === 'number';
+      const meaning: StandardMeaning = STANDARD_MEANINGS[id];
+      const type = meaning.type;
+      const fits =
+        type === 'boolean'
+          ? platform === 'binary_sensor' || platform === 'switch'
+          : meaning.type === 'object'
+            ? platform === (meaning.quantity === 'position' ? 'device_tracker' : 'sensor')
+            : platform === 'sensor' || platform === 'number';
       expect({ id, platform: fits }).toEqual({ id, platform: true });
     }
   });

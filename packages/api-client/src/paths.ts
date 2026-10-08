@@ -23,6 +23,7 @@
     /integrations/<id>/gateways/<gateway>   or a gateway
     /problems
     /family[/<person>]                      where everyone is, and one person
+    /rooms[/<home>]                         a home's map: its rooms, who is in them
     /notifications                          your inbox
     /settings[/accounts|/connectivity|/configuration|/server-log|/maps|/homes[/<id>]|/zones[/<id>]|/labels|/people|/join]
 
@@ -60,6 +61,9 @@ export const PATHS = {
     list: '/family',
     person: (id: string) => `/family/${at(id)}`,
   },
+
+  /** A home's map: its rooms as drawn, which have someone in them, and what stands where. */
+  rooms: (homeId?: string) => (homeId ? `/rooms/${at(homeId)}` : '/rooms'),
 
   devices: {
     add: (category?: string) => (category ? `/devices/add/${at(category)}` : '/devices/add'),

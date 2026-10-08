@@ -109,6 +109,8 @@ export const STANDARD_MEANINGS = {
   open: { label: 'Open', type: 'boolean' },
   /** How many people are where it is, when a sensor counts them. */
   people: { label: 'People', type: 'number', quantity: 'count' },
+  /** Where it is on its own map of the home, in metres (`SPOT_SHAPE`): a robot cleaner, a watch a room's beacons hear. Anchored by where it is placed. */
+  spot: { label: 'Where in the home', type: 'object', quantity: 'spot' },
 } as const satisfies Record<string, StandardMeaning>;
 
 export type StandardMeaningId = keyof typeof STANDARD_MEANINGS;
