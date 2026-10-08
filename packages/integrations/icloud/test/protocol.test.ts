@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { memoryHeld, memoryKept, needsSignIn, validateProtocol, type SetupContext } from '@kraftverk/device-sdk';
 
-import protocol, { authOptionsOf, cookieHeader, cookiesSet, FindMy, IcloudAuth, keep, newState, passwordKey, srpProofs, srpServer, srpStart, stateOf, usesBridge, type IcloudFetch } from '../src/protocol/index.ts';
+import protocol, { AppleBusy, authOptionsOf, cookieHeader, cookiesSet, FindMy, IcloudAuth, keep, newState, passwordKey, renewalDue, srpProofs, srpServer, srpStart, stateOf, trustUntil, usesBridge, type IcloudFetch } from '../src/protocol/index.ts';
 import { APPLE_ID, DEVICE_CODE, DSID, PASSWORD, playedApple, TEXT_CODE } from './apple.ts';
 
 /*
@@ -287,6 +287,53 @@ describe('a session carried on', () => {
     expect(again.dsid).toBe(DSID);
     expect(apple.escrowed()).toBe(2);
     expect(apple.asked.filter((route) => route === 'PUT idmsa.apple.com/appleauth/auth/verify/trusteddevice/securitycode')).toHaveLength(1);
+  });
+
+  test('signed in until its trust ends; renewed past half of it with the trust token — no code — and not before', async () => {
+    const { apple, state } = await trustedSession();
+    const until = trustUntil(state)!;
+    expect(Math.round((until - Date.now()) / 86_400_000)).toBe(90);
+    const auth = new IcloudAuth(apple.fetch, state);
+    const signIns = () => apple.asked.filter((route) => route === 'POST idmsa.apple.com/appleauth/auth/signin/complete').length;
+    const before = signIns();
+
+    // A day on: the session holds, nothing renewed.
+    await auth.resume(APPLE_ID, PASSWORD, Date.now() + 86_400_000);
+    expect(signIns()).toBe(before);
+    expect(renewalDue(auth.state, Date.now() + 44 * 86_400_000)).toBe(false);
+
+    // Past half its trust: signed in again with it — Apple takes the trust token, no code — and counted from now.
+    const later = Date.now() + 46 * 86_400_000;
+    expect(renewalDue(auth.state, later)).toBe(true);
+    await auth.resume(APPLE_ID, PASSWORD, later);
+    expect(signIns()).toBe(before + 1);
+    expect(renewalDue(auth.state, later)).toBe(false);
+  });
+
+  test('Apple refusing a silent sign-in is waited out, twice as long each time, and the wait outlives a restart', async () => {
+    const { apple, state } = await trustedSession();
+    apple.control.expireWebauth = true;
+    apple.control.busy = true;
+    const now = Date.now();
+    const auth = new IcloudAuth(apple.fetch, state);
+    const first = await auth.resume(APPLE_ID, PASSWORD, now).catch((error: unknown) => error);
+    expect(first).toBeInstanceOf(AppleBusy);
+    expect(Math.round(((first as AppleBusy).until - now) / 60_000)).toBe(30);
+
+    // Asked again at once — or after a restart, from what was kept: Apple is not asked.
+    const asked = apple.asked.length;
+    const restarted = new IcloudAuth(apple.fetch, stateOf(JSON.stringify(auth.state)));
+    expect(await restarted.resume(APPLE_ID, PASSWORD, now + 60_000).catch((error: unknown) => error)).toBeInstanceOf(AppleBusy);
+    expect(apple.asked.length).toBe(asked + 1); // the session's check, never a sign-in
+
+    // Refused again after its wait: twice as long.
+    const second = await restarted.resume(APPLE_ID, PASSWORD, now + 31 * 60_000).catch((error: unknown) => error);
+    expect(Math.round(((second as AppleBusy).until - (now + 31 * 60_000)) / 60_000)).toBe(60);
+
+    // Apple taking it again: the count starts over.
+    apple.control.busy = false;
+    await restarted.resume(APPLE_ID, PASSWORD, now + 92 * 60_000);
+    expect(restarted.state.failures).toBe(0);
   });
 
   test('when Apple asks for a code again, a person must sign in: NeedsSignIn', async () => {

@@ -118,6 +118,22 @@
               "integer": true
             },
             "category": "diagnostic"
+          },
+          {
+            "key": "signedInUntil",
+            "label": "Signed in until",
+            "value": {
+              "type": "timestamp"
+            },
+            "category": "diagnostic"
+          }
+        ],
+        "events": [
+          {
+            "id": "sign-in-ending",
+            "label": "Sign-in ending",
+            "level": "warn",
+            "description": "Apple will ask for a code within a week, and renewing it with none has not worked: sign in again on the account’s page."
           }
         ]
       },

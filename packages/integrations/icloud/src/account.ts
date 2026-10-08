@@ -17,7 +17,7 @@ import {
 import type { FindMyLink } from './link.ts';
 import { simulatedFamily } from './simulation.ts';
 import { ICLOUD_WAYS } from './ways.ts';
-import { accountIdentity, AppleRefused, FindMy, IcloudAuth, stateOf, type FoundDevice, type IcloudAccount } from './protocol/index.ts';
+import { accountIdentity, AppleRefused, FindMy, IcloudAuth, stateOf, trustUntil, type FoundDevice, type IcloudAccount } from './protocol/index.ts';
 
 /**
  * An iCloud account, as a device of its own (docs/PLAN-INTEGRATIONS.md §4.3):
@@ -147,9 +147,23 @@ export class Family implements Bridge<FindMyLink> {
   }
 }
 
+/** How long before its trust ends a sign-in that has not renewed itself says so: time to sign in again, at leisure. */
+export const ENDING_WARNING_MS = 7 * 24 * 60 * 60_000;
+
 const DESCRIPTION = {
   parts: [{ id: MAIN_PART, label: 'Account', kind: 'device' as const, icon: 'user' }],
-  attributes: [{ key: 'devices', label: 'Devices in Find My', value: { type: 'number' as const, integer: true }, category: 'diagnostic' as const }],
+  attributes: [
+    { key: 'devices', label: 'Devices in Find My', value: { type: 'number' as const, integer: true }, category: 'diagnostic' as const },
+    { key: 'signedInUntil', label: 'Signed in until', value: { type: 'timestamp' as const }, category: 'diagnostic' as const },
+  ],
+  events: [
+    {
+      id: 'sign-in-ending',
+      label: 'Sign-in ending',
+      level: 'warn' as const,
+      description: 'Apple will ask for a code within a week, and renewing it with none has not worked: sign in again on the account’s page.',
+    },
+  ],
 };
 
 /** Signs in to iCloud with what a connection keeps: the Apple ID, its password, and the session Apple's sign-in made. */
@@ -163,13 +177,22 @@ export function icloudOver(connection: OpenConnection, trace?: (line: string) =>
   return { auth, appleId, password };
 }
 
-/** Find My over a signed-in session: signed in again, with no person, when iCloud ends the session. */
+/** How often the sign-in is looked at, between Find My's own asking: still held, and renewed when past half its trust. */
+export const SIGN_IN_CHECK_MS = 6 * 60 * 60_000;
+
+/**
+ * Find My over a signed-in session: signed in again, with no person, when
+ * iCloud ends the session — and looked at every `SIGN_IN_CHECK_MS`, so its
+ * trust is renewed before it ends rather than after.
+ */
 function findMyOver(auth: IcloudAuth, appleId: string, password: string): { source: FindMySource; account: () => IcloudAccount | null } {
   let account: IcloudAccount | null = null;
   let findMy: FindMy | null = null;
+  let checkedAt = 0;
   const signedIn = async (again = false): Promise<FindMy> => {
-    if (findMy && !again) return findMy;
+    if (findMy && !again && Date.now() - checkedAt < SIGN_IN_CHECK_MS) return findMy;
     account = await auth.resume(appleId, password);
+    checkedAt = Date.now();
     findMy = new FindMy(auth, account);
     return findMy;
   };
@@ -192,11 +215,20 @@ function findMyOver(auth: IcloudAuth, appleId: string, password: string): { sour
   };
 }
 
-/** The account's own session, over wherever Find My's devices come from, kept current on its own schedule. */
-function session(ctx: DeviceContext<Config>, family: Family, identity: () => string | null, via: string): DeviceSession {
+/** "3 Jan": a day, as the account's health says it. */
+const dayOf = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+
+/**
+ * The account's own session, over wherever Find My's devices come from,
+ * kept current on its own schedule — saying until when Apple trusts its
+ * sign-in, and, a week before that ends unrenewed, that a person should
+ * sign in again (`sign-in-ending`, once a day).
+ */
+function session(ctx: DeviceContext<Config>, family: Family, identity: () => string | null, via: string, trusted: () => number | null = () => null): DeviceSession {
   let error: string | null = null;
   /** Why it waits on a person — a code Apple asks for again, its password refused — when it does: then it asks nothing, until it is signed in anew. */
   let needsYou: string | null = null;
+  let warnedAt = 0;
   const tick = async () => {
     if (needsYou) return;
     try {
@@ -206,6 +238,12 @@ function session(ctx: DeviceContext<Config>, family: Family, identity: () => str
       error = errorOf(thrown);
       if (needsSignIn(thrown)) needsYou = error;
       ctx.log.warn(error);
+    }
+    const until = trusted();
+    const now = ctx.clock.now();
+    if (until !== null && until - now < ENDING_WARNING_MS && now - warnedAt > 24 * 60 * 60_000) {
+      warnedAt = now;
+      ctx.event('sign-in-ending');
     }
     ctx.changed();
   };
@@ -218,9 +256,17 @@ function session(ctx: DeviceContext<Config>, family: Family, identity: () => str
       if (error) return { status: 'error', detail: error, lastReadingAt: at };
       if (!at) return { status: 'connecting', detail: `Signing in ${via}`, lastReadingAt: null };
       const count = family.members().length;
-      return { status: 'connected', detail: `${count === 1 ? '1 device' : `${count} devices`} in Find My · ${via}`, lastReadingAt: at };
+      const until = trusted();
+      return { status: 'connected', detail: `${count === 1 ? '1 device' : `${count} devices`} in Find My · ${via}${until !== null ? ` · signed in until ${dayOf(until)}` : ''}`, lastReadingAt: at };
     },
-    readings: () => (family.answeredAt ? [{ key: 'devices', value: family.members().length, at: family.answeredAt }] : []),
+    readings: () => {
+      if (!family.answeredAt) return [];
+      const until = trusted();
+      return [
+        { key: 'devices', value: family.members().length, at: family.answeredAt },
+        ...(until !== null ? [{ key: 'signedInUntil', value: new Date(until).toISOString(), at: family.answeredAt }] : []),
+      ];
+    },
     info: () => ({ manufacturer: 'Apple' }),
     identity: () => ({ id: identity(), name: null }),
     command: async () => ({ accepted: false, error: 'An account takes no commands: its devices are devices of their own' }),
@@ -233,10 +279,16 @@ async function accountSession(ctx: DeviceContext<Config>): Promise<DeviceSession
   if (!ctx.connection) throw new Error('An iCloud account is reached through iCloud');
   const { auth, appleId, password } = icloudOver(ctx.connection, (line) => ctx.log.info(line));
   const { source, account } = findMyOver(auth, appleId, password);
-  return session(ctx, new Family(source), () => {
-    const signedIn = account();
-    return signedIn ? accountIdentity(signedIn.dsid) : null;
-  }, 'through iCloud');
+  return session(
+    ctx,
+    new Family(source),
+    () => {
+      const signedIn = account();
+      return signedIn ? accountIdentity(signedIn.dsid) : null;
+    },
+    'through iCloud',
+    () => trustUntil(auth.state)
+  );
 }
 
 /** An account with a family that is not there: one phone going out and back, one at home, a Mac that is not located. */

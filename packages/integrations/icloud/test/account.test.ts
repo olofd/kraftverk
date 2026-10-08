@@ -5,7 +5,7 @@ import { bridgedConnection, checkDeviceTypeContract, fakeConnection, simulatorCo
 
 import account, { Family, MOVING_EVERY_MS, STILL_EVERY_MS } from '../src/account.ts';
 import device from '../src/device.ts';
-import protocol, { accountIdentity, type FoundDevice } from '../src/protocol/index.ts';
+import protocol, { accountIdentity, stateOf, trustUntil, type FoundDevice } from '../src/protocol/index.ts';
 import { APPLE_ID, DEVICE_CODE, DSID, PASSWORD, playedApple } from './apple.ts';
 
 /*
@@ -31,8 +31,9 @@ const channelTo = (fetch: (url: string, init?: RequestInit) => Promise<Response>
 });
 
 /** An account's connection, signed in once with a code as setup does, its session kept. */
-async function signedInAccount() {
+async function signedInAccount(control: { trustDays?: number } = {}) {
   const apple = playedApple();
+  Object.assign(apple.control, control);
   const action = protocol.credentials!.actions!.find((each) => each.id === 'signIn')!;
   const setup = {
     connection: { appleId: APPLE_ID },
@@ -76,11 +77,24 @@ describe('an iCloud account', () => {
     });
   });
 
+  test('a sign-in whose trust ends within a week says so, once: a person signs in again at leisure', async () => {
+    const { connection } = await signedInAccount({ trustDays: 5 });
+    const { context, stop, events } = simulatorContext(account);
+    stops.push(stop);
+    const session = await account.createSession({ ...context, connection, simulation: null });
+    await until(() => (session.bridge?.members().length ?? 0) === 3, 'Find My’s devices');
+    expect(events.map((event) => event.id)).toEqual(['sign-in-ending']);
+  });
+
   test('a device added through it: where it is and how sure, its charge, whose it is; a sound played; lost mode', async () => {
     const { apple, connection } = await signedInAccount();
     const session = await opened(account, connection);
     await until(() => (session.bridge?.members().length ?? 0) === 3, 'Find My’s devices');
-    expect(session.health()).toMatchObject({ status: 'connected', detail: '3 devices in Find My · through iCloud' });
+    // Until when Apple trusts its sign-in: said, and read.
+    expect(session.health()).toMatchObject({ status: 'connected' });
+    expect(session.health().detail).toMatch(/^3 devices in Find My · through iCloud · signed in until \d{1,2} [A-Z][a-z]{2}$/);
+    const kept = (connection as unknown as { secrets: { get(field: string): string | null } }).secrets.get('session');
+    expect(session.readings().find((reading) => reading.key === 'signedInUntil')?.value).toBe(new Date(trustUntil(stateOf(kept))!).toISOString());
     expect(session.bridge!.members().map((member) => [member.name, member.model])).toEqual([
       ['Someone’s iPhone', 'iPhone 15 Pro'],
       ['Alex’s iPhone', 'iPhone 13'],

@@ -39,7 +39,7 @@ export function playedApple(options: { protocol?: 's2k' | 's2k_fo'; noTrustedDev
   let codeShown = false;
   const asked: string[] = [];
   /** Whether a second factor is asked of a trust token Apple gave (Apple may stop trusting one); whether Apple refuses sign-ins for a while; whether it shows no code on the devices. */
-  const control = { distrust: false, expireWebauth: false, busy: false, refuseDeviceCode: false, terms: false, escrow: false };
+  const control = { distrust: false, expireWebauth: false, busy: false, refuseDeviceCode: false, terms: false, escrow: false, trustDays: 90 };
   /** Whether Apple waits on the password proved once more (escrow), and how often it has been. */
   let escrowPending = false;
   let escrowed = 0;
@@ -111,7 +111,8 @@ export function playedApple(options: { protocol?: 's2k' | 's2k_fo'; noTrustedDev
         trustToken = 'trust-1';
         sessionToken = 'session-2';
         trusted = true;
-        return new Response(null, { status: 204, headers: { 'X-Apple-TwoSV-Trust-Token': trustToken, 'X-Apple-Session-Token': sessionToken } });
+        // Trusted for as long as Apple says: its trust cookie's life.
+        return new Response(null, { status: 204, headers: { 'X-Apple-TwoSV-Trust-Token': trustToken, 'X-Apple-Session-Token': sessionToken, 'Set-Cookie': `X-APPLE-WEBAUTH-HSA-TRUST="hsa-1"; Domain=.icloud.com; Path=/; Max-Age=${control.trustDays * 86_400}; Secure; HttpOnly` } });
       case 'POST setup.icloud.com/setup/ws/1/accountLogin':
         if (body.dsWebAuthToken !== sessionToken || escrowPending) return json({ error: 'bad token' }, 421);
         webauth = `webauth-${Number(webauth.split('-')[1]) + 1}`;

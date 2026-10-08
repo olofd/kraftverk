@@ -1,4 +1,4 @@
-import { NeedsSignIn, NotReachable, randomHex } from '@kraftverk/device-sdk';
+import { NeedsSignIn, needsSignIn, NotReachable, randomHex } from '@kraftverk/device-sdk';
 
 import { cookieHeader, cookiesSet, keep, type Cookie } from './cookies.ts';
 import { authOptionsOf, type AuthOptions, type TrustedPhone } from './options.ts';
@@ -46,7 +46,45 @@ export type IcloudState = {
   scnt?: string;
   authAttributes?: string;
   cookies: Cookie[];
+  /** When it last signed in with the password (ms): what renewal counts from. */
+  signedInAt?: number;
+  /** No sign-in with the password before then (ms): kept, so a restart does not ask Apple sooner. */
+  signInAfter?: number;
+  /** Sign-ins with the password Apple refused in a row: each waits twice as long. */
+  failures?: number;
 };
+
+/** Never two sign-ins with the password closer than this, whatever asks: tried often, Apple suspects them. */
+export const SIGN_IN_EVERY_MS = 15 * 60_000;
+/** The longest a refused sign-in waits before it is tried again. */
+export const SIGN_IN_WAIT_MAX_MS = 6 * 60 * 60_000;
+/** When the trust's end is not known: renewed this long after the last sign-in. */
+const RENEW_AFTER_MS = 30 * 24 * 60 * 60_000;
+/** Renewed no more often than this, however short the trust Apple gives. */
+const RENEW_GAP_MS = 24 * 60 * 60_000;
+
+/**
+ * Until when Apple trusts this client — no code asked of it: its trust
+ * cookie's end, as Apple set it (about 90 days, less for some accounts).
+ * Null when it has set none.
+ */
+export function trustUntil(state: IcloudState): number | null {
+  const trust = state.cookies.find((cookie) => cookie.name === 'X-APPLE-WEBAUTH-HSA-TRUST');
+  return trust?.expires ?? null;
+}
+
+/**
+ * Whether the trust is past half its life, and so due to be renewed: signed
+ * in again with the password and the trust token while Apple still takes it
+ * — no code — as iCloud3 does, so a person never sees one between.
+ */
+export function renewalDue(state: IcloudState, now = Date.now()): boolean {
+  const from = state.signedInAt;
+  if (from === undefined) return false;
+  const until = trustUntil(state);
+  if (until === null) return now - from > RENEW_AFTER_MS;
+  return now - from >= Math.max(RENEW_GAP_MS, (until - from) / 2);
+}
 
 /** A new client, as Apple will know it. */
 export const newState = (): IcloudState => ({ clientId: `auth-${randomHex(4)}-${randomHex(2)}-${randomHex(2)}-${randomHex(2)}-${randomHex(6)}`, cookies: [] });
@@ -314,7 +352,11 @@ export class IcloudAuth {
       body: JSON.stringify({ accountCountryCode: this.kept.accountCountry, dsWebAuthToken: this.kept.sessionToken, extended_login: true, trustToken: this.kept.trustToken ?? '' }),
     });
     if (!response.ok) throw refusal(response.status, await response.text());
-    return accountOf(await response.json());
+    const account = accountOf(await response.json());
+    // Signed in with the password just now: what renewal counts from.
+    this.kept.signedInAt = Date.now();
+    this.onChange(this.kept);
+    return account;
   }
 
   /** Whether the session kept from before still holds, with no password: the account if it does, null when it must be signed in again. */
@@ -330,17 +372,52 @@ export class IcloudAuth {
    * the password and the trust token. A second factor asked for again is
    * `NeedsSignIn`: a person signs in on the account's page.
    */
-  async resume(accountName: string, password: string): Promise<IcloudAccount> {
+  async resume(accountName: string, password: string, now = Date.now()): Promise<IcloudAccount> {
     const held = await this.validate();
-    if (held && held.trusted && !held.challenged) return held;
-    const signedIn = await this.signIn(accountName, password).catch((error: unknown) => {
+    if (held && held.trusted && !held.challenged) {
+      if (!renewalDue(this.kept, now)) return held;
+      // Renewed while the trust still holds: a sign-in with it, no code. Put off, not failed, when Apple will not now.
+      this.trace('renewing the sign-in, past half its trust');
+      return this.#signInAgain(accountName, password, now).catch((error: unknown) => {
+        if (needsSignIn(error)) throw error;
+        this.trace(`renewal put off: ${(error as Error).message}`);
+        return held;
+      });
+    }
+    return this.#signInAgain(accountName, password, now);
+  }
+
+  /**
+   * Signs in again with the password and the trust token, with no person:
+   * never sooner than Apple was last told to wait, never closer than
+   * `SIGN_IN_EVERY_MS` to the last, and — when Apple refuses for a while —
+   * waiting twice as long each time, up to `SIGN_IN_WAIT_MAX_MS`. What it
+   * waits on is kept with the session, so a restart does not ask sooner.
+   */
+  async #signInAgain(accountName: string, password: string, now: number): Promise<IcloudAccount> {
+    const after = this.kept.signInAfter ?? 0;
+    if (after > now) throw new AppleBusy(after);
+    this.kept.signInAfter = now + SIGN_IN_EVERY_MS;
+    this.onChange(this.kept);
+    try {
+      const signedIn = await this.signIn(accountName, password);
+      if (signedIn === 'second-factor') throw new NeedsSignIn('Apple asks for a code again: sign in on the account’s page');
+      const account = await this.accountLogin();
+      if (account.challenged) throw new NeedsSignIn('Apple asks for a code again: sign in on the account’s page');
+      this.kept.failures = 0;
+      this.kept.signedInAt = now;
+      this.onChange(this.kept);
+      return account;
+    } catch (error) {
+      if (error instanceof AppleBusy) {
+        this.kept.failures = (this.kept.failures ?? 0) + 1;
+        this.kept.signInAfter = now + Math.min(SIGN_IN_WAIT_MAX_MS, BUSY_MS * 2 ** (this.kept.failures - 1));
+        this.onChange(this.kept);
+        throw new AppleBusy(this.kept.signInAfter);
+      }
       if (error instanceof AppleRefused && [401, 403, 412].includes(error.status)) throw new NeedsSignIn(error.message);
       throw error;
-    });
-    if (signedIn === 'second-factor') throw new NeedsSignIn('Apple asks for a code again: sign in on the account’s page');
-    const account = await this.accountLogin();
-    if (account.challenged) throw new NeedsSignIn('Apple asks for a code again: sign in on the account’s page');
-    return account;
+    }
   }
 }
 
