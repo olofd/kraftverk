@@ -345,6 +345,36 @@ describe('the broker', () => {
     station.close();
   });
 
+  test('nobody but the station it is speaks for a station: another client saying its state is cut off, and the server hears none of it', async () => {
+    const station = await mqttClient(port, 'station-s');
+    await station.subscribe(COMMANDS);
+    await until(online('station-s'), 'presence');
+    const heard: string[] = [];
+    const listen = (message: { topic: string; payload: Uint8Array }) => void (message.topic.startsWith(`${STATION}/device/`) && heard.push(new TextDecoder().decode(message.payload)));
+    bus.on('message', listen);
+    // The vendor's login is the same on every unit: a neighbour with it says the station is full.
+    const forger = await mqttClient(port, 'forger-s');
+    forger.publish(`${STATION}/device/response/state`, new TextEncoder().encode('forged'));
+    await until(() => forger.isClosed, 'the forger cut off');
+    station.publish(`${STATION}/device/response/state`, new TextEncoder().encode('its own'));
+    await until(() => heard.includes('its own'), 'the station heard');
+    expect(heard).not.toContain('forged');
+    expect(online('station-s')()).toBe(true);
+    bus.off('message', listen);
+    station.close();
+  });
+
+  test('the broker’s statistics are the server’s: another client subscribing to them is refused', async () => {
+    const snoop = await mqttClient(port, 'snoop-sys');
+    await snoop.subscribe('$SYS/#');
+    // A client connecting is said there: who, and from where.
+    const other = await mqttClient(port, 'other-sys');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    other.close();
+    expect(snoop.received.filter((message) => message.topic.startsWith('$SYS'))).toEqual([]);
+    snoop.close();
+  });
+
   test('a listener on a station’s command topic does not take its presence, nor leaving, take it offline', async () => {
     const station = await mqttClient(port, 'station-l');
     await station.subscribe(COMMANDS);

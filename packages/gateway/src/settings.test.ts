@@ -116,6 +116,28 @@ describe('settings through the gateway', () => {
     expect((await g.write(intent({ sleepMinutes: 120 }, { confirmation: other.needsConfirmation }))).outcome).toBe('verified');
   });
 
+  test('a session that only hands back what it was told is not the device agreeing: unverified', async () => {
+    const recorded: AuditRecord[] = [];
+    const at = new Date().toISOString();
+    // It never says its light in its readings; its write answers with the patch it was given.
+    const session: DeviceSession = {
+      health: () => ({ status: 'connected', detail: 'Fine', node: nodeId('n-00000000000000a1'), transport: 'test', lastReadingAt: null }),
+      readings: () => [{ key: 'soc', value: 80, at }],
+      command: async () => ({ accepted: false, error: 'No commands' }),
+      write: async (patch) => ({ ...patch }),
+      close: async () => {},
+    };
+    const g = new ActionGateway({
+      device: () => ({ name: 'Garage station', session, description: DESCRIPTION, offline: 'n/a' }),
+      linksFrom: () => [],
+      isReadOnly: () => false,
+      record: (entry) => recorded.push(entry),
+      policy: { verifyTimeoutMs: 100 },
+    });
+    expect(await g.write(intent({ led: 'on' }))).toMatchObject({ outcome: 'unverified' });
+    expect(recorded.map((entry) => entry.kind)).toEqual(['settings.intent', 'settings.unverified']);
+  });
+
   test('a device that accepts but does not change is unverified, not success', async () => {
     const { g } = gateway({ stubborn: true });
     expect(await g.write(intent({ led: 'on' }))).toMatchObject({ outcome: 'unverified', values: { led: 'off' } });

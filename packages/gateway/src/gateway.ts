@@ -189,6 +189,8 @@ export type LedgerMark = { at: number; by: string };
 export type GatewayLedger = {
   lastSwitch(device: SavedDeviceId, part: string): LedgerMark | null;
   switched(device: SavedDeviceId, part: string, mark: LedgerMark): void;
+  /** Puts back what was marked before a switch the device refused: the mark before it, or none. */
+  unswitched(device: SavedDeviceId, part: string, before: LedgerMark | null): void;
   lastWrite(device: SavedDeviceId, attribute: string): LedgerMark | null;
   wrote(device: SavedDeviceId, attribute: string, mark: LedgerMark): void;
 };
@@ -200,6 +202,7 @@ export function memoryLedger(): GatewayLedger {
   return {
     lastSwitch: (device, part) => switches.get(`${device}:${part}`) ?? null,
     switched: (device, part, mark) => void switches.set(`${device}:${part}`, mark),
+    unswitched: (device, part, before) => void (before ? switches.set(`${device}:${part}`, before) : switches.delete(`${device}:${part}`)),
     lastWrite: (device, attribute) => writes.get(`${device}:${attribute}`) ?? null,
     wrote: (device, attribute, mark) => void writes.set(`${device}:${attribute}`, mark),
   };
@@ -454,7 +457,7 @@ export class ActionGateway {
     const note = (kind: string, summary: string, detail?: unknown) =>
       this.#record({ at: new Date(this.#now()).toISOString(), kind, actor: intent.by, resourceKind: 'device', resource: intent.deviceId, summary, detail });
     const refuse = (detail: string, extra: Partial<GatewayResult> = {}): GatewayResult => {
-      this.#record({ at, kind: 'command.refused', actor: intent.by, resourceKind: 'device', resource: intent.deviceId, summary: `${what} refused: ${detail}`, detail: intent });
+      this.#record({ at, kind: 'command.refused', actor: intent.by, resourceKind: 'device', resource: intent.deviceId, summary: `${what} refused: ${detail}`, detail: { ...intent, confirmation: undefined } });
       return { outcome: 'refused', detail, ...extra };
     };
 
@@ -573,6 +576,8 @@ export class ActionGateway {
       });
     if (settings.length && agrees()) {
       const linkAgreed = links.length ? linksAgree(null) : undefined;
+      // Nothing sent, and said so: a receipt for every press, this one too.
+      note('command.already', `${device.name}: ${what} not sent: it is already ${argsShown}`, { part: intent.part, capability: intent.capability, command: intent.command, args: intent.args });
       return {
         outcome: linkAgreed === false ? 'unverified' : 'verified',
         detail: linkAgreed === false ? `It is already ${argsShown}, but ${links.map((link) => link.name).join(' and ')} does not agree` : `Already ${argsShown}`,
@@ -591,20 +596,28 @@ export class ActionGateway {
       linked: links.length ? links.map((link) => ({ kind: link.kind.verb, deviceId: link.target.device, part: link.target.part, value: this.#evidence(link)?.value ?? null })) : undefined,
     });
 
-    // 6. Exactly one command.
+    // 6. Exactly one command. Marked before it is sent: a send that never answers may have switched it.
+    const marked = this.#ledger.lastSwitch(intent.deviceId, intent.part);
     this.#ledger.switched(intent.deviceId, intent.part, { at: this.#now(), by: intent.by });
-    if (intent.run) {
-      const counts = this.#runSwitches.get(intent.run.id) ?? new Map<string, number>();
-      this.#runSwitches.set(intent.run.id, counts.set(key, inRun + 1));
-    }
+    const counts = intent.run ? (this.#runSwitches.get(intent.run.id) ?? new Map<string, number>()) : null;
+    if (intent.run && counts) this.#runSwitches.set(intent.run.id, counts.set(key, inRun + 1));
     const sentAt = this.#now();
     let result: Awaited<ReturnType<typeof session.command>>;
+    let refused = false;
     try {
       result = await this.#within(session.command({ part: intent.part, capability: intent.capability, command: intent.command, args: intent.args }), device.name);
+      // Its own answer that it did not take it: nothing was switched.
+      refused = !result.accepted;
     } catch (error) {
       result = { accepted: false, error: (error as Error).message };
     }
     if (!result.accepted) {
+      if (refused) {
+        // A refusal switched nothing: the dwell and the run's allowance are not spent on it. One that
+        // never answered, or broke off, keeps them — it may have switched.
+        this.#ledger.unswitched(intent.deviceId, intent.part, marked);
+        if (counts) counts.set(key, inRun);
+      }
       note('command.failed', `${device.name}: ${what} failed: ${result.error}`);
       return { outcome: 'failed', detail: result.error };
     }
@@ -769,12 +782,11 @@ export class ActionGateway {
       .join(', ');
     note('settings.intent', `${device.name}: changing ${described}`, { patch: changed });
 
-    let values: Readonly<Record<string, Value>>;
     const writtenAt = this.#now();
     const settlingMs = () => Math.max(0, writeDwell - (this.#now() - writtenAt));
     for (const key of keys) this.#ledger.wrote(intent.deviceId, key, { at: writtenAt, by: intent.by });
     try {
-      values = await this.#within(session.write(changed), device.name);
+      await this.#within(session.write(changed), device.name);
     } catch (error) {
       const detail = (error as Error).message;
       note('settings.failed', `${device.name}: changing ${described} failed: ${detail}`);
@@ -782,8 +794,15 @@ export class ActionGateway {
     }
 
     // The device's own word, read back: what it reports now, not what was sent.
-    const reported = () => Object.fromEntries(keys.map((key) => [key, readingOf(session.readings(), key)?.value ?? values[key] ?? null]));
-    const agrees = () => keys.every((key) => String(reported()[key]) === String(changed[key]));
+    // Its readings alone: what its session answered the write with is the session's word, not the device's —
+    // one that hands back what it was given would always agree. Only what changed was written, so a
+    // reading that agrees was not there before it.
+    const reported = () => Object.fromEntries(keys.map((key) => [key, readingOf(session.readings(), key)?.value ?? null]));
+    // As values, not as text: `[1,2]` is not `"1,2"`, and `1` is not `"1"`.
+    const agrees = () => {
+      const now = reported();
+      return keys.every((key) => now[key] !== null && JSON.stringify(now[key]) === JSON.stringify(changed[key]));
+    };
     return {
       verify: async () => {
         const verified = agrees() || (await this.#eventually(agrees));

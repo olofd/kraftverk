@@ -284,7 +284,8 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
     return {
       session: opened,
       description: describe,
-      describedBy: () => (opened.description ? 'device' : 'type'),
+      // The device's own word only when it gave one: a session that can describe itself and did not is described by its type.
+      describedBy: () => (opened.description?.() ? 'device' : 'type'),
       info: () => opened.info?.() ?? null,
       health: () => ({
         ...opened.health(),

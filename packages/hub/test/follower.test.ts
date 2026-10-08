@@ -224,6 +224,24 @@ test('a way this app holds: set up here, judged and kept by the server, held her
   expect(hub.connections.secretFields(way.id)).toEqual([]);
 });
 
+test('a way this app holds keeps its secret though the device cannot be reached between its check and its save', async () => {
+  const { home } = await server();
+  const { follower, bus } = await app(home);
+  const api = follower.api;
+  bus.announce();
+  const draft = await api.setup.start({ typeId: 'test.lamp', methodId: 'bus', holder: 'this-node' });
+  await api.setup.choose(draft.id, { address: 'lamp-1' });
+  await api.setup.update(draft.id, { connection: { pin: '4321' } });
+  expect((await api.setup.check(draft.id)).outcome).toBe('new');
+  // Its bus gone, after it answered: asking it again fails outright — saving asks it nothing.
+  bus.lamps.get('lamp-1')!.answers = false;
+  bus.unavailable = 'The bus adapter was unplugged';
+  const saved = await api.setup.save(draft.id, { name: 'Desk lamp' });
+  const way = saved.connections[0]!;
+  expect(way.secrets).toEqual(['pin']);
+  expect(follower.connections.secret(way.id, 'pin')).toBe('4321');
+});
+
 test('a screen reading the list again writes nothing while nothing changed — and what changed is kept at once', async () => {
   const { home } = await server();
   const { follower, bus } = await app(home);

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { checkRule, defineFunction, defineRecipe, inlineParams, SEQUENCE_LIMITS, sunTimes, withSettings, type Coordinates, type Rule, type Step } from '@kraftverk/automation';
+import { checkRule, defineFunction, defineRecipe, inlineParams, SEQUENCE_LIMITS, sunTimes, triggerKey, withSettings, type Coordinates, type Rule, type Step } from '@kraftverk/automation';
 import { MAIN_PART, POSITION_SHAPE, REAL_CLOCK, savedDeviceId, zonedInstant, type AuditRecord, type DeviceDescription, type DeviceReader, type Value } from '@kraftverk/device-sdk';
 import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
@@ -264,6 +264,23 @@ describe('at a time of day', () => {
     expect(sent).toHaveLength(1);
     expect(store.get(armed.id)!.lastRun).toMatchObject({ outcome: 'acted' });
     expect(store.get(off.id)!.lastRun).toBeNull();
+  });
+
+  test('a run a person started just after its time does not take its slot: it is due all the same', async () => {
+    const { engine, sunny, store, sent } = setup();
+    const automation = sunny({}, 'act');
+    // It ran yesterday at its time, by its own trigger.
+    store.keepTriggerStarted(automation.id, triggerKey(automation.rule.when[0]!, 0), zonedInstant({ year: 2026, month: 6, day: 14, hour: 7, minute: 0 }, ZONE).toISOString());
+    // Today someone runs it by hand at 07:05, before the clock has looked.
+    await engine.run(automation);
+    const byHand = sent.length;
+    await engine.tick();
+    expect(sent.length).toBe(byHand + 1);
+    expect(store.triggerStarted(automation.id, triggerKey(automation.rule.when[0]!, 0))).toBe(MORNING.toISOString());
+    // And once a slot: not again.
+    await engine.tick();
+    expect(sent.length).toBe(byHand + 1);
+    engine.stop();
   });
 
   test('late by less than its grace across midnight: 23:30’s, with the server back at 00:05, still runs', async () => {

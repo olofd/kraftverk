@@ -521,11 +521,12 @@ describe('verification', () => {
     expect(result.deviceAgreed).toBe(false);
   });
 
-  test('an already-correct state is not switched again', async () => {
-    const { gateway, plug } = harness();
+  test('an already-correct state is not switched again — and the timeline says so', async () => {
+    const { gateway, plug, events } = harness();
     const result = await gateway.execute(cut({ args: { on: true } }));
     expect(result.outcome).toBe('verified');
     expect(plug.commands).toHaveLength(0);
+    expect(events).toEqual(['command.already']);
   });
 
   test('an already-correct plug the station disagrees with is not called verified', async () => {
@@ -549,6 +550,24 @@ describe('dwell', () => {
     expect(second.detail).toContain('Too soon');
     // One command reached the plug: no relay chatter.
     expect(plug.commands).toEqual([false]);
+  });
+
+  test('a command the device refuses spends neither the dwell nor the run’s allowance; one it never answers does', async () => {
+    const plug = new StubPlug();
+    const session = plug.session();
+    const refusing = { ...session, command: async () => ({ accepted: false, error: 'The relay is locked' }) };
+    const devices = { [PLUG]: { name: 'Heater plug', session: refusing, description: PLUG_DESCRIPTION, offline: 'Not answering' } };
+    const refused = harness({ plug, feeds: false, devices });
+    expect((await refused.gateway.execute(cut({ reason: 'first' }))).outcome).toBe('failed');
+    // Refused, so nothing switched: a second at once is not too soon.
+    const again = await refused.gateway.execute(cut({ reason: 'again' }));
+    expect(again.detail).not.toContain('Too soon');
+
+    // One that never answers may have switched: the dwell holds.
+    const silent = { ...session, command: () => new Promise<never>(() => {}) };
+    const quiet = harness({ plug, feeds: false, devices: { [PLUG]: { name: 'Heater plug', session: silent, description: PLUG_DESCRIPTION, offline: 'Not answering' } }, policy: { sendTimeoutMs: 30 } });
+    expect((await quiet.gateway.execute(cut({ reason: 'first' }))).outcome).toBe('failed');
+    expect((await quiet.gateway.execute(cut({ reason: 'again' }))).detail).toContain('Too soon');
   });
 
   test('each device has its own dwell time, and it survives a restart', async () => {

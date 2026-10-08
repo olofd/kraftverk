@@ -430,7 +430,8 @@ export class MessageBroker {
       */
       authorizeSubscribe: (client, subscription, callback) => {
         const conn = this.#of(client);
-        if (subscription.topic.startsWith('$kraftverk/') && !conn?.privileged) {
+        // The broker's own topics: kraftverk's journal and presence, and aedes's statistics — who connects, from where.
+        if ((subscription.topic.startsWith('$kraftverk/') || subscription.topic.startsWith('$SYS')) && !conn?.privileged) {
           this.#journal.warn({
             kind: 'mqtt.subscribe-refused',
             message: `Refused ${conn ? this.#label(conn) : client.id} a subscription to ${subscription.topic}: broker topics are the server's`,
@@ -1008,17 +1009,21 @@ export class MessageBroker {
   }
 
   /**
-   * Why `conn` may not publish `topic`, when it is a device topic of a
-   * protocol whose devices are spoken for by a client that signed in, and
-   * another connection holds that device now: the first holds it while it
-   * is connected, so a second cannot take its presence or speak in its place.
+   * Why `conn` may not publish `topic`, when it is a device's own topic and
+   * another connection holds that device now: the one holding it speaks for
+   * it while it is connected, so a second cannot take its presence or say
+   * its state — a station's charge, which the reserve and verification both
+   * trust. A station signs in with its vendor's login, the same on every
+   * unit, so who may speak for it is who it is connected as, not a password.
+   * One replaced by its own client id reconnecting has its ending said, and
+   * holds nothing.
    */
   #heldElsewhere(conn: Connection, topic: string): string | null {
     if (conn.privileged) return null;
     const from = deviceOf(this.options.policies, topic);
-    if (!from?.policy.signedIn) return null;
+    if (!from) return null;
     const holder = this.#devices.get(keyOf(from.policy.protocol, from.address))?.connection;
-    if (!holder || holder === conn || holder.socket.destroyed) return null;
+    if (!holder || holder === conn || holder.socket.destroyed || holder.endReason) return null;
     return `${describe(this.#devices.get(keyOf(from.policy.protocol, from.address))!)} is spoken for by ${holder.clientId ?? `#${holder.n}`} on #${holder.n}`;
   }
 

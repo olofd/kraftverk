@@ -275,20 +275,32 @@ export class Triggers {
     const kind = triggerKind(trigger);
     switch (kind) {
       case 'at':
-        return this.#dueAt(automation, rule, trigger as Extract<Trigger, { at: unknown }>, now);
+        return this.#dueAt(automation, rule, trigger as Extract<Trigger, { at: unknown }>, now, this.#lastStarted(automation, rule, trigger));
       case 'every':
-        return this.#dueEvery(automation, rule, trigger as Extract<Trigger, { every: unknown }>, now);
+        return this.#dueEvery(automation, rule, trigger as Extract<Trigger, { every: unknown }>, now, this.#lastStarted(automation, rule, trigger));
       case 'event':
       case 'becomes':
         return false;
     }
   }
 
-  #dueAt(automation: AutomationRecord, rule: Rule, trigger: Extract<Trigger, { at: unknown }>, now: Date): boolean {
+  /**
+   * When this trigger last started a run: what its next slot is counted
+   * from. Not when the automation last ran — a run another trigger started,
+   * or a person, must not take this one's slot. Until it has started one —
+   * an automation just made, or changed, which starts afresh — its last run
+   * of any kind: a slot it already ran in is not run again for a change.
+   */
+  #lastStarted(automation: AutomationRecord, rule: Rule, trigger: RuleTrigger): number {
+    const own = this.deps.store.triggerStarted(automation.id, triggerKey(trigger, rule.when.indexOf(trigger)));
+    if (own) return Date.parse(own);
+    return Math.max(...[automation.lastRun?.at, automation.running?.at].map((at) => Date.parse(at ?? '')).filter(Number.isFinite));
+  }
+
+  #dueAt(automation: AutomationRecord, rule: Rule, trigger: Extract<Trigger, { at: unknown }>, now: Date, lastStarted: number): boolean {
     const at = evaluateNow(trigger.at, this.#context.scope(automation, rule));
     const [hour, minute] = typeof at === 'string' ? at.split(':').map(Number) : [];
     if (hour === undefined || minute === undefined || Number.isNaN(hour) || Number.isNaN(minute)) return false;
-    const lastStarted = Math.max(...[automation.lastRun?.at, automation.running?.at].map((at) => Date.parse(at ?? '')).filter(Number.isFinite));
     // Today's, or yesterday's still within its grace: 23:30's, with the server back at 00:05.
     return [localTime(now, automation.timeZone), dayAfter(now, automation.timeZone, -1)].some((day) => {
       // Only on its days, on the owner's calendar.
@@ -301,7 +313,7 @@ export class Triggers {
   }
 
   /** Whether an interval's latest slot, on the owner's clock, has come and it has not run since: once a slot, never catching up. */
-  #dueEvery(automation: AutomationRecord, rule: Rule, trigger: Extract<Trigger, { every: unknown }>, now: Date): boolean {
+  #dueEvery(automation: AutomationRecord, rule: Rule, trigger: Extract<Trigger, { every: unknown }>, now: Date, lastStarted: number): boolean {
     const seconds = secondsNow(trigger.every, this.#context.scope(automation, rule));
     if (typeof seconds !== 'number' || seconds < EVERY_SECONDS.min || seconds > EVERY_SECONDS.max || seconds % EVERY_SECONDS.step !== 0) return false;
     const every = seconds / 60;
@@ -310,7 +322,6 @@ export class Triggers {
     const slot = slotOf(minuteOfDay, every);
     // Its start, counted back from now on the clock now shown: in the hour repeated as clocks go back, each of the two has its own slots.
     const time = new Date(now.getTime() - (now.getTime() % 60_000) - (minuteOfDay - slot) * 60_000);
-    const lastStarted = Math.max(...[automation.lastRun?.at, automation.running?.at].map((at) => Date.parse(at ?? '')).filter(Number.isFinite));
     return time.getTime() <= now.getTime() && (!Number.isFinite(lastStarted) || lastStarted < time.getTime());
   }
 }

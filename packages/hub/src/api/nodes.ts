@@ -1,5 +1,5 @@
 import { ApiError, type Caller, type KraftverkApi, type NodeView } from '@kraftverk/api-contract';
-import { nodeId as asNodeId, savedDeviceId, validateDescription, type AuditSubject } from '@kraftverk/device-sdk';
+import { checkValue, nodeId as asNodeId, savedDeviceId, validateDescription, type AuditSubject, type Reading } from '@kraftverk/device-sdk';
 import { deviceStore, type NodeRecord } from '@kraftverk/store';
 
 import { loggedAttributes, recordChanges } from '../history/changes.ts';
@@ -129,9 +129,23 @@ export function nodesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'nodes' |
         // On this clock: the node's own may be fast or slow, and said what it read when by it.
         const sentAt = input.sentAt ? Date.parse(input.sentAt) : Number.NaN;
         const offset = Number.isFinite(sentAt) && Math.abs(Date.now() - sentAt) > CLOCK_TOLERANCE_MS ? Date.now() - sentAt : 0;
-        const onOurClock = (at: string) => (offset ? new Date(Date.parse(at) + offset).toISOString() : at);
-        const readings = offset ? input.readings.map((reading) => ({ ...reading, at: onOurClock(reading.at), ...(reading.confirmedAt ? { confirmedAt: onOurClock(reading.confirmedAt) } : {}) })) : input.readings;
-        const counts = heldReadings.accept(device.id, { nodeId: node.id, connectionId: connection.id }, readings, keptAttributes(description));
+        // On this clock, and in UTC: history keys its hours by the time as written.
+        const onOurClock = (at: string) => new Date(Date.parse(at) + offset).toISOString();
+        /*
+          Held to what the device is, as a session's own readings are: an
+          attribute it has, a value of the type it declares — or none — and a
+          time that is one. What is not is refused, and counted.
+        */
+        const attributes = new Map(description.attributes.map((attribute) => [attribute.key, attribute]));
+        const readings = input.readings.flatMap((reading): Reading[] => {
+          const attribute = attributes.get(reading.key);
+          if (!attribute || !Number.isFinite(Date.parse(reading.at))) return [];
+          if (reading.value !== null && !checkValue(attribute.value, reading.value).ok) return [];
+          const confirmed = reading.confirmedAt && Number.isFinite(Date.parse(reading.confirmedAt)) ? { confirmedAt: onOurClock(reading.confirmedAt) } : {};
+          return [{ key: reading.key, value: reading.value, at: onOurClock(reading.at), ...confirmed }];
+        });
+        const accepted = heldReadings.accept(device.id, { nodeId: node.id, connectionId: connection.id }, readings, keptAttributes(description));
+        const counts = { ...accepted, refused: accepted.refused + input.readings.length - readings.length };
         // What it reads now, said on the live stream as a device the home holds says it; the rest went to history.
         const latest = heldReadings.latest(device.id);
         if (counts.live && latest) hub.bus.publish({ kind: 'readings', deviceId: device.id, readings: latest.readings });

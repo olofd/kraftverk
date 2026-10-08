@@ -216,6 +216,11 @@ export class SetupService {
     return viewOf(this.#draft(id));
   }
 
+  /** The secrets a draft was given, as given: what the node that will hold the way keeps for it, without asking the device anything. */
+  secrets(id: string): Record<string, string> {
+    return Object.fromEntries(this.#draft(id).secrets);
+  }
+
   /** Refuses a draft to anyone but the account that started it: it may hold a key. */
   assertOwner(id: string, by: string): void {
     if (this.#draft(id).by !== by) throw new ApiError('not-found', 'That setup has expired; start again');
@@ -636,7 +641,8 @@ export class SetupService {
       secrets: { get: (field: string) => draft.secrets.get(field) ?? null },
       http: this.deps.http,
       sightings: draft.sightings,
-      log: { info: () => {}, warn: (m: string) => console.warn(`[setup] ${m}`), error: (m: string) => console.error(`[setup] ${m}`) },
+      // Setup is where the trail matters most: what it notes is kept, not dropped.
+      log: { info: (m: string) => console.info(`[setup] ${m}`), warn: (m: string) => console.warn(`[setup] ${m}`), error: (m: string) => console.error(`[setup] ${m}`) },
       signal: signal ?? AbortSignal.timeout(ACTION_TIMEOUT_MS),
       platform: this.deps.transports.platform,
       // A channel to the device chosen, for an action that pairs with it.

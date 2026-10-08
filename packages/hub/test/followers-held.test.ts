@@ -82,6 +82,25 @@ describe('a connection a browser holds', () => {
     expect(samples(device.id)).toBe(1);
   });
 
+  test('what it sends is held to what the device is: a value of another type, or of an attribute it has not, is refused; a time is kept in UTC', async () => {
+    const client = await browser();
+    const started = await heldSetup(client.id, { identity: 'test-lamp:DESK', model: 'L1', summary: 'On.' });
+    const device = await t.home.setup.save(started.id, { name: 'Desk lamp' });
+    const connectionId = device.connections[0]!.id;
+    // A time with an offset: the same instant, kept as UTC.
+    const offset = new Date(Date.now() - 1000);
+    const local = `${new Date(offset.getTime() + 2 * 3_600_000).toISOString().slice(0, 19)}+02:00`;
+    const taken = await t.home.held.readings(device.id, {
+      nodeId: client.id,
+      connectionId,
+      readings: [{ key: 'on', value: 'yes' as never, at: new Date().toISOString() }, { key: 'turbo', value: true, at: new Date().toISOString() }, { key: 'on', value: true, at: local }],
+    });
+    expect(taken).toEqual({ live: 1, history: 0, refused: 2 });
+    const on = (await t.home.devices.get(device.id)).readings.find((each) => each.key === 'on')!;
+    expect(on.value).toBe(true);
+    expect(on.at).toBe(new Date(Math.floor(offset.getTime() / 1000) * 1000).toISOString());
+  });
+
   test('a node whose clock is off: what it read is moved onto the home’s clock, not refused for being in the future', async () => {
     const client = await browser();
     const started = await heldSetup(client.id, { identity: 'test-lamp:DESK', model: 'L1', summary: 'On.' });

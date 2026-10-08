@@ -17,11 +17,13 @@ import { body } from './parse.ts';
  * be one that node holds.
  */
 
+/** What a device said, as a session says it: any value of the one value system — a list, a position too — checked against its attribute's type by the home. */
 const reading = z
   .object({
     key: z.string().min(1).max(64),
-    value: z.union([z.number(), z.boolean(), z.string().max(200), z.null()]),
-    at: z.string().min(1).max(40),
+    value: z.union([z.number(), z.boolean(), z.string().max(200), z.null(), z.array(z.unknown()).max(200), z.record(z.string().max(64), z.unknown())]),
+    at: z.iso.datetime({ offset: true }),
+    confirmedAt: z.iso.datetime({ offset: true }).optional(),
   })
   .strict();
 
@@ -85,7 +87,7 @@ export function followerRoutes(deps: AppDeps): Hono {
                   id: z.string().min(1).max(80),
                   part: z.string().min(1).max(80).nullable(),
                   data: z.record(z.string(), z.union([z.string().max(500), z.number(), z.boolean(), z.null()])).nullable(),
-                  at: z.string().max(40),
+                  at: z.iso.datetime({ offset: true }),
                 })
                 .strict()
             )
@@ -101,6 +103,8 @@ export function followerRoutes(deps: AppDeps): Hono {
       description: input.description as unknown as DeviceDescription | undefined,
       info: input.info as unknown as DeviceInfo | undefined,
       events: input.events?.map((event) => ({ ...event, data: event.data as Record<string, Value> | null })),
+      // Each value the home holds to its attribute's declared type.
+      readings: input.readings.map((reading) => ({ ...reading, value: reading.value as Value })),
     };
     return c.json(await homeFor(deps, c).held.readings(savedDeviceId(c.req.param('id')), upload));
   });

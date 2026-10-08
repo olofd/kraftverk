@@ -18,6 +18,10 @@ export const databaseLedger = (db: SqlDatabase): GatewayLedger => {
           'INSERT INTO device_switch (device_id, part, switched_at, switched_by) VALUES (?, ?, ?, ?) ON CONFLICT (device_id, part) DO UPDATE SET switched_at = excluded.switched_at, switched_by = excluded.switched_by'
         )
         .run(device, part, new Date(at).toISOString(), by),
+    unswitched: (device, part, before) =>
+      void (before
+        ? db.query('UPDATE device_switch SET switched_at = ?, switched_by = ? WHERE device_id = ? AND part = ?').run(new Date(before.at).toISOString(), before.by, device, part)
+        : db.query('DELETE FROM device_switch WHERE device_id = ? AND part = ?').run(device, part)),
     lastWrite: (device, attribute) =>
       mark(db.query<{ at: string; by: string }, [string, string]>('SELECT written_at AS at, written_by AS by FROM device_write WHERE device_id = ? AND attribute = ?').get(device, attribute)),
     wrote: (device, attribute, { at, by }) =>

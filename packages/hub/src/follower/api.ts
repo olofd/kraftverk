@@ -209,7 +209,9 @@ export function followerApi(h: Follower): KraftverkApi {
         if (!local(id)) return home.setup.save(id, input);
         const judged = drafts.get(id);
         if (!judged) throw new ApiError('conflict', 'Check that it answers first');
-        const { draft, secrets } = await h.setup.read(id).catch(() => ({ draft: h.setup.view(id), secrets: {} as Record<string, string> }));
+        // The secrets as they were given, not as a device that must answer again would say them: one that does not answer now kept none.
+        const draft = h.setup.view(id);
+        const secrets = h.setup.secrets(id);
         const saved = await home.setup.save(judged, input);
         const me = h.nodeId;
         const way = saved.connections.find((connection) => connection.heldBy.id === me && connection.method === draft.methodId);
