@@ -4,25 +4,32 @@ import { ApiError, PASSWORD_MIN } from '@kraftverk/api-contract';
 import type { SqlDatabase } from '@kraftverk/store';
 
 /**
- * Accounts and their sign-in sessions, in the server's own database: the
- * people who may use this node's HTTP entrance.
+ * Logins and sign-in sessions, in the server's own database
+ * (docs/PLAN-WORLD-MODEL.md §10.5): the ways in at this node's HTTP
+ * entrance, each naming a person in the family it serves — and each
+ * session that person's, opened by a login's password or by their own
+ * device's key.
  *
- * Small on purpose. Every account is an administrator; a session is a random
- * token in an httpOnly cookie, stored here only as its hash; passwords are
- * argon2id, which Bun has built in. There is nothing here a person would want
- * to configure, and nothing an attacker would be glad to find.
+ * Small on purpose. A session is a random token in an httpOnly cookie,
+ * stored here only as its hash; passwords are argon2id, which Bun has built
+ * in. There is nothing here a person would want to configure, and nothing an
+ * attacker would be glad to find.
  */
 
 export type User = {
   id: string;
+  /** The person this login is, in the family's database. */
+  personId: string;
   username: string;
   createdAt: string;
   createdBy: string | null;
   lastLoginAt: string | null;
 };
 
+/** A session: whose, and the login that opened it — none for one their key opened. */
 type Session = {
-  user: User;
+  personId: string;
+  user: User | null;
   expiresAt: string;
   /** The expiry just moved, so the cookie carrying it should be sent again. */
   renewed: boolean;
@@ -40,6 +47,7 @@ const PASSWORD_MAX = 256;
 
 type UserRow = {
   id: string;
+  person_id: string;
   username: string;
   password_hash: string;
   created_at: string;
@@ -49,6 +57,7 @@ type UserRow = {
 
 const toUser = (row: UserRow): User => ({
   id: row.id,
+  personId: row.person_id,
   username: row.username,
   createdAt: row.created_at,
   createdBy: row.created_by,
@@ -97,7 +106,7 @@ const checkPassword = (password: string, hash: string) => slot(() => Bun.passwor
 export class AccountError extends Error {}
 
 /** Why a proposed username or password is not acceptable, or null. */
-function credentialProblem(username: string, password: string): string | null {
+export function credentialProblem(username: string, password: string): string | null {
   if (!USERNAME.test(username)) {
     return 'A username is 1–64 letters, digits, dots, dashes, underscores or @';
   }
@@ -116,22 +125,23 @@ export class Accounts {
   }
 
   countUsers(): number {
-    return this.#db.query<{ n: number }, []>('SELECT COUNT(*) n FROM users').get()?.n ?? 0;
+    return this.#db.query<{ n: number }, []>('SELECT COUNT(*) n FROM login').get()?.n ?? 0;
   }
 
   listUsers(): User[] {
-    return this.#db.query<UserRow, []>('SELECT * FROM users ORDER BY username COLLATE NOCASE').all().map(toUser);
+    return this.#db.query<UserRow, []>('SELECT * FROM login ORDER BY username COLLATE NOCASE').all().map(toUser);
   }
 
   getUser(id: string): User | null {
-    const row = this.#db.query<UserRow, [string]>('SELECT * FROM users WHERE id = ?').get(id);
+    const row = this.#db.query<UserRow, [string]>('SELECT * FROM login WHERE id = ?').get(id);
     return row ? toUser(row) : null;
   }
 
-  async createUser(username: string, password: string, createdBy: string | null): Promise<User> {
+  /** A login for a person: the one the family made for it. */
+  async createUser(username: string, password: string, createdBy: string | null, personId: string): Promise<User> {
     const problem = credentialProblem(username, password);
     if (problem) throw new AccountError(problem);
-    if (this.#db.query('SELECT 1 FROM users WHERE username = ?').get(username)) {
+    if (this.#db.query('SELECT 1 FROM login WHERE username = ?').get(username)) {
       throw new AccountError(`There is already a user called ${username}`);
     }
 
@@ -141,10 +151,10 @@ export class Accounts {
     try {
       this.#db
         .query(
-          `INSERT INTO users (id, username, password_hash, created_at, created_by, password_changed_at)
-           VALUES (?, ?, ?, ?, ?, ?)`
+          `INSERT INTO login (id, person_id, username, password_hash, created_at, created_by, password_changed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(id, username, hash, now, createdBy, now);
+        .run(id, personId, username, hash, now, createdBy, now);
     } catch (error) {
       // The same name added twice at once: both passed the check above while
       // the first was still hashing.
@@ -160,7 +170,7 @@ export class Accounts {
    * The count and the insert happen in one transaction, so two browsers racing
    * through the setup screen cannot both become the first administrator.
    */
-  async createFirstUser(username: string, password: string): Promise<User> {
+  async createFirstUser(username: string, password: string, personId: string): Promise<User> {
     const problem = credentialProblem(username, password);
     if (problem) throw new AccountError(problem);
     // Hashed before the transaction: it is slow, and a transaction must not be.
@@ -172,10 +182,10 @@ export class Accounts {
       if (this.countUsers() > 0) return false;
       this.#db
         .query(
-          `INSERT INTO users (id, username, password_hash, created_at, created_by, password_changed_at)
-           VALUES (?, ?, ?, ?, NULL, ?)`
+          `INSERT INTO login (id, person_id, username, password_hash, created_at, created_by, password_changed_at)
+           VALUES (?, ?, ?, ?, ?, NULL, ?)`
         )
-        .run(id, username, hash, now, now);
+        .run(id, personId, username, hash, now, now);
       return true;
     })();
 
@@ -191,7 +201,7 @@ export class Accounts {
   #decoy: Promise<string> | null = null;
 
   async verifyLogin(username: string, password: string): Promise<User | null> {
-    const row = this.#db.query<UserRow, [string]>('SELECT * FROM users WHERE username = ?').get(username);
+    const row = this.#db.query<UserRow, [string]>('SELECT * FROM login WHERE username = ?').get(username);
     if (!row) {
       this.#decoy ??= hashPassword(randomBytes(16).toString('hex'));
       await checkPassword(password, await this.#decoy);
@@ -199,13 +209,13 @@ export class Accounts {
     }
     const ok = await checkPassword(password, row.password_hash);
     if (!ok) return null;
-    this.#db.query('UPDATE users SET last_login_at = ? WHERE id = ?').run(new Date().toISOString(), row.id);
+    this.#db.query('UPDATE login SET last_login_at = ? WHERE id = ?').run(new Date().toISOString(), row.id);
     return toUser({ ...row, last_login_at: new Date().toISOString() });
   }
 
   /** Whether this is the account's password — to confirm a change, which is not a login. */
   async passwordMatches(userId: string, password: string): Promise<boolean> {
-    const row = this.#db.query<{ password_hash: string }, [string]>('SELECT password_hash FROM users WHERE id = ?').get(userId);
+    const row = this.#db.query<{ password_hash: string }, [string]>('SELECT password_hash FROM login WHERE id = ?').get(userId);
     return row ? checkPassword(password, row.password_hash) : false;
   }
 
@@ -223,11 +233,11 @@ export class Accounts {
 
     const hash = await hashPassword(password);
     this.#db
-      .query('UPDATE users SET password_hash = ?, password_changed_at = ? WHERE id = ?')
+      .query('UPDATE login SET password_hash = ?, password_changed_at = ? WHERE id = ?')
       .run(hash, new Date().toISOString(), userId);
 
     const keep = keepSessionToken ? hashToken(keepSessionToken) : '';
-    this.#db.query('DELETE FROM login_session WHERE user_id = ? AND token_hash <> ?').run(userId, keep);
+    this.#db.query('DELETE FROM login_session WHERE person_id = ? AND token_hash <> ?').run(user.personId, keep);
   }
 
   /**
@@ -242,21 +252,22 @@ export class Accounts {
       if (this.countUsers() <= 1) {
         throw new AccountError('The last account cannot be removed: nobody could then log in from outside the home network');
       }
-      this.#db.query('DELETE FROM login_session WHERE user_id = ?').run(userId);
-      this.#db.query('DELETE FROM users WHERE id = ?').run(userId);
+      this.#db.query('DELETE FROM login_session WHERE login_id = ?').run(userId);
+      this.#db.query('DELETE FROM login WHERE id = ?').run(userId);
     })();
   }
 
-  createSession(userId: string, clientIp: string | null, userAgent: string | null): { token: string; expiresAt: string } {
+  /** A session for a person: opened with a login's password, or — no login — by their own key. */
+  createSession(who: { personId: string; id: string | null }, clientIp: string | null, userAgent: string | null): { token: string; expiresAt: string } {
     const token = randomBytes(32).toString('base64url');
     const now = Date.now();
     const expiresAt = new Date(now + SESSION_LIFETIME_MS).toISOString();
     this.#db
       .query(
-        `INSERT INTO login_session (token_hash, user_id, created_at, last_seen_at, expires_at, client_ip, user_agent)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO login_session (token_hash, person_id, login_id, created_at, last_seen_at, expires_at, client_ip, user_agent)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(hashToken(token), userId, new Date(now).toISOString(), new Date(now).toISOString(), expiresAt, clientIp, userAgent?.slice(0, 300) ?? null);
+      .run(hashToken(token), who.personId, who.id, new Date(now).toISOString(), new Date(now).toISOString(), expiresAt, clientIp, userAgent?.slice(0, 300) ?? null);
     return { token, expiresAt };
   }
 
@@ -270,8 +281,8 @@ export class Accounts {
     if (!token) return null;
     const hash = hashToken(token);
     const row = this.#db
-      .query<{ user_id: string; last_seen_at: string; expires_at: string }, [string]>(
-        'SELECT user_id, last_seen_at, expires_at FROM login_session WHERE token_hash = ?'
+      .query<{ person_id: string; login_id: string | null; last_seen_at: string; expires_at: string }, [string]>(
+        'SELECT person_id, login_id, last_seen_at, expires_at FROM login_session WHERE token_hash = ?'
       )
       .get(hash);
     if (!row) return null;
@@ -282,21 +293,22 @@ export class Accounts {
       return null;
     }
 
-    const user = this.getUser(row.user_id);
-    if (!user) {
+    // Opened with a login that is gone: it goes too.
+    const user = row.login_id ? this.getUser(row.login_id) : null;
+    if (row.login_id && !user) {
       this.#db.query('DELETE FROM login_session WHERE token_hash = ?').run(hash);
       return null;
     }
 
     if (now - Date.parse(row.last_seen_at) <= RENEW_AFTER_MS) {
-      return { user, expiresAt: row.expires_at, renewed: false };
+      return { personId: row.person_id, user, expiresAt: row.expires_at, renewed: false };
     }
     const expiresAt = new Date(now + SESSION_LIFETIME_MS).toISOString();
     this.#db
       .query('UPDATE login_session SET last_seen_at = ?, expires_at = ? WHERE token_hash = ?')
       .run(new Date(now).toISOString(), expiresAt, hash);
     this.#db.query('DELETE FROM login_session WHERE expires_at <= ?').run(new Date(now).toISOString());
-    return { user, expiresAt, renewed: true };
+    return { personId: row.person_id, user, expiresAt, renewed: true };
   }
 
   /**
@@ -307,9 +319,9 @@ export class Accounts {
   sessionAlive(token: string | undefined | null): boolean {
     if (!token) return false;
     const row = this.#db
-      .query<{ user_id: string; expires_at: string }, [string]>('SELECT user_id, expires_at FROM login_session WHERE token_hash = ?')
+      .query<{ login_id: string | null; expires_at: string }, [string]>('SELECT login_id, expires_at FROM login_session WHERE token_hash = ?')
       .get(hashToken(token));
-    return row !== null && Date.parse(row.expires_at) > Date.now() && this.getUser(row.user_id) !== null;
+    return row !== null && Date.parse(row.expires_at) > Date.now() && (row.login_id === null || this.getUser(row.login_id) !== null);
   }
 
   endSession(token: string | undefined | null): void {
@@ -318,16 +330,30 @@ export class Accounts {
 
   /** For sign-ins that did not go through `verifyLogin` — creating the first account signs you in. */
   markLoggedIn(userId: string): void {
-    this.#db.query('UPDATE users SET last_login_at = ? WHERE id = ?').run(new Date().toISOString(), userId);
+    this.#db.query('UPDATE login SET last_login_at = ? WHERE id = ?').run(new Date().toISOString(), userId);
   }
 
-  /** Signs an account out everywhere. Returns how many sessions ended. */
+  /** Signs a login's person out everywhere — their key's sessions too. Returns how many sessions ended. */
   endAllSessions(userId: string): number {
-    return this.#db.query('DELETE FROM login_session WHERE user_id = ?').run(userId).changes;
+    const personId = this.getUser(userId)?.personId;
+    return personId ? this.#db.query('DELETE FROM login_session WHERE person_id = ?').run(personId).changes : 0;
+  }
+
+  /** A person's own sessions ended: their key revoked, or they left. */
+  endPersonSessions(personId: string): number {
+    return this.#db.query('DELETE FROM login_session WHERE person_id = ?').run(personId).changes;
+  }
+
+  /** The person a login is, claimed by their own chain under another id: every login and session follows (docs/PLAN-WORLD-MODEL.md §10.4). */
+  relinkPerson(oldId: string, newId: string): void {
+    this.#db.transaction(() => {
+      this.#db.query('UPDATE login SET person_id = ? WHERE person_id = ?').run(newId, oldId);
+      this.#db.query('UPDATE login_session SET person_id = ? WHERE person_id = ?').run(newId, oldId);
+    })();
   }
 
   findUserByName(username: string): User | null {
-    const row = this.#db.query<UserRow, [string]>('SELECT * FROM users WHERE username = ?').get(username);
+    const row = this.#db.query<UserRow, [string]>('SELECT * FROM login WHERE username = ?').get(username);
     return row ? toUser(row) : null;
   }
 }

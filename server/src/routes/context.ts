@@ -7,7 +7,7 @@ import { NODE_ID, RESOURCE_KINDS, savedDeviceId, type ResourceKind } from '@kraf
 import type { Hub } from '@kraftverk/hub';
 
 import type { Accounts } from '../auth/accounts.ts';
-import { usernameOf, userOf } from '../auth/routes.ts';
+import { personOf, usernameOf } from '../auth/routes.ts';
 import type { LoginLimiter } from '../auth/limiter.ts';
 import type { ProxyDirectory } from '../auth/trust.ts';
 import type { MapParts } from './map.ts';
@@ -43,10 +43,10 @@ export type AppDeps = {
 /** The signed-in person's password asked for again: the refusal to answer, or null when it is theirs (`createAuth`). */
 export type ConfirmPassword = (c: Context, password: string | undefined) => Promise<Response | null>;
 
-/** The home, as the person a request is from asks it. */
+/** The family, as the person a request is from asks it: by their id — the account their apps' nodes belong to. */
 export const familyFor = (deps: Pick<AppDeps, 'hub'>, c: Context): KraftverkApi => {
-  const account = userOf(c)?.id;
-  const caller: Caller = { kind: 'person', name: usernameOf(c), ...(account ? { account } : {}) };
+  const person = personOf(c);
+  const caller: Caller = { kind: 'person', name: usernameOf(c), ...(person ? { id: person, account: person } : {}) };
   return deps.hub.as(caller);
 };
 

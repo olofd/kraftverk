@@ -9,6 +9,7 @@ import { ZodError } from 'zod';
 import { ApiError, API_ERROR_STATUS, CLIENT_HEADER } from '@kraftverk/api-contract';
 
 import { hostGuard } from './auth/host.ts';
+import { familyForAuth } from './auth/family.ts';
 import { createAuth } from './auth/routes.ts';
 import { isPrivate, normaliseIp } from './auth/trust.ts';
 import type { ServerConfig } from './config.ts';
@@ -135,7 +136,7 @@ export function createApp(deps: AppDeps) {
   );
 
   /** Accounts, sessions, and the one gate in front of `/api`. See `auth/routes.ts`. */
-  const auth = createAuth({ proxies: deps.proxies, accounts: deps.accounts, audit: deps.hub.audit, forgetNodesOf: (account) => deps.hub.nodes.forgetJoinedFrom(account), limiter: deps.limiter });
+  const auth = createAuth({ proxies: deps.proxies, accounts: deps.accounts, audit: deps.hub.audit, forgetNodesOf: (person) => deps.hub.nodes.forgetJoinedFrom(person), family: familyForAuth(deps.hub), limiter: deps.limiter });
 
   const api = new Hono();
   // First, before any route: Hono runs middleware only for routes registered after it.

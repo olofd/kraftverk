@@ -102,9 +102,9 @@ describe('the schema', () => {
     const path = scratch();
     const first = openSchema(path, NODE_SCHEMA, ACCOUNTS_CARRIED);
     const accounts = new Accounts(first);
-    const owner = await accounts.createFirstUser('owner', 'a-long-test-password');
-    await accounts.createUser('guest', 'another-test-password', owner.id);
-    accounts.createSession(owner.id, '192.0.2.10', null);
+    const owner = await accounts.createFirstUser('owner', 'a-long-test-password', 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0AA');
+    await accounts.createUser('guest', 'another-test-password', owner.id, 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0BB');
+    accounts.createSession(owner, '192.0.2.10', null);
     first.close();
 
     // Any change to the schema: here, a table more.
@@ -129,20 +129,20 @@ describe('the schema', () => {
   test('an account’s own table changed carries the columns both have — unless the new one requires one the old lacked', async () => {
     const path = scratch();
     const first = openSchema(path, NODE_SCHEMA, ACCOUNTS_CARRIED);
-    await new Accounts(first).createFirstUser('owner', 'a-long-test-password');
+    await new Accounts(first).createFirstUser('owner', 'a-long-test-password', 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0AA');
     first.close();
 
     // A column more, which may be empty: carried, the column empty.
     const nullable = NODE_SCHEMA.replace('last_login_at       TEXT\n', 'last_login_at       TEXT,\n    nickname            TEXT\n');
     expect(nullable).not.toBe(NODE_SCHEMA);
     const second = openSchema(path, nullable, ACCOUNTS_CARRIED);
-    expect(second.query<{ username: string; nickname: string | null }, []>('SELECT username, nickname FROM users').all()).toEqual([{ username: 'owner', nickname: null }]);
+    expect(second.query<{ username: string; nickname: string | null }, []>('SELECT username, nickname FROM login').all()).toEqual([{ username: 'owner', nickname: null }]);
     second.close();
 
     // A column more that is required: nothing carried, and the server starts with no accounts.
     const required = NODE_SCHEMA.replace('last_login_at       TEXT\n', 'last_login_at       TEXT,\n    role                TEXT NOT NULL\n');
     const third = openSchema(path, required, ACCOUNTS_CARRIED);
-    expect(third.query<{ n: number }, []>('SELECT COUNT(*) n FROM users').get()?.n).toBe(0);
+    expect(third.query<{ n: number }, []>('SELECT COUNT(*) n FROM login').get()?.n).toBe(0);
     third.close();
   });
 
@@ -164,10 +164,10 @@ describe('the schema', () => {
     expect(tables(family)).not.toContain('users');
     family.close();
     const node = openSchema(nodePath, NODE_SCHEMA, ACCOUNTS_CARRIED);
-    expect(tables(node)).toEqual(['login_session', 'meta', 'users']);
+    expect(tables(node)).toEqual(['login', 'login_session', 'meta']);
     const accounts = new Accounts(node);
-    const owner = await accounts.createFirstUser('owner', 'a-long-test-password');
-    const session = accounts.createSession(owner.id, '192.0.2.10', null);
+    const owner = await accounts.createFirstUser('owner', 'a-long-test-password', 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0AA');
+    const session = accounts.createSession(owner, '192.0.2.10', null);
     node.close();
 
     // The family's schema changes: the family's file is set aside; the node's is not touched.

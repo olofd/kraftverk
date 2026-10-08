@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { ApiError } from '@kraftverk/api-contract';
 import type { AuthState } from '@kraftverk/api-client';
 
+import { useAccount } from './AccountProvider';
 import { useServers } from './ServersProvider';
 
 /**
@@ -11,6 +12,11 @@ import { useServers } from './ServersProvider';
  * Only meaningful with a server: with none, this app keeps its own home and
  * has nobody to log in to. The session itself is an httpOnly cookie the server
  * sets — the app never touches it, only asks the server what it thinks.
+ *
+ * An account this device keeps that is in the server's family signs in by
+ * its own key, with nothing to type (docs/PLAN-WORLD-MODEL.md §10.5). One
+ * signed in with a password claims the person that login is, so its key is
+ * enough from then on.
  */
 type AuthContextValue = {
   /** A server is chosen, so accounts apply. */
@@ -48,6 +54,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const applies = Boolean(servers.active);
   const serverUrl = servers.active?.url ?? null;
   const { server, onLoginRequired } = servers;
+  const { account, personal } = useAccount();
+  // This account is in the server's family: its key signs it in.
+  const member = Boolean(serverUrl && account.families.some((family) => family.master === 'server' && family.serverUrl === serverUrl));
 
   const [state, setState] = useState<AuthState | null>(null);
   const [loading, setLoading] = useState(applies);
@@ -74,8 +83,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     asked.current = serverUrl;
     try {
-      const next = await server.auth.state();
+      let next = await server.auth.state();
       if (asked.current !== serverUrl) return null;
+      if (!next.user && member) {
+        // Signed in by this device's key: no password, nothing typed. Refused — the key unknown there now — the form is shown.
+        const signedInByKey = await server.auth
+          .challenge()
+          .then(async (challenge) => server.auth.signInWithKey(await personal.answer(account.personId, challenge)))
+          .then(
+            () => true,
+            () => false
+          );
+        if (signedInByKey) next = await server.auth.state();
+        if (asked.current !== serverUrl) return null;
+      }
       setState(next);
       setUnreachable(false);
       return next;
@@ -89,7 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       if (asked.current === serverUrl) setLoading(false);
     }
-  }, [applies, server, serverUrl]);
+  }, [account.personId, applies, member, personal, server, serverUrl]);
 
   useEffect(() => {
     setLoading(applies);
@@ -129,20 +150,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [refresh, serverUrl]
   );
 
+  /**
+   * The person a password signed in, claimed by this device's account — so
+   * the family knows them by its chain, and its key signs in from then on.
+   * One who is someone already is left as they are.
+   */
+  const claim = useCallback(async () => {
+    await server?.auth.claim(await personal.chain(account.personId)).catch(() => undefined);
+  }, [account.personId, personal, server]);
+
   const logIn = useCallback(
     async (username: string, password: string) => {
       await server?.auth.logIn(username, password);
+      await claim();
       await signedIn();
     },
-    [server, signedIn]
+    [claim, server, signedIn]
   );
 
   const setup = useCallback(
     async (username: string, password: string) => {
       await server?.auth.setup(username, password);
+      await claim();
       await signedIn();
     },
-    [server, signedIn]
+    [claim, server, signedIn]
   );
 
   const logOut = useCallback(async () => {

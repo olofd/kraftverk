@@ -21,6 +21,10 @@ import { originAllowed } from './routes/live.ts';
 import { serverSecrets } from './platform/secrets.ts';
 import { RESET_SECRET_MIN } from './platform/reset-secret.ts';
 import { AuditLog, type SqlDatabase } from '@kraftverk/store';
+import { answer, createPerson, newSecret, softwareKey, type Challenge } from '@kraftverk/identity';
+
+/** The people the tests' logins are, in the family. */
+const TEST_PERSON = 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0AA';
 
 /**
  * The server's own, over HTTP, as the app and an attacker reach it: every
@@ -150,9 +154,9 @@ const login = async (username: string, on = server) => (await call('/auth/login'
 
 beforeEach(async () => {
   server.database.exec('DELETE FROM device; DELETE FROM sample; DELETE FROM node WHERE self = 0; DELETE FROM home_setting; DELETE FROM audit; DELETE FROM automation;');
-  server.nodeDatabase.exec('DELETE FROM users; DELETE FROM login_session;');
+  server.nodeDatabase.exec('DELETE FROM login; DELETE FROM login_session;');
   await server.sessions.sync([]);
-  await server.accounts.createFirstUser('olof', PASSWORD);
+  await server.accounts.createFirstUser('olof', PASSWORD, TEST_PERSON);
   session = await login('olof');
   sessions.set(server, session);
   server.bus.lamps.clear();
@@ -330,7 +334,7 @@ describe('a refusal over HTTP', () => {
 
   test('a read-only server refuses a tool that writes to hardware with 423', async () => {
     const readOnly = await build({ readOnly: true, file: join(dir, 'read-only.db') });
-    await readOnly.accounts.createFirstUser('olof', PASSWORD);
+    await readOnly.accounts.createFirstUser('olof', PASSWORD, TEST_PERSON);
     sessions.set(readOnly, await login('olof', readOnly));
     try {
       lampAt('lamp-1', readOnly);
@@ -564,5 +568,46 @@ describe('the sign-in state', () => {
     expect(outside.body).toMatchObject({ onHomeNetwork: false, reason: 'Not on the home network' });
     const home = await call('/auth/state');
     expect(String(home.body?.reason)).toContain('192.168.1.58');
+  });
+});
+
+describe('a person signs in', () => {
+  test('set up: the first login is a person in the family, its admin; an app account claims them, and signs in by its key from then on', async () => {
+    const fresh = await build({ file: join(dir, 'people.db') });
+    const ANNA = 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0CC';
+    try {
+      const setUp = await call('/auth/setup', { method: 'POST', body: { username: 'anna', password: PASSWORD }, on: fresh });
+      expect(setUp.status).toBe(201);
+      const keyless = setUp.body.user.id as string;
+      expect((await call('/people/me', { cookie: setUp.token, on: fresh })).body.person).toMatchObject({ id: keyless, name: 'anna', member: { role: 'admin' } });
+
+      // Her phone's account: its own key, its chain. Signed in with her password, it claims the person the login is.
+      const key = softwareKey(newSecret());
+      const chain = await createPerson({ id: ANNA, key, deviceName: 'Phone', profile: { name: 'Anna Example', shortName: null, locale: null, pictureId: null }, at: new Date().toISOString() });
+      const claimed = await call('/auth/claim', { method: 'POST', body: { chain }, cookie: setUp.token, on: fresh });
+      expect(claimed.body.user).toEqual({ id: ANNA, username: 'Anna Example' });
+      expect((await call('/people/me', { cookie: setUp.token, on: fresh })).body.person).toMatchObject({ id: ANNA, member: { role: 'admin' } });
+      expect((await call('/people', { cookie: setUp.token, on: fresh })).body.people.map((person: { id: string }) => person.id)).toEqual([ANNA]);
+      // Her password still lets her in, as her.
+      const again = await call('/auth/login', { method: 'POST', body: { username: 'anna', password: PASSWORD }, on: fresh });
+      expect(again.body.user.id).toBe(ANNA);
+
+      // And her phone, by its key: a challenge, answered once.
+      const challenge = (await call('/auth/challenge', { method: 'POST', on: fresh })).body as Challenge;
+      const signIn = await answer(challenge, ANNA, key);
+      const byKey = await call('/auth/key', { method: 'POST', body: signIn, on: fresh });
+      expect(byKey.status).toBe(200);
+      expect((await call('/auth/state', { cookie: byKey.token, on: fresh })).body.user).toEqual({ id: ANNA, username: 'Anna Example' });
+      expect((await call('/people/me', { cookie: byKey.token, on: fresh })).body.person.id).toBe(ANNA);
+      // Answered once: the same answer again is refused, and so is a key the family does not know.
+      expect((await call('/auth/key', { method: 'POST', body: signIn, on: fresh })).status).toBe(401);
+      const stranger = softwareKey(newSecret());
+      const theirs = await answer((await call('/auth/challenge', { method: 'POST', on: fresh })).body as Challenge, ANNA, stranger);
+      expect((await call('/auth/key', { method: 'POST', body: theirs, on: fresh })).status).toBe(401);
+      // A key's session has no password to confirm with: what needs one says so.
+      expect((await call('/auth/password', { method: 'POST', body: { current: PASSWORD, next: 'another long password' }, cookie: byKey.token, on: fresh })).status).toBe(403);
+    } finally {
+      await fresh.close();
+    }
   });
 });

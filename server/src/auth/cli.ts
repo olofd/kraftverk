@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
-import { actor } from '@kraftverk/device-sdk';
+import { actor, newId } from '@kraftverk/device-sdk';
 import { AuditLog, NodeStore } from '@kraftverk/store';
 
 import { besideDatabase, loadConfig } from '../config.ts';
@@ -68,9 +68,11 @@ try {
     case 'add': {
       const username = requireName();
       const { password, show } = await newPassword();
-      const user = accounts.countUsers() === 0 ? await accounts.createFirstUser(username, password) : await accounts.createUser(username, password, 'server console');
+      // A person for it, who joins the family — an admin — when the server next starts.
+      const personId = newId('p');
+      const user = accounts.countUsers() === 0 ? await accounts.createFirstUser(username, password, personId) : await accounts.createUser(username, password, 'server console', personId);
       record('user.created', `Created ${user.username} from the server console`, user.id);
-      console.log(`Created ${user.username}.`);
+      console.log(`Created ${user.username}. They join the family when the server next starts.`);
       if (show) console.log(`Password: ${password}\nIt is not stored anywhere readable and will not be shown again.`);
       break;
     }

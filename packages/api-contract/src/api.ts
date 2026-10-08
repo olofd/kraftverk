@@ -1,5 +1,5 @@
 import type { AutomationDraft, Rule } from '@kraftverk/automation';
-import type { Statement } from '@kraftverk/identity';
+import type { Challenge, SignIn, Statement } from '@kraftverk/identity';
 import type { AutomationId, ConfigValues, ConnectionId, LinkId, NodeId, PolicyValueName, ResourceKind, SavedDeviceId, SetupActionResult, Value } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 import type { Vocabulary } from '@kraftverk/home-file';
@@ -355,6 +355,12 @@ export interface ServerApi {
     logOut(): Promise<void>;
     /** Your own password: the current one too, and every other session ends. */
     changePassword(current: string, next: string): Promise<void>;
+    /** A challenge for this device's key to answer: signing in with no password (docs/PLAN-WORLD-MODEL.md §10.5). */
+    challenge(): Promise<Challenge>;
+    /** Signed in by a key the family knows this person by. */
+    signInWithKey(signIn: SignIn): Promise<Account>;
+    /** The person a password signed in claimed by this device's account: the family knows them by its chain from now. */
+    claim(chain: Statement[]): Promise<Account>;
   };
   /** Accounts: changing them takes your own password as well as your session. */
   accounts: {

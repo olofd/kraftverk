@@ -89,6 +89,46 @@ export class PeopleStore {
     return this.get(person.id)!;
   }
 
+  /**
+   * A person with no key yet, by the id a node gave them — made where they
+   * signed in with a password — or as they are, if this family knows them
+   * already. Their app claims them later (`claim`).
+   */
+  ensureKeyless(id: string, name: string, at: string): PersonView {
+    if (!this.get(id)) this.#db.query('INSERT INTO person (id, name, updated_at) VALUES (?, ?, ?)').run(id, name, at);
+    return this.get(id)!;
+  }
+
+  /**
+   * A keyless person claimed by their own chain (§10.4): in one transaction,
+   * the id a node or an admin gave them becomes theirs everywhere it is used —
+   * their membership, who they invited, whom they keep, the family they
+   * founded — and the keyless record goes. What happened before names the old
+   * id, as history does.
+   */
+  claim(oldId: string, chain: readonly Statement[]): PersonView {
+    const was = this.get(oldId);
+    if (!was) throw new Error('No such person to claim');
+    if (this.chainOf(oldId).length) throw new Error('They are someone already: only a person with no key of their own is claimed');
+    const checked = checkChain(chain);
+    if (!checked.ok) throw new Error(`That is not who they say: ${checked.problem}`);
+    const id = checked.person.id;
+    if (id === oldId) return this.present(chain);
+    if (this.roleOf(id)) throw new Error('That person is in this family already');
+    this.#db.transaction(() => {
+      this.#db.exec('PRAGMA defer_foreign_keys = ON');
+      this.present(chain);
+      const member = this.#db.query<MemberRow & { invited_by: string | null }, [string]>('SELECT * FROM member WHERE person_id = ?').get(oldId);
+      this.#db.query('DELETE FROM member WHERE person_id = ?').run(oldId);
+      if (member) this.#db.query('INSERT INTO member (person_id, role, nickname, color, joined_at, invited_by, left_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, member.role, member.nickname, member.color, member.joined_at, member.invited_by, member.left_at);
+      this.#db.query('UPDATE member SET invited_by = ? WHERE invited_by = ?').run(id, oldId);
+      this.#db.query('UPDATE person SET managed_by = ? WHERE managed_by = ?').run(id, oldId);
+      this.#db.query('UPDATE family SET created_by = ? WHERE created_by = ?').run(id, oldId);
+      this.#db.query('DELETE FROM person WHERE id = ?').run(oldId);
+    })();
+    return this.get(id)!;
+  }
+
   /** A picture this family keeps, or none: a profile may name one taken on another device, not brought here yet. */
   #picture(id: string | null): string | null {
     return id && this.#db.query<{ id: string }, [string]>('SELECT id FROM media WHERE id = ?').get(id) ? id : null;

@@ -8,6 +8,7 @@ import { AuditLog, transportStore } from '@kraftverk/store';
 
 import { createApp } from './app.ts';
 import { Accounts } from './auth/accounts.ts';
+import { keepLoginsPeople } from './auth/family.ts';
 import { ProxyDirectory } from './auth/trust.ts';
 import { besideDatabase, loadConfig } from './config.ts';
 import { keepConsole } from './log.ts';
@@ -154,6 +155,9 @@ if (config.readOnly) {
   cut short.
 */
 await hub.start();
+// Every login's person in the family: one a family started again from its kept file no longer has — or one the console added — is made again.
+const accounts = new Accounts(nodeDatabase);
+keepLoginsPeople(hub, accounts);
 
 /** The web container, the one proxy whose "home-network entrance" stamp is believed. */
 const proxies = new ProxyDirectory(config.trustedProxies);
@@ -182,7 +186,7 @@ const stopSnapshot = audit.onRecord((entry) => {
   if (changesConfiguration(entry.kind)) snapshot.schedule();
 });
 
-const { app, websocket } = createApp({ hub, accounts: new Accounts(nodeDatabase), snapshot, config, proxies, serverLog, startedAt, map: { tiles, regions } });
+const { app, websocket } = createApp({ hub, accounts, snapshot, config, proxies, serverLog, startedAt, map: { tiles, regions } });
 
 // Everything is running: from here on, stopping also closes what was opened.
 onStop(stopSnapshot, () => snapshot.stop(), () => hub.stop(), () => tiles.close());

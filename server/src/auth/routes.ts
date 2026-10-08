@@ -4,12 +4,13 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import { ApiError, CLIENT_HEADER, CONFIG_SCHEMA_PATH } from '@kraftverk/api-contract';
+import { ApiError, CLIENT_HEADER, CONFIG_SCHEMA_PATH, type PersonView } from '@kraftverk/api-contract';
 import { actor } from '@kraftverk/device-sdk';
+import { checkSignIn, newChallenge, type Challenge, type PublicJwk, type SignIn, type Statement } from '@kraftverk/identity';
 import type { AuditLog } from '@kraftverk/store';
 import { body } from '../routes/parse.ts';
 import { LoginLimiter, limiterKeys } from './limiter.ts';
-import { AccountError, SESSION_LIFETIME_MS, type Accounts, type User } from './accounts.ts';
+import { AccountError, credentialProblem, SESSION_LIFETIME_MS, type Accounts, type User } from './accounts.ts';
 import { assessTrust, EXPOSURE_HEADER, FORWARDING_HEADERS as FORWARDED, normaliseIp, type ProxyDirectory, type Trust } from './trust.ts';
 
 /**
@@ -40,7 +41,7 @@ export const SESSION_COOKIE = 'kraftverk_session';
  * the configuration's JSON Schema, which an editor fetches without logging in:
  * the installed types only, nothing you have (`routes/configuration.ts`).
  */
-const OPEN = new Set(['/api/auth/state', '/api/auth/setup', '/api/auth/login', '/api/auth/logout', `/api${CONFIG_SCHEMA_PATH}`]);
+const OPEN = new Set(['/api/auth/state', '/api/auth/setup', '/api/auth/login', '/api/auth/logout', '/api/auth/challenge', '/api/auth/key', `/api${CONFIG_SCHEMA_PATH}`]);
 
 /**
  * The health check, for the container's own healthcheck — which runs inside
@@ -49,21 +50,29 @@ const OPEN = new Set(['/api/auth/state', '/api/auth/setup', '/api/auth/login', '
  */
 const HEALTH = '/api/health';
 
+/** Who a request is: a person — signed in with a login's password, or by their own key — or no one. */
+export type Signed = { personId: string; name: string; user: User | null };
+
 export type Access = {
   trust: Trust;
-  user: User | null;
+  signed: Signed | null;
 };
 
 const accessByRequest = new WeakMap<Request, Access>();
 
-/** The signed-in account's name: what a caller is named by. */
+/** The signed-in person's name: what a caller is named by. */
 export function usernameOf(c: Context): string {
-  return accessByRequest.get(c.req.raw)?.user?.username ?? 'unknown';
+  return accessByRequest.get(c.req.raw)?.signed?.name ?? 'unknown';
 }
 
-/** The signed-in account, once the gate has let the request through. */
+/** The signed-in person, once the gate has let the request through. */
+export function personOf(c: Context): string | null {
+  return accessByRequest.get(c.req.raw)?.signed?.personId ?? null;
+}
+
+/** The login a person signed in with, if a password opened their session. */
 export function userOf(c: Context): User | null {
-  return accessByRequest.get(c.req.raw)?.user ?? null;
+  return accessByRequest.get(c.req.raw)?.signed?.user ?? null;
 }
 
 type AuthDeps = {
@@ -72,12 +81,35 @@ type AuthDeps = {
   accounts: Accounts;
   /** The home's timeline: sign-ins, failures and account changes are on it. */
   audit: Pick<AuditLog, 'record'>;
-  /** The nodes an account joined from, forgotten with it, and every way they held: no other account may speak for them. */
-  forgetNodesOf: (accountId: string) => void;
+  /** The nodes a person joined from, forgotten with their login, and every way they held: no one else may speak for them. */
+  forgetNodesOf: (personId: string) => void;
+  /** The family this node serves, as signing in needs it (docs/PLAN-WORLD-MODEL.md §10.5). */
+  family: {
+    /** This node's id: what a key's challenge names. */
+    nodeId: () => string;
+    /** A person a login is made for: in the family, with no key yet, an admin — every account on a server is. */
+    newPerson: (name: string) => string;
+    /** What the family calls a person; null for one it does not know. */
+    nameOf: (personId: string) => string | null;
+    /** The member a key is, and its public half: while it is not revoked. */
+    keyHolder: (keyId: string) => { personId: string; publicJwk: PublicJwk } | null;
+    /** A keyless person claimed by their own chain: the id the family knows them by from now. */
+    claim: (personId: string, chain: Statement[]) => PersonView;
+    /** A person gone from the family with their login. */
+    leave: (personId: string) => void;
+  };
   limiter?: LoginLimiter;
 };
 
-export function createAuth({ proxies, accounts, audit, forgetNodesOf, limiter = new LoginLimiter() }: AuthDeps) {
+/** How long a key's challenge may be answered in. */
+const CHALLENGE_MS = 120_000;
+
+export function createAuth({ proxies, accounts, audit, forgetNodesOf, family, limiter = new LoginLimiter() }: AuthDeps) {
+  /** The challenges handed out and not yet answered, by nonce: each answered once, while young. */
+  const challenges = new Map<string, Challenge>();
+  const sweep = (now: number) => {
+    for (const [nonce, challenge] of challenges) if (now - Date.parse(challenge.issuedAt) > CHALLENGE_MS) challenges.delete(nonce);
+  };
   const socketIp = (c: Context): string | null => {
     const env = c.env as { requestIP?: (request: Request) => { address: string } | null } | undefined;
     return normaliseIp(env?.requestIP?.(c.req.raw)?.address ?? null);
@@ -122,21 +154,29 @@ export function createAuth({ proxies, accounts, audit, forgetNodesOf, limiter = 
     const session = accounts.readSession(getCookie(c, SESSION_COOKIE));
     // Renewed sessions send the cookie again, so its own expiry moves with it.
     if (session?.renewed) writeCookie(c, getCookie(c, SESSION_COOKIE)!);
-    const result: Access = { trust: trustOf(c), user: session?.user ?? null };
+    const signed: Signed | null = session ? { personId: session.personId, name: family.nameOf(session.personId) ?? session.user?.username ?? 'someone', user: session.user } : null;
+    const result: Access = { trust: trustOf(c), signed };
     accessByRequest.set(c.req.raw, result);
     return result;
   };
 
   /**
-   * The signed-in account behind a request, or a 401.
+   * The signed-in person behind a request, or a 401.
    *
-   * Throws rather than returning null: every route behind the gate has an
-   * account by construction, and one that somehow did not must not carry on as
+   * Throws rather than returning null: every route behind the gate has a
+   * person by construction, and one that somehow did not must not carry on as
    * nobody in particular.
    */
+  const requireSigned = (c: Context): Signed => {
+    const { signed } = access(c);
+    if (!signed) throw new HTTPException(401, { message: 'Log in to use this server.' });
+    return signed;
+  };
+
+  /** The login behind a request: what needs a password to confirm. A person in by their key is told to use it. */
   const requireUser = (c: Context): User => {
-    const { user } = access(c);
-    if (!user) throw new HTTPException(401, { message: 'Log in to use this server.' });
+    const { user } = requireSigned(c);
+    if (!user) throw new ApiError('forbidden', 'That needs your password: sign in with it on this server to do it');
     return user;
   };
 
@@ -154,7 +194,7 @@ export function createAuth({ proxies, accounts, audit, forgetNodesOf, limiter = 
   /** The gate in front of every `/api` route. */
   const gate: MiddlewareHandler = async (c, next) => {
     if (c.req.method === 'OPTIONS' || OPEN.has(c.req.path)) return next();
-    if (access(c).user) return next();
+    if (access(c).signed) return next();
     if (c.req.path === HEALTH && localCaller(c)) return next();
     const setupRequired = accounts.countUsers() === 0;
     return c.json(
@@ -204,16 +244,16 @@ export function createAuth({ proxies, accounts, audit, forgetNodesOf, limiter = 
 
   /** Everything the app needs to decide what to show: who, where, and whether setup is due. */
   auth.get('/state', (c) => {
-    const { user, trust } = access(c);
+    const { signed, trust } = access(c);
     const users = accounts.countUsers();
     return c.json({
-      user: user ? { id: user.id, username: user.username } : null,
+      user: signed ? { id: signed.personId, username: signed.name } : null,
       // Only consulted for setup: signing in is required everywhere.
       onHomeNetwork: trust.onHomeNetwork,
       // The whole reasoning — which proxy, which address — for someone signed
       // in or at home. A stranger on the internet only needs to know it is
       // not the home network; the details describe how this server is set up.
-      reason: user || trust.onHomeNetwork ? trust.reason : 'Not on the home network',
+      reason: signed || trust.onHomeNetwork ? trust.reason : 'Not on the home network',
       setupRequired: users === 0,
       canSetup: users === 0 && trust.onHomeNetwork,
     });
@@ -233,12 +273,16 @@ export function createAuth({ proxies, accounts, audit, forgetNodesOf, limiter = 
     // be a way to make the server hash passwords for anyone who asks.
     if (accounts.countUsers() > 0) throw new ApiError('conflict', 'This server already has an administrator. Log in instead.');
     const { username, password } = await body(c, credentials);
-    const user = await accounts.createFirstUser(username, password).catch(rethrow);
-    const { token } = accounts.createSession(user.id, trust.clientIp, c.req.header('user-agent') ?? null);
+    // Checked before the person is made: a refused name or password leaves no one behind.
+    const problem = credentialProblem(username, password);
+    if (problem) throw new ApiError('invalid', problem);
+    const personId = family.newPerson(username);
+    const user = await accounts.createFirstUser(username, password, personId).catch(rethrow);
+    const { token } = accounts.createSession(user, trust.clientIp, c.req.header('user-agent') ?? null);
     accounts.markLoggedIn(user.id);
     writeCookie(c, token);
-    audit.record({ at: now(), kind: 'auth.setup', actor: actor('person', username), resourceKind: 'account', resource: user.id, summary: `${username} created the first account`, detail: { clientIp: trust.clientIp } });
-    return c.json({ user: { id: user.id, username: user.username } }, 201);
+    audit.record({ at: now(), kind: 'auth.setup', actor: actor('person', username, personId), resourceKind: 'person', resource: personId, summary: `${username} created the first account`, detail: { clientIp: trust.clientIp } });
+    return c.json({ user: { id: personId, username: user.username } }, 201);
   });
 
   auth.post('/login', async (c) => {
@@ -259,17 +303,67 @@ export function createAuth({ proxies, accounts, audit, forgetNodesOf, limiter = 
     limiter.succeeded(keys);
     // Whatever session this browser held before, it holds this one instead.
     accounts.endSession(getCookie(c, SESSION_COOKIE));
-    const { token } = accounts.createSession(user.id, trust.clientIp, c.req.header('user-agent') ?? null);
+    const { token } = accounts.createSession(user, trust.clientIp, c.req.header('user-agent') ?? null);
     writeCookie(c, token);
-    audit.record({ at: now(), kind: 'auth.login', actor: actor('person', user.username), resourceKind: 'account', resource: user.id, summary: `${user.username} logged in`, detail: { clientIp: trust.clientIp, reason: trust.reason } });
-    return c.json({ user: { id: user.id, username: user.username } });
+    audit.record({ at: now(), kind: 'auth.login', actor: actor('person', user.username, user.personId), resourceKind: 'person', resource: user.personId, summary: `${user.username} logged in`, detail: { clientIp: trust.clientIp, reason: trust.reason } });
+    return c.json({ user: { id: user.personId, username: family.nameOf(user.personId) ?? user.username } });
+  });
+
+  /** A challenge for a person's own device to sign: this node, a nonce, now (docs/PLAN-WORLD-MODEL.md §10.5). */
+  auth.post('/challenge', (c) => {
+    const at = Date.now();
+    sweep(at);
+    if (challenges.size >= 1000) throw new ApiError('unavailable', 'Too many sign-ins at once: try again in a moment');
+    const challenge = newChallenge(family.nodeId(), new Date(at).toISOString());
+    challenges.set(challenge.nonce, challenge);
+    return c.json(challenge);
+  });
+
+  /** Signed in by a key a member holds: the challenge this node gave, answered once, while young. No password crosses. */
+  auth.post('/key', async (c) => {
+    const { trust } = access(c);
+    const signIn = (await body(c, z.object({ person: z.string().max(40), keyId: z.string().max(60), signature: z.string().max(200), challenge: z.object({ node: z.string().max(40), nonce: z.string().max(60), issuedAt: z.string().max(40) }).strict() }).strict())) as SignIn;
+    const given = challenges.get(signIn.challenge.nonce);
+    challenges.delete(signIn.challenge.nonce);
+    const holder = family.keyHolder(signIn.keyId);
+    const refused = !given ? 'That is not a challenge this node gave, or it was answered already' : holder?.personId !== signIn.person ? 'That key is not one this family knows for them' : checkSignIn(signIn, { node: given.node, nonce: given.nonce, now: Date.now(), maxAgeMs: CHALLENGE_MS, key: holder.publicJwk });
+    if (refused) {
+      audit.record({ at: now(), kind: 'auth.key-failed', actor: actor('person', family.nameOf(signIn.person) ?? 'someone', signIn.person), summary: `A sign-in by key was refused: ${refused}`, detail: { clientIp: trust.clientIp } });
+      throw new ApiError('signed-out', refused);
+    }
+    accounts.endSession(getCookie(c, SESSION_COOKIE));
+    const { token } = accounts.createSession({ personId: signIn.person, id: null }, trust.clientIp, c.req.header('user-agent') ?? null);
+    writeCookie(c, token);
+    const name = family.nameOf(signIn.person) ?? 'someone';
+    audit.record({ at: now(), kind: 'auth.login', actor: actor('person', name, signIn.person), resourceKind: 'person', resource: signIn.person, summary: `${name} signed in with their device`, detail: { clientIp: trust.clientIp, key: signIn.keyId } });
+    return c.json({ user: { id: signIn.person, username: name } });
+  });
+
+  /**
+   * A login's person claimed by an app's account (docs/PLAN-WORLD-MODEL.md
+   * §10.4): someone signed in with their password shows who they are — their
+   * chain — and from then on the family knows them by it, their logins and
+   * sessions with it. Only a person with no key of their own yet is claimed.
+   */
+  auth.post('/claim', async (c) => {
+    const signed = requireSigned(c);
+    const { chain } = await body(c, z.object({ chain: z.array(z.record(z.string(), z.unknown())).min(1).max(1000) }).strict());
+    let person: PersonView;
+    try {
+      person = family.claim(signed.personId, chain as unknown as Statement[]);
+    } catch (error) {
+      throw new ApiError('invalid', (error as Error).message);
+    }
+    accounts.relinkPerson(signed.personId, person.id);
+    audit.record({ at: now(), kind: 'person.claimed', actor: actor('person', person.name, person.id), resourceKind: 'person', resource: person.id, summary: `${signed.name} is ${person.name} now, by their own account`, detail: { was: signed.personId } });
+    return c.json({ user: { id: person.id, username: person.shownAs } });
   });
 
   auth.post('/logout', (c) => {
-    const { user } = access(c);
+    const { signed } = access(c);
     accounts.endSession(getCookie(c, SESSION_COOKIE));
     clearCookie(c);
-    if (user) audit.record({ at: now(), kind: 'auth.logout', actor: actor('person', user.username), resourceKind: 'account', resource: user.id, summary: `${user.username} logged out` });
+    if (signed) audit.record({ at: now(), kind: 'auth.logout', actor: actor('person', signed.name, signed.personId), resourceKind: 'person', resource: signed.personId, summary: `${signed.name} logged out` });
     return c.json({ ok: true });
   });
 
@@ -280,14 +374,14 @@ export function createAuth({ proxies, accounts, audit, forgetNodesOf, limiter = 
     const refused = await confirmIdentity(c, user, current);
     if (refused) return refused;
     await accounts.setPassword(user.id, password, getCookie(c, SESSION_COOKIE)).catch(rethrow);
-    audit.record({ at: now(), kind: 'user.password', actor: actor('person', user.username), resourceKind: 'account', resource: user.id, summary: `${user.username} changed their password; their other sessions were signed out` });
+    audit.record({ at: now(), kind: 'user.password', actor: actor('person', user.username, user.personId), resourceKind: 'person', resource: user.personId, summary: `${user.username} changed their password; their other sessions were signed out` });
     return c.json({ ok: true });
   });
 
   const users = new Hono();
 
   users.get('/', (c) => {
-    requireUser(c);
+    requireSigned(c);
     return c.json({ users: accounts.listUsers() });
   });
 
@@ -296,8 +390,11 @@ export function createAuth({ proxies, accounts, audit, forgetNodesOf, limiter = 
     const { username, password, yourPassword: confirmation } = await body(c, credentials.extend({ yourPassword }));
     const refused = await confirmIdentity(c, signedIn, confirmation);
     if (refused) return refused;
-    const user = await accounts.createUser(username, password, signedIn.username).catch(rethrow);
-    audit.record({ at: now(), kind: 'user.created', actor: actor('person', signedIn.username), resourceKind: 'account', resource: user.id, summary: `${signedIn.username} added ${user.username}` });
+    const problem = credentialProblem(username, password);
+    if (problem) throw new ApiError('invalid', problem);
+    if (accounts.findUserByName(username)) throw new ApiError('invalid', `There is already a user called ${username}`);
+    const user = await accounts.createUser(username, password, signedIn.username, family.newPerson(username)).catch(rethrow);
+    audit.record({ at: now(), kind: 'user.created', actor: actor('person', signedIn.username, signedIn.personId), resourceKind: 'person', resource: user.personId, summary: `${signedIn.username} added ${user.username}` });
     return c.json({ user }, 201);
   });
 
@@ -313,9 +410,14 @@ export function createAuth({ proxies, accounts, audit, forgetNodesOf, limiter = 
     } catch (error) {
       rethrow(error);
     }
-    forgetNodesOf(target.id);
+    // The person goes from the family with their last login; their own devices' sessions end.
+    if (!accounts.listUsers().some((each) => each.personId === target.personId)) {
+      family.leave(target.personId);
+      accounts.endPersonSessions(target.personId);
+      forgetNodesOf(target.personId);
+    }
     if (target.id === signedIn.id) clearCookie(c);
-    audit.record({ at: now(), kind: 'user.removed', actor: actor('person', signedIn.username), resourceKind: 'account', resource: target.id, summary: `${signedIn.username} removed ${target.username}` });
+    audit.record({ at: now(), kind: 'user.removed', actor: actor('person', signedIn.username, signedIn.personId), resourceKind: 'person', resource: target.personId, summary: `${signedIn.username} removed ${target.username}` });
     return c.json({ ok: true });
   });
 
@@ -337,7 +439,7 @@ export function createAuth({ proxies, accounts, audit, forgetNodesOf, limiter = 
     const refused = await confirmIdentity(c, signedIn, confirmation);
     if (refused) return refused;
     await accounts.setPassword(target.id, password).catch(rethrow);
-    audit.record({ at: now(), kind: 'user.password', actor: actor('person', signedIn.username), resourceKind: 'account', resource: target.id, summary: `${signedIn.username} set a new password for ${target.username}; their sessions were signed out` });
+    audit.record({ at: now(), kind: 'user.password', actor: actor('person', signedIn.username, signedIn.personId), resourceKind: 'person', resource: target.personId, summary: `${signedIn.username} set a new password for ${target.username}; their sessions were signed out` });
     return c.json({ ok: true });
   });
 
@@ -351,7 +453,7 @@ export function createAuth({ proxies, accounts, audit, forgetNodesOf, limiter = 
     return confirmIdentity(c, requireUser(c), password);
   };
 
-  return { gate, forgery, auth, users, access, requireUser, confirm };
+  return { gate, forgery, auth, users, access, requireUser, requireSigned, confirm };
 }
 
 /** Account problems are the caller's to fix, so they are refusals with the reason — not failures. */

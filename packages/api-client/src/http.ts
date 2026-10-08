@@ -351,6 +351,9 @@ export function serverApi(options: HttpApiOptions): ServerApi {
       logIn: async (username, password) => (await call<{ user: Account }>('POST', '/auth/login', { username, password })).user,
       logOut: async () => void (await call('POST', '/auth/logout', {})),
       changePassword: async (current, next) => void (await call('POST', '/auth/password', { current, next })),
+      challenge: () => call('POST', '/auth/challenge', {}),
+      signInWithKey: async (signIn) => (await call<{ user: Account }>('POST', '/auth/key', signIn)).user,
+      claim: async (chain) => (await call<{ user: Account }>('POST', '/auth/claim', { chain })).user,
     },
     accounts: {
       list: async () => (await get<{ users: AccountDetail[] }>('/users')).users,

@@ -19,6 +19,9 @@ import { openDatabase, openNodeDatabase } from './platform/database.ts';
 import { serverSecrets } from './platform/secrets.ts';
 import { AuditLog, type SqlDatabase } from '@kraftverk/store';
 
+/** The people the tests' logins are, in the family. */
+const TEST_PERSON = 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0AA';
+
 /*
   One interface, three ways to reach it (docs/PLAN-SHARED-CORE.md, principle
   4): the same questions asked of a home in the process (`hub.as(caller)`),
@@ -85,10 +88,10 @@ afterAll(async () => {
 
 beforeEach(async () => {
   database.exec('DELETE FROM device; DELETE FROM sample; DELETE FROM node; DELETE FROM home_setting; DELETE FROM audit; DELETE FROM automation;');
-  nodeDatabase.exec('DELETE FROM users; DELETE FROM login_session;');
+  nodeDatabase.exec('DELETE FROM login; DELETE FROM login_session;');
   await hub.sessions.sync([]);
   bus.lamps.clear();
-  account = (await accounts.createFirstUser('olof', PASSWORD)).id;
+  account = (await accounts.createFirstUser('olof', PASSWORD, TEST_PERSON)).id;
   const response = await app.fetch(
     new Request(`http://${HOST}/api/auth/login`, { method: 'POST', headers: { host: HOST, 'content-type': 'application/json', 'x-kraftverk-client': 'test' }, body: JSON.stringify({ username: 'olof', password: PASSWORD }) }),
     { requestIP: () => ({ address: '192.168.1.58' }) }

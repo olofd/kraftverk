@@ -111,8 +111,8 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
 
 /** A server's home, over HTTP — with what this app holds for it wrapped in, once that is open here. */
 function ServerHome({ serverKey, url, children }: { serverKey: string; url: string; children: ReactNode }) {
-  const { refresh } = useAuth();
-  const { account } = useAccount();
+  const { refresh, state: auth } = useAuth();
+  const { account, personal, reload } = useAccount();
   // The account's own family, kept here: offered to the server.
   const ownId = account.families.find((family) => family.master === 'here')?.familyId ?? null;
   // Whether the server answered the last time it was asked: said by every request, whoever made it.
@@ -124,6 +124,20 @@ function ServerHome({ serverKey, url, children }: { serverKey: string; url: stri
   const options = useMemo(() => ({ server, own: ownId ? { id: ownId } : null }), [ownId, server]);
   const { state, open } = useOpened(options);
   const home = state.status === 'open' ? state.home : null;
+  // Signed in as this account: the server's family is one it is in — recorded, so its key signs in from now.
+  const signedInAs = auth?.user?.id ?? null;
+  useEffect(() => {
+    if (signedInAs !== account.personId) return;
+    const api = home?.api ?? server.api;
+    void api
+      .family()
+      .then((family) => {
+        const kept = account.families.find((each) => each.familyId === family.id);
+        if (kept?.master === 'server' && kept.serverUrl === url && kept.name === family.name) return;
+        return personal.keepFamily(account.personId, { familyId: family.id, name: family.name, master: 'server', serverUrl: url, joinedAt: kept?.joinedAt ?? new Date().toISOString() }).then(reload);
+      })
+      .catch(() => undefined);
+  }, [account.families, account.personId, home, personal, reload, server, signedInAs, url]);
   const [writesAllowed, setWritesAllowed] = useWritesFor(home);
 
   const value = useMemo<FamilyValue | null>(() => {
