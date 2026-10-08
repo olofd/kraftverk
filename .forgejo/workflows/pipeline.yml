@@ -19,6 +19,12 @@ on:
 env:
   SERVER_IMAGE: kraftverk-server:${{ github.sha }}
   WEB_IMAGE: kraftverk-web:${{ github.sha }}
+  # Every check job installs from the registry afresh: a connection dropped
+  # mid-download (ECONNRESET) is tried again, five times and patiently,
+  # rather than failing the pipeline (npm's own default is twice, quickly).
+  NPM_CONFIG_FETCH_RETRIES: "5"
+  NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: "5000"
+  NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: "60000"
 
 jobs:
   # The checks split in parallel jobs, the deploy waiting for all of them:

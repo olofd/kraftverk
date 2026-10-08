@@ -64,7 +64,8 @@ FROM manifests AS deps
 # screens name them as optional peers, and npm resolves optional peers that
 # the app installs elsewhere in the workspace. Unused by the server, and in a
 # layer that changes only with the lockfile.)
-RUN npm ci --omit=dev --omit=optional --ignore-scripts \
+# A connection dropped mid-download is tried again, five times and patiently.
+RUN npm ci --fetch-retries=5 --fetch-retry-mintimeout=5000 --fetch-retry-maxtimeout=60000 --omit=dev --omit=optional --ignore-scripts \
       --workspace server --workspace packages/device-sdk \
       --workspace packages/transports \
       --workspace packages/integrations --workspace packages/devices \
@@ -82,7 +83,7 @@ FROM manifests AS web-build
 # app imports device types' screens from their own packages, which a
 # client-only install leaves unlinked. --ignore-scripts keeps the native
 # Bluetooth builds out; nothing the export uses needs an install script.
-RUN npm ci --ignore-scripts
+RUN npm ci --fetch-retries=5 --fetch-retry-mintimeout=5000 --fetch-retry-maxtimeout=60000 --ignore-scripts
 
 COPY packages ./packages
 COPY client ./client
