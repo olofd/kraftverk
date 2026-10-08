@@ -123,6 +123,14 @@ export function familyRoutes(deps: AppDeps): Hono {
     const input = await body(c, z.object({ invitation: z.string().max(40), secret: z.string().min(20).max(100), chain: CHAIN }).strict());
     return c.json(acceptInvitation(deps.hub, input as unknown as Parameters<typeof acceptInvitation>[1]));
   });
+  // A person forgotten: in the family, and every login here that was theirs, with its sessions.
+  api.delete('/people/:id', async (c) => {
+    const personId = c.req.param('id');
+    await familyFor(deps, c).people.erase(personId);
+    for (const user of deps.accounts.listUsers().filter((each) => each.personId === personId)) deps.accounts.forgetUser(user.id);
+    deps.accounts.endPersonSessions(personId);
+    return c.json({ ok: true });
+  });
   api.patch('/people/:id', async (c) => {
     const changes = await body(c, z.object({ role: z.enum(['admin', 'member', 'child']), nickname: z.string().max(30).nullable(), color: z.string().regex(/^#[0-9a-f]{6}$/) }).partial().strict());
     return c.json(await familyFor(deps, c).people.update(c.req.param('id'), changes));

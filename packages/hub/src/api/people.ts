@@ -1,6 +1,7 @@
 import { ApiError, type Caller, type KraftverkApi } from '@kraftverk/api-contract';
 import { isTimeZone } from '@kraftverk/device-sdk';
 import { checkChain } from '@kraftverk/identity';
+import { SOMEONE_WHO_LEFT } from '@kraftverk/store';
 
 import type { Hub } from '../node/hub.ts';
 import { scopeOf } from './scope.ts';
@@ -137,6 +138,17 @@ export function peopleApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'people'
         const invitation = hub.invitations.revoke(invitationId, new Date().toISOString())!;
         record('invitation.revoked', 'family', hub.family.get()!.id, `Took back an invitation${invitation.forName ? ` for ${invitation.forName}` : ''}`);
         return invitation;
+      },
+
+      async erase(id) {
+        const person = personOf(id);
+        if (me !== id) asAdmin();
+        if (!person.member) throw new ApiError('not-found', 'They are not in the family');
+        const names = [person.name, person.shortName, person.member.nickname, person.shownAs].filter((name): name is string => Boolean(name));
+        refusing(() => hub.people.erase(id, new Date().toISOString()));
+        record('person.erased', 'person', id, me === id ? `${SOMEONE_WHO_LEFT} the family, and asked to be forgotten` : `${SOMEONE_WHO_LEFT} the family, forgotten by an admin`);
+        // After the line that says so: one who forgot themselves is no one there too.
+        hub.audit.forget(id, names, SOMEONE_WHO_LEFT);
       },
 
       async update(id, changes) {

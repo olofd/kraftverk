@@ -17,6 +17,9 @@ type PersonRow = { id: string; name: string; short_name: string | null; picture_
 type MemberRow = { role: MemberRole; nickname: string | null; color: string; joined_at: string; left_at: string | null };
 type KeyRow = { id: string; kind: 'device' | 'recovery'; public_key: string; device_name: string | null; added_at: string; vouched: string | null; revoked_at: string | null };
 
+/** What a person forgotten is called, wherever they were named. */
+export const SOMEONE_WHO_LEFT = 'Someone who left';
+
 export class PeopleStore {
   readonly #db: SqlDatabase;
 
@@ -79,7 +82,7 @@ export class PeopleStore {
       this.#db
         .query(
           `INSERT INTO person (id, name, short_name, picture_id, locale, chain, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT (id) DO UPDATE SET name = excluded.name, short_name = excluded.short_name, picture_id = excluded.picture_id, locale = excluded.locale, chain = excluded.chain, updated_at = excluded.updated_at, managed_by = NULL`
+           ON CONFLICT (id) DO UPDATE SET name = excluded.name, short_name = excluded.short_name, picture_id = excluded.picture_id, locale = excluded.locale, chain = excluded.chain, updated_at = excluded.updated_at, managed_by = NULL, erased_at = NULL`
         )
         .run(person.id, person.profile.name, person.profile.shortName, this.#picture(person.profile.pictureId), person.profile.locale, JSON.stringify(chain), person.updatedAt);
       this.#keepKeys(person);
@@ -197,6 +200,24 @@ export class PeopleStore {
   }
 
   /** A member gone from the family — never the last admin — the row kept for the history that names them. */
+  /**
+   * A person forgotten (docs/PLAN-WORLD-MODEL.md §11.6): they leave, and
+   * all this family kept of them goes but their id — their name is
+   * "Someone who left". Showing who they are again, by an invitation, they
+   * are someone here again.
+   */
+  erase(personId: string, at: string): void {
+    this.#db.transaction(() => {
+      this.leave(personId, at);
+      this.#db.query('UPDATE member SET nickname = NULL WHERE person_id = ?').run(personId);
+      this.#db.query('DELETE FROM person_identity WHERE person_id = ?').run(personId);
+      this.#db.query('DELETE FROM shortcut WHERE person_id = ?').run(personId);
+      this.#db.query('UPDATE person_key SET added_with = NULL WHERE person_id = ?').run(personId);
+      this.#db.query('DELETE FROM person_key WHERE person_id = ?').run(personId);
+      this.#db.query("UPDATE person SET name = ?, short_name = NULL, picture_id = NULL, locale = NULL, chain = NULL, managed_by = NULL, updated_at = ?, erased_at = ? WHERE id = ?").run(SOMEONE_WHO_LEFT, at, at, personId);
+    })();
+  }
+
   leave(personId: string, at: string): void {
     if (this.roleOf(personId) === 'admin' && this.#admins() === 1) throw new Error('A family keeps at least one admin: make another one first');
     this.#db.query('UPDATE member SET left_at = ? WHERE person_id = ? AND left_at IS NULL').run(at, personId);

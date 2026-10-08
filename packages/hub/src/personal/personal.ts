@@ -178,6 +178,12 @@ export function personalApi(deps: PersonalDeps): PersonalApi {
       return viewOf(accountOf(personId));
     },
 
+    async leaveFamily(personId, familyId) {
+      accountOf(personId);
+      store.leaveFamily(personId, familyId);
+      return viewOf(accountOf(personId));
+    },
+
     async answer(personId, challenge) {
       const account = accountOf(personId);
       return answer(challenge, personId, await keyOf(account));

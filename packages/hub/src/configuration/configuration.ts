@@ -37,7 +37,7 @@ const CHANGES = new RegExp(
       'opening\\.(added|changed|removed)',
       'label\\.(added|changed|removed|set)',
       'family\\.founded',
-      'person\\.(changed|claimed)',
+      'person\\.(changed|claimed|erased)',
       'member\\.(joined|role|changed)',
       'user\\.removed',
       'config\\.(imported|restored)',

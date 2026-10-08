@@ -36,6 +36,20 @@ export class AuditLog {
     }
   }
 
+  /**
+   * A person forgotten on the timeline (docs/PLAN-WORLD-MODEL.md §11.6):
+   * where they did something, and where a line names them, `instead` is
+   * said. Their id stays.
+   */
+  forget(personId: string, names: readonly string[], instead: string): void {
+    this.#db.transaction(() => {
+      this.#db.query("UPDATE OR IGNORE audit SET actor_name = ? WHERE actor_kind = 'person' AND actor_id = ?").run(instead, personId);
+      const rename = this.#db.query("UPDATE OR IGNORE audit SET summary = replace(summary, ?, ?) WHERE (actor_kind = 'person' AND actor_id = ?) OR (resource_kind = 'person' AND resource = ?) OR instr(summary, ?) > 0");
+      // The longest first: "Anna Example" before "Anna".
+      for (const name of [...new Set(names)].filter((each) => each.trim()).sort((a, b) => b.length - a.length)) rename.run(name, instead, personId, personId, name);
+    })();
+  }
+
   /** Hears each line added, after it is added: what follows a change without each caller saying so. Returns what stops it. */
   onRecord(listener: (entry: AuditRecord) => void): () => void {
     this.#listeners.add(listener);

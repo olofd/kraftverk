@@ -606,6 +606,16 @@ describe('a person signs in', () => {
       expect((await call('/auth/key', { method: 'POST', body: theirs, on: fresh })).status).toBe(401);
       // A key's session has no password to confirm with: what needs one says so.
       expect((await call('/auth/password', { method: 'POST', body: { current: PASSWORD, next: 'another long password' }, cookie: byKey.token, on: fresh })).status).toBe(403);
+
+      // Bo, added with a password, then forgotten by her: his login goes, and his session with it.
+      const added = await call('/users', { method: 'POST', body: { username: 'bo', password: PASSWORD, yourPassword: PASSWORD }, cookie: setUp.token, on: fresh });
+      expect(added.status).toBe(201);
+      const bo = await call('/auth/login', { method: 'POST', body: { username: 'bo', password: PASSWORD }, on: fresh });
+      expect((await call('/people/me', { cookie: bo.token, on: fresh })).status).toBe(200);
+      expect((await call(`/people/${added.body.user.personId as string}`, { method: 'DELETE', cookie: setUp.token, on: fresh })).status).toBe(200);
+      expect((await call('/people/me', { cookie: bo.token, on: fresh })).status).toBe(401);
+      expect((await call('/auth/login', { method: 'POST', body: { username: 'bo', password: PASSWORD }, on: fresh })).status).toBe(401);
+      expect((await call('/people', { cookie: setUp.token, on: fresh })).body.people.map((person: { id: string }) => person.id)).toEqual([ANNA]);
     } finally {
       await fresh.close();
     }

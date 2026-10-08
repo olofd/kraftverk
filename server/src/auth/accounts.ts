@@ -257,6 +257,14 @@ export class Accounts {
     })();
   }
 
+  /** An account forgotten with the person it was: its sessions too — even the last, as there is no one left to sign in as it. */
+  forgetUser(userId: string): void {
+    this.#db.transaction(() => {
+      this.#db.query('DELETE FROM login_session WHERE login_id = ?').run(userId);
+      this.#db.query('DELETE FROM login WHERE id = ?').run(userId);
+    })();
+  }
+
   /** A session for a person: opened with a login's password, or — no login — by their own key. */
   createSession(who: { personId: string; id: string | null }, clientIp: string | null, userAgent: string | null): { token: string; expiresAt: string } {
     const token = randomBytes(32).toString('base64url');

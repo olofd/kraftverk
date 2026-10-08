@@ -134,7 +134,10 @@ function ServerHome({ serverKey, url, children }: { serverKey: string; url: stri
     void api.people
       .me()
       .then(async (me) => {
-        if (me && me.keys.length === 0) await servers.server?.auth.claim(await personal.chain(account.personId));
+        const chain = await personal.chain(account.personId);
+        if (me && me.keys.length === 0) await servers.server?.auth.claim(chain);
+        // What this account said since the family last heard — a new name, a picture, a device — it is shown.
+        else if (me && (await api.people.myChain()).length < chain.length) await api.people.present(chain);
       })
       .catch(() => undefined);
     void api

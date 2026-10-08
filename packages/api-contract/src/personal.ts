@@ -51,6 +51,8 @@ export interface PersonalApi {
   say(personId: string, said: Exclude<Said, { kind: 'created' | 'key-added' }>): Promise<AccountView>;
   /** A family they are in, as it is now. */
   keepFamily(personId: string, family: MyFamilyView): Promise<AccountView>;
+  /** A family they are no longer in — left, and forgotten there — let go of. */
+  leaveFamily(personId: string, familyId: string): Promise<AccountView>;
   /** A node's challenge, answered with this device's key: signing in. */
   answer(personId: string, challenge: Challenge): Promise<SignIn>;
   /** On a new device: its own new key, and the code to show the first device — what it is called, and its proof it holds the key. */

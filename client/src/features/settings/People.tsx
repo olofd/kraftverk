@@ -8,6 +8,7 @@ import { Card, Chips, haptic, Row, RowSeparator, SectionLabel, ToggleRow } from 
 import { ErrorText } from '../../components/ErrorText';
 import { QrCode } from '../../components/QrCode';
 import { Screen } from '../../components/Screen';
+import { confirmAction } from '../../platform/confirm';
 import { useAccount } from '../../state/AccountProvider';
 import { useFamily } from '../../state/FamilyProvider';
 import { useServers } from '../../state/ServersProvider';
@@ -31,7 +32,7 @@ const STATUS_WORDS: Record<InvitationView['status'], string> = { open: 'Not take
 
 export function People() {
   const { api, role } = useFamily();
-  const { account } = useAccount();
+  const { account, personal, reload } = useAccount();
   const { active } = useServers();
   const [people, setPeople] = useState<PersonView[] | null>(null);
   const [invitations, setInvitations] = useState<InvitationView[]>([]);
@@ -61,6 +62,26 @@ export function People() {
     }
   };
 
+  /** One forgotten by an admin: they leave, and the family keeps nothing of them but that someone was here. */
+  const forget = async (person: PersonView) => {
+    if (!(await confirmAction(`Forget ${person.shownAs}?`, 'They leave the family, and it forgets them: their name becomes “Someone who left”, here and on the timeline, and their devices are no longer signed in here.', 'Forget them', 'dangerous'))) return;
+    await doing(() => api.people.erase(person.id), 'They could not be forgotten');
+  };
+  /** Oneself, leaving and forgotten: this account lets go of the family too. */
+  const leave = async () => {
+    if (!(await confirmAction('Leave this family, and be forgotten?', 'You leave, and it forgets you: your name becomes “Someone who left”, here and on its timeline. Coming back takes a new invitation.', 'Leave', 'dangerous'))) return;
+    haptic();
+    setProblem(null);
+    try {
+      const family = await api.family();
+      await api.people.erase(account.personId);
+      await personal.leaveFamily(account.personId, family.id);
+      await reload();
+    } catch (err) {
+      setProblem(describeError(err) || 'You could not leave');
+    }
+  };
+
   const waiting = invitations.filter((each) => each.status === 'waiting');
   return (
     <Screen back="App settings" backTo={PATHS.settings.index} title="People" subtitle="Who your family is, and inviting someone">
@@ -78,8 +99,11 @@ export function People() {
                   subtitle={[person.member ? ROLE_WORDS[person.member.role] : null, person.shownAs !== person.name ? person.name : null, person.keys.length ? null : 'No device of their own yet'].filter(Boolean).join(' · ')}
                 />
                 {admin && person.member && person.id !== account.personId ? (
-                  <XStack paddingHorizontal="$4" paddingBottom="$3">
+                  <XStack paddingHorizontal="$4" paddingBottom="$3" gap="$2" flexWrap="wrap" alignItems="center">
                     <Chips label={`${person.shownAs}'s role`} options={ROLES} value={person.member.role} onChange={(next) => void doing(() => api.people.update(person.id, { role: next }), 'Their role could not be changed')} />
+                    <Button size="$3" minHeight={44} chromeless color="$danger" onPress={() => void forget(person)}>
+                      Forget them
+                    </Button>
                   </XStack>
                 ) : null}
               </YStack>
@@ -140,6 +164,23 @@ export function People() {
                   />
                 </YStack>
               ))}
+          </Card>
+        </YStack>
+      ) : null}
+
+      {me && role === 'follower' ? (
+        <YStack gap="$2">
+          <SectionLabel>Leaving</SectionLabel>
+          <Card inset>
+            <Row
+              title="Leave this family"
+              subtitle={admin && people?.filter((person) => person.member?.role === 'admin').length === 1 ? 'You are its only admin: make someone else one first' : 'And be forgotten by it: your name, your devices, your shortcuts'}
+              accessory={
+                <Button size="$3" minHeight={44} chromeless color="$danger" onPress={() => void leave()}>
+                  Leave
+                </Button>
+              }
+            />
           </Card>
         </YStack>
       ) : null}

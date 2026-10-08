@@ -121,6 +121,11 @@ export class PersonalStore {
       .map((row) => ({ familyId: row.family_id, name: row.name, master: row.master, serverUrl: row.server_url, joinedAt: row.joined_at }));
   }
 
+  /** A family an account is no longer in. */
+  leaveFamily(personId: string, familyId: string): void {
+    this.#db.query('DELETE FROM my_family WHERE person_id = ? AND family_id = ?').run(personId, familyId);
+  }
+
   /** A family an account is in, or what it is now called. */
   keepFamily(personId: string, family: MyFamily): void {
     this.#db

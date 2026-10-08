@@ -300,6 +300,13 @@ export interface KraftverkApi {
     approve(invitationId: string): Promise<PersonView>;
     /** An admin's: an invitation taken back. */
     revokeInvitation(invitationId: string): Promise<InvitationView>;
+    /**
+     * A person forgotten (docs/PLAN-WORLD-MODEL.md §11.6) — oneself, or anyone
+     * by an admin: they leave, their name becomes "Someone who left" here and
+     * on the timeline, and their picture, keys, linked identities and
+     * shortcuts go. Their id stays, so history adds up and points at no one.
+     */
+    erase(personId: string): Promise<void>;
   };
   /** A family's labels (docs/PLAN-WORLD-MODEL.md §8.13): any grouping it wants, on devices, spaces and automations. */
   labels: {

@@ -226,4 +226,37 @@ describe('a family founded by its first person', () => {
     await t.as(asAnna).labels.add({ name: 'Heating' });
     expect((await t.home.timeline()).find((entry) => entry.kind === 'label.added')?.actor.name).toBe('Mum');
   });
+
+  test('their own name and picture, said by them; and forgotten — by themselves or an admin — their id alone stays', async () => {
+    const { personal } = aDevice();
+    const anna = (await personal.create({ name: 'Anna', deviceName: 'Phone' })).account;
+    const bo = (await personal.create({ name: 'Bo Example', deviceName: 'Phone' })).account;
+    const asAnna: Caller = { kind: 'person', id: anna.personId, name: 'Anna' };
+    const asBo: Caller = { kind: 'person', id: bo.personId, name: 'Bo Example' };
+    await t.as(asAnna).people.found({ chain: await personal.chain(anna.personId), name: 'The Examples', kind: 'family', home: { name: 'Home', type: 'house', timeZone: 'Europe/Stockholm' } });
+    const { invitation, secret } = await t.as(asAnna).people.invite({ role: 'member', needsApproval: false });
+    acceptInvitation(t.hub, { invitation: invitation.id, secret, chain: await personal.chain(bo.personId) });
+
+    // Bo says what he goes by: the family hears it from him, and says so.
+    await personal.say(bo.personId, { kind: 'profile', profile: { name: 'Bo Example', shortName: 'Bo', locale: null, pictureId: null } });
+    expect((await t.as(asBo).people.present(await personal.chain(bo.personId))).shownAs).toBe('Bo');
+    expect((await t.home.timeline()).find((entry) => entry.kind === 'person.changed')?.summary).toBe('Bo Example changed their profile');
+    await t.as(asBo).labels.add({ name: 'Garden' });
+
+    // Only an admin forgets someone else; Bo may forget himself.
+    expect((await refusal(t.as(asBo).people.erase(anna.personId))).kind).toBe('forbidden');
+    t.hub.shortcuts.set(bo.personId, []);
+    await t.as(asBo).people.erase(bo.personId);
+    expect((await t.as(asAnna).people.list()).map((each) => each.name)).toEqual(['Anna']);
+    expect(t.hub.people.get(bo.personId)).toMatchObject({ name: 'Someone who left', shortName: null, keys: [], linked: [], member: null });
+    expect(t.hub.people.chainOf(bo.personId)).toEqual([]);
+    // The timeline names no one: what he did, and what was said of him.
+    const lines = await t.home.timeline({ limit: 1000 });
+    expect(lines.find((entry) => entry.kind === 'label.added')?.actor).toEqual({ kind: 'person', id: bo.personId, name: 'Someone who left' });
+    expect(lines.filter((entry) => /\bBo\b/.test(entry.summary) || entry.actor.name.includes('Bo'))).toEqual([]);
+    expect(lines[0]).toMatchObject({ kind: 'person.erased', summary: 'Someone who left the family, and asked to be forgotten' });
+    expect(changesConfiguration('person.erased')).toBe(true);
+    // The last admin is not forgotten: the family keeps one.
+    expect((await refusal(t.as(asAnna).people.erase(anna.personId))).message).toContain('at least one admin');
+  });
 });
