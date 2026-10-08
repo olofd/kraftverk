@@ -57,6 +57,15 @@ export type TrackPointView = { at: string; latitude: number; longitude: number; 
 /** A tool of the device's type that its session can run now, as data. */
 export type ToolView = ToolSpec & { name: string };
 
+/** What a person is to a device (docs/PLAN-WORLD-MODEL.md §8.8). */
+export type DeviceRole = 'carries' | 'drives' | 'owns' | 'uses';
+
+/**
+ * Who a device is with, by person id: who carries it — its position is
+ * theirs — its usual driver, whose it is, and who uses it.
+ */
+export type DevicePeople = { carries: string | null; drives: string | null; owns: string[]; uses: string[] };
+
 /** A saved device, joined to what it is doing right now. */
 export type DeviceView = {
   id: SavedDeviceId;
@@ -73,6 +82,8 @@ export type DeviceView = {
   pausedAt: string | null;
   /** How many days where it has been is kept, its owner's choice: 1 to 366. Null: none of it is. */
   trackDays: number | null;
+  /** Who it is with: who carries it, drives it, owns it, uses it. */
+  people: DevicePeople;
   /** Where it stands now — its main part — in which space of which home; null: nowhere said. */
   placement: PlacementView | null;
   /** Its labels' ids. */

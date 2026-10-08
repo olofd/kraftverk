@@ -127,6 +127,17 @@ function deviceSchema(types: readonly VocabularyType[]): Schema {
       track: { type: 'string', pattern: '^[0-9]+ ?days?$', description: 'How long where it has been is kept: "30 days", from 1 day to 366. Where it was is never in the file.' },
       place: { ...PLACE, description: 'Where it stands: a home by its key, a space of it — the home itself when none — perhaps an opening it is at.' },
       based: { ...PLACE, description: 'Where one that moves is based — a car, a scooter: a home by its key, perhaps a space of it.' },
+      people: {
+        type: 'object',
+        description: 'Who it is with, by the people’s keys in this file: who carries it — where it is, they are — drives it, owns it, uses it.',
+        additionalProperties: false,
+        properties: {
+          carries: { type: 'string', description: 'Who carries it: its position is theirs.' },
+          drives: { type: 'string', description: 'Its usual driver.' },
+          owns: { type: 'array', items: { type: 'string' }, description: 'Whose it is.' },
+          uses: { type: 'array', items: { type: 'string' }, description: 'Who uses it.' },
+        },
+      },
       labels: LABELS,
       settings: { type: 'object', description: 'Its type’s settings.' },
       connect: {

@@ -65,6 +65,13 @@ export function deviceRoutes(deps: AppDeps, confirm: ConfirmPassword): Hono {
     return c.json(await familyFor(deps, c).devices.setTrack(id(c.req.param('id')), days));
   });
 
+  /** Who it is with: who carries it, drives it, owns it, uses it — each role given, or left as it is. */
+  api.put('/devices/:id/people', async (c) => {
+    const person = z.string().regex(/^p-[0-9A-HJKMNP-TV-Z]{26}$/);
+    const people = await body(c, z.object({ carries: person.nullable(), drives: person.nullable(), owns: z.array(person).max(20), uses: z.array(person).max(20) }).partial().strict());
+    return c.json(await familyFor(deps, c).devices.setPeople(id(c.req.param('id')), people));
+  });
+
   /** Where it has been since a time, while that is kept: never cached, never in an export. */
   api.get('/devices/:id/track', async (c) => {
     const { since } = query(c, z.object({ since: z.iso.datetime({ offset: true }) }).strict());

@@ -12,7 +12,7 @@ import {
   type WaySource,
 } from '@kraftverk/home-file';
 import { keyFrom, methodsOf, partsOf, type NodeId, type PolicyValueName, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
-import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, FamilyStore, LinkStore, MediaStore, LabelStore, PeopleStore, PlaceStore, SecretsAtRest, ShortcutStore, SpaceStore } from '@kraftverk/store';
+import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, FamilyStore, LinkStore, MediaStore, LabelStore, PeopleStore, PlaceStore, SecretsAtRest, ShortcutStore, DevicePeopleStore, SpaceStore } from '@kraftverk/store';
 import { base64url } from '@kraftverk/identity';
 import type { SpaceView } from '@kraftverk/api-contract';
 
@@ -49,6 +49,8 @@ export type ConfigDeps = {
   people: PeopleStore;
   /** Each person's own shortcuts on their home page. */
   shortcuts: ShortcutStore;
+  /** Who each device is with. */
+  devicePeople: DevicePeopleStore;
   /** Pictures, by their content: what a home or a device in a file names. */
   media: MediaStore;
   /** A home's own values: how much is a load, the reserve. */
@@ -163,6 +165,8 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
   if (options.devices) for (const key of options.devices) if (!devices.some((device) => device.key === key)) notes.push(`There is no device "${key}"`);
   if (options.automations) for (const key of options.automations) if (!automations.some((automation) => automation.key === key)) notes.push(`There is no automation "${key}"`);
 
+  /** Each person in the file, by their id: what a device's people are written as. */
+  const personKeys = new Map<string, string>();
   if (everything) {
     const family = deps.family.get();
     if (family) document.family = { name: family.name, kind: family.kind, locale: family.locale };
@@ -177,6 +181,7 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
         const automation = deps.automations.get(id);
         return automation ? [automation.key] : [];
       });
+      personKeys.set(person.id, key);
       document.people[key] = { id: person.id, name: person.name, role: person.member.role, nickname: person.member.nickname, color: person.member.color, chain: base64url(new TextEncoder().encode(JSON.stringify(chain))), shortcuts };
     }
     for (const zone of deps.places.zones()) document.zones[zone.key] = { name: zone.name, icon: zone.icon, location: zone.location };
@@ -245,7 +250,11 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
       }
       ways.push({ method: connection.method, through: bridge?.key ?? null, address: connection.address, config: connection.config, secrets, exportable: connection.secretsExportable, fixedAddress: Boolean(method?.address) });
     }
-    document.devices[device.key] = deviceEntryFrom({ ...device, place: placeOf(deps, device.id), labels: labelKeys(labelled.devices[device.id]) }, ways);
+    // Who it is with, when the file has its people: one device's file names none.
+    const people = deps.devicePeople.of(device.id);
+    const keyed = (ids: readonly string[]) => ids.flatMap((id) => personKeys.get(id) ?? []);
+    const withPeople = everything ? { carries: keyed(people.carries ? [people.carries] : [])[0] ?? null, drives: keyed(people.drives ? [people.drives] : [])[0] ?? null, owns: keyed(people.owns), uses: keyed(people.uses) } : null;
+    document.devices[device.key] = deviceEntryFrom({ ...device, place: placeOf(deps, device.id), labels: labelKeys(labelled.devices[device.id]), people: withPeople }, ways);
   }
 
   // Links between the devices it carries.

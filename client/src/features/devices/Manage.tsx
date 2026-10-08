@@ -8,6 +8,7 @@ import { Card, haptic, Icon, Row, RowSeparator, SectionLabel, TrackSetting } fro
 import { ErrorText } from '../../components/ErrorText';
 import { confirmAction } from '../../platform/confirm';
 import { useDevices } from '../../state/DevicesProvider';
+import { DevicePeople } from './DevicePeople';
 
 
 // --- manage -----------------------------------------------------------------------
@@ -102,6 +103,7 @@ export function Manage({ device }: { device: DeviceView }) {
             <TrackSetting days={device.trackDays} disabled={busy} onChange={keepTrack} />
           </>
         ) : null}
+        <DevicePeople device={device} located={located} />
         <RowSeparator />
         <Row
           title={device.pausedAt ? 'Paused' : `Pause this ${device.kind === 'hardware' ? 'device' : device.kind}`}

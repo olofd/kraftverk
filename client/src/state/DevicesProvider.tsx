@@ -11,6 +11,7 @@ import {
   type ConnectionView,
   type DeviceActions,
   type DeviceScreenProps,
+  type DevicePeople,
   type DeviceView,
   type PictureRef,
   type LinkView,
@@ -86,6 +87,8 @@ type DevicesContextValue = {
   setPicture: (id: string, picture: PictureRef) => Promise<void>;
   /** Pauses it, or resumes it. */
   setPaused: (id: string, paused: boolean) => Promise<void>;
+  /** Who it is with: who carries it, drives it, owns it, uses it — each role given. */
+  setPeople: (id: string, people: Partial<DevicePeople>) => Promise<void>;
   remove: (id: string) => Promise<void>;
   deleteHistory: (id: string, name: string) => Promise<void>;
   prefer: (device: DeviceView, connection: ConnectionView) => Promise<void>;
@@ -366,6 +369,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       setExportable: (device, connection, exportable, yourPassword) => mutate(() => api.connections.setExportable(device.id, connection.id as ConnectionId, exportable, yourPassword)),
       setPicture: (id, picture) => mutate(() => api.devices.setPicture(savedDeviceId(id), picture)),
       setPaused: (id, paused) => mutate(() => api.devices.setPaused(savedDeviceId(id), paused)),
+      setPeople: (id, people) => mutate(() => api.devices.setPeople(savedDeviceId(id), people)),
       remove: (id) => mutate(() => api.devices.remove(savedDeviceId(id))),
       deleteHistory: (id, name) => mutate(() => api.devices.deleteHistory(savedDeviceId(id), name)),
       prefer: (device, connection) => mutate(() => api.connections.prefer(device.id, connection.id as ConnectionId)),

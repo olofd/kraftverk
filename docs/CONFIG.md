@@ -103,6 +103,7 @@ devices:
     type: acme.phone
     name: Pocket phone
     track: 30 days                # where it has been is kept a month: never where it was, in a file
+    people: { carries: anna-example, owns: [anna-example] }   # who it is with, by the people's keys
     connect:
       - via: account
         through: family-account

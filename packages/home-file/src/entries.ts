@@ -1,6 +1,6 @@
 import type { AutomationMode, Rule } from '@kraftverk/automation';
 
-import type { AutomationEntry, DeviceEntry, PlaceEntry, Scalar, SecretValue } from './document.ts';
+import type { AutomationEntry, DeviceEntry, DevicePeopleEntry, PlaceEntry, Scalar, SecretValue } from './document.ts';
 import type { Use } from '@kraftverk/automation';
 
 /*
@@ -128,6 +128,8 @@ export type DeviceSource = {
   place?: PlaceEntry | null;
   /** Its labels' keys, likewise. */
   labels?: string[];
+  /** Who it is with, by the people's keys in the file, likewise. */
+  people?: DevicePeopleEntry | null;
 };
 
 /** One way a device is reached, as an entry is written from it: its secrets as asked for — by name, sealed, or plain — and whether its method fixes the address. */
@@ -162,6 +164,7 @@ export function deviceEntryFrom(device: DeviceSource, ways: readonly WaySource[]
     paused: device.pausedAt !== null,
     track: device.trackDays,
     place: device.place ?? null,
+    people: device.people ?? null,
     labels: device.labels ?? [],
     settings: scalars(device.config),
     connect: ways.map((way) => ({ via: way.method, through: way.through, address: way.fixedAddress ? null : way.address, settings: scalars(way.config), secrets: way.secrets, exportable: way.exportable })),

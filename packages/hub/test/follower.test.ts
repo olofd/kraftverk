@@ -378,6 +378,7 @@ test('this app holds its way only while nothing above it reaches the device, and
       removedAt: null,
       pausedAt: null,
       trackDays: null,
+      people: { carries: null, drives: null, owns: [], uses: [] },
       placement: null,
       labels: [],
       kind: 'hardware' as const,

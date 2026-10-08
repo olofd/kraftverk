@@ -1,3 +1,4 @@
+import { DEVICE_ROLES } from '@kraftverk/store';
 import { ApiError, type Caller, type ChangesQuery, type DeviceTypeListing, type HistoryQuery, type KraftverkApi } from '@kraftverk/api-contract';
 import { capabilityIn, CATEGORIES, describeDeviceType, isBridgedMethod, isSimulated, methodsOf, placementsOf, platformsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
 import { deviceReader } from '@kraftverk/holder';
@@ -218,6 +219,31 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
             days === null ? `Stopped keeping where "${device.name}" has been, and forgot it` : `Keeping where "${device.name}" has been for ${days === 1 ? '1 day' : `${days} days`}`,
             { days }
           );
+          changed();
+        }
+        return viewOf(device.id);
+      },
+
+      async setPeople(id, given) {
+        if (caller.kind === 'agent') throw new ApiError('forbidden', 'An assistant cannot say who a device is with');
+        const device = deviceOf(id);
+        const was = hub.devicePeople.of(device.id);
+        const at = new Date().toISOString();
+        const nameOf = (personId: string) => hub.people.get(personId)?.shownAs ?? 'someone';
+        const said: string[] = [];
+        for (const role of DEVICE_ROLES) {
+          const value = given[role];
+          if (value === undefined) continue;
+          const ids = value === null ? [] : typeof value === 'string' ? [value] : [...new Set(value)];
+          for (const personId of ids) if (!hub.people.get(personId)?.member) throw new ApiError('invalid', 'Only someone in the family can be with a device');
+          const before = role === 'carries' || role === 'drives' ? (was[role] ? [was[role]!] : []) : was[role];
+          if (before.join() === ids.join()) continue;
+          hub.devicePeople.set(device.id, role, ids, at);
+          const who = ids.length ? ids.map(nameOf).join(' and ') : 'Nobody';
+          said.push({ carries: `${who} carries it`, drives: `${who} drives it`, owns: `${who} owns it`, uses: `${who} uses it` }[role]);
+        }
+        if (said.length) {
+          record('device.people', 'device', device.id, `"${device.name}": ${said.join('; ')}`, { people: hub.devicePeople.of(device.id) });
           changed();
         }
         return viewOf(device.id);

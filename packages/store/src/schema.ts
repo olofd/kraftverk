@@ -649,6 +649,24 @@ export const SCHEMA = `
   );
 
   /*
+    Who a device is with (docs/PLAN-WORLD-MODEL.md §8.8): carries — its
+    position is theirs — drives, its usual driver; owns, it is theirs; uses,
+    theirs to use. Intervals: who carried it when is history. One carrier
+    and one usual driver at a time. A device deleted takes its rows with it.
+  */
+  CREATE TABLE device_person (
+    device_id TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+    person_id TEXT NOT NULL REFERENCES person (id),
+    role      TEXT NOT NULL CHECK (role IN ('carries', 'drives', 'owns', 'uses')),
+    since     TEXT NOT NULL,
+    until     TEXT,
+    PRIMARY KEY (device_id, person_id, role, since),
+    CHECK (until IS NULL OR until > since)
+  );
+  CREATE UNIQUE INDEX device_person_one ON device_person (device_id, role) WHERE until IS NULL AND role IN ('carries', 'drives');
+  CREATE INDEX device_person_person ON device_person (person_id) WHERE until IS NULL;
+
+  /*
     Each person's own shortcuts on their home page (docs/PLAN-WORLD-MODEL.md
     §8.3): the automations they start from it, in their order. A person's
     own, never the family's; an automation deleted, or a person erased,

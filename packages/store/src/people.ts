@@ -2,6 +2,7 @@ import type { MemberRole, PersonView } from '@kraftverk/api-contract';
 import { checkChain, hashOf, keyId, type Json, type Person, type PublicJwk, type Statement } from '@kraftverk/identity';
 
 import type { SqlDatabase } from './database.ts';
+import { DevicePeopleStore } from './device-people.ts';
 
 /**
  * A family's people (docs/PLAN-WORLD-MODEL.md §8.2, §8.3, §10): each as their
@@ -221,6 +222,8 @@ export class PeopleStore {
   leave(personId: string, at: string): void {
     if (this.roleOf(personId) === 'admin' && this.#admins() === 1) throw new Error('A family keeps at least one admin: make another one first');
     this.#db.query('UPDATE member SET left_at = ? WHERE person_id = ? AND left_at IS NULL').run(at, personId);
+    // Gone from the family, they carry, drive, own and use none of its devices.
+    new DevicePeopleStore(this.#db).endFor(personId, at);
   }
 
   #admins(): number {

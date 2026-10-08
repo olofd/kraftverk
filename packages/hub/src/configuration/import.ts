@@ -1,4 +1,4 @@
-import { ApiError, type ImportApplied, type ImportItem, type ImportPlan, type LabelTarget, type PlacementInput } from '@kraftverk/api-contract';
+import { ApiError, type DevicePeople, type ImportApplied, type ImportItem, type ImportPlan, type LabelTarget, type PlacementInput } from '@kraftverk/api-contract';
 import { checkBinding, checkRule, isAutomationRole, isGroupRole, keepsSo, useOf, useText, type AutomationDraft, type BoundPart, type GroupRole, type PartRole, type PartUse } from '@kraftverk/automation';
 import type { AutomationEngine, AutomationLibrary, AutomationRecord } from '@kraftverk/automation-engine';
 import {
@@ -31,6 +31,7 @@ import {
   type ConfigDocument,
   type ConnectEntry,
   type DeviceEntry,
+  type DevicePeopleEntry,
   type HomeEntry,
   type PlaceEntry,
   type SecretValue,
@@ -262,7 +263,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     else if (misplaced) problem(misplaced, ['devices', key, entry.place!.role === 'based' ? 'based' : 'place']);
     if (leftOut.has(key)) continue;
     const back = existing ? null : removedMatch(deps, key, entry);
-    devices.push(existing ? { key, name: entry.name, ...deviceChanges(deps, existing, placesLeft.has(key) ? { ...entry, place: null } : entry, secrets, key) } : { key, name: entry.name, action: back ? 'restore' : 'add', changes: back ? [`brought back, with its history (removed ${back.removedAt!.slice(0, 10)})`] : [] });
+    devices.push(existing ? { key, name: entry.name, ...deviceChanges(deps, existing, placesLeft.has(key) ? { ...entry, place: null } : entry, secrets, key, (personKey) => document.people[personKey]?.id ?? null) } : { key, name: entry.name, action: back ? 'restore' : 'add', changes: back ? [`brought back, with its history (removed ${back.removedAt!.slice(0, 10)})`] : [] });
   }
   if (needs.passphrase) notes.push(needs.passphrase === 'missing' ? 'It carries secrets sealed with a passphrase: give it to open them' : 'The passphrase given does not open its secrets');
 
@@ -528,8 +529,9 @@ function candidatesFor(deps: ImportDeps, need: PartRole | null, document: Config
 }
 
 /** How a device would change: each difference in words, or "same". */
-function deviceChanges(deps: ImportDeps, existing: DeviceRecord, entry: DeviceEntry, secrets: Map<string, string>, key: string): Pick<ImportItem, 'action' | 'changes'> {
+function deviceChanges(deps: ImportDeps, existing: DeviceRecord, entry: DeviceEntry, secrets: Map<string, string>, key: string, personId: (key: string) => string | null): Pick<ImportItem, 'action' | 'changes'> {
   const changes: string[] = [];
+  if (entry.people && !samePeople(deps.devicePeople.of(existing.id), entry.people, personId)) changes.push('who it is with');
   if (existing.name !== entry.name) changes.push(`name: ${existing.name} → ${entry.name}`);
   if (entry.identity !== null && existing.identity !== entry.identity) changes.push('who it is: its identity');
   if (entry.picture !== existing.picture && entry.picture !== null) changes.push('its picture');
@@ -699,7 +701,7 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
         if (item.action === 'same') continue;
         const entry = document.devices[item.key]!;
         each(entry.name, () => {
-          writeDevice(deps, item.key, entry, kept.secrets, choices.secrets ?? {}, kept.by);
+          writeDevice(deps, item.key, entry, kept.secrets, choices.secrets ?? {}, kept.by, (personKey) => document.people[personKey]?.id ?? null);
           (item.action === 'add' ? applied.devices.added : item.action === 'restore' ? applied.devices.restored : applied.devices.changed).push(item.key);
         });
       }
@@ -905,7 +907,18 @@ function spotOf(deps: ImportDeps, place: PlaceEntry): PlacementInput | null {
 }
 
 /** A device added or changed as its entry says: what it is, how it is reached, its secrets, kept or given. */
-function writeDevice(deps: ImportDeps, key: string, entry: DeviceEntry, opened: Map<string, string>, given: Record<string, string>, by: Actor): void {
+/** Who a device is with, as kept here and as a file says it: the same people in each role. */
+function samePeople(kept: DevicePeople, said: DevicePeopleEntry, personId: (key: string) => string | null): boolean {
+  const ids = (keys: readonly string[]) => keys.flatMap((key) => personId(key) ?? []).sort().join();
+  return (
+    ids(said.carries ? [said.carries] : []) === (kept.carries ?? '') &&
+    ids(said.drives ? [said.drives] : []) === (kept.drives ?? '') &&
+    ids(said.owns) === [...kept.owns].sort().join() &&
+    ids(said.uses) === [...kept.uses].sort().join()
+  );
+}
+
+function writeDevice(deps: ImportDeps, key: string, entry: DeviceEntry, opened: Map<string, string>, given: Record<string, string>, by: Actor, personId: (key: string) => string | null): void {
   // Loaded when its plan was made: what it is, with its settings, is its code's to say.
   const type = deps.types.loaded(entry.type)!;
   const settings = validateConfig(type.config ?? { fields: {} }, entry.settings);
@@ -926,6 +939,15 @@ function writeDevice(deps: ImportDeps, key: string, entry: DeviceEntry, opened: 
   const spot = entry.place && !samePlace(placeOf(deps, device.id), entry.place) ? spotOf(deps, entry.place) : null;
   if (spot) deps.spaces.place(device.id, spot, by);
   writeLabels(deps, { device: device.id }, entry.labels);
+  // Who it is with, where the file says so: each a person in the family, as the file's people were just written.
+  if (entry.people && !samePeople(deps.devicePeople.of(device.id), entry.people, personId)) {
+    const at = new Date().toISOString();
+    const members = (keys: readonly string[]) => keys.flatMap((personKey) => personId(personKey) ?? []).filter((id) => deps.people.get(id)?.member);
+    deps.devicePeople.set(device.id, 'carries', members(entry.people.carries ? [entry.people.carries] : []), at);
+    deps.devicePeople.set(device.id, 'drives', members(entry.people.drives ? [entry.people.drives] : []), at);
+    deps.devicePeople.set(device.id, 'owns', members(entry.people.owns), at);
+    deps.devicePeople.set(device.id, 'uses', members(entry.people.uses), at);
+  }
 
   const ways = governed(deps, device.id);
   entry.connect.forEach((way, index) => {

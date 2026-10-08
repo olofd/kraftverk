@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures';
+import { expect, OWNER, test } from './fixtures';
 
 import { addSimulated, link, unique } from './helpers';
 
@@ -126,4 +126,17 @@ test('a NIU scooter is found under Vehicles — the common one, and a model of i
   const card = page.getByRole('button', { name: new RegExp(`^${scooter.name},`) });
   await expect(card).toContainText('Range');
   await expect(card).toContainText(/Charging\s*(Yes|No)/);
+});
+
+test('whose a device is: chosen in its settings from the family, and kept', async ({ page, request }) => {
+  const plug = await addSimulated(request, 'atorch.s1w', unique('Desk plug'));
+  await page.goto(`/devices/${plug.id}/settings`);
+  const owner = page.getByRole('group', { name: 'Whose it is' }).getByRole('checkbox', { name: OWNER.name });
+  await expect(owner).toHaveAttribute('aria-checked', 'false');
+  await owner.click();
+  await expect(owner).toHaveAttribute('aria-checked', 'true');
+  // A plug says nothing of where it is: nobody carries it.
+  await expect(page.getByRole('radiogroup', { name: 'Who carries it' })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole('group', { name: 'Whose it is' }).getByRole('checkbox', { name: OWNER.name })).toHaveAttribute('aria-checked', 'true');
 });

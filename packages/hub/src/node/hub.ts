@@ -17,6 +17,7 @@ import {
   PeopleStore,
   InvitationStore,
   ShortcutStore,
+  DevicePeopleStore,
   FamilyStore,
   NodeStore,
   ConnectionStore,
@@ -134,6 +135,8 @@ export class Hub {
   readonly invitations: InvitationStore;
   /** Each person's own shortcuts on their home page. */
   readonly shortcuts: ShortcutStore;
+  /** Who each device is with: who carries it, drives it, owns it, uses it. */
+  readonly devicePeople: DevicePeopleStore;
   /** The family this database is, and its master. */
   readonly family: FamilyStore;
   /** This node: what its database is, and what holds the ways it holds. */
@@ -257,6 +260,7 @@ export class Hub {
     this.people = new PeopleStore(db);
     this.invitations = new InvitationStore(db);
     this.shortcuts = new ShortcutStore(db);
+    this.devicePeople = new DevicePeopleStore(db);
     // The family's values, as its API sets them: its first home's. The gateway asks each device's own home (`policyValues`).
     const policyHome = new HomeSettings(db, () => ensureFirstHome(this.places).id);
     this.policy = { values: () => policyValues(policyHome), set: (name, value) => setPolicyValue(policyHome, name, value) };
@@ -270,7 +274,7 @@ export class Hub {
     this.drafts = drafts({ history: this.history, events, catalog, sessions, library: this.library, engine: this.engine, automations });
 
     this.heldReadings = new HeldReadings(this.history);
-    this.views = new DeviceViews({ catalog, types, sessions, connections, links, nodes, transports, heldReadings: this.heldReadings, self: self.id, master: () => this.family.get()!.masterId, readOnly: options.readOnly, placement: (id) => this.spaces.placement(id), labels: (id) => this.labels.on({ device: id }).map((label) => label.id) });
+    this.views = new DeviceViews({ catalog, types, sessions, connections, links, nodes, transports, heldReadings: this.heldReadings, self: self.id, master: () => this.family.get()!.masterId, readOnly: options.readOnly, placement: (id) => this.spaces.placement(id), labels: (id) => this.labels.on({ device: id }).map((label) => label.id), people: (id) => this.devicePeople.of(id) });
     this.ignored = new IgnoredSightings(this.db);
     this.nearby = new Nearby({ types, protocols, transports, connections, catalog, sessions, ignored: this.ignored });
     this.sampler = new Sampler({ history: this.history, audit: this.audit, events, tracks: this.tracks }, this.views);
@@ -297,6 +301,7 @@ export class Hub {
       labels: this.labels,
       people: this.people,
       shortcuts: this.shortcuts,
+      devicePeople: this.devicePeople,
       media: this.media,
       policyOf: policyOf(db),
       sealing: options.sealing,

@@ -95,6 +95,7 @@ export function followerApi(h: Follower): KraftverkApi {
       setPicture: (id, picture) => viewed(home.devices.setPicture(id, picture)),
       setPaused: (id, paused) => viewed(home.devices.setPaused(id, paused)),
       setTrack: (id, days) => viewed(home.devices.setTrack(id, days)),
+      setPeople: (id, people) => viewed(home.devices.setPeople(id, people)),
       place: (id, placement) => viewed(home.devices.place(id, placement)),
       placements: (id) => home.devices.placements(id),
       track: (id, since) => home.devices.track(id, since),

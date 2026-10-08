@@ -158,6 +158,7 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
       setPicture: (id, picture) => call('PUT', `/devices/${enc(id)}/picture`, { picture }),
       setPaused: (id, paused) => call('PUT', `/devices/${enc(id)}/paused`, { paused }),
       setTrack: (id, days) => call('PUT', `/devices/${enc(id)}/track`, { days }),
+      setPeople: (id, people) => call('PUT', `/devices/${enc(id)}/people`, people),
       place: (id, placement) => call('PUT', `/devices/${enc(id)}/placement`, { placement }),
       placements: async (id) => (await get<{ placements: PlacementView[] }>(`/devices/${enc(id)}/placements`)).placements,
       track: async (id, since) => (await get<{ points: TrackPointView[] }>(`/devices/${enc(id)}/track`, { since })).points,

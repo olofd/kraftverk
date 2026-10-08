@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import type { DeviceView } from '@kraftverk/api-contract';
 import { savedDeviceId } from '@kraftverk/device-sdk';
+import { createPerson, newSecret, softwareKey } from '@kraftverk/identity';
 
 import { deviceHomeOf } from '../src/homes/homes.ts';
 import { aHome, refusal, settle, type TestHome } from './a-home.ts';
@@ -75,6 +76,40 @@ describe('a device you have', () => {
     expect((await t.home.devices.setTrack(lamp.id, null)).trackDays).toBeNull();
     expect((await t.home.timeline()).find((entry) => entry.kind === 'device.untracked')?.summary).toBe('Stopped keeping where "Hall lamp" has been, and forgot it');
     expect((await t.home.configuration.export({ secrets: 'none' })).text).not.toContain('track:');
+  });
+
+  test('who it is with: one carrier, owners in the family only, on the timeline, in its file and back from it, and nobody once they leave', async () => {
+    const lamp = await aLamp();
+    const at = '2026-10-08T12:00:00.000Z';
+    const someone = async (id: string, name: string, role: 'admin' | 'member') => {
+      t.hub.people.present(await createPerson({ id, key: softwareKey(newSecret()), deviceName: 'Phone', profile: { name, shortName: null, locale: null, pictureId: null }, at }));
+      t.hub.people.addMember(id, { role, invitedBy: null, at });
+    };
+    const ANNA = 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0AA';
+    const BO = 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0AB';
+    await someone(ANNA, 'Anna', 'admin');
+    await someone(BO, 'Bo', 'member');
+
+    expect((await t.home.devices.setPeople(lamp.id, { carries: ANNA, owns: [ANNA, BO] })).people).toEqual({ carries: ANNA, drives: null, owns: [ANNA, BO], uses: [] });
+    expect((await t.home.timeline()).find((entry) => entry.kind === 'device.people')?.summary).toBe('"Hall lamp": Anna carries it; Anna and Bo owns it');
+    // One carrier at a time; only someone in the family; never by an assistant.
+    expect((await t.home.devices.setPeople(lamp.id, { carries: BO })).people.carries).toBe(BO);
+    expect((await refusal(t.home.devices.setPeople(lamp.id, { carries: 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0ZZ' }))).kind).toBe('invalid');
+    expect((await refusal(t.as({ kind: 'agent', for: 'olof' }).devices.setPeople(lamp.id, { carries: null }))).kind).toBe('forbidden');
+    expect(t.hub.devicePeople.carriedBy(BO)).toEqual([lamp.id]);
+
+    // In its file, by the people's keys; and back from it.
+    const { text } = await t.home.configuration.export({ secrets: 'none' });
+    expect(text).toContain('    people:\n      carries: bo\n      owns:\n        - anna\n        - bo\n');
+    await t.home.devices.setPeople(lamp.id, { carries: null, owns: [] });
+    const plan = await t.home.configuration.plan({ text });
+    expect(plan.devices.find((device) => device.name === 'Hall lamp')?.changes).toContain('who it is with');
+    await t.home.configuration.apply({ plan: plan.id! });
+    expect((await t.home.devices.get(lamp.id)).people).toEqual({ carries: BO, drives: null, owns: [ANNA, BO], uses: [] });
+
+    // Bo leaves: he carries and owns nothing of the family's.
+    t.hub.people.leave(BO, new Date().toISOString());
+    expect((await t.home.devices.get(lamp.id)).people).toEqual({ carries: null, drives: null, owns: [ANNA], uses: [] });
   });
 
   test('stands in a room of a home, moves to another, and keeps where it stood — each said on the timeline', async () => {

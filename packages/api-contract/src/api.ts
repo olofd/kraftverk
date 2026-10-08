@@ -9,7 +9,7 @@ import type { Rehearsal, VocabularyView, WorldView } from './assistant.ts';
 import type { AutomationChanges, AutomationDraftView, AutomationKit, AutomationRun, AutomationView, NewAutomation, RunLog } from './automations.ts';
 import type { ConfigExported, ConfigExportRequest, ConfigSnapshotView, ImportAnswers, ImportApplied, ImportPlan } from './configuration.ts';
 import type { MapRegionAsk, MapRegionsView } from './map.ts';
-import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, FamilyElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
+import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DevicePeople, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, FamilyElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
 import type { FoundFamily, InvitationInput, InvitationMade, InvitationView, Joined, MemberChanges, PersonView } from './people.ts';
 import type { HomeInput, HomeView, ZoneInput, ZoneView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView } from './homes.ts';
@@ -77,6 +77,12 @@ export interface KraftverkApi {
     setPaused(id: SavedDeviceId, paused: boolean): Promise<DeviceView>;
     /** Keeps where it has been for so many days, 1 to 366, or none of it: null forgets what was kept. */
     setTrack(id: SavedDeviceId, days: number | null): Promise<DeviceView>;
+    /**
+     * Who it is with (docs/PLAN-WORLD-MODEL.md §8.8), as given — each role
+     * left out stays as it is: who carries it, its usual driver, whose it is,
+     * who uses it. Each a person in the family; one carrier, one driver.
+     */
+    setPeople(id: SavedDeviceId, people: Partial<DevicePeople>): Promise<DeviceView>;
     /** Where it stands from now on — a space of a home, perhaps at an opening — or, null, nowhere said: where it stood is kept. */
     place(id: SavedDeviceId, placement: PlacementInput | null): Promise<DeviceView>;
     /** Where it has stood, oldest first. */

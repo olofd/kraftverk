@@ -61,6 +61,8 @@ export type DeviceEntry = {
   track: number | null;
   /** Where it stands, or is based; null: nowhere said. */
   place: PlaceEntry | null;
+  /** Who it is with, by the people's keys in the file; null: not said, and left as it is. */
+  people: DevicePeopleEntry | null;
   /** Its labels, by key. */
   labels: string[];
   /** Its type's settings. */
@@ -149,6 +151,9 @@ export type SpaceEntry = {
 export type PersonEntry = { id: string; name: string; role: 'admin' | 'member' | 'child'; nickname: string | null; color: string | null; chain: string; shortcuts: string[] };
 
 export const PERSON_ID = /^p-[0-9A-HJKMNP-TV-Z]{26}$/;
+
+/** Who a device is with, by the people's keys in the file: who carries it — its position is theirs — drives it, owns it, uses it. */
+export type DevicePeopleEntry = { carries: string | null; drives: string | null; owns: string[]; uses: string[] };
 
 /** A label: any grouping the family wants, by its key. */
 export type LabelEntry = { name: string; color: string | null; icon: string | null };
@@ -416,7 +421,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         problem('Expected a device: its type, name and how it is reached', path);
         continue;
       }
-      for (const field of Object.keys(entry)) if (!['type', 'name', 'identity', 'picture', 'paused', 'track', 'place', 'based', 'labels', 'settings', 'connect'].includes(field)) problem(`"${field}" is not part of a device: it has type, name, identity, picture, paused, track, place, based, labels, settings and connect`, [...path, field]);
+      for (const field of Object.keys(entry)) if (!['type', 'name', 'identity', 'picture', 'paused', 'track', 'place', 'based', 'people', 'labels', 'settings', 'connect'].includes(field)) problem(`"${field}" is not part of a device: it has type, name, identity, picture, paused, track, place, based, people, labels, settings and connect`, [...path, field]);
       const type = text(entry.type, [...path, 'type'], 'its type ("type: acme.plug")');
       const name = text(entry.name, [...path, 'name'], 'its name');
       const connect: ConnectEntry[] = [];
@@ -466,7 +471,29 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
           if (homeKey) place = { home: homeKey, space: spaceKey, opening: openingKey, role };
         }
       }
-      if (type && name) devices[key] = { type, name, identity: optional('identity'), picture: optional('picture'), paused: entry.paused === true, track: track ?? null, place, labels: labelKeys(entry.labels, [...path, 'labels']), settings: scalars(entry.settings, [...path, 'settings']), connect };
+      // Who it is with: each by a person's key in this file.
+      let with_: DevicePeopleEntry | null = null;
+      if (entry.people !== undefined && entry.people !== null) {
+        const given = entry.people;
+        if (!isRecord(given)) problem('"people" is who it is with: { carries: anna, drives: anna, owns: [anna], uses: [sam] }', [...path, 'people']);
+        else {
+          for (const field of Object.keys(given)) if (!['carries', 'drives', 'owns', 'uses'].includes(field)) problem(`"${field}" is not who a device is with: carries, drives, owns or uses`, [...path, 'people', field]);
+          const someone = (value: unknown, at: Path): string | null => {
+            if (typeof value !== 'string' || !KEY.test(value)) return (problem('A person, by their key in this file', at), null);
+            if (!(value in people)) return (problem(`There is no person "${value}" in this file`, at), null);
+            return value;
+          };
+          const one = (role: 'carries' | 'drives') => (given[role] === undefined || given[role] === null ? null : someone(given[role], [...path, 'people', role]));
+          const many = (role: 'owns' | 'uses') => {
+            const value = given[role];
+            if (value === undefined || value === null) return [];
+            const list = Array.isArray(value) ? value : [value];
+            return list.flatMap((each, index) => someone(each, [...path, 'people', role, index]) ?? []);
+          };
+          with_ = { carries: one('carries'), drives: one('drives'), owns: many('owns'), uses: many('uses') };
+        }
+      }
+      if (type && name) devices[key] = { type, name, identity: optional('identity'), picture: optional('picture'), paused: entry.paused === true, track: track ?? null, place, people: with_, labels: labelKeys(entry.labels, [...path, 'labels']), settings: scalars(entry.settings, [...path, 'settings']), connect };
     }
 
   // The links.
@@ -581,6 +608,16 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
                 home: device.place.home,
                 ...(device.place.space !== null ? { space: device.place.space } : {}),
                 ...(device.place.opening !== null ? { opening: device.place.opening } : {}),
+              },
+            }
+          : {}),
+        ...(device.people && (device.people.carries || device.people.drives || device.people.owns.length || device.people.uses.length)
+          ? {
+              people: {
+                ...(device.people.carries ? { carries: device.people.carries } : {}),
+                ...(device.people.drives ? { drives: device.people.drives } : {}),
+                ...(device.people.owns.length ? { owns: device.people.owns } : {}),
+                ...(device.people.uses.length ? { uses: device.people.uses } : {}),
               },
             }
           : {}),
