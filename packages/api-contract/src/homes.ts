@@ -12,6 +12,32 @@ export type HomeType = 'house' | 'apartment' | 'cabin' | 'boat' | 'caravan' | 'o
 /** Where a home is, and its geofence: a circle of so many metres round it. */
 export type HomeLocation = { latitude: number; longitude: number; radius: number };
 
+/**
+ * A zone (docs/PLAN-WORLD-MODEL.md §8.4): a place the family knows that is no
+ * home — school, work, the gym — where presence says someone is. Always
+ * somewhere; no clock of its own. Let go, it is archived: the stays there
+ * stay its own.
+ */
+export type ZoneView = {
+  id: string;
+  /** Its name in configuration. */
+  key: string;
+  name: string;
+  icon: string | null;
+  location: HomeLocation;
+  createdAt: string;
+  /** Archived; null while the family knows it. */
+  removedAt: string | null;
+};
+
+export type ZoneInput = {
+  /** Made from its name when not given. */
+  key?: string;
+  name: string;
+  icon?: string | null;
+  location: HomeLocation;
+};
+
 /** An address, as written: each part optional. */
 export type HomeAddress = { street: string | null; postalCode: string | null; locality: string | null; region: string | null };
 

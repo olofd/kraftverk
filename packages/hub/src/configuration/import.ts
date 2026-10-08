@@ -38,7 +38,7 @@ import {
   isSealed,
 } from '@kraftverk/home-file';
 import { checkChain, fromBase64url, type Statement } from '@kraftverk/identity';
-import { HOME_RADIUS, isConstraintError, type ConnectionRecord, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
+import { HOME_RADIUS, ZONE_RADIUS, isConstraintError, type ConnectionRecord, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
 
 import type { Checked } from '../automations/drafts.ts';
 import { bySource, secretFieldsOf } from '../installed/connection-schema.ts';
@@ -158,7 +158,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
   // A restore reads what it can: an entry it cannot read is left out and said, never the whole home lost for it.
   // A file kept before an installed integration's entries changed comes back as they are now.
   const read = readConfig(text, (document) => checkDocument(document, vocabulary, { hasSecret: () => true, uses: 'leave' }), { partial: options.lenient, migrations: deps.types.fileMigrations() });
-  const empty: ImportPlan = { id: null, from: read.from, problems: read.problems.map((each) => ({ ...each, path: [...each.path] })), devices: [], links: [], automations: [], family: [], people: [], homes: [], labels: [], policy: [], needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
+  const empty: ImportPlan = { id: null, from: read.from, problems: read.problems.map((each) => ({ ...each, path: [...each.path] })), devices: [], links: [], automations: [], family: [], people: [], homes: [], labels: [], zones: [], policy: [], needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
   if (!read.document) return empty;
   const document = read.document;
   // What a device it brings is, with its settings, is its type's code to say: each type it names is loaded now.
@@ -374,6 +374,18 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     return changes.length ? { key, name: entry.name, action: 'change', changes } : { key, name: entry.name, action: 'same', changes };
   });
 
+  // Its zones, by key: added, or moved and renamed as the file says.
+  const zones: ImportItem[] = Object.entries(document.zones).map(([key, entry]) => {
+    const existing = deps.places.zoneByKey(key);
+    if (!existing) return { key, name: entry.name, action: 'add', changes: [] };
+    const changes: string[] = [];
+    if (existing.name !== entry.name) changes.push(`name: ${existing.name} → ${entry.name}`);
+    if (entry.location.latitude !== existing.location.latitude || entry.location.longitude !== existing.location.longitude) changes.push('where it is');
+    if (entry.location.radius !== null && entry.location.radius !== existing.location.radius) changes.push(`its size: ${entry.location.radius} m`);
+    if (entry.icon !== null && entry.icon !== existing.icon) changes.push('its icon');
+    return { key, name: entry.name, action: changes.length ? 'change' : 'same', changes };
+  });
+
   // Each home's values.
   /*
     Each value is one this version knows, within its bounds: a file from another
@@ -428,7 +440,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     return { ...each, line: at?.line ?? null, column: at?.column ?? null };
   });
   const id = placed.length ? null : newId('plan');
-  const view: ImportPlan = { id, from: read.from, problems: placed, devices, links, automations, family, people, homes, labels, policy, needs, notes };
+  const view: ImportPlan = { id, from: read.from, problems: placed, devices, links, automations, family, people, homes, labels, zones, policy, needs, notes };
   if (id) deps.pending.set(id, { view, document, mode: options.mode, secrets, by: options.by, expiresAt: Date.now() + PLAN_TTL_MS, turnedOff, lenient: Boolean(options.lenient) });
   return view;
 }
@@ -611,7 +623,7 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
   if (!options.lenient) for (const need of view.needs.rebind) if (automationsIn(need.automation) && !choices.rebind?.[`${need.automation}.${need.role}`]) missing.push(`"${document.automations[need.automation]?.name}": a device for ${need.label}`);
   if (missing.length) throw new ApiError('invalid', `It still needs ${missing.join('; ')}`, { problems: missing });
 
-  const applied: ImportApplied = { devices: { added: [], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, family: false, people: { added: [], changed: [] }, homes: { added: [], changed: [] }, labels: { added: [], changed: [] }, policy: [], notes: [] };
+  const applied: ImportApplied = { devices: { added: [], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, family: false, people: { added: [], changed: [] }, homes: { added: [], changed: [] }, labels: { added: [], changed: [] }, zones: { added: [], changed: [] }, policy: [], notes: [] };
   const touched: AutomationId[] = [];
   /** Where each automation goes on the home page: placed after all are written, by place, so each lands where the file says. */
   /** Restoring, each in a savepoint of its own: what fails is undone alone, said, and the rest goes on. */
@@ -667,6 +679,14 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
         if (existing) (deps.places.updateHome(existing.id, given), applied.homes.changed.push(item.key));
         else (deps.places.addHome({ ...given, key: item.key }), applied.homes.added.push(item.key));
         writeSpaces(deps, deps.places.homeByKey(item.key)!.id, entry);
+      }
+      for (const item of view.zones) {
+        if (item.action === 'same') continue;
+        const entry = document.zones[item.key]!;
+        const existing = deps.places.zoneByKey(item.key);
+        const given = { name: entry.name, location: { latitude: entry.location.latitude, longitude: entry.location.longitude, radius: entry.location.radius ?? existing?.location.radius ?? ZONE_RADIUS }, ...(entry.icon !== null ? { icon: entry.icon } : {}) };
+        if (existing) (deps.places.updateZone(existing.id, given), applied.zones.changed.push(item.key));
+        else (deps.places.addZone({ ...given, key: item.key }), applied.zones.added.push(item.key));
       }
       // Devices: added, changed, removed — a bridge before what is reached through it.
       for (const item of bridgesFirst(view.devices, document)) {

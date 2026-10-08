@@ -11,6 +11,7 @@ import {
   type NodeView,
   type DeviceEventView,
   type HomeView,
+  type ZoneView,
   type LabelView,
   type InvitationView,
   type PersonView,
@@ -296,6 +297,12 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
       add: (input) => call('POST', '/homes', input),
       update: (id, changes) => call('PATCH', `/homes/${encodeURIComponent(id)}`, changes),
       remove: (id) => call('DELETE', `/homes/${encodeURIComponent(id)}`),
+    },
+    zones: {
+      list: async (options = {}) => (await get<{ zones: ZoneView[] }>('/zones', options.removed ? { removed: 'true' } : undefined)).zones,
+      add: (input) => call('POST', '/zones', input),
+      update: (id, changes) => call('PATCH', `/zones/${encodeURIComponent(id)}`, changes),
+      remove: (id) => call('DELETE', `/zones/${encodeURIComponent(id)}`),
     },
 
     nodes: {

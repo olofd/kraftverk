@@ -372,6 +372,27 @@ export function configJsonSchema(vocabulary: Vocabulary): Schema {
           properties: { name: { type: 'string', minLength: 1, maxLength: 30 }, color: { type: 'string', pattern: '^#[0-9a-f]{6}$' }, icon: { type: 'string' } },
         },
       },
+      zones: {
+        type: 'object',
+        ...keys,
+        description: 'Its zones, by key: places it knows that are no home — school, work — where presence says someone is.',
+        additionalProperties: {
+          type: 'object',
+          required: ['name', 'location'],
+          additionalProperties: false,
+          properties: {
+            name: { type: 'string', minLength: 1, maxLength: 60 },
+            icon: { type: 'string' },
+            location: {
+              type: 'object',
+              description: 'Where it is, in degrees, and its geofence in metres.',
+              required: ['latitude', 'longitude'],
+              additionalProperties: false,
+              properties: { latitude: { type: 'number', minimum: -90, maximum: 90 }, longitude: { type: 'number', minimum: -180, maximum: 180 }, radius: { type: 'number', exclusiveMinimum: 0, maximum: 50000 } },
+            },
+          },
+        },
+      },
       homes: {
         type: 'object',
         ...keys,

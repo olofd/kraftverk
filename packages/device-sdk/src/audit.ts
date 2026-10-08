@@ -6,8 +6,8 @@
  * What an entry on the timeline is about: a device, a node, an automation, an
  * account, or something a transport saw that is no device yet (an address).
  */
-export type ResourceKind = 'device' | 'node' | 'automation' | 'account' | 'transport' | 'family' | 'home' | 'person';
-export const RESOURCE_KINDS: readonly ResourceKind[] = ['device', 'node', 'automation', 'account', 'transport', 'family', 'home', 'person'];
+export type ResourceKind = 'device' | 'node' | 'automation' | 'account' | 'transport' | 'family' | 'home' | 'zone' | 'person';
+export const RESOURCE_KINDS: readonly ResourceKind[] = ['device', 'node', 'automation', 'account', 'transport', 'family', 'home', 'zone', 'person'];
 /** What an entry is about: a kind and an id together, or nothing — an id with no kind could not be filtered by. */
 export type AuditSubject = { resourceKind?: undefined; resource?: undefined } | { resourceKind: ResourceKind; resource: string };
 /**

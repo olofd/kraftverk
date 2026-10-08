@@ -38,6 +38,20 @@ export function familyRoutes(deps: AppDeps): Hono {
   api.patch('/homes/:id', async (c) => c.json(await familyFor(deps, c).homes.update(c.req.param('id'), await body(c, HOME.partial()))));
   api.delete('/homes/:id', async (c) => c.json(await familyFor(deps, c).homes.remove(c.req.param('id'))));
 
+  // Its zones: places it knows that are no home, each a circle on the map.
+  const ZONE = z
+    .object({
+      key: z.string().regex(KEY),
+      name: z.string().trim().min(1).max(60),
+      icon: z.string().max(40).nullable(),
+      location: z.object({ latitude: z.number().finite().min(-90).max(90), longitude: z.number().finite().min(-180).max(180), radius: z.number().finite().min(10).max(50_000) }).strict(),
+    })
+    .strict();
+  api.get('/zones', async (c) => c.json({ zones: await familyFor(deps, c).zones.list({ removed: c.req.query('removed') === 'true' }) }));
+  api.post('/zones', async (c) => c.json(await familyFor(deps, c).zones.add(await body(c, ZONE.partial({ key: true, icon: true })))));
+  api.patch('/zones/:id', async (c) => c.json(await familyFor(deps, c).zones.update(c.req.param('id'), await body(c, ZONE.partial()))));
+  api.delete('/zones/:id', async (c) => c.json(await familyFor(deps, c).zones.remove(c.req.param('id'))));
+
   /** A home's spaces: a tree from its site — the family checks what each says. */
   const SPACE = z
     .object({

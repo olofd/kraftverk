@@ -33,6 +33,7 @@ const CHANGES = new RegExp(
       'automation\\.(created|proposed|changed|let-act|deleted|placed)',
       'policy\\.changed',
       'home\\.(added|changed|removed)',
+      'zone\\.(added|changed|removed)',
       'space\\.(added|changed|removed)',
       'opening\\.(added|changed|removed)',
       'label\\.(added|changed|removed|set)',

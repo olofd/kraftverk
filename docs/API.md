@@ -71,6 +71,7 @@ answers — and listed on the device as `tools`.
 | `PUT` | `/devices/:id/connections/:connection/secrets` | Replace a server-held connection's secrets, such as a plug's new local key |
 | `POST` `DELETE` | `/links` · `/links/:id` | Facts about the house, between parts: `{kind, source: {device, part}, target: {device, part}}` — this plug's relay feeds that station's mains input |
 | `GET` | `/home` | The home: its name, and which node is its master |
+| `GET` `POST` `PATCH` `DELETE` | `/zones` · `/zones/:id` | The family's zones (docs/PLAN-WORLD-MODEL.md §8.4): places it knows that are no home — school, work — each `{ key, name, icon, location: { latitude, longitude, radius } }`, always somewhere. Deleting lets one go: archived, listed with `?removed=true`. On the timeline by name, never its coordinates; an assistant may not change them |
 | `GET` `POST` `DELETE` | `/nodes` · `/nodes/:id` | The kraftverk nodes of the home: its master, and every node that joins it — by its own id, at every start, saying what it is (`alwaysOn`, `reachable`, `trusted`) and what it reaches devices over. Each says whether it is the master and whether it is `yours` — joined from the asking account, and so theirs to forget. Forgotten only by that account; never the master |
 | `POST` | `/devices/:id/readings` · `/nodes/:id/audit` | What a node sends the master for a connection it holds |
 | `GET` `PUT` | `/devices/:id/store` · `/devices/:id/store/:key` | A device's own store, for a session a node following this one runs |

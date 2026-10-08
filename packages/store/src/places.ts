@@ -1,4 +1,4 @@
-import type { HomeInput, HomeType } from '@kraftverk/api-contract';
+import type { HomeInput, HomeType, ZoneInput } from '@kraftverk/api-contract';
 import { KEY, keyFrom, newId } from '@kraftverk/device-sdk';
 
 import type { SqlDatabase } from './database.ts';
@@ -43,7 +43,32 @@ export type HomeRecord = {
   removedAt: string | null;
 };
 
-/** What a home is made with, or changed to. */
+/** A zone: a place the family knows that is no home — school, work — where presence says someone is. Always somewhere. */
+export type ZoneRecord = {
+  id: string;
+  key: string;
+  name: string;
+  icon: string | null;
+  location: PlaceLocation;
+  createdAt: string;
+  /** Archived: what was recorded there stays its own. Null while the family knows it. */
+  removedAt: string | null;
+};
+
+type ZoneRow = { id: string; key: string; name: string; icon: string | null; latitude: number; longitude: number; radius: number; created_at: string; removed_at: string | null };
+
+const zoneOf = (row: ZoneRow): ZoneRecord => ({
+  id: row.id,
+  key: row.key,
+  name: row.name,
+  icon: row.icon,
+  location: { latitude: row.latitude, longitude: row.longitude, radius: row.radius },
+  createdAt: row.created_at,
+  removedAt: row.removed_at,
+});
+
+/** How big a zone's geofence is when nobody said: a school, a workplace. */
+export const ZONE_RADIUS = 200;
 
 type Row = {
   id: string;
@@ -195,15 +220,71 @@ export class PlaceStore {
     })();
   }
 
-  #writePlace(id: string, input: HomeInput & { key: string }, createdAt: string, removedAt: string | null): void {
+  // --- zones -----------------------------------------------------------------------
+
+  /** The zones the family knows, by name; with those it let go, `removed`. */
+  zones(options: { removed?: boolean } = {}): ZoneRecord[] {
+    return this.#db
+      .query<ZoneRow, []>(`SELECT * FROM place WHERE kind = 'zone' ${options.removed ? '' : 'AND removed_at IS NULL'} ORDER BY name COLLATE NOCASE, created_at`)
+      .all()
+      .map(zoneOf);
+  }
+
+  zone(id: string): ZoneRecord | null {
+    const row = this.#db.query<ZoneRow, [string]>("SELECT * FROM place WHERE kind = 'zone' AND id = ?").get(id);
+    return row ? zoneOf(row) : null;
+  }
+
+  /** A zone the family knows, by its key. */
+  zoneByKey(key: string): ZoneRecord | null {
+    const row = this.#db.query<ZoneRow, [string]>("SELECT * FROM place WHERE kind = 'zone' AND key = ? AND removed_at IS NULL").get(key);
+    return row ? zoneOf(row) : null;
+  }
+
+  zoneKeyTaken(key: string, except?: string): boolean {
+    return this.#db.query<{ id: string }, [string]>("SELECT id FROM place WHERE kind = 'zone' AND key = ? AND removed_at IS NULL").all(key).some((row) => row.id !== except);
+  }
+
+  addZone(input: ZoneInput, id = newId('z')): ZoneRecord {
+    if (input.key !== undefined && (!KEY.test(input.key) || this.zoneKeyTaken(input.key))) throw new Error(`"${input.key}" is not a free key: lowercase letters, digits and dashes, and not another zone's`);
+    const key = input.key ?? keyFrom(input.name, (taken) => this.zoneKeyTaken(taken), 'zone');
+    this.#writePlace(id, { key, name: input.name, icon: input.icon ?? null, location: input.location, timeZone: null }, new Date().toISOString(), null, 'zone');
+    return this.zone(id)!;
+  }
+
+  updateZone(id: string, changes: Partial<ZoneInput>): ZoneRecord | null {
+    const was = this.zone(id);
+    if (!was) return null;
+    if (changes.key !== undefined && changes.key !== was.key && (!KEY.test(changes.key) || this.zoneKeyTaken(changes.key, id))) throw new Error(`"${changes.key}" is not a free key: lowercase letters, digits and dashes, and not another zone's`);
+    const next = { ...was, ...changes };
+    this.#db
+      .query('UPDATE place SET key = ?, name = ?, icon = ?, latitude = ?, longitude = ?, radius = ? WHERE id = ? AND kind = \'zone\'')
+      .run(next.key, next.name, next.icon ?? null, next.location.latitude, next.location.longitude, next.location.radius, id);
+    return this.zone(id);
+  }
+
+  /** A zone let go, archived: the stays there stay its own. */
+  archiveZone(id: string): ZoneRecord | null {
+    this.#db.query("UPDATE place SET removed_at = ? WHERE id = ? AND kind = 'zone' AND removed_at IS NULL").run(new Date().toISOString(), id);
+    return this.zone(id);
+  }
+
+  #writePlace(
+    id: string,
+    input: Pick<HomeInput, 'name' | 'icon' | 'location' | 'address' | 'country'> & { key: string; timeZone: string | null },
+    createdAt: string,
+    removedAt: string | null,
+    kind: 'home' | 'zone' = 'home'
+  ): void {
     const address = input.address ?? NO_ADDRESS;
     this.#db
       .query(
         `INSERT INTO place (id, kind, key, name, icon, latitude, longitude, radius, time_zone, street, postal_code, locality, region, country, created_at, removed_at)
-         VALUES (?, 'home', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
+        kind,
         input.key,
         input.name,
         input.icon ?? null,

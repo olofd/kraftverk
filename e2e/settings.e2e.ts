@@ -63,3 +63,26 @@ test('a button that cannot be undone asks first, in the server’s words; no run
   await answer(page, true);
   await expect.poll(ran).toBe(1);
 });
+
+test('a zone: added in degrees, listed, renamed on its own page, and let go', async ({ page }) => {
+  const name = unique('School');
+  await page.goto('/settings/zones');
+  // Made-up coordinates near Greenwich.
+  await page.getByRole('textbox', { name: 'Its name' }).fill(name);
+  await page.getByRole('textbox', { name: 'Latitude' }).fill('51,49');
+  await page.getByRole('textbox', { name: 'Longitude' }).fill('0.01');
+  await page.getByRole('button', { name: 'Add it' }).click();
+  await page.getByText(name, { exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
+  await expect(page.getByText('51.49° N, 0.01° E · 200 m across its middle').filter({ visible: true }).first()).toBeVisible();
+
+  const renamed = `${name} yard`;
+  await page.getByRole('textbox', { name: 'Its name' }).fill(renamed);
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: renamed })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Let it go' }).click();
+  await answer(page, true);
+  await expect(page.getByRole('heading', { level: 1, name: 'Zones' })).toBeVisible();
+  await expect(page.getByText(renamed, { exact: true })).toHaveCount(0);
+});

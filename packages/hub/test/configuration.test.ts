@@ -181,6 +181,33 @@ describe('configuration', () => {
     expect((await t.home.configuration.plan({ text })).homes).toEqual([{ key: 'home', name: 'Home', action: 'same', changes: [] }]);
   });
 
+  test('a zone: added somewhere, renamed, refused nowhere and twice by one key, on the timeline without its coordinates, exported, let go and brought back from the file', async () => {
+    // Made-up coordinates near Greenwich.
+    const school = await t.home.zones.add({ name: 'School', location: { latitude: 51.49, longitude: 0.01, radius: 200 } });
+    expect(school).toMatchObject({ key: 'school', name: 'School', location: { latitude: 51.49, longitude: 0.01, radius: 200 }, removedAt: null });
+    expect(school.id).toMatch(/^z-/);
+    expect((await refusal(t.home.zones.add({ name: 'Nowhere', location: { latitude: 91, longitude: 0, radius: 200 } }))).kind).toBe('invalid');
+    expect((await refusal(t.home.zones.add({ key: 'school', name: 'Another school', location: { latitude: 51.5, longitude: 0, radius: 200 } }))).kind).toBe('conflict');
+    expect((await refusal(t.as({ kind: 'agent', for: 'olof' }).zones.add({ name: 'Work', location: { latitude: 51.5, longitude: 0, radius: 200 } }))).kind).toBe('forbidden');
+
+    await t.home.zones.update(school.id, { name: 'The school', location: { latitude: 51.491, longitude: 0.01, radius: 250 } });
+    const said = (await t.home.timeline()).find((entry) => entry.kind === 'zone.changed')!;
+    expect(said.summary).toBe('Changed the zone "The school": name, where it is');
+    expect(JSON.stringify(said)).not.toContain('51.491');
+
+    const { text } = await t.home.configuration.export({ secrets: 'none' });
+    expect(text).toContain('zones:\n  school:\n    name: The school\n    location:\n      latitude: 51.491\n      longitude: 0.01\n      radius: 250\n');
+    // Let go: archived, its key free, not listed — and the file brings it back, as a new zone by that key.
+    await t.home.zones.remove(school.id);
+    expect(await t.home.zones.list()).toEqual([]);
+    expect((await t.home.zones.list({ removed: true })).map((zone) => zone.name)).toEqual(['The school']);
+    const plan = await t.home.configuration.plan({ text });
+    expect(plan.zones).toEqual([{ key: 'school', name: 'The school', action: 'add', changes: [] }]);
+    expect((await t.home.configuration.apply({ plan: plan.id! })).zones.added).toEqual(['school']);
+    expect((await t.home.zones.list()).map((zone) => [zone.key, zone.location.radius])).toEqual([['school', 250]]);
+    expect((await t.home.configuration.plan({ text })).zones[0]!.action).toBe('same');
+  });
+
   test('a group: exported as the list of its parts, in order, and imported back so', async () => {
     const hall = await aLamp('Hall lamp', 'lamp-1');
     const porch = await aLamp('Porch lamp', 'lamp-2');

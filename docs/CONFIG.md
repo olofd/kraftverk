@@ -65,6 +65,9 @@ homes:                            # each by its key, in their order
     type: cabin
     time zone: Europe/London
 
+zones:                            # places the family knows that are no home, by key
+  school: { name: School, location: { latitude: 51.49, longitude: 0.01, radius: 200 } }
+
 devices:
   garage-station:                 # its key: what everything else names it by
     type: acme.station

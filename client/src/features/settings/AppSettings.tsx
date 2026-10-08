@@ -70,6 +70,10 @@ export function AppSettings() {
             <Row title="Homes" subtitle="Where your family lives, or spends time: each with its own place and clock" accessory={chevron} />
           </Pressable>
           <RowSeparator />
+          <Pressable onPress={() => router.push(PATHS.settings.zones)}>
+            <Row title="Zones" subtitle="Places your family knows that are no home: school, work" accessory={chevron} />
+          </Pressable>
+          <RowSeparator />
           <Pressable onPress={() => router.push(PATHS.settings.people)}>
             <Row title="People" subtitle="Who is in your family, and inviting someone" accessory={chevron} />
           </Pressable>

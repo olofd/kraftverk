@@ -179,6 +179,7 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
       });
       document.people[key] = { id: person.id, name: person.name, role: person.member.role, nickname: person.member.nickname, color: person.member.color, chain: base64url(new TextEncoder().encode(JSON.stringify(chain))), shortcuts };
     }
+    for (const zone of deps.places.zones()) document.zones[zone.key] = { name: zone.name, icon: zone.icon, location: zone.location };
     for (const home of deps.places.homes()) {
       document.homes[home.key] = {
         name: home.name,

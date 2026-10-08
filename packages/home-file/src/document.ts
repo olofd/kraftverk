@@ -153,6 +153,9 @@ export const PERSON_ID = /^p-[0-9A-HJKMNP-TV-Z]{26}$/;
 /** A label: any grouping the family wants, by its key. */
 export type LabelEntry = { name: string; color: string | null; icon: string | null };
 
+/** A zone: a place the family knows that is no home — school, work — always somewhere, by its key. */
+export type ZoneEntry = { name: string; icon: string | null; location: Coordinates & { radius: number | null } };
+
 /** Where two spaces meet — by their keys — or a space meets the outside (`to` null). */
 export type OpeningEntry = { kind: (typeof OPENING_KINDS)[number]; from: string; to: string | null; name: string | null };
 
@@ -166,6 +169,8 @@ export type ConfigDocument = {
   people: Record<string, PersonEntry>;
   /** Its labels, by key. */
   labels: Record<string, LabelEntry>;
+  /** Its zones, by key. */
+  zones: Record<string, ZoneEntry>;
   /** Its homes, by key, in their order. */
   homes: Record<string, HomeEntry>;
   devices: Record<string, DeviceEntry>;
@@ -193,7 +198,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
   const issues: Issue[] = [];
   const problem = (message: string, path: Path) => void issues.push({ message, path });
   if (!isRecord(data)) return { document: null, issues: [{ message: 'A configuration is a map: kraftverk, family, homes, devices, links, automations', path: [] }] };
-  for (const key of Object.keys(data)) if (!['kraftverk', 'family', 'people', 'labels', 'homes', 'devices', 'links', 'automations', 'secrets'].includes(key)) problem(`"${key}" is not part of a configuration: it has kraftverk, family, people, labels, homes, devices, links, automations and secrets`, [key]);
+  for (const key of Object.keys(data)) if (!['kraftverk', 'family', 'people', 'labels', 'homes', 'zones', 'devices', 'links', 'automations', 'secrets'].includes(key)) problem(`"${key}" is not part of a configuration: it has kraftverk, family, people, labels, homes, zones, devices, links, automations and secrets`, [key]);
 
   const text = (value: unknown, path: Path, what: string): string | null => {
     if (typeof value === 'string' && value.trim()) return value.trim();
@@ -287,6 +292,15 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
   const homes: Record<string, HomeEntry> = {};
   const homesData = data.homes ?? {};
   const fits = (value: unknown, most: number) => typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= most;
+  /** Where a place is — a home, a zone — and its geofence: what sunrise and sunset are told by, and what presence is measured from. */
+  const locationOf = (given: unknown, path: Path): ZoneEntry['location'] | null => {
+    if (!isRecord(given) || Object.keys(given).some((field) => !['latitude', 'longitude', 'radius'].includes(field))) problem('"location" is its latitude and longitude, in degrees, and a radius in metres: { latitude: 59.3, longitude: 18.1, radius: 150 }', path);
+    else if (!fits(given.latitude, 90)) problem('A latitude is a number from -90 to 90', [...path, 'latitude']);
+    else if (!fits(given.longitude, 180)) problem('A longitude is a number from -180 to 180', [...path, 'longitude']);
+    else if (given.radius !== undefined && !(typeof given.radius === 'number' && given.radius > 0 && given.radius <= 50_000)) problem('A radius is metres, from 1 to 50 000', [...path, 'radius']);
+    else return { latitude: given.latitude as number, longitude: given.longitude as number, radius: typeof given.radius === 'number' ? given.radius : null };
+    return null;
+  };
   const optionalText = (value: unknown, path: Path, what: string): string | null => (value === undefined || value === null ? null : text(value, path, what));
   if (!isRecord(homesData)) problem('"homes" is a map: each home by its key', ['homes']);
   else
@@ -303,15 +317,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
       const type = entry.type === undefined ? 'house' : HOME_TYPES.includes(entry.type as HomeTypeEntry) ? (entry.type as HomeTypeEntry) : (problem(`"type" is one of ${HOME_TYPES.join(', ')}`, [...path, 'type']), 'house');
       const timeZone = text(entry['time zone'], [...path, 'time zone'], 'its time zone: "Europe/Stockholm"');
       // Where it is: what sunrise and sunset are told by, and its geofence.
-      let location: HomeEntry['location'] = null;
-      if (entry.location !== undefined && entry.location !== null) {
-        const given = entry.location;
-        if (!isRecord(given) || Object.keys(given).some((field) => !['latitude', 'longitude', 'radius'].includes(field))) problem('"location" is its latitude and longitude, in degrees, and a radius in metres: { latitude: 59.3, longitude: 18.1, radius: 150 }', [...path, 'location']);
-        else if (!fits(given.latitude, 90)) problem('A latitude is a number from -90 to 90', [...path, 'location', 'latitude']);
-        else if (!fits(given.longitude, 180)) problem('A longitude is a number from -180 to 180', [...path, 'location', 'longitude']);
-        else if (given.radius !== undefined && !(typeof given.radius === 'number' && given.radius > 0 && given.radius <= 50_000)) problem('A radius is metres, from 1 to 50 000', [...path, 'location', 'radius']);
-        else location = { latitude: given.latitude as number, longitude: given.longitude as number, radius: typeof given.radius === 'number' ? given.radius : null };
-      }
+      const location = entry.location === undefined || entry.location === null ? null : locationOf(entry.location, [...path, 'location']);
       const address: HomeEntry['address'] = { street: null, postalCode: null, locality: null, region: null };
       if (entry.address !== undefined && entry.address !== null) {
         if (!isRecord(entry.address)) problem('"address" is a map: street, postal code, locality, region', [...path, 'address']);
@@ -377,6 +383,26 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
       }
       if (name && timeZone) homes[key] = { name, type, picture, location, timeZone, address, country, policy, spaces, openings };
     }
+
+  // The zones, by key: each somewhere.
+  const zones: Record<string, ZoneEntry> = {};
+  if (data.zones !== undefined && data.zones !== null) {
+    if (!isRecord(data.zones)) problem('"zones" is a map: each zone by its key', ['zones']);
+    else
+      for (const [key, entry] of Object.entries(data.zones)) {
+        const path = ['zones', key];
+        if (!KEY.test(key)) problem(`"${key}" is not a key: lowercase letters, digits and dashes`, path);
+        if (!isRecord(entry)) {
+          problem('Expected a zone: its name and where it is', path);
+          continue;
+        }
+        for (const field of Object.keys(entry)) if (!['name', 'icon', 'location'].includes(field)) problem(`"${field}" is not part of a zone: it has name, icon and location`, [...path, field]);
+        const name = text(entry.name, [...path, 'name'], 'its name');
+        const icon = entry.icon === undefined || entry.icon === null ? null : text(entry.icon, [...path, 'icon'], 'its icon');
+        const location = entry.location === undefined || entry.location === null ? (problem('A zone is somewhere: "location: { latitude: 59.3, longitude: 18.1, radius: 200 }"', [...path, 'location']), null) : locationOf(entry.location, [...path, 'location']);
+        if (name && location) zones[key] = { name, icon, location };
+      }
+  }
 
   // The devices.
   const devices: Record<string, DeviceEntry> = {};
@@ -507,7 +533,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
 
   // Partial: what could be read, beside every problem — whose entries the reader leaves out (`readConfig`).
   if (issues.length && !options.partial) return { document: null, issues };
-  return { document: { version: CURRENT_VERSION, family, people, labels, homes, devices, links, automations, secrets }, issues };
+  return { document: { version: CURRENT_VERSION, family, people, labels, homes, zones, devices, links, automations, secrets }, issues };
 }
 
 
@@ -646,6 +672,20 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
           ),
         }
       : {}),
+    ...(Object.keys(document.zones).length
+      ? {
+          zones: Object.fromEntries(
+            Object.entries(document.zones).map(([key, zone]) => [
+              key,
+              {
+                name: zone.name,
+                ...(zone.icon !== null ? { icon: zone.icon } : {}),
+                location: { latitude: zone.location.latitude, longitude: zone.location.longitude, ...(zone.location.radius !== null ? { radius: zone.location.radius } : {}) },
+              },
+            ])
+          ),
+        }
+      : {}),
     ...(Object.keys(document.devices).length ? { devices } : {}),
     ...(document.links.length ? { links: document.links.map((link) => ({ [link.kind]: { from: useText(link.from), to: useText(link.to) } })) } : {}),
     ...(Object.keys(document.automations).length ? { automations } : {}),
@@ -654,4 +694,4 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
 }
 
 /** An empty document of this version. */
-export const emptyDocument = (): ConfigDocument => ({ version: CURRENT_VERSION, family: { name: null, kind: null, locale: null }, people: {}, labels: {}, homes: {}, devices: {}, links: [], automations: {}, secrets: {} });
+export const emptyDocument = (): ConfigDocument => ({ version: CURRENT_VERSION, family: { name: null, kind: null, locale: null }, people: {}, labels: {}, homes: {}, zones: {}, devices: {}, links: [], automations: {}, secrets: {} });
