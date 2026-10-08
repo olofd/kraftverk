@@ -21,13 +21,19 @@ fi
 
 npm ci --prefer-offline --no-audit --no-fund
 
-# Every node_modules npm made — the root's, and a workspace's own (the app's) — not those inside them.
+# Every node_modules npm made — the root's, and a workspace's own (the app's) —
+# not those inside them. Under a name no other job has (each job is its own
+# container, its process ids alike: $$ was the same in all of them), and
+# never failing the job: the install is done; the archive only spares the next.
 mkdir -p "$DIR"
-find . -name node_modules -type d -prune -not -path './node_modules/*' -print >"$DIR/$key.list.$$"
-tar -cf "$archive.$$" -T "$DIR/$key.list.$$"
-rm -f "$DIR/$key.list.$$"
-mv "$archive.$$" "$archive"
-echo "node_modules archived for the next job ($key)"
+if part=$(mktemp "$DIR/$key.tar.XXXXXX") &&
+  find . -name node_modules -type d -prune -not -path './node_modules/*' -print | tar -cf "$part" -T - &&
+  mv "$part" "$archive"; then
+  echo "node_modules archived for the next job ($key)"
+else
+  rm -f "${part:-}"
+  echo "node_modules could not be archived; the next job installs afresh"
+fi
 
 # The newest few, and nothing left half written by a job that stopped.
 ls -t "$DIR"/*.tar 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm -f
