@@ -75,3 +75,17 @@ export const databaseFile = (fingerprint: number, of: string): string => `kraftv
 
 /** The file this device's accounts are kept in: one per schema of the personal store. */
 export const personalFile = (fingerprint: number): string => `kraftverk-personal-${fingerprint}.db`;
+
+/**
+ * Work done one at a time, in the order it was asked: opening a family,
+ * closing it. One asked while another runs waits for it, whatever became of
+ * it, and never runs beside it.
+ */
+export function oneAtATime(): <T>(work: () => Promise<T>) => Promise<T> {
+  let queue: Promise<unknown> = Promise.resolve();
+  return (work) => {
+    const turn = queue.then(work, work);
+    queue = turn.catch(() => undefined);
+    return turn;
+  };
+}

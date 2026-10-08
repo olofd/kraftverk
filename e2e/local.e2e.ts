@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { ALONE, expect, test, type Page } from './fixtures';
 
 import { answer, press } from './helpers';
 
@@ -9,7 +9,7 @@ import { answer, press } from './helpers';
   same automations. How someone tries kraftverk before installing anything.
 */
 
-test.use({ storageState: { cookies: [], origins: [] } });
+test.use({ as: ALONE });
 
 /** Replaces what a YAML editor holds, as if typed. */
 async function write(page: Page, label: string, text: string) {
@@ -20,9 +20,6 @@ async function write(page: Page, label: string, text: string) {
 }
 
 test('without a server, the app keeps its own home: a simulated plug added, switched through its own gateway, and an automation run', async ({ page }) => {
-  await page.goto('/');
-  await press(page, 'Use without a server');
-
   await page.goto('/devices/add');
   await press(page, 'Smart plugs');
   await press(page, 'Tuya smart plug');

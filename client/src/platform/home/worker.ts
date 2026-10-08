@@ -6,7 +6,7 @@ import { apiOver, hear, serveApi, transportOver, type MessageEnd } from '@kraftv
 import { fromSqliteWasm, PERSONAL_SCHEMA, PersonalStore, schemaFingerprint, sealedWithKey, type SqlDatabase, type SqliteWasmDatabase } from '@kraftverk/store';
 
 import { appFollower, appHub, readyDatabase } from './hub';
-import { callerOf, databaseFile, personalFile } from './home';
+import { callerOf, databaseFile, oneAtATime, personalFile } from './home';
 import type { ToPage, ToWorker } from './worker-messages';
 
 /*
@@ -290,16 +290,21 @@ function holdDevice(message: Extract<ToWorker, { kind: 'start' }>, handOver: Bro
   });
 }
 
+/** Opening and closing a family, one after another: one asked while another opens waits for it, never runs beside it. */
+const inTurn = oneAtATime();
+
 hear<ToWorker>(scope, 'home', (message) => {
   if (message.kind === 'start') void start(message);
   else if (message.kind === 'open')
-    void openFamily(message).then(
-      (family) => {
-        if (device) device.family = family;
-        say({ via: 'home', kind: 'ready', nodeId: family.nodeId as never });
-      },
-      (error: unknown) => say({ via: 'home', kind: 'failed', message: (error as Error).message })
+    void inTurn(() =>
+      openFamily(message).then(
+        (family) => {
+          if (device) device.family = family;
+          say({ via: 'home', kind: 'ready', nodeId: family.nodeId as never });
+        },
+        (error: unknown) => say({ via: 'home', kind: 'failed', message: (error as Error).message })
+      )
     );
   else if (message.kind === 'writes') void device?.family?.allowWrites(message.allowed);
-  else if (message.kind === 'close') void closeFamily().then(() => say({ via: 'home', kind: 'closed' }));
+  else if (message.kind === 'close') void inTurn(() => closeFamily().then(() => say({ via: 'home', kind: 'closed' })));
 });

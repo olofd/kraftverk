@@ -6,11 +6,11 @@ import type { Opening } from '../state/AccountProvider';
 import { useServers } from '../state/ServersProvider';
 import { Pressable } from './Pressable';
 
-/** While the home opens: a spinner, and nothing else. */
-export function Waiting() {
+/** While something opens: a spinner, and nothing else — named for what it waits for, to a screen reader and to a test. */
+export function Waiting({ what }: { what: string }) {
   return (
     <YStack flex={1} alignItems="center" justifyContent="center" backgroundColor="$background">
-      <Spinner color="$accent" />
+      <Spinner color="$accent" aria-label={what} />
     </YStack>
   );
 }
@@ -18,7 +18,7 @@ export function Waiting() {
 /** What stands in for the app while its own home is not open here: opening, held by another tab, or why it cannot be. */
 export function NotOpen({ state, onTakeOver, onRetry }: { state: Opening; onTakeOver: () => void; onRetry: () => void }) {
   const servers = useServers();
-  if (state.status === 'opening' || state.status === 'open') return <Waiting />;
+  if (state.status === 'opening' || state.status === 'open') return <Waiting what="Opening this device" />;
   const [title, detail, action] =
     state.status === 'elsewhere'
       ? (['Open in another tab', 'This browser keeps kraftverk in one tab at a time, and another tab has it open now.', 'Use it here'] as const)

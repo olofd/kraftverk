@@ -104,7 +104,9 @@ export function automationRoutes(deps: AppDeps): Hono {
           name: z.string().trim().min(1).max(80),
           key: z.string().trim().min(1).max(63).optional(),
           madeFrom: z.string().min(1).max(120).nullable().optional(),
-          timeZone: z.string().min(1).max(64),
+          // The home it is for, and a clock of its own: none, the family's and its home's.
+          homeId: z.string().min(1).max(64).nullable().optional(),
+          timeZone: z.string().min(1).max(64).nullable().optional(),
           recheckMinutes: recheckMinutes.optional(),
         })
         .strict()
@@ -124,7 +126,8 @@ export function automationRoutes(deps: AppDeps): Hono {
           roles: roles.optional(),
           groups: groups.optional(),
           starts: starts.optional(),
-          timeZone: z.string().min(1).max(64).optional(),
+          homeId: z.string().min(1).max(64).nullable().optional(),
+          timeZone: z.string().min(1).max(64).nullable().optional(),
           mode: z.enum(AUTOMATION_MODES).optional(),
           recheckMinutes: recheckMinutes.optional(),
           homePlace: z.number().int().min(0).max(1000).nullable().optional(),

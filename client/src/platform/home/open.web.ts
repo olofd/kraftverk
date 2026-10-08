@@ -3,7 +3,7 @@ import { apiOver, hear, serveApi, serveTransport, type MessageEnd } from '@kraft
 
 import { TRANSPORT_ENTRIES } from '../../generated/transports';
 import { clearPreference, readPreference, writePreference } from '../preferences';
-import { HomeOpenElsewhere, type OpenDevice, type OpenHome, type OpenOptions } from './home';
+import { HomeOpenElsewhere, oneAtATime, type OpenDevice, type OpenHome, type OpenOptions } from './home';
 import type { ToPage, ToWorker } from './worker-messages';
 
 /*
@@ -73,6 +73,14 @@ export async function openDevice(options: { takeOver?: boolean } = {}): Promise<
     throw error;
   }
 
+  /**
+   * One request of the worker at a time, each answered before the next is
+   * sent: what it says next is the answer to the one waited for. A family
+   * opened while another is still opening waits its turn, never takes the
+   * other's answer.
+   */
+  const inTurn = oneAtATime();
+
   /** The family open now: closed before another opens, and before the device lets go. */
   let current: OpenHome | null = null;
   const closeFamily = async () => {
@@ -87,7 +95,7 @@ export async function openDevice(options: { takeOver?: boolean } = {}): Promise<
 
   return {
     personal: apiOver<PersonalApi>(end, 'personal'),
-    async openHome(open: OpenOptions) {
+    openHome: (open: OpenOptions) => inTurn(async () => {
       await closeFamily();
       if (open.server) stopServer = serveApi(open.server.api, end, 'server');
       const ready = next();
@@ -109,17 +117,17 @@ export async function openDevice(options: { takeOver?: boolean } = {}): Promise<
         api: apiOver(end, 'api'),
         nodeId,
         allowWrites: async (allowed) => send({ via: 'home', kind: 'writes', allowed }),
-        close: async () => {
+        close: () => inTurn(async () => {
           if (current === home) await closeFamily();
-        },
+        }),
       };
       current = home;
       return home;
-    },
-    async close() {
+    }),
+    close: () => inTurn(async () => {
       await closeFamily();
       finish();
-    },
+    }),
     ended: new Promise((resolve) => {
       ended = resolve;
     }),

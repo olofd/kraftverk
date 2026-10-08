@@ -57,11 +57,29 @@ gateway's pause between switches and how fresh a reading must be, the
 holder's looks at its devices, and the simulators' batteries. A test of what
 happens over hours lives through them in seconds, over the API (`fastServer`
 in `e2e/helpers.ts`): `keep-between.e2e.ts` keeps a simulated P280 between 5
-and 30 % through the plug that feeds it — 2-minute holds, two whole cycles,
-six hours — in about 25 seconds. Faster runs it in less, but at 2000× a
+and 30 % through the plug that feeds it — 2-minute holds, one whole round,
+nearly three hours — in about ten seconds. A test that needs longer lives
+through less of the home's time, not at a faster clock: at 2000× a
 reading is fresh for only 30 ms of real time, and a busy machine (the
 pipeline's) can let one go stale: the gateway then rightly refuses to act
 on it.
+
+**Who the browser is** ([`e2e/fixtures.ts`](../e2e/fixtures.ts)). The app
+opens on an account of the device, kept in the browser's own storage, which
+no cookie or storage state carries. So each person a test acts as is a
+browser profile of its own — `OWNER`, signed in at the server with its first
+login, or `ALONE`, with no server — signed up the first time a test asks, the
+way a person does it, and reused by every test after. Tests import `test`
+from `./fixtures`, and choose with `test.use({ as: ALONE })`. Getting a
+profile ready is a list of the screens the app may stand on, each with what a
+person does there (`STEPS`): a screen added in front of the app is one entry
+there, and no test changes. Stuck, it says what the app is still waiting
+for — each spinner is named.
+
+**Fast is the rule.** A test has 15 seconds, a check 5, and nothing is
+retried: one that fails now and then is fixed, not run twice. One that needs
+longer is made faster — less of the home's time lived through, a device set
+up nearer where the test begins — never given more time.
 
 `npm run test:e2e` builds the app first (`E2E_SKIP_BUILD=1` reuses
 `client/dist`); `-- --headed` or `-- --ui` pass through to Playwright. The

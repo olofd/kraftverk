@@ -9,7 +9,7 @@ import { fromExpoSqlite, PERSONAL_SCHEMA, PersonalStore, schemaFingerprint, seal
 
 import { TRANSPORT_ENTRIES } from '../../generated/transports';
 import { appFollower, appHub, readyDatabase } from './hub';
-import { callerOf, databaseFile, personalFile, type OpenDevice, type OpenHome, type OpenOptions } from './home';
+import { callerOf, databaseFile, oneAtATime, personalFile, type OpenDevice, type OpenHome, type OpenOptions } from './home';
 
 /*
   A phone's kraftverk (docs/PLAN-SHARED-CORE.md, phase 6): in the app's own
@@ -137,19 +137,23 @@ async function openFamily(options: OpenOptions): Promise<OpenHome> {
 export async function openDevice(_options: { takeOver?: boolean } = {}): Promise<OpenDevice> {
   const personalDb = readyDatabase(fromExpoSqlite(openDatabaseSync(personalFile(schemaFingerprint(PERSONAL_SCHEMA)))), MADE_BY, PERSONAL_SCHEMA);
   let family: OpenHome | null = null;
+  // Two asked at once — another server chosen while one opens — open one after the other, the first closed before the next.
+  const inTurn = oneAtATime();
   return {
     personal: personalApi({ store: new PersonalStore(personalDb), keys: secureStoreKeys }),
-    async openHome(options) {
-      await family?.close();
-      family = null;
-      family = await openFamily(options);
-      return family;
-    },
-    async close() {
-      await family?.close();
-      family = null;
-      personalDb.close();
-    },
+    openHome: (options) =>
+      inTurn(async () => {
+        await family?.close();
+        family = null;
+        family = await openFamily(options);
+        return family;
+      }),
+    close: () =>
+      inTurn(async () => {
+        await family?.close();
+        family = null;
+        personalDb.close();
+      }),
     // One app, one device: nothing on a phone asks for it.
     ended: new Promise<'handed-over'>(() => {}),
   };

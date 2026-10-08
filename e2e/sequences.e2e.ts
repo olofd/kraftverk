@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, OWNER, test } from './fixtures';
 
 import { addSimulated, answer, press, unique, whose } from './helpers';
 
@@ -77,7 +77,7 @@ test('start charging: copied from its recipe, its parts chosen, run from its pag
 
   // Its history: the run, started by its owner.
   await activity.getByText('History', { exact: true }).click();
-  await expect(activity.getByText(/^by e2e-admin/).first()).toBeVisible();
+  await expect(activity.getByText(new RegExp('^by ' + OWNER.name)).first()).toBeVisible();
 
   // Put on the home page: its card there, to run it.
   await main.getByRole('switch', { name: 'On the home page' }).click();

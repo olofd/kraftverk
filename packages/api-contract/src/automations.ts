@@ -78,7 +78,7 @@ export type NewAutomation = AutomationDraft & { name: string; key?: string; made
 /**
  * `PATCH /automations/:id`. A new rule comes with what fills its roles. Letting
  * it act, or changing one that acts, needs `confirmation`. `homePlace`: its
- * place among the shortcuts on the home page; null, off it.
+ * place among the shortcuts on the asking person's own home page; null, off it.
  */
 export type AutomationChanges = Partial<AutomationDraft> & {
   name?: string;

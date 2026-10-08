@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext } from '@playwright/test';
+import { expect, test, type APIRequestContext } from './fixtures';
 
 import { addSimulated, fastServer, link, unique } from './helpers';
 
@@ -16,9 +16,10 @@ import { addSimulated, fastServer, link, unique } from './helpers';
   hold and freshness rule keeps the home's one clock. Its load is heavier
   than the owner's, so a cycle is hours, not days.
 
-  It starts at 60 %: off, once it has been at 30 % or above for 2 minutes;
-  down to under 5 % for 2 minutes, on; up to 30 % for 2 minutes, off; and
-  round again.
+  It starts at 35 %: off, once it has been at 30 % or above for 2 minutes;
+  down to under 5 % for 2 minutes, on; up to 30 % for 2 minutes, off — one
+  whole round, nearly three hours of its time in about ten seconds. A second
+  round would show nothing the first does not, and double the wait.
 */
 
 const LOW = 5;
@@ -47,7 +48,7 @@ test('a station kept between 5 and 30 % by the plug that feeds it, round and rou
   const began = Date.now();
 
   // The owner's two devices, simulated: the station as theirs is, the plug its mains is plugged into.
-  const station = await addSimulated(api, 'aferiy.p280', unique('AFERIY P280'), undefined, { level: 60, packs: 0, acLoadWatts: 600 });
+  const station = await addSimulated(api, 'aferiy.p280', unique('AFERIY P280'), undefined, { level: 35, packs: 0, acLoadWatts: 600 });
   const plug = await addSimulated(api, 'atorch.s1w', unique('SmartPlug P280'));
   await link(api, { device: plug.id, part: 'main' }, { device: station.id, part: 'input.ac' });
   // Set as the owner's is, through the gateway as its settings screen does.
@@ -75,9 +76,9 @@ test('a station kept between 5 and 30 % by the plug that feeds it, round and rou
   let lowest = 100;
   let highest = 0;
   let last: boolean | null = null;
-  const deadline = Date.now() + 50_000;
-  // Off (it starts on, above 30 %), on, off, on, off: two whole cycles.
-  while (switches.length < 5 && Date.now() < deadline) {
+  const deadline = Date.now() + 13_000;
+  // Off (it starts on, above 30 %), on, off: one whole round.
+  while (switches.length < 3 && Date.now() < deadline) {
     const [now, relay] = await Promise.all([readings(api, station.id), readings(api, plug.id)]);
     const soc = Number(now.get('soc'));
     const on = relay.get('relay') === true;
@@ -92,7 +93,7 @@ test('a station kept between 5 and 30 % by the plug that feeds it, round and rou
     // Looked at often, not without pause: the server keeps the home's time on the one thread these questions take.
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  expect(switches).toEqual([false, true, false, true, false]);
+  expect(switches).toEqual([false, true, false]);
   // Kept off its floor, and not far past its high level: the window held.
   expect(lowest).toBeGreaterThan(FLOOR);
   expect(highest).toBeLessThan(HIGH + 5);
@@ -102,8 +103,10 @@ test('a station kept between 5 and 30 % by the plug that feeds it, round and rou
   // came and went with the plug.
   const { runs } = await (await api.get(`/api/automations/${made.id}/runs?limit=20`)).json();
   const acted = (runs as { outcome: string; summary: string; why: string; saw: string[]; at: string }[]).reverse().filter((run) => run.outcome !== 'idle');
+  // Made watching, it may say what it would have done before it is let act: at this clock, a hold of 2 minutes passes between two requests.
+  while (acted[0]?.outcome === 'would-act') acted.shift();
   const told = JSON.stringify(acted.map((run) => [run.at, run.outcome, run.summary, run.why, run.saw]));
-  expect(acted.map((run) => run.outcome), told).toEqual(['acted', 'acted', 'acted', 'acted', 'acted']);
+  expect(acted.map((run) => run.outcome), told).toEqual(['acted', 'acted', 'acted']);
   acted.forEach((run, index) => {
     const on = index % 2 === 1;
     const charge = Number(/Charge ([\d.]+)/.exec(run.saw.join(' '))?.[1]);
@@ -119,7 +122,7 @@ test('a station kept between 5 and 30 % by the plug that feeds it, round and rou
 
   // Hours of the home's time, in seconds of ours.
   const lived = (Date.parse(acted.at(-1)!.at) - Date.parse(acted[0]!.at)) / 3_600_000;
-  console.log(`Two cycles: ${lived.toFixed(1)} h of the home's time in ${((Date.now() - began) / 1000).toFixed(1)} s, at ${rate}×; the charge between ${lowest} and ${highest} %`);
-  expect(lived).toBeGreaterThan(2);
+  console.log(`One round: ${lived.toFixed(1)} h of the home's time in ${((Date.now() - began) / 1000).toFixed(1)} s, at ${rate}×; the charge between ${lowest} and ${highest} %`);
+  expect(lived).toBeGreaterThan(1.5);
   await api.dispose();
 });

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 import { addSimulated, answer, unique } from './helpers';
 
@@ -7,14 +7,16 @@ import { addSimulated, answer, unique } from './helpers';
   dragged or moved from the keyboard.
 */
 
-test('where the home is: typed in degrees, said back with today’s sunrise and sunset, and forgotten', async ({ page }) => {
-  await page.goto('/settings');
+test('where the home is: typed in degrees, said back with today’s sunrise and sunset, and forgotten', async ({ page, request }) => {
+  // On the home's own page: each home has its place.
+  const { homes } = await (await request.get('/api/homes', { headers: { 'x-kraftverk-client': 'app' } })).json();
+  await page.goto(`/settings/homes/${homes[0].id}`);
   // Made-up coordinates: Greenwich.
   await page.getByLabel('Latitude', { exact: true }).fill('51,4779');
   await page.getByLabel('Longitude', { exact: true }).fill('0');
   await page.getByRole('button', { name: /^(Save|Move it here)$/ }).click();
   await expect(page.getByText('51.48° N, 0.00° E', { exact: true })).toBeVisible();
-  await expect(page.getByText(/^Today the sun rises at \d\d:\d\d and sets at \d\d:\d\d\.$/)).toBeVisible();
+  await expect(page.getByText(/^Today the sun rises at \d\d:\d\d and sets at \d\d:\d\d, on its clock\.$/)).toBeVisible();
   await page.getByRole('button', { name: 'Forget it' }).click();
   await expect(page.getByText('Not said yet', { exact: true })).toBeVisible();
 });

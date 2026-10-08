@@ -7,8 +7,9 @@ import { request, type FullConfig } from '@playwright/test';
 /**
  * A fresh server has no account: the first is created from the home network,
  * which this machine is. Made here with a password generated for this run
- * alone — kept in the run's state directory, never printed — and the browser
- * starts signed in.
+ * alone — kept in the run's state directory, never printed. The API the tests
+ * set things up with starts signed in with it; the browser signs in itself,
+ * as its owner's account (fixtures.ts).
  */
 export default async function setup(config: FullConfig): Promise<void> {
   const { baseURL, storageState } = config.projects[0]!.use;

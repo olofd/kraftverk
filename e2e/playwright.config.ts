@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -31,6 +31,17 @@ const state = process.env.E2E_STATE_DIR ?? mkdtempSync(join(tmpdir(), 'kraftverk
 process.env.E2E_STATE_DIR = state;
 process.env.E2E_FAST_API = `http://127.0.0.1:${FAST_API_PORT}`;
 process.env.E2E_FAST_CLOCK_RATE = String(FAST_CLOCK_RATE);
+/**
+ * A folder of each server's own: what a server keeps beside its database —
+ * its logins (node.db), its node's id, the configuration it keeps, its map —
+ * is that server's alone, as on any machine.
+ */
+const serverDir = (name: string) => {
+  const dir = join(state, name);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+};
+process.env.E2E_WEB_URL = `http://127.0.0.1:${WEB_PORT}`;
 
 export default defineConfig({
   testDir: '.',
@@ -39,13 +50,20 @@ export default defineConfig({
   // One server and one database: the tests run in order, each with devices of its own.
   workers: 1,
   fullyParallel: false,
-  timeout: 60_000,
-  expect: { timeout: 10_000 },
-  retries: process.env.CI ? 1 : 0,
+  /*
+    Fast is the rule: a test does what a person does, against simulated
+    devices, in seconds. One that needs longer is made faster — a faster
+    clock, a quicker simulation — not given more time. No retries: a test
+    that fails now and then is fixed, not run twice.
+  */
+  timeout: 15_000,
+  expect: { timeout: 5_000 },
+  retries: 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never', outputFolder: join(ROOT, 'e2e-report') }]] : 'list',
   globalSetup: './setup.ts',
   use: {
     baseURL: `http://127.0.0.1:${WEB_PORT}`,
+    // What `request` — the API, for what a test needs to exist — is signed in with. The browser signs itself in (fixtures.ts).
     storageState: join(state, 'signed-in.json'),
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
@@ -61,8 +79,8 @@ export default defineConfig({
       timeout: 60_000,
       env: {
         PORT: String(API_PORT),
-        KRAFTVERK_DB: join(state, 'kraftverk.db'),
-        KRAFTVERK_LOG_DIR: join(state, 'logs'),
+        KRAFTVERK_DB: join(serverDir('server'), 'kraftverk.db'),
+        KRAFTVERK_LOG_DIR: join(serverDir('server'), 'logs'),
         READ_ONLY: '1',
         BROKER_SPAWN: '0',
         ALLOWED_ORIGINS: `http://127.0.0.1:${WEB_PORT}`,
@@ -76,8 +94,8 @@ export default defineConfig({
       timeout: 60_000,
       env: {
         PORT: String(FAST_API_PORT),
-        KRAFTVERK_DB: join(state, 'fast.db'),
-        KRAFTVERK_LOG_DIR: join(state, 'fast-logs'),
+        KRAFTVERK_DB: join(serverDir('fast'), 'kraftverk.db'),
+        KRAFTVERK_LOG_DIR: join(serverDir('fast'), 'logs'),
         READ_ONLY: '1',
         BROKER_SPAWN: '0',
         KRAFTVERK_CLOCK_RATE: String(FAST_CLOCK_RATE),

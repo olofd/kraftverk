@@ -98,7 +98,7 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
   const servers = useServers();
   const { generation } = useAuth();
   // Not yet known whether a server stands beside this app: nothing is opened until it is.
-  if (servers.deciding) return <Waiting />;
+  if (servers.deciding) return <Waiting what="Looking for your server" />;
   // What this app holds is held for one server, as one person: switching either lets go of it.
   return servers.active ? (
     <ServerHome key={`${servers.active.id} ${generation}`} serverKey={servers.active.id} url={servers.active.url}>
@@ -170,7 +170,7 @@ function ServerHome({ serverKey, url, children }: { serverKey: string; url: stri
     };
   }, [away, home, open, server, state, writesAllowed]);
 
-  if (!value) return <Waiting />;
+  if (!value) return <Waiting what="Opening your family on its server" />;
   return <HomeContext.Provider value={value}>{children}</HomeContext.Provider>;
 }
 
@@ -221,7 +221,7 @@ function OwnHome({ children }: { children: ReactNode }) {
   );
 
   if (state.status === 'failed') return <FamilyFailed message={state.message} onRetry={() => void open()} />;
-  if (!value || founded === null) return <Waiting />;
+  if (!value || founded === null) return <Waiting what="Opening your family on this device" />;
   if (!founded) return <FoundFamily api={value.api} onFounded={() => setFounded(true)} />;
   return <HomeContext.Provider value={value}>{children}</HomeContext.Provider>;
 }

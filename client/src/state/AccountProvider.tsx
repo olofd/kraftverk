@@ -75,7 +75,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   }, [reload]);
 
   if (!device) return <NotOpen state={state} onTakeOver={() => open(true)} onRetry={() => open(false)} />;
-  if (!accounts) return <Waiting />;
+  if (!accounts) return <Waiting what="Reading the accounts on this device" />;
   const account = accounts.find((each) => each.active) ?? null;
   // No one opened as: sign up, or choose an account this device keeps.
   if (!account) return <Welcome personal={device.personal} accounts={accounts} onChanged={reload} />;
