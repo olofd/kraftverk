@@ -8,7 +8,7 @@
       },
       "credentials": {
         "schema": {
-          "help": "Your Apple ID and its password stay on this server: they are how it signs in again when Apple ends a session. Apple asks for a code from one of your devices once.",
+          "help": "Your Apple ID and its password stay on this kraftverk: they are how it signs in again when Apple ends a session. Apple asks for a code from one of your devices once.",
           "fields": {
             "appleId": {
               "type": "string",
@@ -41,7 +41,7 @@
           }
         ],
         "first": true,
-        "title": "Your Apple ID"
+        "title": "Your Apple Account"
       }
     }
   ],

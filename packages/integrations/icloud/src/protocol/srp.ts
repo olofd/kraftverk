@@ -2,11 +2,15 @@ import { pbkdf2Sha256, sha256 } from '@kraftverk/device-sdk';
 
 /*
   SRP-6a as Apple's sign-in speaks it (idmsa.apple.com, since 2024): the
-  2048-bit group of RFC 5054, SHA-256, RFC 5054's padding, and no username
-  in x — exactly as pysrp computes it with rfc5054_enable() and
-  no_username_in_x(), which pyicloud uses. The password itself never leaves:
-  it is stretched with PBKDF2 into the secret x is made from, and only a
-  proof of knowing it (M1) is sent.
+  2048-bit group of RFC 5054, SHA-256, and no username in x — as pysrp
+  computes it with rfc5054_enable() and no_username_in_x(), which pyicloud
+  uses — and padded as Apple's own web client pads (its
+  webSRPClientWorker.js): A, g and S to the prime's width, B as Apple sent
+  it, the account name lowercased where it is hashed. Unpadded, about one
+  sign-in in a hundred — an A or S that happens to begin with a zero byte —
+  is refused as a wrong password. The password itself never leaves: it is
+  stretched with PBKDF2 into the secret x is made from, and only a proof of
+  knowing it (M1) is sent.
 
   Ported from pyicloud and pysrp (MIT; NOTICE).
 */
@@ -93,35 +97,40 @@ const hNxorg = (() => {
   return hN.map((byte, index) => byte ^ hg[index]!);
 })();
 
-/** A client's side of one sign-in: its secret a, and A to send. */
+/** A client's side of one sign-in: its secret a, and A to send — padded to the prime's width, as Apple's own client sends it. */
 export type SrpClient = { a: bigint; A: Uint8Array };
 
 /** Starts a sign-in: a random secret a, and A = g^a mod N. */
 export function srpStart(random: Uint8Array = crypto.getRandomValues(new Uint8Array(32))): SrpClient {
   const a = bigOfBytes(random);
-  return { a, A: bytesOfBig(modPow(g, a, N)) };
+  return { a, A: padded(bytesOfBig(modPow(g, a, N))) };
 }
+
+/** What the account name is hashed as: lowercased, as Apple's client hashes it. */
+const nameHash = (accountName: string) => sha256(accountName.toLowerCase());
 
 /**
  * The proofs for the server's challenge: M1, that this side knows the
- * password, and M2, what the server's own proof must be. Null when the
+ * password, and M2, what the server's own proof must be — with K, the key
+ * both sides now share, which Apple's escrow step asks for. Null when the
  * challenge is one no honest server sends (B ≡ 0, u = 0).
  */
-export function srpProofs(input: { client: SrpClient; accountName: string; key: Uint8Array; salt: Uint8Array; B: Uint8Array }): { m1: Uint8Array; m2: Uint8Array } | null {
+export function srpProofs(input: { client: SrpClient; accountName: string; key: Uint8Array; salt: Uint8Array; B: Uint8Array }): { m1: Uint8Array; m2: Uint8Array; K: Uint8Array } | null {
   const { client, accountName, key, salt } = input;
   const B = bigOfBytes(input.B);
   if (B % N === 0n) return null;
-  const A = bigOfBytes(client.A);
-  const u = bigOfBytes(sha256(join(padded(bytesOfBig(A)), padded(bytesOfBig(B)))));
+  const A = padded(client.A);
+  const u = bigOfBytes(sha256(join(A, padded(bytesOfBig(B)))));
   if (u === 0n) return null;
   // No username in x: H(salt | H(":" | key)).
   const x = bigOfBytes(sha256(join(salt, sha256(join(encoder.encode(':'), key)))));
   const v = modPow(g, x, N);
   const S = modPow(B - k * v, client.a + u * x, N);
-  const K = sha256(bytesOfBig(S));
-  const m1 = sha256(join(hNxorg, sha256(accountName), salt, bytesOfBig(A), bytesOfBig(B), K));
-  const m2 = sha256(join(bytesOfBig(A), m1, K));
-  return { m1, m2 };
+  const K = sha256(padded(bytesOfBig(S)));
+  // B as Apple sent it, not as a number re-made: a leading zero it sent is part of what it hashes.
+  const m1 = sha256(join(hNxorg, nameHash(accountName), salt, A, input.B, K));
+  const m2 = sha256(join(A, m1, K));
+  return { m1, m2, K };
 }
 
 /** What a server keeps of a password, and how it answers — for tests to play Apple with. */
@@ -130,17 +139,16 @@ export const srpServer = {
   verifier(key: Uint8Array, salt: Uint8Array): bigint {
     return modPow(g, bigOfBytes(sha256(join(salt, sha256(join(encoder.encode(':'), key))))), N);
   },
-  /** B = k·v + g^b mod N. */
+  /** B = k·v + g^b mod N, padded as Apple sends it. */
   challenge(verifier: bigint, b: bigint): Uint8Array {
-    return bytesOfBig((k * verifier + modPow(g, b, N)) % N);
+    return padded(bytesOfBig((k * verifier + modPow(g, b, N)) % N));
   },
-  /** The proof a client that knows the password sends, as the server computes it. */
-  expectedM1(input: { verifier: bigint; b: bigint; A: Uint8Array; B: Uint8Array; accountName: string; salt: Uint8Array }): Uint8Array {
-    const A = bigOfBytes(input.A);
-    const B = bigOfBytes(input.B);
-    const u = bigOfBytes(sha256(join(padded(bytesOfBig(A)), padded(bytesOfBig(B)))));
-    const S = modPow(A * modPow(input.verifier, u, N), input.b, N);
-    const K = sha256(bytesOfBig(S));
-    return sha256(join(hNxorg, sha256(input.accountName), input.salt, bytesOfBig(A), bytesOfBig(B), K));
+  /** The proof a client that knows the password sends, as the server computes it — and the key both then share. */
+  expected(input: { verifier: bigint; b: bigint; A: Uint8Array; B: Uint8Array; accountName: string; salt: Uint8Array }): { m1: Uint8Array; K: Uint8Array } {
+    const A = padded(input.A);
+    const u = bigOfBytes(sha256(join(A, padded(input.B))));
+    const S = modPow(bigOfBytes(A) * modPow(input.verifier, u, N), input.b, N);
+    const K = sha256(padded(bytesOfBig(S)));
+    return { m1: sha256(join(hNxorg, nameHash(input.accountName), input.salt, A, input.B, K)), K };
   },
 };

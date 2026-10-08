@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
-import { configDefaults, type ConfigValues, type SetupActionResult, type SetupActionView, type SetupChoice } from '@kraftverk/device-sdk';
+import { configDefaults, type ConfigValues, type SetupActionResult, type SetupActionView, type SetupChoice, type SetupInstead } from '@kraftverk/device-sdk';
 import { describeError, type SetupFlow } from '@kraftverk/api-client';
 import { Card, isComplete, Row, RowSeparator, SchemaForm } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
 import { QrCode } from '../../../components/QrCode';
+import { useNow } from '../../automations/looks';
 import { ErrorLine, PRIMARY } from './StepFrame';
 
 /** A helper's candidates: which one is it? With what it offers beside them — the same run afresh — when it does. */
@@ -75,6 +76,44 @@ function Waiting({ result, onAgain, onCancel }: { result: SetupActionResult; onA
   );
 }
 
+/** "1:05": how long until, in minutes and seconds — or "12 min" when it is long. */
+export function countdown(ms: number): string {
+  const seconds = Math.max(0, Math.ceil(ms / 1000));
+  if (seconds >= 600) return `${Math.ceil(seconds / 60)} min`;
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+/**
+ * Other ways to answer than the question asks — "Didn't get a code?" — one
+ * tap away, each waiting until it may be asked again.
+ */
+function Instead({ instead, busy, onAnswer }: { instead: SetupInstead; busy: boolean; onAnswer: (answers: ConfigValues) => void }) {
+  const [open, setOpen] = useState(false);
+  const waits = instead.options.some((option) => option.after && Date.parse(option.after) > Date.now());
+  const now = useNow(open && waits);
+  return (
+    <YStack gap="$2">
+      <Pressable onPress={() => setOpen((before) => !before)}>
+        <Text fontSize={13} color="$accent" paddingHorizontal="$1" paddingVertical="$1" aria-expanded={open}>
+          {instead.title}
+        </Text>
+      </Pressable>
+      {open ? (
+        <YStack gap="$1" alignItems="flex-start">
+          {instead.options.map((option) => {
+            const left = option.after ? Date.parse(option.after) - now : 0;
+            return (
+              <Button key={option.label} size="$3" chromeless color="$color" disabled={busy || left > 0} opacity={busy || left > 0 ? 0.5 : 1} onPress={() => onAnswer(option.answer)}>
+                {left > 0 ? `${option.label} (${countdown(left)})` : option.label}
+              </Button>
+            );
+          })}
+        </YStack>
+      ) : null}
+    </YStack>
+  );
+}
+
 /**
  * A result that asks one more thing — a code sent to a phone, the PIN a TV
  * shows — drawn inside the step, and the same action run again with it.
@@ -101,6 +140,7 @@ export function Asked({ result, busy, onAnswer, onRestart }: { result: SetupActi
           onSubmit={() => (!busy && ready ? onAnswer(answers) : undefined)}
         />
       </Card>
+      {result.ask!.instead ? <Instead instead={result.ask!.instead} busy={busy} onAnswer={onAnswer} /> : null}
       <XStack gap="$3" alignItems="center">
         <Button alignSelf="flex-start" size="$3" {...PRIMARY} disabled={busy || !ready} opacity={busy || !ready ? 0.5 : 1} onPress={() => onAnswer(answers)}>
           {busy ? 'Working…' : 'Continue'}

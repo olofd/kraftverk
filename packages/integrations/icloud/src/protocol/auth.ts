@@ -51,6 +51,17 @@ export type IcloudState = {
 /** A new client, as Apple will know it. */
 export const newState = (): IcloudState => ({ clientId: `auth-${randomHex(4)}-${randomHex(2)}-${randomHex(2)}-${randomHex(2)}-${randomHex(6)}`, cookies: [] });
 
+/** The session kept in a connection's secret, read back; a new one when there is none. */
+export function stateOf(kept: string | null | undefined): IcloudState {
+  if (!kept) return newState();
+  try {
+    const state = JSON.parse(kept) as IcloudState;
+    return typeof state.clientId === 'string' && Array.isArray(state.cookies) ? state : newState();
+  } catch {
+    return newState();
+  }
+}
+
 /** The account, as accountLogin and validate answer: who it is, and where its services are. */
 export type IcloudAccount = {
   dsid: string;
@@ -190,8 +201,28 @@ export class IcloudAuth {
       if (error instanceof NotReachable) throw error;
     });
 
+    const { c, proofs } = await this.#prove('signin', accountName, password);
+    const complete = await this.request(`${AUTH}/signin/complete?isRememberMeEnabled=true`, {
+      method: 'POST',
+      headers: this.#authHeaders(),
+      body: JSON.stringify({ accountName, c, m1: base64(proofs.m1), m2: base64(proofs.m2), rememberMe: true, trustTokens: this.kept.trustToken ? [this.kept.trustToken] : [] }),
+    });
+    if (complete.status === 409) {
+      // The trust token was taken, and Apple asks the password proved once more: no code.
+      if (escrowAsked(complete)) {
+        await this.#escrow(password);
+        return 'signed-in';
+      }
+      return 'second-factor';
+    }
+    if (!complete.ok) throw refusal(complete.status, await complete.text());
+    return 'signed-in';
+  }
+
+  /** One SRP exchange's first half, at `signin` or `escrow`: Apple's challenge, and the proofs that meet it. */
+  async #prove(at: 'signin' | 'escrow', accountName: string, password: string): Promise<{ c: unknown; proofs: NonNullable<ReturnType<typeof srpProofs>> }> {
     const client = srpStart();
-    const init = await this.request(`${AUTH}/signin/init`, {
+    const init = await this.request(`${AUTH}/${at}/init`, {
       method: 'POST',
       headers: this.#authHeaders(),
       body: JSON.stringify({ a: base64(client.A), accountName, protocols: ['s2k', 's2k_fo'] }),
@@ -202,15 +233,25 @@ export class IcloudAuth {
     const key = passwordKey(password, salt, challenge.iteration, challenge.protocol);
     const proofs = srpProofs({ client, accountName, key, salt, B: fromBase64(challenge.b) });
     if (!proofs) throw new AppleRefused(400, 'Apple’s sign-in answered with a challenge no sign-in can meet: try again');
+    return { c: challenge.c, proofs };
+  }
 
-    const complete = await this.request(`${AUTH}/signin/complete?isRememberMeEnabled=true`, {
+  /**
+   * Apple's escrow step (since iOS 26.4): the password proved a second time,
+   * as an account with no name, and the key that proof shares handed over.
+   * Asked for, by `X-Apple-EDP` or `X-Apple-PDP` on a 409, after a trust
+   * token or a code was taken; Apple answers with a new session token.
+   * Without it, a trust token is as good as none: a code at every sign-in.
+   */
+  async #escrow(password: string): Promise<void> {
+    this.trace('Apple asks the password proved once more (escrow)');
+    const { c, proofs } = await this.#prove('escrow', '', password);
+    const done = await this.request(`${AUTH}/escrow/complete`, {
       method: 'POST',
       headers: this.#authHeaders(),
-      body: JSON.stringify({ accountName, c: challenge.c, m1: base64(proofs.m1), m2: base64(proofs.m2), rememberMe: true, trustTokens: this.kept.trustToken ? [this.kept.trustToken] : [] }),
+      body: JSON.stringify({ m1: base64(proofs.m1), m2: base64(proofs.m2), c, k: base64(proofs.K) }),
     });
-    if (complete.status === 409) return 'second-factor';
-    if (!complete.ok) throw refusal(complete.status, await complete.text());
-    return 'signed-in';
+    if (!done.ok) throw refusal(done.status, await done.text());
   }
 
   /**
@@ -238,19 +279,27 @@ export class IcloudAuth {
 
   /**
    * Gives the second factor's code — from a trusted device, or sent to
-   * `phone` — then has Apple trust this client, and signs in to iCloud.
-   * A wrong code is refused, saying so; another can be given.
+   * `phone` — then, when Apple asks, proves the password once more
+   * (escrow), has Apple trust this client, and signs in to iCloud. A wrong
+   * code is refused, saying so; another can be given.
    */
-  async verify(code: string, phone?: TrustedPhone): Promise<IcloudAccount> {
+  async verify(code: string, phone: TrustedPhone | undefined, password: string | null): Promise<IcloudAccount> {
+    const before = this.kept.sessionToken;
     const response = phone === undefined
       ? await this.request(`${AUTH}/verify/trusteddevice/securitycode`, { method: 'POST', headers: this.#authHeaders({ Accept: 'application/json' }), body: JSON.stringify({ securityCode: { code } }) })
       : await this.request(`${AUTH}/verify/phone/securitycode`, { method: 'POST', headers: this.#authHeaders({ Accept: 'application/json, text/plain' }), body: JSON.stringify({ phoneNumber: phoneNumberOf(phone), securityCode: { code }, mode: phone.mode }) });
     const answered = await response.text();
-    if (!response.ok && !(response.status === 409 && acceptedConflict(answered))) {
+    // A 409 takes the code when it says so, or when it carries a new session.
+    const taken = response.ok || (response.status === 409 && (acceptedConflict(answered) || this.kept.sessionToken !== before));
+    if (!taken) {
       if (response.status === 400 || response.status === 401) throw new AppleRefused(response.status, 'That code was not the one Apple sent: try again, or have another sent');
       // A code from the devices Apple will not take this way: its newer route asks for one by text instead.
       if (response.status === 409 && phone === undefined) throw new AppleRefused(409, 'Apple did not take a code from your devices this way: have one texted instead');
       throw refusal(response.status, answered);
+    }
+    if (escrowAsked(response)) {
+      if (!password) throw new AppleRefused(401, 'Apple asks for the password again: sign in again');
+      await this.#escrow(password);
     }
     const trusted = await this.request(`${AUTH}/2sv/trust`, { headers: this.#authHeaders() });
     if (!trusted.ok) throw refusal(trusted.status, await trusted.text());
@@ -285,7 +334,7 @@ export class IcloudAuth {
     const held = await this.validate();
     if (held && held.trusted && !held.challenged) return held;
     const signedIn = await this.signIn(accountName, password).catch((error: unknown) => {
-      if (error instanceof AppleRefused && (error.status === 401 || error.status === 403)) throw new NeedsSignIn(error.message);
+      if (error instanceof AppleRefused && [401, 403, 412].includes(error.status)) throw new NeedsSignIn(error.message);
       throw error;
     });
     if (signedIn === 'second-factor') throw new NeedsSignIn('Apple asks for a code again: sign in on the account’s page');
@@ -304,6 +353,9 @@ function refusal(status: number, body: string): AppleRefused {
   return new AppleRefused(status, `Apple refused (${status})${body.trim() ? `: ${body.trim().slice(0, 200)}` : ''}`);
 }
 
+/** Whether Apple asks the password proved once more (escrow): said on a 409. */
+const escrowAsked = (response: Response) => response.status === 409 && Boolean(response.headers.get('X-Apple-EDP') || response.headers.get('X-Apple-PDP'));
+
 /** A trusted number as Apple's verify calls want it back. */
 const phoneNumberOf = (phone: TrustedPhone) => ({ id: phone.id, ...(phone.nonFTEU !== undefined ? { nonFTEU: phone.nonFTEU } : {}) });
 
@@ -318,8 +370,10 @@ function acceptedConflict(body: string): boolean {
 
 /** The account as Apple answers it. */
 function accountOf(data: unknown): IcloudAccount {
-  const said = data as { dsInfo?: { dsid?: unknown }; webservices?: { findme?: { url?: unknown } }; hsaTrustedBrowser?: unknown; hsaChallengeRequired?: unknown };
+  const said = data as { dsInfo?: { dsid?: unknown }; webservices?: { findme?: { url?: unknown } }; hsaTrustedBrowser?: unknown; hsaChallengeRequired?: unknown; termsUpdateNeeded?: unknown };
   if (said.dsInfo?.dsid === undefined) throw new AppleRefused(502, 'iCloud answered with no account');
+  // Accepting Apple's terms is the person's to do, never this client's.
+  if (said.termsUpdateNeeded === true) throw new AppleRefused(412, 'Apple asks you to accept its updated iCloud terms: sign in at icloud.com once and accept them, then sign in here again');
   return {
     dsid: String(said.dsInfo.dsid),
     findMe: typeof said.webservices?.findme?.url === 'string' ? said.webservices.findme.url : null,

@@ -39,7 +39,10 @@ export function playedApple(options: { protocol?: 's2k' | 's2k_fo'; noTrustedDev
   let codeShown = false;
   const asked: string[] = [];
   /** Whether a second factor is asked of a trust token Apple gave (Apple may stop trusting one); whether Apple refuses sign-ins for a while; whether it shows no code on the devices. */
-  const control = { distrust: false, expireWebauth: false, busy: false, refuseDeviceCode: false };
+  const control = { distrust: false, expireWebauth: false, busy: false, refuseDeviceCode: false, terms: false, escrow: false };
+  /** Whether Apple waits on the password proved once more (escrow), and how often it has been. */
+  let escrowPending = false;
+  let escrowed = 0;
 
   const fetch = async (url: string, given: RequestInit = {}): Promise<Response> => {
     const at = new URL(url);
@@ -58,11 +61,31 @@ export function playedApple(options: { protocol?: 's2k' | 's2k_fo'; noTrustedDev
         B = srpServer.challenge(verifier, b);
         return json({ iteration: iterations, salt: base64(salt), protocol, b: base64(B), c: 'c-1' });
       case 'POST idmsa.apple.com/appleauth/auth/signin/complete': {
-        const m1 = srpServer.expectedM1({ verifier, b, A, B, accountName: APPLE_ID, salt });
+        const { m1 } = srpServer.expected({ verifier, b, A, B, accountName: APPLE_ID, salt });
         if (body.c !== 'c-1' || body.m1 !== base64(m1)) return json({ serviceErrors: [{ code: '-20101', message: 'Your Apple ID or password was incorrect.' }] }, 401);
         const headers = { 'X-Apple-ID-Session-Id': 'sid-1', scnt: 'scnt-1', 'X-Apple-ID-Account-Country': 'SWE', 'X-Apple-Session-Token': sessionToken };
-        if (trustToken && body.trustTokens?.includes(trustToken) && !control.distrust) return json({ authType: 'hsa2' }, 200, headers);
+        if (trustToken && body.trustTokens?.includes(trustToken) && !control.distrust) {
+          // Since iOS 26.4: the trust token taken, and the password asked proved once more.
+          if (control.escrow) {
+            escrowPending = true;
+            return json({ authType: 'hsa2' }, 409, { ...headers, 'X-Apple-EDP': '1' });
+          }
+          return json({ authType: 'hsa2' }, 200, headers);
+        }
         return json({ authType: 'hsa2' }, 409, headers);
+      }
+      case 'POST idmsa.apple.com/appleauth/auth/escrow/init':
+        if (body.accountName !== '' || !escrowPending) return json({}, 400);
+        A = fromBase64(body.a);
+        B = srpServer.challenge(verifier, b);
+        return json({ iteration: iterations, salt: base64(salt), protocol, b: base64(B), c: 'c-escrow' });
+      case 'POST idmsa.apple.com/appleauth/auth/escrow/complete': {
+        const { m1, K } = srpServer.expected({ verifier, b, A, B, accountName: '', salt });
+        if (body.c !== 'c-escrow' || body.m1 !== base64(m1) || body.k !== base64(K)) return json({ serviceErrors: [{ code: '-20101' }] }, 401);
+        escrowPending = false;
+        escrowed++;
+        sessionToken = `session-escrowed-${escrowed}`;
+        return new Response(null, { status: 200, headers: { 'X-Apple-Session-Token': sessionToken } });
       }
       case 'GET idmsa.apple.com/appleauth/auth': {
         const phone = { id: 1, numberWithDialCode: '+46 •• ••• •• 12', pushMode: 'sms', nonFTEU: false };
@@ -76,21 +99,24 @@ export function playedApple(options: { protocol?: 's2k' | 's2k_fo'; noTrustedDev
         return json({ trustedDeviceCount: 2 }, 202);
       case 'POST idmsa.apple.com/appleauth/auth/verify/trusteddevice/securitycode':
         if (init.headers.scnt !== 'scnt-1' || init.headers['x-apple-id-session-id'] !== 'sid-1') return json({}, 401);
-        return codeShown && body.securityCode?.code === DEVICE_CODE ? json({ securityCode: { code: DEVICE_CODE, valid: true } }, 409) : json({ service_errors: [{ code: '-21669' }] }, 400);
+        if (!codeShown || body.securityCode?.code !== DEVICE_CODE) return json({ service_errors: [{ code: '-21669' }] }, 400);
+        if (control.escrow) escrowPending = true;
+        return json({ securityCode: { code: DEVICE_CODE, valid: true } }, 409, control.escrow ? { 'X-Apple-PDP': '1' } : {});
       case 'PUT idmsa.apple.com/appleauth/auth/verify/phone':
         return json({ trustedPhoneNumber: { id: body.phoneNumber?.id } });
       case 'POST idmsa.apple.com/appleauth/auth/verify/phone/securitycode':
         return body.securityCode?.code === TEXT_CODE && body.phoneNumber?.id === 1 && body.phoneNumber?.nonFTEU === false && body.mode === 'sms' ? json({}) : json({ service_errors: [{ code: '-21669' }] }, 400);
       case 'GET idmsa.apple.com/appleauth/auth/2sv/trust':
+        if (escrowPending) return json({ serviceErrors: [{ code: 'escrow' }] }, 401);
         trustToken = 'trust-1';
         sessionToken = 'session-2';
         trusted = true;
         return new Response(null, { status: 204, headers: { 'X-Apple-TwoSV-Trust-Token': trustToken, 'X-Apple-Session-Token': sessionToken } });
       case 'POST setup.icloud.com/setup/ws/1/accountLogin':
-        if (body.dsWebAuthToken !== sessionToken) return json({ error: 'bad token' }, 421);
+        if (body.dsWebAuthToken !== sessionToken || escrowPending) return json({ error: 'bad token' }, 421);
         webauth = `webauth-${Number(webauth.split('-')[1]) + 1}`;
         return json(
-          { dsInfo: { dsid: DSID, fullName: 'Someone Example' }, webservices: { findme: { url: 'https://p42-fmipweb.icloud.com:443', status: 'active' } }, hsaTrustedBrowser: trusted, hsaChallengeRequired: false },
+          { dsInfo: { dsid: DSID, fullName: 'Someone Example' }, webservices: { findme: { url: 'https://p42-fmipweb.icloud.com:443', status: 'active' } }, hsaTrustedBrowser: trusted, hsaChallengeRequired: false, termsUpdateNeeded: control.terms },
           200,
           { 'Set-Cookie': `X-APPLE-WEBAUTH-TOKEN="${webauth}"; Domain=.icloud.com; Path=/; Secure; HttpOnly` }
         );
@@ -116,5 +142,5 @@ export function playedApple(options: { protocol?: 's2k' | 's2k_fo'; noTrustedDev
     }
   };
 
-  return { fetch, asked, control, trustToken: () => trustToken, bytes: { bigOfBytes, bytesOfBig } };
+  return { fetch, asked, control, trustToken: () => trustToken, escrowed: () => escrowed, bytes: { bigOfBytes, bytesOfBig } };
 }

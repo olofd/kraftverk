@@ -6,7 +6,8 @@ import { Card, Icon, isComplete, SchemaForm } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
 import { useAttempt } from '../../../components/useAttempt';
-import { ActionCard, Asked, Choices } from './ActionCard';
+import { useNow } from '../../automations/looks';
+import { ActionCard, Asked, Choices, countdown } from './ActionCard';
 import { ErrorLine, StepFrame, type StepProps } from './StepFrame';
 
 export function FormStep({ flow, step, onNext, onBack, onNamed }: StepProps & { step: Extract<SetupStepView, { kind: 'form' }>; onNamed: (name: string) => void }) {
@@ -22,6 +23,10 @@ export function FormStep({ flow, step, onNext, onBack, onNamed }: StepProps & { 
   // What the sign-in answered last: a question (a code), a refusal, candidates.
   const [answered, setAnswered] = useState<SetupActionResult | null>(null);
   const [refused, setRefused] = useState<string | null>(null);
+  // Not before then: a vendor refusing sign-ins for a while — tried sooner, longer.
+  const [retryAt, setRetryAt] = useState<number | null>(null);
+  const now = useNow(retryAt !== null && retryAt > Date.now());
+  const waiting = retryAt !== null && retryAt > now ? retryAt - now : 0;
   const theme = useTheme();
 
   const apply = (patch: ConfigValues) => flow.update(step.target === 'device' ? { device: patch } : { connection: patch });
@@ -58,6 +63,7 @@ export function FormStep({ flow, step, onNext, onBack, onNamed }: StepProps & { 
   /** What the sign-in said: asked again, refused, candidates — or done, and on to the next step. */
   const took = (result: SetupActionResult) => {
     setRefused(null);
+    setRetryAt(result.retryAt ? Date.parse(result.retryAt) : null);
     if (result.ask || result.choices?.length) return setAnswered(result);
     setAnswered(null);
     if (!result.ok) return setRefused(result.detail);
@@ -85,7 +91,7 @@ export function FormStep({ flow, step, onNext, onBack, onNamed }: StepProps & { 
   const next = primary
     ? answered
       ? undefined
-      : { label: busy ? 'Signing in…' : primary.label, disabled: !canContinue, onPress: signIn }
+      : { label: busy ? 'Signing in…' : waiting ? `Try again in ${countdown(waiting)}` : primary.label, disabled: !canContinue || waiting > 0, onPress: signIn }
     : typing
       ? { label: 'Continue', disabled: !canContinue, onPress: proceed }
       : undefined;

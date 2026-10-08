@@ -41,13 +41,35 @@ describe('SRP, as Apple’s sign-in speaks it', () => {
       const client = srpStart();
       const B = srpServer.challenge(verifier, b);
       const proofs = srpProofs({ client, accountName: 'someone@example.test', key, salt, B })!;
-      expect(proofs.m1).toEqual(srpServer.expectedM1({ verifier, b, A: client.A, B, accountName: 'someone@example.test', salt }));
+      expect(proofs.m1).toEqual(srpServer.expected({ verifier, b, A: client.A, B, accountName: 'someone@example.test', salt }).m1);
       // The wrong password proves nothing.
       const wrong = srpProofs({ client, accountName: 'someone@example.test', key: passwordKey('another', salt, 50, kind), salt, B })!;
       expect(wrong.m1).not.toEqual(proofs.m1);
     }
     // The two ways differ.
     expect(passwordKey('pw', new Uint8Array(16), 10, 's2k')).not.toEqual(passwordKey('pw', new Uint8Array(16), 10, 's2k_fo'));
+  });
+
+  test('padded as Apple’s own client pads: an A that begins with a zero byte is sent whole, and proves the password still; a name in capitals is the same name', () => {
+    const salt = new Uint8Array(16).fill(3);
+    const key = passwordKey('a password', salt, 10, 's2k');
+    const verifier = srpServer.verifier(key, salt);
+    const b = 0xfeedfacecafebeefn;
+    const B = srpServer.challenge(verifier, b);
+    // About one A in 256 begins with a zero byte: found, as a sign-in may meet it.
+    let seed = 0;
+    let client = srpStart(new Uint8Array(32).fill(0));
+    for (; seed < 5000; seed++) {
+      client = srpStart(Uint8Array.from({ length: 32 }, (_, index) => (index * 31 + seed * 7 + (seed >> 8)) % 256));
+      if (client.A[0] === 0) break;
+    }
+    expect(client.A[0]).toBe(0);
+    expect(client.A.length).toBe(256);
+    const proofs = srpProofs({ client, accountName: 'Someone@Example.TEST', key, salt, B })!;
+    const server = srpServer.expected({ verifier, b, A: client.A, B, accountName: 'someone@example.test', salt });
+    expect(proofs.m1).toEqual(server.m1);
+    // The key both now share: what Apple's escrow step is handed.
+    expect(proofs.K).toEqual(server.K);
   });
 
   test('a challenge no honest server sends is refused', () => {
@@ -79,20 +101,22 @@ describe('the protocol', () => {
 });
 
 describe('signing in, as setup does', () => {
-  test('a code from a trusted device, asked for in a turn of its own; the trust token kept; then Find My, the family’s included', async () => {
+  test('a code shown on the devices, asked for in a turn of its own; the trust token kept; then who is in Find My, the family’s included', async () => {
     const apple = playedApple();
     const ctx = contextFor(apple.fetch);
     const first = await signInAction.run(ctx, {});
-    expect(first).toMatchObject({ ok: true, ask: { schema: { fields: { code: { type: 'string' } } } } });
-    // What the next turn needs, never shown: the session half made.
+    expect(first).toMatchObject({ ok: true, detail: 'Apple asks for a code', ask: { schema: { fields: { code: { type: 'string', presentation: 'code', length: 6, required: true } } } } });
+    // The code is asked for: Apple shows none on the devices until it is.
+    expect(apple.asked).toContain('PUT idmsa.apple.com/appleauth/auth/verify/trusteddevice/securitycode');
+    // What the next turn needs, never shown: the session half made, and how this sign-in may be answered.
     expect(typeof first.ask!.carry!.state).toBe('string');
+    expect(typeof first.ask!.carry!.talk).toBe('string');
 
     const wrong = await signInAction.run(ctx, { ...first.ask!.carry, code: '000000' });
-    expect(wrong).toMatchObject({ ok: false, detail: 'That code was not the one Apple sent: try again, or have another sent' });
-    expect(wrong.ask).toBeDefined();
+    expect(wrong).toMatchObject({ ok: false, detail: 'That code was not the one Apple sent: try again, or have another sent', ask: { instead: { title: 'Didn’t get a code?' } } });
 
     const done = await signInAction.run(ctx, { ...wrong.ask!.carry, code: DEVICE_CODE });
-    expect(done).toMatchObject({ ok: true, detail: 'Signed in to iCloud: 3 devices in Find My, the family’s included.' });
+    expect(done).toMatchObject({ ok: true, detail: 'Signed in to iCloud: Someone’s iPhone, Alex’s iPhone (Alex), Someone’s MacBook are in its Find My.' });
     const kept = stateOf(done.suggestedConfig!.session as string);
     expect(kept.trustToken).toBe('trust-1');
     expect(kept.cookies.some((cookie) => cookie.name === 'X-APPLE-WEBAUTH-TOKEN')).toBe(true);
@@ -105,8 +129,6 @@ describe('signing in, as setup does', () => {
     const ctx = { ...contextFor(apple.fetch), connection: {}, secrets: { get: () => null } };
     const first = await signInAction.run(ctx, { appleId: ` ${APPLE_ID} `, password: PASSWORD });
     expect(first).toMatchObject({ ok: true, detail: 'Apple asks for a code', suggestedConfig: { appleId: APPLE_ID, password: PASSWORD } });
-    // The code is asked for: Apple shows none on the devices until it is.
-    expect(apple.asked).toContain('PUT idmsa.apple.com/appleauth/auth/verify/trusteddevice/securitycode');
     expect(await signInAction.run(ctx, { ...first.ask!.carry, code: '123 456' })).toMatchObject({ ok: true });
     // With nothing typed and nothing kept, it says what is missing, and asks Apple nothing.
     const before = apple.asked.length;
@@ -114,44 +136,58 @@ describe('signing in, as setup does', () => {
     expect(apple.asked.length).toBe(before);
   });
 
-  test('by text instead, when asked: a code to the trusted number, sent back as Apple named it', async () => {
+  test('didn’t get a code: shown again, texted, or read out by a call — each waiting longer than the last', async () => {
     const apple = playedApple();
     const ctx = contextFor(apple.fetch);
     const first = await signInAction.run(ctx, {});
-    expect(first.ask!.schema.fields.byText).toMatchObject({ title: 'Text it to +46 •• ••• •• 12 instead' });
-    const texted = await signInAction.run(ctx, { ...first.ask!.carry, byText: true });
-    expect(texted).toMatchObject({ ok: true, detail: 'A code is on its way by text', ask: { schema: { help: 'Apple sent a code by text to +46 •• ••• •• 12.' } } });
+    const options = first.ask!.instead!.options;
+    expect(options.map((option) => option.label)).toEqual(['Show it on my devices again', 'Text it to +46 •• ••• •• 12', 'Call +46 •• ••• •• 12']);
+    const wait = (result: typeof first) => Date.parse(result.ask!.instead!.options[0]!.after!) - Date.now();
+    expect(wait(first)).toBeGreaterThan(25_000);
+    expect(wait(first)).toBeLessThanOrEqual(30_000);
+
+    const again = await signInAction.run(ctx, { ...first.ask!.carry, ...options[0]!.answer });
+    expect(again).toMatchObject({ ok: true, detail: 'Apple shows a new code on your devices' });
+    expect(wait(again)).toBeGreaterThan(55_000);
+
+    const texted = await signInAction.run(ctx, { ...again.ask!.carry, ...options[1]!.answer });
+    expect(texted).toMatchObject({ ok: true, detail: 'A code is on its way to +46 •• ••• •• 12', ask: { schema: { help: 'Apple sent a code by text to +46 •• ••• •• 12.' } } });
+    expect(wait(texted)).toBeGreaterThan(115_000);
     expect(apple.asked).toContain('PUT idmsa.apple.com/appleauth/auth/verify/phone');
+    // The code from the text is given back as the text came: to that number.
     expect(await signInAction.run(ctx, { ...texted.ask!.carry, code: TEXT_CODE })).toMatchObject({ ok: true });
+
+    const called = await signInAction.run(contextFor(apple.fetch), { ...first.ask!.carry, ...options[2]!.answer });
+    expect(called).toMatchObject({ ok: true, detail: 'Apple is calling +46 •• ••• •• 12', ask: { schema: { help: 'Apple is calling +46 •• ••• •• 12: it reads out a code.' } } });
   });
 
   test('Apple’s options as its JSON once had them, flat, are read as well', async () => {
     const apple = playedApple({ flat: true });
     const ctx = contextFor(apple.fetch);
     const first = await signInAction.run(ctx, {});
-    expect(first.ask!.schema.fields.byText).toBeDefined();
+    expect(first.ask!.instead!.options).toHaveLength(3);
     expect(await signInAction.run(ctx, { ...first.ask!.carry, code: DEVICE_CODE })).toMatchObject({ ok: true });
   });
 
   test('an Apple ID with no trusted device has a code texted at once; one whose devices show none, too', async () => {
     const apple = playedApple({ noTrustedDevices: true, protocol: 's2k_fo' });
     const first = await signInAction.run(contextFor(apple.fetch), {});
-    expect(first).toMatchObject({ ok: true, detail: 'Apple sent a code by text' });
-    expect(JSON.parse(first.ask!.carry!.phone as string)).toMatchObject({ id: 1, mode: 'sms' });
+    expect(first).toMatchObject({ ok: true, detail: 'Apple sent a code to +46 •• ••• •• 12' });
+    // Nothing to show on devices that are not there.
+    expect(first.ask!.instead!.options.map((option) => option.label)).toEqual(['Text it to +46 •• ••• •• 12', 'Call +46 •• ••• •• 12']);
 
     const refusing = playedApple();
     refusing.control.refuseDeviceCode = true;
-    expect(await signInAction.run(contextFor(refusing.fetch), {})).toMatchObject({ ok: true, detail: 'Apple sent a code by text' });
+    expect(await signInAction.run(contextFor(refusing.fetch), {})).toMatchObject({ ok: true, detail: 'Apple sent a code to +46 •• ••• •• 12' });
   });
 
-  test('a mistyped code keeps its question, with a text still offered', async () => {
+  test('a mistyped code keeps its question, and its other ways', async () => {
     const apple = playedApple();
     const ctx = contextFor(apple.fetch);
     const first = await signInAction.run(ctx, {});
     const typo = await signInAction.run(ctx, { ...first.ask!.carry, code: '12' });
-    expect(typo).toMatchObject({ ok: false, detail: 'Type the digits Apple shows', ask: { schema: { fields: { byText: {} } } } });
-    const wrong = await signInAction.run(ctx, { ...typo.ask!.carry, code: '000000' });
-    expect(wrong.ask!.schema.fields.byText).toBeDefined();
+    expect(typo).toMatchObject({ ok: false, detail: 'Type the 6 digits Apple shows', ask: { schema: { fields: { code: {} } }, instead: {} } });
+    expect(await signInAction.run(ctx, { ...typo.ask!.carry, code: DEVICE_CODE })).toMatchObject({ ok: true });
   });
 
   test('the wrong password is said so, and nothing is kept', async () => {
@@ -168,8 +204,17 @@ describe('signing in, as setup does', () => {
     const refused = await signInAction.run(ctx, {});
     expect(refused.ok).toBe(false);
     expect(refused.detail).toMatch(/^Apple is refusing sign-ins for this Apple ID for a while, usually after several tries\. Try once more in about 30 minutes/);
+    expect(Date.parse(refused.retryAt!) - Date.now()).toBeGreaterThan(29 * 60_000);
     expect(lines).toContain('iCloud: GET /appleauth/auth/authorize/signin → 503 (Apple’s request req-busy)');
     expect(lines.join('\n')).not.toContain(PASSWORD);
+  });
+
+  test('terms Apple asks to be accepted are the person’s to accept: said so, never accepted here', async () => {
+    const apple = playedApple();
+    apple.control.terms = true;
+    const ctx = contextFor(apple.fetch);
+    const first = await signInAction.run(ctx, {});
+    expect(await signInAction.run(ctx, { ...first.ask!.carry, code: DEVICE_CODE })).toEqual({ ok: false, detail: 'Apple asks you to accept its updated iCloud terms: sign in at icloud.com once and accept them, then sign in here again' });
   });
 });
 
@@ -224,6 +269,24 @@ describe('a session carried on', () => {
     await findMy.playSound('device-2');
     await findMy.lostMode('device-2', { text: 'Found it? Call me', phone: '+46 70 000 00 00' });
     expect(apple.asked).toContain('POST p42-fmipweb.icloud.com/fmipservice/client/web/lostDevice');
+  });
+
+  test('Apple’s escrow step: after the code, and after the trust token, the password proved once more — and no code asked again', async () => {
+    const apple = playedApple();
+    apple.control.escrow = true;
+    const ctx = contextFor(apple.fetch);
+    const first = await signInAction.run(ctx, {});
+    const done = await signInAction.run(ctx, { ...first.ask!.carry, code: DEVICE_CODE });
+    expect(done).toMatchObject({ ok: true });
+    expect(apple.escrowed()).toBe(1);
+
+    // Its session gone: signed in again with the password and the trust token — escrowed, never a code.
+    apple.control.expireWebauth = true;
+    const auth = new IcloudAuth(apple.fetch, stateOf(done.suggestedConfig!.session as string));
+    const again = await auth.resume(APPLE_ID, PASSWORD);
+    expect(again.dsid).toBe(DSID);
+    expect(apple.escrowed()).toBe(2);
+    expect(apple.asked.filter((route) => route === 'PUT idmsa.apple.com/appleauth/auth/verify/trusteddevice/securitycode')).toHaveLength(1);
   });
 
   test('when Apple asks for a code again, a person must sign in: NeedsSignIn', async () => {

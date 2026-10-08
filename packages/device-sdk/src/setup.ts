@@ -69,6 +69,17 @@ export type SetupWaiting = {
   until: string;
 };
 
+/**
+ * Other ways to answer a question than the one it asks — "Didn't get a
+ * code?": the code sent again, texted, read out by a call. Each runs the same
+ * action with `answer` as what the person gave; one with `after` waits until
+ * then (an ISO time), so a code is not asked for again too soon.
+ */
+export type SetupInstead = {
+  title: string;
+  options: readonly { label: string; answer: ConfigValues; after?: string }[];
+};
+
 export type SetupActionResult = {
   ok: boolean;
   /** One sentence for the user. */
@@ -95,7 +106,13 @@ export type SetupActionResult = {
    * made: kept by whoever runs the setup, added to that next input, and never
    * sent to the app.
    */
-  ask?: { schema: ConfigSchema; carry?: ConfigValues };
+  ask?: { schema: ConfigSchema; carry?: ConfigValues; instead?: SetupInstead };
+  /**
+   * Not before then (an ISO time): the one asked will not take it sooner —
+   * a vendor refusing sign-ins for a while. The app holds the button until
+   * then, saying how long.
+   */
+  retryAt?: string;
   /**
    * Offered beside its answer: the same action run afresh, with this input —
    * "Fetch the keys again" beside devices listed from what was kept.

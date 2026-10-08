@@ -384,8 +384,10 @@ export class SetupService {
     console.info(`[setup] ${draft.type.id} ${actionId}${answering ? ' (answered)' : ''}: ${result.ok ? 'ok' : 'refused'}${result.ask ? ', asks again' : ''}${result.waiting ? ', waits' : ''} — ${result.detail}`);
     // Kept here for its next turn, never sent: the app sees what to ask, not what was carried.
     if (result.ask) {
-      draft.carried.set(actionId, { carry: result.ask.carry ?? {}, asked: Object.keys(result.ask.schema.fields) });
-      return this.#hold(draft, step.target, { ...result, ask: { schema: result.ask.schema } });
+      // Answered by its fields, or by one of its other ways.
+      const asked = [...Object.keys(result.ask.schema.fields), ...(result.ask.instead?.options.flatMap((option) => Object.keys(option.answer)) ?? [])];
+      draft.carried.set(actionId, { carry: result.ask.carry ?? {}, asked });
+      return this.#hold(draft, step.target, { ...result, ask: { schema: result.ask.schema, ...(result.ask.instead ? { instead: result.ask.instead } : {}) } });
     }
     return this.#hold(draft, step.target, result);
   }
