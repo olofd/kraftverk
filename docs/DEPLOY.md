@@ -94,8 +94,11 @@ hand.
 ### The runner
 
 The jobs that build, start and ship images mount the server's Docker socket
-by name (`/var/run/docker.sock`); the runner must allow that volume and no
-other unasked. Two settings matter on a server that also runs kraftverk:
+by name (`/var/run/docker.sock`), and the check jobs npm's download cache,
+a volume Docker makes on first use (`kraftverk-npm-cache`, at `/root/.npm`; the end-to-end jobs Metro's too, `kraftverk-metro-cache` at `/tmp/metro-cache`):
+each `npm ci` takes from it (`--prefer-offline`) and asks the registry only
+for what it lacks. The runner must allow those volumes and no other unasked.
+Two settings matter on a server that also runs kraftverk:
 
 - **A network of each job's own, never the server's.** The end-to-end suite
   starts a server of its own that looks for a broker on `127.0.0.1:1883`; on
@@ -120,7 +123,12 @@ container:
   docker_host: "-"
   valid_volumes:
     - /var/run/docker.sock
+    - kraftverk-npm-cache
+    - kraftverk-metro-cache
 ```
 
-Capping the jobs (`--cpus`, `--memory` in `options`) keeps a pipeline from
-starving the kraftverk it deploys.
+A low CPU weight for the jobs (`--cpu-shares=256` in `options`, a quarter of
+a container's default) keeps a pipeline from starving the kraftverk it
+deploys, and lets a job use every core nothing else wants: a cap
+(`--cpus=3`) held an end-to-end job at its limit with the machine idle.
+Memory is capped (`--memory=6g`).

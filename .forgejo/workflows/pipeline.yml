@@ -30,8 +30,9 @@ jobs:
   # The checks split in parallel jobs, the deploy waiting for all of them:
   # the end-to-end suite, the longest, in two shards — each a job with a server
   # and a database of its own, and the machine's share a job gets: two shards
-  # side by side in one job starve each other. Every check job runs in one
-  # image, built once.
+  # side by side in one job starve each other. The static checks and the unit
+  # tests share a job: four check jobs fit the runner's four at once, and one
+  # install fewer. Every check job runs in one image, built once.
   checks-image:
     name: The image the checks run in
     runs-on: docker
@@ -48,30 +49,21 @@ jobs:
       # cache answers at once.
       - run: docker build -t kraftverk-checks:pipeline -f scripts/ci/checks.Dockerfile scripts/ci
 
-  static:
-    name: Architecture, types and unused code
+  checks:
+    name: Architecture, types, unused code and the tests
     needs: checks-image
     runs-on: docker
     container:
       image: kraftverk-checks:pipeline
+      # npm's download cache, kept by the runner between runs (homelab's runner.yml).
+      volumes: [kraftverk-npm-cache:/root/.npm]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - run: npm ci
+      - run: npm ci --prefer-offline --no-audit --no-fund
       - run: npm run check:architecture
       - run: npm run typecheck
       - run: npm run knip
-
-  unit:
-    name: The tests
-    needs: checks-image
-    runs-on: docker
-    container:
-      image: kraftverk-checks:pipeline
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm ci
       - run: npm test
 
   e2e:
@@ -84,10 +76,14 @@ jobs:
     runs-on: docker
     container:
       image: kraftverk-checks:pipeline
+      # npm's download cache, and Metro's — each module it transformed, by its
+      # content — kept by the runner between runs (homelab's runner.yml): the
+      # app is built from what changed, not afresh.
+      volumes: [kraftverk-npm-cache:/root/.npm, kraftverk-metro-cache:/tmp/metro-cache]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - run: npm ci
+      - run: npm ci --prefer-offline --no-audit --no-fund
       # Builds the app as it ships, then runs its share of e2e/ against a
       # read-only server of its own, every device simulated.
       - run: npm run test:e2e -- --shard=${{ matrix.shard }}/2
@@ -140,7 +136,7 @@ jobs:
   deploy:
     name: Deploy the server and the app
     # All must pass: `stack` built and attacked the very images shipped here.
-    needs: [static, unit, e2e, stack]
+    needs: [checks, e2e, stack]
     if: vars.KRAFTVERK_DEPLOY == 'on'
     runs-on: docker
     container:

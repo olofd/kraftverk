@@ -12,13 +12,17 @@ checks are.
 
 ## What the checks are
 
-1. **the checks** — in parallel jobs, in one image built once from
+1. **the checks** — in three parallel jobs (the static checks and the unit
+   tests in one, the end-to-end suite in two), in one image built once from
    `scripts/ci/checks.Dockerfile` (the Playwright the lockfile pins, its
-   browser and libraries, and the tools native modules build with):
-   - `npm ci`;
+   browser and libraries, and the tools native modules build with), npm's
+   download cache and Metro's kept between runs in volumes the runner allows
+   ([DEPLOY.md](DEPLOY.md#the-runner)):
+   - `npm ci`, from the cache first, a dropped download tried again;
    - `npm run check:architecture`: the dependency rule and the
      product-identifier ratchet ([ARCHITECTURE.md §7](ARCHITECTURE.md#7-guardrails-in-ci));
-   - `npm run typecheck` and `npm test`;
+   - `npm run typecheck` (each project's own `tsc`, side by side —
+     `scripts/typecheck.mjs`) and `npm test`;
    - `npm run knip`: nothing exported, depended on or written that nothing uses;
    - `npm run test:e2e`: Playwright, in Chromium, drives the web build against
      a read-only server of its own, every device simulated
