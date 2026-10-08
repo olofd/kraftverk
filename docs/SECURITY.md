@@ -98,6 +98,31 @@ would let anyone choose the address their guesses are counted against.
 | Guessing | Counted per client address (an IPv6 caller's whole /64) and per username. Five failures are free; then each locks for twice as long, from one minute to fifteen. A wrong username takes as long as a wrong password, and gets the same answer. The username count from the internet is kept apart from the one at home, so someone who knows your username cannot lock you out of your own server from outside |
 | The last account | Cannot be deleted |
 | Erasing everything | Needs an account *and* the reset passphrase — 16 characters or more — from a file on the server. Wrong passphrases are counted and slowed down like logins, on a count of their own. Keeps the accounts, so the server is never left waiting to be claimed |
+| A new schema | Keeps the accounts too, and signs everyone out (below) |
+
+### Where accounts live
+
+In the server's database, `kraftverk.db`, and nowhere else: their names, their
+argon2id password hashes, when and by whom each was made, and the sessions'
+hashes. Nothing about an account is in the configuration kept beside the
+database (`config/kraftverk.yaml`), in an export, or anywhere the app can carry
+off. A copy of `kraftverk.db` — a backup, or one set aside — holds those hashes,
+so keep it as you would the server itself.
+
+When a new version of kraftverk changes the database's schema, the old
+database is set aside beside the new one, untouched
+(`kraftverk.db.set-aside.<time>`). The home comes back from the configuration
+kept beside it ([CONFIG.md](CONFIG.md)). The accounts are copied straight
+from the database being set aside into the new one, so the same names and
+passwords still sign in. The sessions are not copied: a new schema signs
+everyone out. If the accounts' own table changed so that the new one requires
+something the old did not hold, no account is carried. The log says so, and
+the server waits for its first account again, from the home network only, as
+a new one does.
+
+Deleting `kraftverk.db` by hand is different. Nothing is set aside then, so
+nothing is carried: the home comes back from its configuration, and the server
+waits for its first account.
 
 ## Attacks the browser makes possible
 

@@ -291,7 +291,9 @@ Everything that outlives a restart is in the `kraftverk-data` volume, mounted at
 
 | Path | What |
 | --- | --- |
-| `kraftverk.db` | Devices and how each is reached, their secrets, recorded history, accounts, the audit timeline ([DATA-MODEL.md](DATA-MODEL.md)) |
+| `kraftverk.db` | Devices and how each is reached, their secrets, recorded history, the audit timeline ([DATA-MODEL.md](DATA-MODEL.md)) — and the accounts and their sessions, which live nowhere else ([SECURITY.md](SECURITY.md#where-accounts-live)) |
+| `config/kraftverk.yaml` | The home's configuration, kept beside the database: devices, how each is reached and their secrets, links, automations, the home's values — never accounts. Written after every change, the five before it kept as `.1` … `.5` ([CONFIG.md](CONFIG.md#where-it-is-kept)) |
+| `node-id` | Which kraftverk node this server is, so a new database is still the same node |
 | `logs/server-YYYY-MM-DD.log` | The server's log, one file a day, two weeks kept |
 | `broker/logs/broker-YYYY-MM-DD.jsonl` | The broker's journal: every connection, frame and disconnect |
 | `broker/` | The broker's token and the stations it has seen |
@@ -300,7 +302,7 @@ Everything that outlives a restart is in the `kraftverk-data` volume, mounted at
 | `map/cache.db` | The detail fetched as someone looks where no region is held: 2 GB at most, the least used let go |
 | `map/assets/` | The map's fonts and icons, fetched with the world |
 | `baseline.json` | A register baseline, if one was taken |
-| `kraftverk.db.before-migration-N.<time>` | The database as it was before an upgrade changed its schema: the way back from a bad one |
+| `kraftverk.db.set-aside.<time>` | A database made by an earlier schema, set aside untouched when a new version started a new one: the way back from a bad upgrade |
 
 Back it up:
 
@@ -308,11 +310,25 @@ Back it up:
 docker run --rm -v kraftverk_kraftverk-data:/data -v "$PWD:/backup" busybox tar czf /backup/kraftverk-data.tgz -C /data .
 ```
 
-**Upgrades copy the database first.** Before a new version changes the
-database's schema, the server copies it beside itself and logs where. Rolling
-back is stopping the stack, putting that copy in place of `kraftverk.db`, and
-starting the previous image. The copies are not removed automatically; delete
-old ones once the new version has been running for a while.
+**A new schema sets the database aside.** The database has one schema and
+no migrations: when a new version changes it, the server moves the old file
+beside the new one, unchanged, and logs where. What a new schema keeps:
+
+- **The home** — devices, how each is reached and their secrets (sign-ins to
+  a cloud account included), links, automations and the home's values. It
+  is restored from `config/kraftverk.yaml`.
+- **The accounts** — the same names and passwords. They are copied from the
+  database being set aside into the new one. Everyone is signed out, so sign
+  in again. If the accounts' own table changed so that they cannot be
+  carried, the log says so, and the first account is made again from the
+  home network.
+- **Not kept:** history, the timeline, what automations remember, and their
+  runs. These stay in the file set aside.
+
+Rolling back means stopping the stack, putting the file set aside in place of
+`kraftverk.db`, and starting the previous image. The files are not removed
+automatically. Delete old ones once the new version has been running for a
+while. They hold the accounts' password hashes too.
 
 (The volume is named after the compose project: `kraftverk_kraftverk-data` when
 the project is `kraftverk`. `docker volume ls` shows it.)

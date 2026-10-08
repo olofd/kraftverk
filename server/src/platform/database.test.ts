@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { Database } from 'bun:sqlite';
 
+import { Accounts } from '../auth/accounts.ts';
 import { ACCOUNTS_SCHEMA } from '../auth/schema.ts';
 import { openSchema, SERVER_SCHEMA } from './database.ts';
 import { SCHEMA, schemaFingerprint, type SqlDatabase } from '@kraftverk/store';
@@ -12,7 +13,8 @@ import { SCHEMA, schemaFingerprint, type SqlDatabase } from '@kraftverk/store';
 /*
   One schema, strict version 1 (docs/ARCHITECTURE.md §9, decision 21): a new
   database gets it, one made by it is used as it is, and one made by anything
-  else is set aside — never changed, never deleted. These use their own
+  else is set aside — never changed, never deleted — its accounts carried
+  into the new one, their sign-ins not. These use their own
   handles on their own files: nothing here touches the shared database.
 */
 
@@ -75,6 +77,64 @@ describe('the schema', () => {
     expect(kept.query<{ name: string }, []>('SELECT name FROM thing').all()).toEqual([{ name: 'station' }]);
     kept.close();
     expect(existsSync(path)).toBe(true);
+  });
+
+  test('a database set aside hands its accounts to the new one, and not their sign-ins', async () => {
+    const path = scratch();
+    const first = openSchema(path);
+    const accounts = new Accounts(first);
+    const owner = await accounts.createFirstUser('owner', 'a-long-test-password');
+    await accounts.createUser('guest', 'another-test-password', owner.id);
+    accounts.createSession(owner.id, '192.0.2.10', null);
+    first.close();
+
+    // Any change to the schema: here, a table more.
+    const handle = openSchema(path, SERVER_SCHEMA + 'CREATE TABLE thing (name TEXT);');
+    expect(handle.setAside).toContain('.set-aside.');
+    const again = new Accounts(handle);
+    expect(again.listUsers().map((user) => [user.id, user.username, user.createdBy])).toEqual([
+      [again.findUserByName('guest')!.id, 'guest', owner.id],
+      [owner.id, 'owner', null],
+    ]);
+    // The same password signs in; the old session does not.
+    expect((await again.verifyLogin('owner', 'a-long-test-password'))?.id).toBe(owner.id);
+    expect(handle.query<{ n: number }, []>('SELECT COUNT(*) n FROM login_session').get()?.n).toBe(0);
+    handle.close();
+
+    // The file set aside still holds them as they were.
+    const kept = new Database(handle.setAside!, { readonly: true });
+    expect(kept.query<{ n: number }, []>('SELECT COUNT(*) n FROM login_session').get()?.n).toBe(1);
+    kept.close();
+  });
+
+  test('an account’s own table changed carries the columns both have — unless the new one requires one the old lacked', async () => {
+    const path = scratch();
+    const first = openSchema(path);
+    await new Accounts(first).createFirstUser('owner', 'a-long-test-password');
+    first.close();
+
+    // A column more, which may be empty: carried, the column empty.
+    const nullable = SERVER_SCHEMA.replace('last_login_at       TEXT\n', 'last_login_at       TEXT,\n    nickname            TEXT\n');
+    expect(nullable).not.toBe(SERVER_SCHEMA);
+    const second = openSchema(path, nullable);
+    expect(second.query<{ username: string; nickname: string | null }, []>('SELECT username, nickname FROM users').all()).toEqual([{ username: 'owner', nickname: null }]);
+    second.close();
+
+    // A column more that is required: nothing carried, and the server starts with no accounts.
+    const required = SERVER_SCHEMA.replace('last_login_at       TEXT\n', 'last_login_at       TEXT,\n    role                TEXT NOT NULL\n');
+    const third = openSchema(path, required);
+    expect(third.query<{ n: number }, []>('SELECT COUNT(*) n FROM users').get()?.n).toBe(0);
+    third.close();
+  });
+
+  test('a database set aside with no accounts in it starts the new one with none', () => {
+    const path = scratch();
+    const old = new Database(path, { create: true });
+    old.exec("CREATE TABLE thing (name TEXT); INSERT INTO thing (name) VALUES ('station')");
+    old.close();
+    const handle = openSchema(path);
+    expect(new Accounts(handle).countUsers()).toBe(0);
+    handle.close();
   });
 
   test('the server’s is the home’s with the accounts beside it, and its fingerprint covers both', () => {

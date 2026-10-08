@@ -5,7 +5,7 @@ import { Database, type Statement } from 'bun:sqlite';
 
 import { createSchema, metaOf, prepareDatabase, SCHEMA, schemaStateOf, type SqlDatabase, type SqlStatement } from '@kraftverk/store';
 
-import { ACCOUNTS_SCHEMA } from '../auth/schema.ts';
+import { ACCOUNTS_CARRIED, ACCOUNTS_SCHEMA } from '../auth/schema.ts';
 import { DEFAULT_DATABASE_FILE, SERVER } from '../config.ts';
 
 /** The server's database is the home's, and its own accounts beside it: one definition, one fingerprint. */
@@ -63,7 +63,10 @@ function open(path: string): SqlDatabase {
  * A new file gets the schema. A file whose schema matches is used as it is. A
  * file built from any other schema is not changed: it is set aside beside
  * itself — `kraftverk.db.set-aside.<time>` — and a new one is started, saying
- * so in the log. Nothing is deleted. Exported for tests.
+ * so in the log. Nothing is deleted. Its accounts are carried into the new
+ * one (`ACCOUNTS_CARRIED`, `carry`) — its sign-ins are not — as the home is
+ * restored from the configuration kept beside it (`snapshot.ts`): a new
+ * schema is not a server waiting to be claimed again. Exported for tests.
  */
 export function openSchema(path: string, schema = SERVER_SCHEMA): SqlDatabase & { setAside?: string; created?: boolean } {
   let handle = open(path);
@@ -71,9 +74,12 @@ export function openSchema(path: string, schema = SERVER_SCHEMA): SqlDatabase & 
   if (state === 'current') return handle;
 
   let setAside: string | undefined;
+  let carried: Carried[] = [];
   if (state === 'other') {
     if (path === ':memory:') throw new Error('An in-memory database with another schema: nothing to set aside');
     const old = metaOf(handle);
+    // Read before it is set aside: the file set aside is never opened again, so it stays as it was.
+    carried = ACCOUNTS_CARRIED.map((table) => readTable(handle, table)).filter((rows) => rows !== null);
     handle.close();
     const stamp = new Date().toISOString().replace(/\.\d+Z$/, 'Z').replaceAll(':', '-');
     setAside = `${path}.set-aside.${stamp}`;
@@ -83,7 +89,55 @@ export function openSchema(path: string, schema = SERVER_SCHEMA): SqlDatabase & 
     handle = open(path);
   }
   createSchema(handle, SERVER.version, schema);
+  for (const rows of carried) carry(handle, rows);
   return Object.assign(handle, { created: true }, setAside ? { setAside } : {});
+}
+
+/** A table's rows, as a database being set aside held them. */
+type Carried = { table: string; columns: string[]; rows: Record<string, unknown>[] };
+
+type Column = { name: string; notnull: number; dflt_value: string | null; pk: number };
+
+const columnsOf = (handle: SqlDatabase, table: string) => handle.query<Column, []>(`PRAGMA table_info("${table}")`).all();
+
+/** A table's rows from a database about to be set aside — or null, when it has no such table or it cannot be read. */
+function readTable(handle: SqlDatabase, table: string): Carried | null {
+  try {
+    const columns = columnsOf(handle, table).map((column) => column.name);
+    if (!columns.length) return null;
+    return { table, columns, rows: handle.query<Record<string, unknown>, []>(`SELECT * FROM "${table}"`).all() };
+  } catch (error) {
+    console.warn(`[db] ${table} could not be read from the database being set aside, and is not carried: ${(error as Error).message}`);
+    return null;
+  }
+}
+
+/**
+ * Puts a table's rows from the database set aside into the new one: the
+ * columns both have, as long as every column the new one requires is among
+ * them. One it requires that the old one lacked, and nothing is carried
+ * rather than something made up. All the rows or none; either way the log
+ * says so, and the server starts.
+ */
+function carry(handle: SqlDatabase, { table, columns, rows }: Carried): void {
+  if (!rows.length) return;
+  const now = columnsOf(handle, table);
+  if (!now.length) return;
+  const missing = now.filter((column) => (column.notnull || column.pk) && column.dflt_value === null && !columns.includes(column.name)).map((column) => column.name);
+  if (missing.length) {
+    console.warn(`[db] ${table} is not carried from the database set aside: the new schema requires ${missing.join(', ')}, which it did not have`);
+    return;
+  }
+  const shared = now.map((column) => column.name).filter((name) => columns.includes(name));
+  const insert = handle.query<unknown, unknown[]>(`INSERT INTO "${table}" (${shared.map((name) => `"${name}"`).join(', ')}) VALUES (${shared.map(() => '?').join(', ')})`);
+  try {
+    handle.transaction(() => {
+      for (const row of rows) insert.run(...shared.map((name) => row[name]));
+    })();
+    console.log(`[db] ${rows.length} rows of ${table} carried from the database set aside`);
+  } catch (error) {
+    console.warn(`[db] ${table} is not carried from the database set aside: ${(error as Error).message}`);
+  }
 }
 
 /** The database the server opened, and whether this run started it: new, or new after one of another schema was set aside. */

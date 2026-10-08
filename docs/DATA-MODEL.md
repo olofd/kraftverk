@@ -619,7 +619,9 @@ erDiagram
 keeping a home has none, so they are not in the schema every node carries.
 The server keeps them beside the home's in the same file
 ([`server/src/auth/schema.ts`](../server/src/auth/schema.ts)), and its
-fingerprint covers both; a reset of the home leaves them alone.
+fingerprint covers both; a reset of the home leaves them alone. A database
+set aside for a new schema hands `users` to the new one, never
+`login_session` (§5).
 
 ```mermaid
 erDiagram
@@ -805,6 +807,11 @@ holds it — a way an integration has since moved, an account not yet a device
 — so its database is set aside too, and the home carried over through the
 file kept beside it, whose migrations bring it up to date. That file is never
 written over with a home that does not check against what is installed.
+The server's accounts are not in that file. They are read from the database
+before it is set aside, and written into the new one: the columns both have,
+unless the new table requires one the old lacked. In that case none are
+carried. Sign-ins are never carried
+(`server/src/platform/database.ts`).
 When there is a production state to
 protect, this section becomes the rules for changing a schema that holds it.
 

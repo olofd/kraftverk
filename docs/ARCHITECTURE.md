@@ -600,7 +600,10 @@ audit, home_setting, login_session (the server's own: users)
 `packages/store/src/schema.ts`, and its fingerprint is kept in the database's
 `user_version`. A database made by any other schema is not changed: it is set
 aside beside itself — `kraftverk.db.set-aside.<time>` — and a new one started.
-Nothing is deleted; history from the old schema is not carried over. Every
+Nothing is deleted; history from the old schema is not carried over. The
+home comes back from the configuration kept beside it (CONFIG.md), and the
+server's accounts are copied from the old file into the new one, without
+their sign-ins (SECURITY.md). Every
 column that can be required is: a null is left only where it means something.
 
 ### 4.6 The gateway: every command, one path

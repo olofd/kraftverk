@@ -153,6 +153,9 @@ server sets the old database aside (`kraftverk.db.set-aside.<time>`) and
 begins a new one, so the first account is created again from the home network
 and the station added again through the add flow. The `.before-migration-*`
 and `.set-aside.*` copies on the server's volume are the owner's to delete.
+Since then, a database set aside brings the home back from
+`config/kraftverk.yaml`, and its accounts are copied into the new one
+(sign in again, same password). See SECURITY.md, "Where accounts live".
 
 ## Integrations
 

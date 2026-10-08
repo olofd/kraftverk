@@ -450,8 +450,9 @@ key no longer opens leaves its device restored without it, to be given
 again. Each is said. What happened is on the
 timeline (`config.restored`, or `config.restore-failed` with its
 problems), in the server's log, and in `GET /api/config/snapshot`'s
-`restored`. Accounts are not in a configuration: after a reset, the first
-account is made again from the home network, as on a new server.
+`restored`. Accounts are never in a configuration. A database set aside
+for a new schema hands them straight to the new one, and everyone signs in
+again with the same password ([SECURITY.md](SECURITY.md#where-accounts-live)).
 
 ## Where it is kept
 
