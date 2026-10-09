@@ -123,21 +123,25 @@ function Declared({ shape }: { shape: ScriptShape }) {
   );
 }
 
-/** A source, read again by the home's engine each time typing rests: what it declares, or its problems; null while it is read. */
-function useRead(source: string): { check: ScriptCheck | null; error: string | null } {
+/**
+ * A source, read again by the home's engine each time typing rests: what it
+ * declares, or its problems. What was read last stays shown while the next
+ * reading is made, so the page keeps its height and place as it is typed in;
+ * `current` says whether it was read from the source as it is now.
+ */
+function useRead(source: string): { check: ScriptCheck | null; current: boolean; error: string | null } {
   const { api } = useFamily();
-  const [check, setCheck] = useState<ScriptCheck | null>(null);
+  const [read, setRead] = useState<{ source: string; check: ScriptCheck } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const asked = useRef(0);
   useEffect(() => {
     const ask = ++asked.current;
-    setCheck(null);
     const timer = setTimeout(() => {
       api.scripts
         .check(source)
-        .then((read) => {
+        .then((check) => {
           if (ask !== asked.current) return;
-          setCheck(read);
+          setRead({ source, check });
           setError(null);
         })
         .catch((err: unknown) => {
@@ -147,7 +151,7 @@ function useRead(source: string): { check: ScriptCheck | null; error: string | n
     }, READ_AFTER_MS);
     return () => clearTimeout(timer);
   }, [api, source]);
-  return { check, error };
+  return { check: read?.check ?? null, current: read?.source === source, error };
 }
 
 /** The script itself: its name, its source, what it declares, and keeping it. */
@@ -158,7 +162,7 @@ function ScriptForm({ script }: { script: ScriptView | null }) {
   const [source, setSource] = useState(script?.source ?? STARTER);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const { check, error } = useRead(source);
+  const { check, current, error } = useRead(source);
   // The home's types, for the editor's checking and completion: asked once, as the page opens.
   const [types, setTypes] = useState<string | null>(null);
   useEffect(() => {
@@ -170,7 +174,7 @@ function ScriptForm({ script }: { script: ScriptView | null }) {
 
   const changed = script === null || name.trim() !== script.name || source !== script.source;
   const problems = check?.problems.length ?? 0;
-  const ready = Boolean(name.trim()) && check !== null && problems === 0 && changed;
+  const ready = Boolean(name.trim()) && current && problems === 0 && changed;
 
   const save = async () => {
     haptic();
@@ -208,9 +212,9 @@ function ScriptForm({ script }: { script: ScriptView | null }) {
       {problem ? <ErrorText>{problem}</ErrorText> : null}
       <XStack alignItems="center" gap="$2">
         <XStack flex={1} alignItems="center" gap="$2">
-          {check === null ? <Spinner size="small" color="$accent" /> : <Icon name={problems ? 'alert-triangle' : 'check-circle'} size={16} color={tone(problems ? '$warning' : '$success')} />}
-          <Text flex={1} fontSize={14} fontWeight="600" color={problems ? '$warning' : '$success'} numberOfLines={1}>
-            {check === null ? 'Reading…' : problems ? `${problems} thing${problems === 1 ? '' : 's'} to fix` : 'Ready'}
+          {!current ? <Spinner size="small" color="$accent" /> : <Icon name={problems ? 'alert-triangle' : name.trim() ? 'check-circle' : 'edit-3'} size={16} color={tone(problems ? '$warning' : name.trim() ? '$success' : '$muted')} />}
+          <Text flex={1} fontSize={14} fontWeight="600" color={!current || (!problems && !name.trim()) ? '$muted' : problems ? '$warning' : '$success'} numberOfLines={1}>
+            {!current ? 'Reading…' : problems ? `${problems} thing${problems === 1 ? '' : 's'} to fix` : !name.trim() ? 'Give it a name to keep it' : 'Ready'}
           </Text>
         </XStack>
         {script ? (
@@ -229,7 +233,7 @@ function ScriptForm({ script }: { script: ScriptView | null }) {
     <Screen back="Automations" backTo={PATHS.automations.list} title={script ? script.name : 'New script'} subtitle={script ? `${script.key} · written in TypeScript` : 'Written in TypeScript'} footer={footer}>
       <YStack gap="$4">
         <Text fontSize={14} color="$muted" lineHeight={20}>
-          A script is what an automation does, or a value it works out. What it declares is read as you write, by the same engine that will run it. Running scripts in automations comes next.
+          A script is what an automation does, or a value it works out. What it declares is read as you write, by the same engine that runs it. Once it is kept, an automation runs its steps and uses its functions.
         </Text>
         <YStack gap="$1.5">
           <Text fontSize={13} color="$muted">

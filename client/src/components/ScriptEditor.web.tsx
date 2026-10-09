@@ -3,7 +3,7 @@ import { autocompletion, closeBrackets, completionKeymap, type CompletionContext
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { javascript } from '@codemirror/lang-javascript';
 import { bracketMatching, indentOnInput, indentUnit } from '@codemirror/language';
-import { linter, lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint';
+import { forceLinting, linter, lintGutter, type Diagnostic } from '@codemirror/lint';
 import { Compartment, EditorState } from '@codemirror/state';
 import { drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, hoverTooltip, keymap, lineNumbers, tooltips } from '@codemirror/view';
 import { useTheme, YStack } from 'tamagui';
@@ -44,6 +44,9 @@ export function ScriptEditor({ value, onChange, problems = [], label, minLines =
   const [typeProblems, setTypeProblems] = useState<TextProblem[]>([]);
   const service = useRef<ReturnType<typeof openLanguage> | null>(null);
   const language = () => (service.current ??= openLanguage()).language;
+  /** The hub's problems, as last given: marked beside TypeScript's, by the one linter, so neither wipes out the other. */
+  const hubProblems = useRef(problems);
+  hubProblems.current = problems;
 
   const colors = {
     background: theme.background?.val as string,
@@ -67,7 +70,8 @@ export function ScriptEditor({ value, onChange, problems = [], label, minLines =
         const found = await language().problems(editor.state.doc.toString()).catch(() => []);
         setTypeProblems(found.map((each) => ({ message: each.message, line: each.line, column: each.column })));
         const length = editor.state.doc.length;
-        return found.map((each) => ({ from: Math.min(each.from, length), to: Math.min(Math.max(each.to, each.from), length), severity: 'error' as const, message: each.message, source: 'TypeScript' }));
+        const typed = found.map((each) => ({ from: Math.min(each.from, length), to: Math.min(Math.max(each.to, each.from), length), severity: 'error' as const, message: each.message, source: 'TypeScript' }));
+        return [...typed, ...diagnosticsOf(editor.state, hubProblems.current)];
       },
       { delay: CHECK_AFTER_MS }
     );
@@ -143,8 +147,7 @@ export function ScriptEditor({ value, onChange, problems = [], label, minLines =
     void language()
       .types(types)
       .then(() => {
-        const current = view.current;
-        if (current) current.dispatch({ changes: { from: 0, to: 0, insert: '' } });
+        if (view.current) forceLinting(view.current);
       })
       .catch(() => undefined);
   }, [types]);
@@ -163,11 +166,11 @@ export function ScriptEditor({ value, onChange, problems = [], label, minLines =
     view.current?.dispatch({ effects: looks.reconfigure(look) });
   }, [look, looks]);
 
-  // The hub's problems, marked where they are; the language service marks its own as the script is typed.
+  // The hub's problems, marked where they are with TypeScript's, and unmarked when they are gone.
+  const hubSaid = problems.map((each) => `${each.line}:${each.column}:${each.message}`).join('\n');
   useEffect(() => {
-    const current = view.current;
-    if (current && problems.length) current.dispatch(setDiagnostics(current.state, diagnosticsOf(current.state, problems)));
-  }, [problems]);
+    if (view.current) forceLinting(view.current);
+  }, [hubSaid]);
 
   const shown = [...problems, ...typeProblems.filter((each) => !problems.some((one) => one.line === each.line && one.message === each.message))];
   return (
