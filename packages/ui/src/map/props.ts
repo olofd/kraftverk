@@ -26,6 +26,8 @@ export type MapViewProps = {
   onPress?: (place: { latitude: number; longitude: number }) => void;
   /** Where to look when there is nothing else to fit: a place, and how many metres around it — a home before anything of it is drawn. */
   centre?: { latitude: number; longitude: number; metres: number } | null;
+  /** What the map looks at — a floor, say: when it changes, the map fits what it shows again. */
+  view?: string | null;
   /** The marker the map follows as it moves, until the person pans: then a button brings it back. */
   follow?: string | null;
   /** How tall, in points. */

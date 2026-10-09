@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import type { RoleBinding } from '@kraftverk/automation';
 import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
-import { NODE_ID, RESOURCE_KINDS, savedDeviceId, type ResourceKind } from '@kraftverk/device-sdk';
+import { NODE_ID, RESOURCE_KINDS, savedDeviceId } from '@kraftverk/device-sdk';
 import type { Hub } from '@kraftverk/hub';
 
 import type { Accounts } from '../auth/accounts.ts';
@@ -60,7 +60,7 @@ export const bindingsOf = (given: Record<string, z.infer<typeof PART>>): Record<
   Object.fromEntries(Object.entries(given).map(([role, binding]) => [role, { device: savedDeviceId(binding.device), part: binding.part }]));
 
 /** What the timeline's entries are about. */
-export const RESOURCE_KIND = z.enum(RESOURCE_KINDS as [ResourceKind, ...ResourceKind[]]);
+export const RESOURCE_KIND = z.enum(RESOURCE_KINDS);
 
 /** The node a follower speaks for, and a connection it holds. */
 export const HELD_BY = { nodeId: z.string().regex(NODE_ID), connectionId: z.string().min(1).max(40) };

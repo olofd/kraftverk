@@ -763,9 +763,10 @@ export const SCHEMA = `
   CREATE UNIQUE INDEX mode_key ON mode (key) WHERE removed_at IS NULL;
 
   /*
-    Which mode a home is in on each axis, as intervals, the open one now —
-    and some ahead: a vacation from Saturday ends what is before it then.
-    Who set it, a person, an automation, presence. Kept two years.
+    What set a home's mode on each axis, and who: for good from a time
+    (until null) — until the next for good — or planned from a time until
+    another, the setting for good in force then coming back after. Some lie
+    ahead. Kept two years.
   */
   CREATE TABLE home_mode (
     home_id    TEXT NOT NULL REFERENCES home (id),
@@ -780,7 +781,15 @@ export const SCHEMA = `
     FOREIGN KEY (mode_id, axis) REFERENCES mode (id, axis),
     CHECK (until IS NULL OR until > since)
   );
-  CREATE UNIQUE INDEX home_mode_now ON home_mode (home_id, axis) WHERE until IS NULL;
+
+  /* Which mode was last said on the bus for each home's axis: what began while nobody listened is said when someone does. */
+  CREATE TABLE home_mode_said (
+    home_id TEXT NOT NULL REFERENCES home (id),
+    axis    TEXT NOT NULL CHECK (axis IN ('presence', 'day')),
+    mode_id TEXT NOT NULL REFERENCES mode (id),
+    at      TEXT NOT NULL,
+    PRIMARY KEY (home_id, axis)
+  );
 
   /* What said someone was there: each device, once. */
   CREATE TABLE occupancy_evidence (

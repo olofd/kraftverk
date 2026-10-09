@@ -1,7 +1,7 @@
 import { stepJsonSchema, triggerJsonSchema, WHILE_RUNNING } from '@kraftverk/automation';
 import type { ConfigField, ConfigSchema } from '@kraftverk/device-sdk';
 
-import { KEY, unitsOfQuantity, UNIT_LIST } from '@kraftverk/device-sdk';
+import { BUILT_IN_MODES, KEY, MODE_KEY, unitsOfQuantity, UNIT_LIST } from '@kraftverk/device-sdk';
 import { OPENING_KINDS, SPACE_KINDS, SPACE_PURPOSES } from './document.ts';
 import { CURRENT_VERSION } from './migrate.ts';
 import type { Vocabulary, VocabularyMethod, VocabularyType } from './vocabulary.ts';
@@ -436,7 +436,7 @@ export function configJsonSchema(vocabulary: Vocabulary): Schema {
       },
       modes: {
         type: 'object',
-        propertyNames: { pattern: '^[a-z][a-z0-9-]{0,29}$', not: { enum: ['home', 'away', 'vacation', 'day', 'evening', 'night'] } },
+        propertyNames: { pattern: MODE_KEY.source, not: { enum: BUILT_IN_MODES.map((mode) => mode.key) } },
         description: 'The family’s own modes, by key, beside the built-in ones — home, away, vacation; day, evening, night — on either axis.',
         additionalProperties: {
           type: 'object',

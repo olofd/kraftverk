@@ -404,6 +404,7 @@ export function followerApi(h: Follower): KraftverkApi {
       remove: (id) => home.modes.remove(id),
       of: (homeId) => home.modes.of(homeId),
       set: (homeId, input) => home.modes.set(homeId, input),
+      cancel: (homeId, input) => home.modes.cancel(homeId, input),
     },
     occupancy: {
       now: (homeId) => home.occupancy.now(homeId),

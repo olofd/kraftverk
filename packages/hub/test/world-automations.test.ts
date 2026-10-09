@@ -100,7 +100,7 @@ describe('the family’s world, automated', () => {
     };
     const automation = await acting(rule, {}, { lamp: { device: plug.id, part: 'main' } });
     t.hub.modes.set(home, 'night', { kind: 'person', id: null, name: 'olof' });
-    await t.hub.engine.hear({ kind: 'mode', homeId: home, axis: 'day', mode: 'night', previous: null, at: new Date().toISOString() });
+    await t.hub.engine.hear({ kind: 'mode', homeId: home, axis: 'day', mode: 'night', previous: 'day', by: { kind: 'person', id: null, name: 'olof' }, cause: [], at: new Date().toISOString() });
     await settle(300);
     const runs = await t.home.automations.runs(automation.id);
     expect(runs[0]?.why).toBe(`${t.hub.places.home(home)!.name} became night`);

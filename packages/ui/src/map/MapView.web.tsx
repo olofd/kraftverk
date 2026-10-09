@@ -65,7 +65,10 @@ const around = (centre: { latitude: number; longitude: number; metres: number })
   return [centre.longitude - dLon, centre.latitude - dLat, centre.longitude + dLon, centre.latitude + dLat];
 };
 
-export function MapView({ markers = [], trails = [], zones = [], areas = [], drawing = null, tracing = null, onPress, centre = null, follow = null, height = 280, label }: MapViewProps) {
+/** Whether a map here takes taps: on the web it does. */
+export const MAP_TAKES_TAPS = true;
+
+export function MapView({ markers = [], trails = [], zones = [], areas = [], drawing = null, tracing = null, onPress, centre = null, follow = null, view = null, height = 280, label }: MapViewProps) {
   const api = useMapApi();
   const theme = useTheme();
   const accent = theme.accent?.val ?? '#4ade80';
@@ -77,6 +80,16 @@ export function MapView({ markers = [], trails = [], zones = [], areas = [], dra
   // Following until the person pans; a button brings it back.
   const [following, setFollowing] = useState(true);
   const fitted = useRef(false);
+  // What each source was last given, as text: a screen that draws again with the same shapes sets nothing.
+  const given = useRef<Partial<Record<(typeof SOURCES)[number], string>>>({});
+  // The drawing's picture, as it was last laid: moved corners move it, a new picture loads.
+  const laid = useRef<string | null>(null);
+  // What it looks at: another, and it fits again.
+  const looking = useRef(view);
+  if (looking.current !== view) {
+    looking.current = view;
+    fitted.current = false;
+  }
   // The tap, as it is now: the map is made once.
   const pressed = useRef(onPress);
   pressed.current = onPress;
@@ -141,6 +154,8 @@ export function MapView({ markers = [], trails = [], zones = [], areas = [], dra
       map.current = null;
       setReady(false);
       fitted.current = false;
+      given.current = {};
+      laid.current = null;
     };
   }, [api]);
 
@@ -148,7 +163,12 @@ export function MapView({ markers = [], trails = [], zones = [], areas = [], dra
   useEffect(() => {
     const shown = map.current;
     if (!shown || !ready) return;
-    const set = (id: (typeof SOURCES)[number], data: unknown) => (shown.getSource(id) as MapLibre.GeoJSONSource | undefined)?.setData(data as Parameters<MapLibre.GeoJSONSource['setData']>[0]);
+    const set = (id: (typeof SOURCES)[number], data: unknown) => {
+      const text = JSON.stringify(data);
+      if (given.current[id] === text) return;
+      given.current[id] = text;
+      (shown.getSource(id) as MapLibre.GeoJSONSource | undefined)?.setData(data as Parameters<MapLibre.GeoJSONSource['setData']>[0]);
+    };
     set('kv-markers', markersGeoJSON(markers));
     set('kv-accuracy', accuracyGeoJSON(markers));
     set('kv-trails', trailsGeoJSON(trails));
@@ -157,17 +177,11 @@ export function MapView({ markers = [], trails = [], zones = [], areas = [], dra
     set('kv-tracing', tracingGeoJSON(tracing ?? []));
 
     const followed = follow ? markers.find((marker) => marker.id === follow) : null;
-    if (!fitted.current) {
-      // At first: everything it shows, in view — a home's rooms close enough to tell apart.
-      const box = boundsOf({ markers, trails, zones, areas, ...(drawing ? { areas: [...areas, { id: 'drawing', ring: [...drawing.corners, drawing.corners[0]] }] } : {}) }) ?? (centre ? around(centre) : null);
-      if (box) {
-        shown.fitBounds([box[0], box[1], box[2], box[3]], { padding: 48, maxZoom: areas.length || drawing || centre ? FIT_ZOOM_INDOORS : FIT_ZOOM, duration: 0 });
-        fitted.current = true;
-      }
-    } else if (followed && following) {
+    // At first, and as it looks at something else: everything it shows, in view.
+    if (!fitted.current) fitted.current = fit(shown, 0); else if (followed && following) {
       shown.easeTo({ center: [followed.longitude, followed.latitude], duration: 800 });
     }
-  }, [ready, markers, trails, zones, areas, drawing, tracing, centre, follow, following]);
+  }, [ready, markers, trails, zones, areas, drawing, tracing, centre, follow, following, view]);
 
   // A floor's drawing, laid under its rooms: an image of its own, placed by its corners.
   useEffect(() => {
@@ -176,15 +190,19 @@ export function MapView({ markers = [], trails = [], zones = [], areas = [], dra
     const source = shown.getSource('kv-drawing') as MapLibre.ImageSource | undefined;
     if (!drawing) {
       if (source) (shown.removeLayer('kv-drawing'), shown.removeSource('kv-drawing'));
+      laid.current = null;
       return;
     }
     const coordinates = drawing.corners.map((corner) => [corner[0], corner[1]]) as [[number, number], [number, number], [number, number], [number, number]];
-    if (source) source.updateImage({ url: drawing.url, coordinates });
+    // The same picture moved is moved; another is loaded — never loaded again because a screen drew again.
+    if (source && laid.current === drawing.url) source.setCoordinates(coordinates);
+    else if (source) source.updateImage({ url: drawing.url, coordinates });
     else {
       shown.addSource('kv-drawing', { type: 'image', url: drawing.url, coordinates });
       shown.addLayer({ id: 'kv-drawing', type: 'raster', source: 'kv-drawing', paint: { 'raster-opacity': 0.85 } }, 'kv-areas-fill');
     }
-  }, [ready, drawing]);
+    laid.current = drawing.url;
+  }, [ready, drawing?.url, drawing ? JSON.stringify(drawing.corners) : null]);
 
   // A map that takes taps shows it.
   useEffect(() => {
@@ -193,10 +211,18 @@ export function MapView({ markers = [], trails = [], zones = [], areas = [], dra
   }, [ready, Boolean(onPress)]);
 
   const zoom = (by: number) => map.current?.easeTo({ zoom: (map.current.getZoom() ?? 0) + by, duration: 250 });
+  /** Everything it shows in view — or what it follows — a home's rooms close enough to tell apart. Whether there was anything to look at. */
+  function fit(shown: MapLibre.Map, duration: number): boolean {
+    const followed = follow ? markers.filter((marker) => marker.id === follow) : null;
+    const shapes = drawing ? [...areas, { id: 'drawing', label: '', filled: false, ring: [...drawing.corners, drawing.corners[0]] }] : areas;
+    const box = (followed?.length ? boundsOf({ markers: followed }) : boundsOf({ markers, trails, zones, areas: shapes })) ?? (centre ? around(centre) : null);
+    if (!box) return false;
+    shown.fitBounds([box[0], box[1], box[2], box[3]], { padding: 48, maxZoom: !followed?.length && (areas.length || drawing || centre) ? FIT_ZOOM_INDOORS : FIT_ZOOM, duration });
+    return true;
+  }
   const recentre = () => {
     setFollowing(true);
-    const box = boundsOf({ markers: follow ? markers.filter((marker) => marker.id === follow) : markers, trails: follow ? [] : trails, areas: follow ? [] : areas }) ?? (centre && !follow ? around(centre) : null);
-    if (box) map.current?.fitBounds([box[0], box[1], box[2], box[3]], { padding: 48, maxZoom: !follow && areas.length ? FIT_ZOOM_INDOORS : FIT_ZOOM, duration: 600 });
+    if (map.current) fit(map.current, 600);
   };
 
   if (!api || failed) {
@@ -211,7 +237,8 @@ export function MapView({ markers = [], trails = [], zones = [], areas = [], dra
 
   return (
     <YStack height={height} borderRadius="$4" overflow="hidden" position="relative" backgroundColor="$backgroundPress" role="img" aria-label={label}>
-      <div ref={holder} style={{ position: 'absolute', inset: 0 }} />
+      {/* Ready: its style is there, and what it shows set and fitted — what a test waits on before it taps. */}
+      <div ref={holder} data-ready={ready ? 'true' : 'false'} style={{ position: 'absolute', inset: 0 }} />
       <YStack position="absolute" top="$2" right="$2" gap="$1.5">
         <Control icon="plus" label="Closer" onPress={() => zoom(1)} />
         <Control icon="minus" label="Further" onPress={() => zoom(-1)} />

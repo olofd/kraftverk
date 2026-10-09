@@ -1,14 +1,15 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { describeError, homeMapOf, mapLevels, outlineFrom, PATHS, placementAt, type HomeSpaces, type OccupancyView, type SpaceView } from '@kraftverk/api-client';
+import { describeError, firstLevel, homeMapOf, mapLevels, outlineFrom, PATHS, placementAt, planWith, type HomeSpaces, type OccupancyView, type SpaceView } from '@kraftverk/api-client';
 import type { LngLat } from '@kraftverk/map';
-import { Card, Chips, haptic, Icon, MapView, Row, RowSeparator, SectionLabel, useMapApi } from '@kraftverk/ui';
+import { Card, Chips, haptic, Icon, MAP_TAKES_TAPS, MapView, Row, RowSeparator, SectionLabel, useMapApi } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { Pressable } from '../../components/Pressable';
 import { Screen } from '../../components/Screen';
+import { confirmAction } from '../../platform/confirm';
 import { pickPicture, usePicture } from '../../platform/picture';
 import { useDevices } from '../../state/DevicesProvider';
 import { useFamily } from '../../state/FamilyProvider';
@@ -26,19 +27,25 @@ import { useHomeSpaces } from '../../state/useHomeSpaces';
 
 /** How often occupancy is read again, besides when the home says it moved. */
 const AGAIN_MS = 15_000;
-/** What a new drawing is taken to be across until said: a house's floor. */
-const DRAWING_METRES = 15;
 
-function useOccupancy(homeId: string | null): OccupancyView[] | null {
+/** Which rooms have someone in them: the newest answer asked for, never an older one that came later — or why it could not be read. */
+function useOccupancy(homeId: string | null): { occupancy: OccupancyView[] | null; failed: boolean } {
   const { api } = useFamily();
   const { onWorld } = useDevices();
   const [occupancy, setOccupancy] = useState<OccupancyView[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const asked = useRef(0);
   const load = useCallback(async () => {
     if (!homeId) return;
+    const ask = ++asked.current;
     try {
-      setOccupancy(await api.occupancy.now(homeId));
+      const answer = await api.occupancy.now(homeId);
+      if (ask !== asked.current) return;
+      setOccupancy(answer);
+      setFailed(false);
     } catch {
-      // Kept as it was: the next look tries again.
+      // Kept as it was, and said: the next look tries again.
+      if (ask === asked.current) setFailed(true);
     }
   }, [api, homeId]);
   useEffect(() => {
@@ -47,7 +54,7 @@ function useOccupancy(homeId: string | null): OccupancyView[] | null {
     return () => clearInterval(timer);
   }, [load]);
   useEffect(() => onWorld((what, at) => (what === 'occupancy' && (at === null || at === homeId) ? void load() : undefined)), [onWorld, load, homeId]);
-  return occupancy;
+  return { occupancy, failed };
 }
 
 /** What a tap on the map does now. */
@@ -74,14 +81,19 @@ function HomeMap({ here, homes }: { here: HomeSpaces; homes: HomeSpaces[] }) {
   const theme = useTheme();
   const { home, spaces } = here;
   const levels = mapLevels(spaces);
-  const [levelId, setLevelId] = useState<string | null>(null);
-  const level = levels.find((each) => each.id === levelId) ?? levels.find((each) => each.outline || each.plan || spaces.some((space) => space.parentId === each.id && space.outline)) ?? levels[0] ?? null;
-  const occupancy = useOccupancy(home.id);
+  // The level it opens on, kept: clearing what is drawn on it does not move the map to another.
+  const [levelId, setLevelId] = useState<string | null>(() => firstLevel(spaces)?.id ?? null);
+  const level = levels.find((each) => each.id === levelId) ?? firstLevel(spaces);
+  const { occupancy, failed: occupancyFailed } = useOccupancy(home.id);
+  // Drawing on the map needs a map that takes taps: not a phone's, yet.
+  const draws = Boolean(mapApi) && MAP_TAKES_TAPS;
   const [tapping, setTapping] = useState<Tapping>({ kind: 'look' });
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const map = useMemo(() => (level ? homeMapOf({ home, spaces, devices, occupancy: occupancy ?? [], showing: level.id }) : null), [home, spaces, devices, occupancy, level]);
   const drawingUrl = usePicture(api, map?.drawing?.pictureId ?? null);
+  const corners = map?.drawing?.corners;
+  const drawing = useMemo(() => (corners && drawingUrl ? { url: drawingUrl, corners } : null), [drawingUrl, corners ? JSON.stringify(corners) : null]);
   // Before anything is drawn, the map looks at the home: a few rooms' worth around it.
   const centre = useMemo(() => (map?.anchor ? { latitude: map.anchor.latitude, longitude: map.anchor.longitude, metres: 20 } : null), [map?.anchor?.latitude, map?.anchor?.longitude]);
 
@@ -135,9 +147,14 @@ function HomeMap({ here, homes }: { here: HomeSpaces; homes: HomeSpaces[] }) {
       const picked = await pickPicture();
       if (!picked) return;
       const picture = await api.media.add(picked);
-      const was = level.plan;
-      await api.spaces.update(level.id, { plan: { pictureId: picture.id, scale: was ? (was.scale * was.width) / picked.width : DRAWING_METRES / picked.width, x: was?.x ?? 0, y: was?.y ?? 0, turn: was?.turn ?? 0 } });
+      await api.spaces.update(level.id, { plan: planWith(level.plan, { id: picture.id, width: picked.width }) });
     }, 'The drawing could not be added');
+
+  const clearOutlines = async () => {
+    const many = map.drawn.length === 1 ? 'its outline' : `the ${map.drawn.length} outlines`;
+    if (!(await confirmAction(`Clear ${many} on ${level.name}?`, 'Each room traced on this floor is traced again to be shown.', 'Clear', 'dangerous'))) return;
+    await doing(() => Promise.all(map.drawn.map((space) => api.spaces.update(space.id, { outline: null }))), 'The outlines could not be cleared');
+  };
 
   const hint =
     tapping.kind === 'trace'
@@ -180,9 +197,10 @@ function HomeMap({ here, homes }: { here: HomeSpaces; homes: HomeSpaces[] }) {
             height={360}
             areas={map.areas}
             markers={map.markers}
-            drawing={map.drawing && drawingUrl ? { url: drawingUrl, corners: map.drawing.corners } : null}
+            drawing={drawing}
             tracing={tapping.kind === 'trace' ? tapping.corners : null}
             centre={centre}
+            view={level.id}
             onPress={tapping.kind === 'look' ? undefined : tap}
           />
           {hint ? (
@@ -210,11 +228,11 @@ function HomeMap({ here, homes }: { here: HomeSpaces; homes: HomeSpaces[] }) {
         <Text color="$muted">A map is drawn by a server: this app has none.</Text>
       )}
 
-      <YStack gap="$2">
+      <YStack gap="$2" role="region" aria-label="Someone is in">
         <SectionLabel>Someone is in</SectionLabel>
         <Card inset>
           {!occupancy ? (
-            <Row title="Looking…" />
+            <Row title={occupancyFailed ? 'Who is in which room could not be read' : 'Looking…'} subtitle={occupancyFailed ? 'It is asked again in a moment' : undefined} />
           ) : map.occupied.length ? (
             map.occupied.map((room, index) => (
               <YStack key={room.spaceId}>
@@ -232,7 +250,7 @@ function HomeMap({ here, homes }: { here: HomeSpaces; homes: HomeSpaces[] }) {
         </Card>
       </YStack>
 
-      {anchor && mapApi ? (
+      {anchor && draws ? (
         <YStack gap="$2">
           <SectionLabel>Draw it</SectionLabel>
           <Card gap="$3">
@@ -260,7 +278,7 @@ function HomeMap({ here, homes }: { here: HomeSpaces; homes: HomeSpaces[] }) {
               </>
             ) : null}
             {map.drawn.length ? (
-              <Button size="$3" minHeight={44} chromeless color="$muted" disabled={busy} onPress={() => void doing(() => Promise.all(map.drawn.map((space) => api.spaces.update(space.id, { outline: null }))), 'The outlines could not be cleared')}>
+              <Button size="$3" minHeight={44} chromeless color="$muted" disabled={busy} onPress={() => void clearOutlines()}>
                 {`Clear the ${map.drawn.length === 1 ? 'outline' : `${map.drawn.length} outlines`} on ${level.name}`}
               </Button>
             ) : null}
@@ -268,7 +286,7 @@ function HomeMap({ here, homes }: { here: HomeSpaces; homes: HomeSpaces[] }) {
         </YStack>
       ) : null}
 
-      {anchor && mapApi && level.kind === 'floor' ? <Drawing level={level} busy={busy} onAdd={() => void addDrawing()} onCorner={() => setTapping({ kind: 'corner' })} doing={doing} /> : null}
+      {anchor && draws && level.kind === 'floor' ? <Drawing level={level} busy={busy} onAdd={() => void addDrawing()} onCorner={() => setTapping({ kind: 'corner' })} doing={doing} /> : null}
 
       <Pressable onPress={() => router.push(PATHS.settings.home(home.id))}>
         <Row title={`${home.name}’s floors and rooms`} subtitle="Add, rename and move them; doors between them" accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />} />
@@ -287,6 +305,10 @@ function Drawing({ level, busy, onAdd, onCorner, doing }: { level: SpaceView; bu
     setAcross(plan ? String(Math.round(plan.scale * plan.width * 100) / 100) : '');
     setTurn(plan ? String(plan.turn) : '0');
   }, [plan?.pictureId, plan?.scale, plan?.turn]);
+  const takeAway = async () => {
+    if (!(await confirmAction(`Take ${level.name}’s drawing away?`, 'The rooms traced over it stay.', 'Take it away', 'dangerous'))) return;
+    await doing(() => api.spaces.update(level.id, { plan: null }), 'The drawing could not be taken away');
+  };
   const metres = Number(across.replace(',', '.'));
   const degrees = Number(turn.replace(',', '.'));
   const fine = plan && metres > 0 && Number.isFinite(degrees);
@@ -306,7 +328,7 @@ function Drawing({ level, busy, onAdd, onCorner, doing }: { level: SpaceView; bu
               <Button size="$3" minHeight={44} disabled={busy} onPress={onCorner}>
                 Place its corner
               </Button>
-              <Button size="$3" minHeight={44} chromeless color="$muted" disabled={busy} onPress={() => void doing(() => api.spaces.update(level.id, { plan: null }), 'The drawing could not be taken away')}>
+              <Button size="$3" minHeight={44} chromeless color="$muted" disabled={busy} onPress={() => void takeAway()}>
                 Take it away
               </Button>
             </>

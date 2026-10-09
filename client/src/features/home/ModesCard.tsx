@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Text, YStack } from 'tamagui';
 
-import { describeError, type HomeModeView, type HomeView, type ModeView } from '@kraftverk/api-client';
+import { describeError, modeLine, type HomeModeView, type HomeView, type ModeView } from '@kraftverk/api-client';
 import { Card, Chips, haptic, SectionLabel } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
@@ -15,16 +15,6 @@ import { useFamily } from '../../state/FamilyProvider';
   home says a mode moved — an automation, presence, a vacation beginning.
 */
 
-const clock = (at: string) => new Date(at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-const time = (at: string) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-/** One axis in words: since when, who set it, and what comes next. */
-export function modeLine(axis: HomeModeView): string {
-  const now = axis.mode ? `${axis.mode.name} since ${time(axis.since!)}${axis.by ? `, set by ${axis.by}` : ''}` : 'Not said yet';
-  const next = axis.ahead.find((each) => each.mode.id !== axis.mode?.id);
-  return next ? `${now} · ${next.mode.name} from ${clock(next.from)}${next.until ? ` to ${clock(next.until)}` : ''}` : now;
-}
-
 export function useHomeModes(homeId: string | null): { modes: HomeModeView[] | null; all: ModeView[]; set: (mode: string) => Promise<void>; problem: string | null; reload: () => Promise<void> } {
   const { api } = useFamily();
   const { onWorld } = useDevices();
@@ -37,6 +27,7 @@ export function useHomeModes(homeId: string | null): { modes: HomeModeView[] | n
       const [of, list] = await Promise.all([api.modes.of(homeId), api.modes.list()]);
       setModes(of);
       setAll(list);
+      setProblem(null);
     } catch (err) {
       setProblem(describeError(err) || 'The modes could not be read');
     }

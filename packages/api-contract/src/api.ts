@@ -12,7 +12,7 @@ import type { MapRegionAsk, MapRegionsView } from './map.ts';
 import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DevicePeople, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, FamilyElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
 import type { FoundFamily, InvitationInput, InvitationMade, InvitationView, Joined, MemberChanges, PersonView, SharingChanges, SharingLevel, PresenceView, NotificationView, WebPushSubscription } from './people.ts';
-import type { HomeInput, HomeView, ZoneInput, ZoneView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView, OccupancyView, ModeView, ModeInput, HomeModeView, ModeSet } from './homes.ts';
+import type { HomeInput, HomeView, ZoneInput, ZoneView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView, OccupancyView, ModeView, ModeInput, HomeModeView, ModeSet, ModeAxis } from './homes.ts';
 import type { MediaData, MediaView, NewMedia } from './media.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, FamilyView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
 import type { CheckOutcome, DraftView, FoundAt, FoundView, HeldSetupInput, KeptView, SaveInput, SightingView } from './setup.ts';
@@ -297,6 +297,8 @@ export interface KraftverkApi {
     of(homeId: string): Promise<HomeModeView[]>;
     /** A home set to a mode — now, or ahead: a vacation from Saturday to Sunday week. */
     set(homeId: string, input: ModeSet): Promise<HomeModeView[]>;
+    /** A mode planned ahead let go, by its axis and when it was to begin: what is before it lasts on. */
+    cancel(homeId: string, input: { axis: ModeAxis; from: string }): Promise<HomeModeView[]>;
   };
   /** Which spaces of a home have someone in them, whoever they are (§8.9). */
   occupancy: {

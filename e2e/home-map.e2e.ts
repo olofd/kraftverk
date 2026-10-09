@@ -33,17 +33,20 @@ test('a home’s map: the bathroom someone is in, said by its sensor; the bathro
 
   await page.goto(`/rooms/${home.id}`);
   await expect(page.getByRole('img', { name: /, its rooms/ })).toBeVisible();
+  await expect(page.locator('[data-ready="true"]')).toBeAttached();
   // A home with other floors asks which: this one.
   const floors = page.getByRole('radiogroup', { name: 'Floor' });
   if (await floors.count()) await floors.getByRole('radio', { name: floor.name }).click();
   // Someone came in as the sensor started: the bathroom has someone in it, said by the sensor.
-  await expect(page.getByText(new RegExp(`Since \\d{1,2}:\\d\\d( [AP]M)?, said by ${sensor.name}`))).toBeVisible();
-  await expect(page.getByText(bathroom.name, { exact: true }).first()).toBeVisible();
+  const someone = page.getByRole('region', { name: 'Someone is in' });
+  await expect(someone.getByText(new RegExp(`Since \\d{1,2}:\\d\\d( [AP]M)?, said by ${sensor.name}`))).toBeVisible();
+  await expect(someone.getByText(bathroom.name, { exact: true })).toBeVisible();
 
   // Traced: four corners tapped on the map, then kept.
   await page.getByRole('radiogroup', { name: 'Trace a room' }).getByRole('radio', { name: bathroom.name }).click();
   await expect(page.getByText(`Tap each corner of ${bathroom.name} in turn — 0 so far`)).toBeVisible();
   const map = page.getByRole('img', { name: new RegExp(`: ${floor.name}, its rooms`) });
+  await expect(map.locator('[data-ready="true"]')).toBeAttached();
   const box = (await map.boundingBox())!;
   for (const [x, y] of [
     [0.3, 0.3],

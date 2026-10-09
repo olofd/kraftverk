@@ -315,6 +315,7 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
       remove: (id) => call('DELETE', `/modes/${encodeURIComponent(id)}`),
       of: async (homeId) => (await get<{ modes: HomeModeView[] }>(`/homes/${encodeURIComponent(homeId)}/modes`)).modes,
       set: async (homeId, input) => (await call<{ modes: HomeModeView[] }>('PUT', `/homes/${encodeURIComponent(homeId)}/modes`, input)).modes,
+      cancel: async (homeId, input) => (await call<{ modes: HomeModeView[] }>('DELETE', `/homes/${encodeURIComponent(homeId)}/modes`, input)).modes,
     },
     occupancy: {
       now: async (homeId) => (await get<{ occupancy: OccupancyView[] }>(`/homes/${encodeURIComponent(homeId)}/occupancy`)).occupancy,

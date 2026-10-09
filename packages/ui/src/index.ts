@@ -26,7 +26,7 @@ export { Row, RowSeparator, toggled, ToggleRow } from './Row.tsx';
 export { Toggle, type ToggleProps } from './Toggle.tsx';
 export { SchemaForm, isComplete } from './SchemaForm.tsx';
 // No extension: each platform's own is picked (MapView.web.tsx on the web, MapView.tsx on a phone).
-export { MapView } from './map/MapView';
+export { MAP_TAKES_TAPS, MapView } from './map/MapView';
 export { MapApiProvider, useMapApi, type MapViewProps } from './map/props.ts';
 export { CodeInput } from './CodeInput.tsx';
 export { Chips } from './Chips.tsx';

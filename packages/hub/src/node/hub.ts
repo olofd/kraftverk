@@ -1,5 +1,5 @@
 import { AutomationEngine, AutomationLibrary, type EngineWorld } from '@kraftverk/automation-engine';
-import { isPosition, SYSTEM, type Actor, type AuditRecord, type Clock, type PolicyValueName, type PolicyValues, type ScopedHttp } from '@kraftverk/device-sdk';
+import { isPosition, REAL_CLOCK, SYSTEM, type Actor, type AuditRecord, type Clock, type PolicyValueName, type PolicyValues, type ScopedHttp } from '@kraftverk/device-sdk';
 import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
 import { ActionGateway, Confirmations, type GatewayPolicy } from '@kraftverk/gateway';
 import { LiveBus, SessionManager } from '@kraftverk/holder';
@@ -170,6 +170,8 @@ export class Hub {
   // What runs.
   /** What devices say as they say it, and what changed: what a live stream, the engine and the change log hear. */
   readonly bus: LiveBus;
+  /** The home's clock: real time, or a fast one where nothing reaches hardware. */
+  readonly clock: Clock;
   readonly sessions: SessionManager;
   readonly gateway: ActionGateway;
   readonly library: AutomationLibrary;
@@ -220,6 +222,7 @@ export class Hub {
   #started = false;
 
   constructor(options: HubOptions) {
+    this.clock = options.clock ?? REAL_CLOCK;
     // A fast clock shortens every pause that protects a relay: only where nothing reaches hardware.
     if ((options.clock?.rate ?? 1) > 1 && !options.readOnly()) throw new Error(`A clock ${options.clock!.rate} times real time runs only where every write to hardware is refused (read-only)`);
     const db = options.database;

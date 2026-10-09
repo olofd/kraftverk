@@ -9,6 +9,9 @@ import type { MapViewProps } from './props.ts';
   so screens draw `MapView` alike on every platform (docs/PLAN-MAPS.md).
 */
 
+/** Whether a map here takes taps: not until the phone's own map comes. */
+export const MAP_TAKES_TAPS = false;
+
 export function MapView({ markers = [], height = 200, label }: MapViewProps) {
   const first = markers[0];
   return (

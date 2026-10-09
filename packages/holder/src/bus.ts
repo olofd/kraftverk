@@ -1,4 +1,5 @@
-import type { AutomationId, ConnectionHealth, EventLevel, Reading, SavedDeviceId, Value } from '@kraftverk/device-sdk';
+import type { ModeAxis } from '@kraftverk/api-contract';
+import type { Actor, AutomationId, ConnectionHealth, EventLevel, Reading, SavedDeviceId, Value } from '@kraftverk/device-sdk';
 
 /**
  * What a holder hears from the devices it holds, as it happens
@@ -41,8 +42,14 @@ export type LiveMessage =
   | { kind: 'presence'; personId: string; place: WorldPlace; change: 'arrived' | 'left'; at: string }
   /** A space of a home has someone in it now, or nobody any more. */
   | { kind: 'occupancy'; homeId: string; spaceId: string; occupied: boolean; at: string }
-  /** A home's mode on one of its axes changed: from `previous`, to `mode`. */
-  | { kind: 'mode'; homeId: string; axis: string; mode: string; previous: string | null; at: string };
+  /**
+   * A home's mode on one of its axes changed: from `previous`, to `mode`, by
+   * whom — and, set by an automation, the automations whose runs led to it,
+   * outermost first: what keeps two from setting it back and forth forever.
+   */
+  | { kind: 'mode'; homeId: string; axis: ModeAxis; mode: string; previous: string | null; by: Actor; cause: readonly string[]; at: string }
+  /** The family's own modes changed: one added, renamed or let go. */
+  | { kind: 'modes'; at: string };
 
 /** A place someone can be at: a home, a zone, or a space of a home (its home's id beside it). */
 export type WorldPlace = { id: string; kind: 'home' | 'zone' } | { id: string; kind: 'space'; homeId: string };

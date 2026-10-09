@@ -43,3 +43,4 @@ export * from './setup.ts';
 export * from './validate.ts';
 export * from './time.ts';
 export * from './clock.ts';
+export * from './modes.ts';

@@ -1,4 +1,4 @@
-import { KEY } from '@kraftverk/device-sdk';
+import { isBuiltInMode, KEY, MODE_KEY } from '@kraftverk/device-sdk';
 import { AUTOMATION_MODES, type AutomationMode, type Coordinates, type Rule } from '@kraftverk/automation';
 
 import { CURRENT_VERSION } from './migrate.ts';
@@ -177,8 +177,6 @@ export type LabelEntry = { name: string; color: string | null; icon: string | nu
 /** A family's own mode, by its key: on one of the two axes — presence or the day — beside the built-in ones. */
 export type ModeEntry = { axis: 'presence' | 'day'; name: string; icon: string | null };
 
-/** The built-in modes' keys: a family's own is none of them. */
-export const BUILT_IN_MODE_KEYS = ['home', 'away', 'vacation', 'day', 'evening', 'night'] as const;
 
 /** A zone: a place the family knows that is no home — school, work — always somewhere, by its key. */
 export type ZoneEntry = { name: string; icon: string | null; location: Coordinates & { radius: number | null } };
@@ -494,8 +492,8 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
     else
       for (const [key, entry] of Object.entries(data.modes)) {
         const path = ['modes', key];
-        if (!/^[a-z][a-z0-9-]{0,29}$/.test(key)) problem(`"${key}" is not a mode's key: lowercase letters, digits and dashes, from a letter`, path);
-        else if ((BUILT_IN_MODE_KEYS as readonly string[]).includes(key)) problem(`"${key}" is a built-in mode: every family has it, and a file does not say it`, path);
+        if (!MODE_KEY.test(key)) problem(`"${key}" is not a mode's key: lowercase letters, digits and dashes, from a letter`, path);
+        else if (isBuiltInMode(key)) problem(`"${key}" is a built-in mode: every family has it, and a file does not say it`, path);
         if (!isRecord(entry)) {
           problem('Expected a mode: its axis and its name', path);
           continue;

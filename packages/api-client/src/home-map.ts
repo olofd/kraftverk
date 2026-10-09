@@ -1,4 +1,4 @@
-import type { DeviceView, HomeView, OccupancyView, SpaceView } from '@kraftverk/api-contract';
+import type { DeviceView, FloorPlanInput, FloorPlanView, HomeView, OccupancyView, SpaceView } from '@kraftverk/api-contract';
 import type { LngLat, MapArea, MapMarker } from '@kraftverk/map';
 // The frames alone: the map's style, and its basemap, are not bundled with a screen that only places things.
 import { anchoredSpot, drawingCorners, fromGlobe, outlineOnGlobe, spaceAt, toGlobe, type Anchor, type Point } from '@kraftverk/map/frames';
@@ -17,11 +17,10 @@ export const anchorOf = (home: Pick<HomeView, 'location' | 'bearing'>): Anchor |
 
 /** The spaces from one down: it, and everything within it. */
 export function spacesWithin(spaces: readonly SpaceView[], rootId: string): SpaceView[] {
+  const children = new Map<string, string[]>();
+  for (const space of spaces) if (space.parentId) children.set(space.parentId, [...(children.get(space.parentId) ?? []), space.id]);
   const ids = new Set([rootId]);
-  for (let grew = true; grew; ) {
-    grew = false;
-    for (const space of spaces) if (space.parentId && ids.has(space.parentId) && !ids.has(space.id)) (ids.add(space.id), (grew = true));
-  }
+  for (const id of ids) for (const child of children.get(id) ?? []) ids.add(child);
   return spaces.filter((space) => ids.has(space.id));
 }
 
@@ -31,6 +30,20 @@ export function mapLevels(spaces: readonly SpaceView[]): SpaceView[] {
   const site = spaces.find((space) => space.kind === 'site');
   return floors.length ? floors : site ? [site] : [];
 }
+
+/** The level a map opens on: the first with something drawn on it — its outline, a drawing, a room's outline — or the lowest. */
+export function firstLevel(spaces: readonly SpaceView[]): SpaceView | null {
+  const levels = mapLevels(spaces);
+  return levels.find((level) => level.outline || level.plan || spaces.some((space) => space.parentId === level.id && space.outline)) ?? levels[0] ?? null;
+}
+
+/** What a floor is drawn as, when a new picture of it comes: where the one before was, as wide and as turned — or, the first, a house's floor across. */
+export function planWith(was: FloorPlanView | null, picture: { id: string; width: number }): FloorPlanInput {
+  return { pictureId: picture.id, scale: was ? (was.scale * was.width) / picture.width : DRAWING_METRES / picture.width, x: was?.x ?? 0, y: was?.y ?? 0, turn: was?.turn ?? 0 };
+}
+
+/** What a new drawing is taken to be across until said: a house's floor. */
+const DRAWING_METRES = 15;
 
 /** A space with someone in it, as a list says it: its name, since when, and what said so. */
 export type OccupiedRoom = { spaceId: string; name: string; since: string; peak: number | null; by: string[] };

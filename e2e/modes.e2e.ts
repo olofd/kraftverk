@@ -27,4 +27,7 @@ test('a home set to away from the home screen, by its owner; a mode of the famil
   await expect(page.getByText(name, { exact: true })).toBeVisible();
   await page.goto('/');
   await expect(page.getByRole('radiogroup', { name: /^Whether anyone is home, at / }).first().getByRole('radio', { name })).toBeVisible();
+  // Home again, as it was: no other test finds the home away.
+  const back = await request.put(`/api/homes/${homes[0].id}/modes`, { headers: HEADERS, data: { mode: 'home' } });
+  expect(back.ok()).toBe(true);
 });

@@ -54,6 +54,8 @@ export class Outbox {
         return this.#world('occupancy', message.homeId);
       case 'mode':
         return this.#world('mode', message.homeId);
+      case 'modes':
+        return this.#world('mode', null);
     }
   }
 

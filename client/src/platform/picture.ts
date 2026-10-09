@@ -65,7 +65,9 @@ function base64(bytes: Uint8Array): string {
 export function usePicture(api: Pick<KraftverkApi, 'media'>, id: string | null): string | null {
   const [uri, setUri] = useState<string | null>(null);
   useEffect(() => {
-    if (!id) return setUri(null);
+    // Another picture: the one before is let go below, so it is not shown meanwhile.
+    setUri(null);
+    if (!id) return;
     let current = true;
     let made: string | null = null;
     void api.media
