@@ -1236,8 +1236,13 @@ meet in the form, not only in YAML:
   `with` (the vocabulary carries each script's shape). The first key of a
   map not yet begun is YAML's value, not a key, which codemirror-json-schema
   does not complete: `client/src/components/yamlFirstKey.ts` does.
-- **Left:** script functions in the form's condition builder; "Used by" on
-  a script's page.
+- **Script functions in the form's conditions, built after:** "One of your
+  scripts" among a condition's kinds (`Condition.tsx`): the family's
+  functions, each by its words and its script; each argument a value or a
+  reading of a part — one whose unit converts to the argument's, or of its
+  type — and its answer compared, in its unit. Picked, its script fills a
+  role (`scriptRole`), as a step's does.
+- **Left:** "Used by" on a script's page.
 
 What browser first changes in the slices:
 - **The editor is a web component of its own**, `ScriptEditor.web.tsx`,

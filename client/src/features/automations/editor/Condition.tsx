@@ -1,8 +1,8 @@
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { triggerIdOf, type CompareOp, type Expr } from '@kraftverk/automation';
+import { scriptRole, triggerIdOf, type CompareOp, type Expr } from '@kraftverk/automation';
 import type { PartOption } from '@kraftverk/automation';
-import { capabilitiesOf, MAIN_PART, meetsNeed, type ValueType } from '@kraftverk/device-sdk';
+import { capabilitiesOf, convertible, isUnit, MAIN_PART, meetsNeed, valueTypeOf, type ConfigField, type Value, type ValueType } from '@kraftverk/device-sdk';
 import { Chips, Icon, IconLabel } from '@kraftverk/ui';
 
 import { Picker } from '../../../components/Picker';
@@ -14,18 +14,20 @@ import { Label, TimeField, ValueField, type Literal } from './fields';
   A condition, built without showing an expression (docs/AUTOMATION-EDITOR.md):
   a part and something it reports compared with a value in that reading's own
   unit or options; whether a part can be reached; the time of day, between
-  two times; or what a package's function says of a part. Rows join as "all of" or "any of", a group may hold a group,
+  two times; what a package's function says of a part; or what one of your
+  scripts' functions works out, from values and readings. Rows join as "all of" or "any of", a group may hold a group,
   and a row may be turned round ("not"). One the editor cannot draw as rows is
   said in words, and replaced whole.
 */
 
-type Kind = 'reading' | 'reachable' | 'time' | 'ask' | 'started' | 'all' | 'any';
+type Kind = 'reading' | 'reachable' | 'time' | 'ask' | 'script' | 'started' | 'all' | 'any';
 
 const KIND_OPTIONS: { value: Kind; label: string }[] = [
   { value: 'reading', label: 'A reading' },
   { value: 'reachable', label: 'Can be reached' },
   { value: 'time', label: 'Time of day' },
   { value: 'ask', label: 'Ask a package' },
+  { value: 'script', label: 'One of your scripts' },
   { value: 'started', label: 'What started it' },
   { value: 'all', label: 'All of' },
   { value: 'any', label: 'Any of' },
@@ -55,6 +57,7 @@ function kindOf(expr: Expr): Kind | null {
   if ('compare' in expr && 'run' in expr.left && expr.left.run === 'trigger' && 'value' in expr.right && (expr.compare === 'eq' || expr.compare === 'ne')) return 'started';
   if ('compare' in expr && 'read' in expr.left && 'value' in expr.right) return 'reading';
   if ('compare' in expr && 'call' in expr.left && 'value' in expr.right) return 'ask';
+  if ('compare' in expr && 'script' in expr.left && 'value' in expr.right) return 'script';
   return null;
 }
 
@@ -80,6 +83,8 @@ function blankOf(kind: Kind, role: string | null): Expr {
       return { within: { from: { value: '22:00' }, to: { value: '06:00' } } };
     case 'ask':
       return { compare: 'eq', left: { call: '', role: role ?? '', args: {} }, right: { value: true } };
+    case 'script':
+      return { compare: 'gt', left: { script: '', fn: '', args: [] }, right: { value: 0 } };
     case 'started':
       return { compare: 'eq', left: { run: 'trigger' }, right: { value: '' } };
     case 'all':
@@ -136,6 +141,8 @@ export function ConditionField({ label, expr, onChange, depth = 0 }: { label: st
         <Reading expr={inner as Extract<Expr, { compare: unknown }>} onChange={put} label={label} />
       ) : kind === 'started' ? (
         <StartedBy expr={inner as Extract<Expr, { compare: unknown }>} onChange={put} label={label} />
+      ) : kind === 'script' ? (
+        <ScriptFunction expr={inner as Extract<Expr, { compare: unknown }>} onChange={put} label={label} />
       ) : (
         <Ask expr={inner as Extract<Expr, { compare: unknown }>} onChange={put} label={label} />
       )}
@@ -298,6 +305,126 @@ function Reading({ expr, onChange, label }: { expr: Extract<Expr, { compare: unk
           )}
           <ValueField label={`${label}: value`} type={type} literal={expr.right as Literal} onChange={(right) => onChange({ ...expr, right })} />
         </YStack>
+      ) : null}
+    </YStack>
+  );
+}
+
+/** A name in a script, as a person says it: "feelsLike" is "Feels like". */
+const wordsOfName = (name: string): string => {
+  const words = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
+/** A value to start from, of a field: nought in its unit, yes, its first option, nothing. */
+const startOf = (field: ConfigField): Expr =>
+  field.type === 'number' ? { value: field.default ?? 0, ...(field.unit && isUnit(field.unit) ? { unit: field.unit } : {}) } : { value: (field.type === 'boolean' ? (field.default ?? true) : field.type === 'enum' ? (field.default ?? field.options[0]?.value ?? '') : (field.default ?? '')) as Value };
+
+/**
+ * An argument of a script's function: a value, or what a part reports now —
+ * a reading of the same kind: in a unit that converts to the argument's, or
+ * of its type.
+ */
+function ArgSource({ label, field, expr, onChange }: { label: string; field: ConfigField; expr: Expr | undefined; onChange: (expr: Expr) => void }) {
+  const editor = useEditor();
+  const read = expr && 'read' in expr ? expr.read : null;
+  const type = valueTypeOf(field);
+  /** Whether what a part reports may be given here. */
+  const fitting = (value: ValueType) => (type.type === 'number' ? value.type === 'number' && (!type.unit || (value.unit !== undefined && isUnit(type.unit) && isUnit(value.unit) && convertible(value.unit, type.unit))) : value.type === type.type);
+  const bound = read ? editor.partOf(read.role) : null;
+  const readings = bound ? bound.description.attributes.filter((attribute) => attribute.means && (attribute.part ?? MAIN_PART) === bound.part && fitting(attribute.value)) : [];
+  return (
+    <YStack gap="$1.5">
+      <Label>{field.title}</Label>
+      <XStack>
+        <Chips
+          label={`${label}: a value or a reading`}
+          options={[
+            { value: 'value', label: 'A value' },
+            { value: 'reading', label: 'A reading' },
+          ]}
+          value={read ? 'reading' : 'value'}
+          onChange={(source) => onChange(source === 'reading' ? { read: { role: '', means: '' } } : startOf(field))}
+        />
+      </XStack>
+      {read ? (
+        <>
+          <PartChoice
+            label={`${label}: which part`}
+            role={read.role}
+            fits={(option) => option.description.attributes.some((attribute) => attribute.means && (attribute.part ?? MAIN_PART) === option.binding.part && fitting(attribute.value))}
+            onRole={(role) => onChange({ read: { role, means: '' } })}
+          />
+          {bound ? (
+            <Picker
+              label={`${label}: which reading`}
+              chosen={readings.find((attribute) => attribute.means === read.means)?.label ?? null}
+              placeholder="Choose what it reports"
+              options={readings.map((attribute) => ({ key: attribute.key, title: attribute.label, subtitle: attribute.value.type === 'number' && attribute.value.unit ? attribute.value.unit : undefined, value: attribute, selected: attribute.means === read.means }))}
+              onPick={(attribute) => onChange({ read: { role: read.role, means: attribute.means! } })}
+            />
+          ) : null}
+        </>
+      ) : (
+        <ValueField label={`${label}: ${field.title}`} type={type} literal={expr && 'value' in expr ? (expr as Literal) : null} onChange={onChange} />
+      )}
+    </YStack>
+  );
+}
+
+/**
+ * What one of your scripts' functions works out — "how warm it feels" —
+ * from values and readings, compared with the answer it waits for. Picked,
+ * its script fills a role, as a "run a script" step's does.
+ */
+function ScriptFunction({ expr, onChange, label }: { expr: Extract<Expr, { compare: unknown }>; onChange: (expr: Expr) => void; label: string }) {
+  const editor = useEditor();
+  const call = expr.left as Extract<Expr, { script: unknown }>;
+  const script = editor.scripts.find((each) => each.id === editor.draft.scripts?.[call.script]);
+  const declared = script?.shape?.functions[call.fn] ?? null;
+  const offered = editor.scripts.flatMap((each) => Object.entries(each.shape?.functions ?? {}).map(([fn, shape]) => ({ script: each, fn, shape })));
+  const ordered = declared?.returns.type === 'number';
+  return (
+    <YStack gap="$2">
+      <Picker
+        label={`${label}: which function`}
+        chosen={declared ? `${wordsOfName(call.fn)} — ${script!.name}` : null}
+        placeholder={offered.length ? 'Choose a function' : 'No script has a function yet'}
+        options={offered.map((each) => ({ key: `${each.script.id}:${each.fn}`, title: wordsOfName(each.fn), subtitle: [each.script.name, each.shape.about].filter(Boolean).join(' — '), value: each, selected: each.script.id === script?.id && each.fn === call.fn }))}
+        onPick={(picked) => {
+          const made = scriptRole(editor.draft, picked.script);
+          editor.change(() => made.draft);
+          onChange({
+            compare: picked.shape.returns.type === 'number' ? 'gt' : 'eq',
+            left: { script: made.role, fn: picked.fn, args: picked.shape.args.map(startOf) },
+            right: startOf(picked.shape.returns),
+          });
+        }}
+      />
+      {declared?.about ? (
+        <Text fontSize={13} color="$muted" lineHeight={19}>
+          {declared.about}
+        </Text>
+      ) : null}
+      {declared ? (
+        <>
+          {declared.args.map((field, at) => (
+            <ArgSource key={at} label={`${label}: ${field.title}`} field={field} expr={call.args[at]} onChange={(next) => onChange({ ...expr, left: { ...call, args: declared.args.map((_, index) => (index === at ? next : (call.args[index] ?? startOf(declared.args[index]!)))) } })} />
+          ))}
+          <Label>Its answer</Label>
+          {ordered ? (
+            <Picker
+              label={`${label}: compared`}
+              chosen={NUMBER_OPS.find((option) => option.value === expr.compare)?.label ?? null}
+              placeholder="Choose how"
+              options={NUMBER_OPS.map((option) => ({ key: option.value, title: option.label, value: option.value, selected: option.value === expr.compare }))}
+              onPick={(compare) => onChange({ ...expr, compare })}
+            />
+          ) : (
+            <Chips label={`${label}: compared`} options={EQUAL_OPS} value={expr.compare} onChange={(compare) => onChange({ ...expr, compare })} />
+          )}
+          <ValueField label={`${label}: its answer`} type={valueTypeOf(declared.returns)} literal={expr.right as Literal} onChange={(right) => onChange({ ...expr, right })} />
+        </>
       ) : null}
     </YStack>
   );

@@ -1,6 +1,6 @@
 import { ALONE, expect, test, type Page } from './fixtures';
 
-import { answer, press, unique } from './helpers';
+import { addSimulated, answer, pick, press, unique } from './helpers';
 
 /*
   Scripts in the app (docs/PLAN-SCRIPTS.md): one written, read as it is
@@ -212,6 +212,29 @@ test('a script’s step, run when… — an automation made from it in the form,
   await expect(activity.getByText(`Ran “${name}” (hello)`).first()).toBeVisible();
   await activity.getByText(`Ran “${name}” (hello)`).first().click();
   await expect(page.getByText('Hello after 120 s').first()).toBeVisible();
+});
+
+test('a script’s function in a condition built in the form: a part’s reading given it, its answer compared', async ({ page, request }) => {
+  const plug = await addSimulated(request, 'tuya.zigbee-plug', unique('Desk plug'));
+  // A function of its own name: other runs' scripts are the family's too.
+  const suffix = Math.random().toString(36).slice(2, 6).replace(/[0-9]/g, 'x');
+  const fn = `doubled${suffix.charAt(0).toUpperCase()}${suffix.slice(1)}`;
+  const source = ["import type { Watts } from 'kraftverk';", '', '/** Twice what it is given. */', `export function ${fn}(power: Watts): Watts {`, '  return power * 2;', '}', ''].join('\n');
+  const made = await request.post('/api/scripts', { headers: { 'x-kraftverk-client': 'app' }, data: { name: unique('Maths'), source } });
+  expect(made.ok(), await made.text()).toBe(true);
+  const words = `Doubled ${suffix}`;
+
+  await page.goto('/automations/new');
+  await press(page, 'Nothing');
+  await press(page, 'Add a condition it must meet');
+  await pick(page, 'Only if: what kind', 'One of your scripts');
+  await pick(page, 'Only if: which function', words);
+  await expect(page.getByText('Twice what it is given.')).toBeVisible();
+  // Its argument: what the plug reports — a reading in watts, as the argument is.
+  await page.getByRole('radio', { name: 'A reading' }).click();
+  await pick(page, 'Only if: Power: which part', plug.name);
+  await pick(page, 'Only if: Power: which reading', 'Power');
+  await expect(page.getByText(new RegExp(`^${words} by .+\\(${plug.name}.*\\) is above 0 W$`))).toBeVisible();
 });
 
 test.describe('run with no server', () => {
