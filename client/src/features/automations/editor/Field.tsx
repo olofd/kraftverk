@@ -1,6 +1,6 @@
 import { Input, Text, YStack } from 'tamagui';
 
-import { fieldValue, withField, type Expr, type FieldSpec, type ListPath, type Month, type Weekday } from '@kraftverk/automation';
+import { fieldValue, OWN_HOME, withField, type Expr, type FieldSpec, type ListPath, type Month, type Weekday } from '@kraftverk/automation';
 import { MAIN_PART, wholeTime } from '@kraftverk/device-sdk';
 import { Chips } from '@kraftverk/ui';
 
@@ -45,16 +45,14 @@ function FieldEditor<T extends object>({ field, fields, construct, set, path }: 
   ) : null;
   const type = field.type;
   switch (type.type) {
-    case 'timeOfDay': {
-      const time = literal(value);
+    case 'timeOfDay':
       return (
-        <YStack gap="$1">
+        <YStack gap="$1.5">
           <Label>{field.label}</Label>
-          <TimeField label={field.label} value={typeof time === 'string' ? time : '07:00'} onChange={(at) => put({ value: at })} />
+          <TimeOfDayField label={field.label} expr={(value as Expr | undefined) ?? { value: '07:00' }} onChange={put} />
           {help}
         </YStack>
       );
-    }
     case 'days':
       return (
         <YStack gap="$1">
@@ -277,4 +275,81 @@ function FieldEditor<T extends object>({ field, fields, construct, set, path }: 
       throw new Error(`No field drawn for ${JSON.stringify(unknown)}`);
     }
   }
+}
+
+type TimeSource = 'time' | 'sun' | 'variable';
+
+/**
+ * A time of day, from where it comes: a time on the clock, the sun where
+ * the home is — so long before or after it — or one of the home's time
+ * variables, "Wake at". One it cannot draw — a reading's — is said in words,
+ * and replaced only when asked.
+ */
+function TimeOfDayField({ label, expr, onChange }: { label: string; expr: Expr; onChange: (expr: Expr) => void }) {
+  const editor = useEditor();
+  const times = editor.variablesAt(OWN_HOME).filter((variable) => variable.kind === 'time');
+  const source: TimeSource | null = 'value' in expr ? 'time' : 'sun' in expr ? 'sun' : 'variable' in expr ? 'variable' : null;
+  const sources: { value: TimeSource; label: string }[] = [
+    { value: 'time', label: 'A time' },
+    { value: 'sun', label: 'The sun' },
+    ...(times.length || source === 'variable' ? [{ value: 'variable' as const, label: 'A variable' }] : []),
+  ];
+  const start = (next: TimeSource): Expr => (next === 'time' ? { value: '07:00' } : next === 'sun' ? { sun: 'sunset' } : { variable: { key: times[0]?.key ?? '', at: OWN_HOME } });
+  if (source === null)
+    return (
+      <YStack gap="$1.5">
+        <Text fontSize={15} color="$color" lineHeight={21}>
+          {editor.saidExpr(expr)}
+        </Text>
+        <Chips label={`${label}: from where`} options={sources} value={null} onChange={(next) => onChange(start(next))} />
+      </YStack>
+    );
+  return (
+    <YStack gap="$2">
+      <Chips label={`${label}: from where`} options={sources} value={source} onChange={(next) => (next === source ? undefined : onChange(start(next)))} />
+      {'value' in expr ? <TimeField label={label} value={typeof expr.value === 'string' ? expr.value : '07:00'} onChange={(at) => onChange({ value: at })} /> : null}
+      {'sun' in expr ? <SunTime label={label} expr={expr} onChange={onChange} /> : null}
+      {'variable' in expr ? (
+        <Picker
+          label={`${label}: which variable`}
+          chosen={times.find((variable) => variable.key === expr.variable.key)?.field.title ?? (expr.variable.key || null)}
+          placeholder="Choose a time variable"
+          options={times.map((variable) => ({ key: variable.key, title: variable.field.title, value: variable.key, selected: variable.key === expr.variable.key }))}
+          onPick={(key) => onChange({ variable: { key, at: expr.variable.at } })}
+        />
+      ) : null}
+    </YStack>
+  );
+}
+
+/** Sunrise or sunset where the home is — at it, or so long before or after. */
+function SunTime({ label, expr, onChange }: { label: string; expr: Extract<Expr, { sun: unknown }>; onChange: (expr: Expr) => void }) {
+  const when = !expr.offset ? 'at' : expr.offset.before ? 'before' : 'after';
+  const by = expr.offset ? durationOf(expr.offset.by) : null;
+  return (
+    <YStack gap="$2">
+      <Chips
+        label={`${label}: which`}
+        options={[
+          { value: 'sunrise', label: 'Sunrise' },
+          { value: 'sunset', label: 'Sunset' },
+        ]}
+        value={expr.sun}
+        onChange={(sun) => onChange({ ...expr, sun })}
+      />
+      <Chips
+        label={`${label}: when`}
+        options={[
+          { value: 'before', label: 'Before' },
+          { value: 'at', label: 'At it' },
+          { value: 'after', label: 'After' },
+        ]}
+        value={when}
+        onChange={(next) => onChange(next === 'at' ? { sun: expr.sun } : { sun: expr.sun, offset: { by: expr.offset?.by ?? { value: 30, unit: 'min' }, before: next === 'before' } })}
+      />
+      {expr.offset ? (
+        <DurationField label={`${label}: how long`} value={by ?? { value: 30, unit: 'min' }} max={6 * 3600} onChange={(next) => onChange({ sun: expr.sun, offset: { by: next ?? { value: 30, unit: 'min' }, before: expr.offset!.before } })} />
+      ) : null}
+    </YStack>
+  );
 }

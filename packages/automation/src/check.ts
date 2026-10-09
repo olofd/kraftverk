@@ -651,6 +651,11 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         const got = shape(expr, at, { calls: false, trigger: true });
         if (!fits({ type: 'string', options: null }, got)) problems.push(`${at}: expected a time of day, got ${said(got)}`);
         if ('value' in expr && (typeof expr.value !== 'string' || !CLOCK_TIME.test(expr.value))) problems.push(`${at}: a time of day is "HH:MM"`);
+        // A home's variable is one only as a time of day: words are not one, whatever they say.
+        if ('variable' in expr) {
+          const found = vocabulary.variables?.(expr.variable.at)?.find((each) => each.key === expr.variable.key);
+          if (found && found.kind !== 'time') problems.push(`${at}: ${found.field.title} is not a time of day — a time variable is`);
+        }
         return;
       }
       case 'duration': {

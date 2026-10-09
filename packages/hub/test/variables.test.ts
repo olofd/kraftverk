@@ -120,6 +120,22 @@ describe('a home’s variables', () => {
     expect(runs[0]!.summary).toBe('Set “Guests staying” to no');
   });
 
+  test('a time taken from a variable: run when the clock comes to it — and a variable of words is no time', async () => {
+    await t.home.variables.add(home, { key: 'wake', kind: 'time', field: { type: 'string', title: 'Wake at' } });
+    await t.home.variables.add(home, { key: 'note', kind: 'text', field: { type: 'string', title: 'Note' } });
+    const problems = async (key: string) => (await t.home.automations.draft({ rule: { roles: {}, params: { fields: {} }, when: [{ at: { variable: { key, at: 'home' } } }], then: [{ setMode: { mode: 'home' } }] }, roles: {}, groups: {}, starts: {}, world: {} })).problems;
+    expect(await problems('wake')).toEqual([]);
+    expect((await problems('note')).join(' ')).toContain('Note is not a time of day');
+    // Now, on the automation's clock: its minute is the one it wakes at.
+    const now = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Stockholm', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
+    await t.home.variables.set(home, 'wake', now);
+    const waking = await acting({ roles: {}, params: { fields: {} }, when: [{ at: { variable: { key: 'wake', at: 'home' } } }], then: [{ setMode: { mode: 'home' } }] });
+    expect((await t.home.automations.list()).find((each) => each.id === waking.id)?.sentence).toBe('Every day at “Wake at”, set the home to home.');
+    await t.hub.engine.tick();
+    await settle(100);
+    expect((await t.home.automations.runs(waking.id))).toHaveLength(1);
+  });
+
   test('a script sets and counts them — but does not declare them', async () => {
     await t.home.variables.add(home, RUNS);
     const script = t.as({ kind: 'automation', id: 'a-1', name: 'A tidy', for: null, run: { id: 'r-1', askedBy: null } });

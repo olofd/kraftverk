@@ -60,8 +60,8 @@ const AT: TriggerSpec<'at'> = {
     return days || narrowed ? `At ${say.expr(trigger.at)}${days ? ` ${days}` : ''}${narrowed ? ` ${narrowed}` : ''}` : `Every day at ${say.expr(trigger.at)}`;
   },
   docs: {
-    summary: 'At a time of day on the automation’s own clock — `07:00`, or by the sun where the home is: `sunset`, `30 min before sunset` — every day, or only on the `days`, in the `months` and on the `dates` it names: `"12-24"`, or a span `"12-01..12-24"`, across the year’s end when it ends before it begins. A server that was down at that time still runs it within the hour, once.',
-    examples: ['at: "07:00"', 'at: "22:30"\ndays: weekdays', 'at: "09:00"\ndays: [mon, wed, fri]', 'at: sunset', 'at: 30 min before sunset\ndays: weekdays', 'at: "06:30"\nmonths: [dec, jan, feb]', 'at: sunset\ndates: ["12-01..12-24"]'],
+    summary: 'At a time of day on the automation’s own clock — `07:00`, or by the sun where the home is: `sunset`, `30 min before sunset` — or one of the home’s time variables, `home.var.wakeUp`, when it comes to it: every day, or only on the `days`, in the `months` and on the `dates` it names: `"12-24"`, or a span `"12-01..12-24"`, across the year’s end when it ends before it begins. A server that was down at that time still runs it within the hour, once.',
+    examples: ['at: "07:00"', 'at: "22:30"\ndays: weekdays', 'at: "09:00"\ndays: [mon, wed, fri]', 'at: sunset', 'at: 30 min before sunset\ndays: weekdays', 'at: "06:30"\nmonths: [dec, jan, feb]', 'at: home.var.wakeUp\ndays: weekdays', 'at: sunset\ndates: ["12-01..12-24"]'],
   },
   starts: 'clock',
   world: false,
