@@ -158,8 +158,6 @@ export type AutomationEngineDeps = {
    * what it stamps. Real time when not given; a test's own — fixed, or fast.
    */
   clock?: Clock;
-  /** How often it looks at what is due by the clock, in the clock's time. */
-  everyMs?: number;
   /** What runs its scripts' steps and functions (docs/PLAN-SCRIPTS.md §10): the hub's. None: a script step fails, and a function is not known. */
   scripts?: ScriptRunner;
 };

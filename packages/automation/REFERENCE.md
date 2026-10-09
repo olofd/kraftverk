@@ -264,11 +264,11 @@ when:
 
 ### `every` — Every so often
 
-Every so many minutes, counted on the owner’s clock from midnight: every 15 min is :00, :15, :30 and :45. Once a slot; a server that was down runs once, at the latest, and does not catch up.
+Every so many minutes — from one to 12 hours, in whole minutes — counted on the owner’s clock from midnight: every 15 min is :00, :15, :30 and :45, each on the minute. Once a slot; a server that was down runs once, at the latest, and does not catch up.
 
 | Word | Holds | |
 |---|---|---|
-| `every` | a length of time, `2 min` — 5 min to 12 h, in steps of 1 min | needed |
+| `every` | a length of time, `2 min` — 1 min to 12 h, in steps of 1 min | needed |
 
 ```yaml
 when:

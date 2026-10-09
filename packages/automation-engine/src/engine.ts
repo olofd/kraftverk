@@ -52,8 +52,13 @@ export { quoted } from './words.ts';
  * parts (`RuleContext`), when an automation starts on its own (`Triggers`),
  * and its runs (`Runs`), each with its log (`listen.ts`).
  */
+/** How often it looks at what is due by the clock — on the minute and the half — in the clock's time; and how far past it, so the minute has turned. */
+const TICK_MS = 30_000;
+const TICK_LATE_MS = 20;
+
 export class AutomationEngine {
   #timer: ClockTimer | null = null;
+  #started = false;
   #unsubscribe: (() => void) | null = null;
   readonly #context: RuleContext;
   readonly #runs: Runs;
@@ -67,12 +72,32 @@ export class AutomationEngine {
 
   start(): void {
     this.#runs.endInterrupted();
-    // Nobody waits on a tick or on what was heard: what goes wrong is said, never left to bring the server down.
-    this.#timer ??= this.#context.clock.setInterval(() => void this.tick().catch((error) => console.error('[automations] a tick failed:', error)), this.deps.everyMs ?? 30_000);
+    this.#started = true;
+    if (!this.#timer) this.#nextTick();
+    // Nobody waits on what was heard: what goes wrong is said, never left to bring the server down.
     this.#unsubscribe ??= this.deps.bus?.subscribe((message) => void this.hear(message).catch((error) => console.error('[automations] hearing a device failed:', error))) ?? null;
   }
 
+  /**
+   * The next look at what is due by the clock: on the half minute, on the
+   * home's clock. Every time a clock trigger names falls on a whole minute —
+   * 07:00, every 15 min, sunset as the minute it is — so each is seen as it
+   * comes, not up to half a minute late; the look between catches a hold
+   * kept so, or a server back from sleep.
+   */
+  #nextTick(): void {
+    const ms = TICK_MS - (this.#context.clock.now() % TICK_MS) + TICK_LATE_MS;
+    this.#timer = this.#context.clock.setTimeout(() => {
+      this.#timer = null;
+      if (!this.#started) return;
+      this.#nextTick();
+      // Nobody waits on a tick: what goes wrong is said, never left to bring the server down.
+      void this.tick().catch((error) => console.error('[automations] a tick failed:', error));
+    }, ms);
+  }
+
   stop(): void {
+    this.#started = false;
     this.#context.clock.clear(this.#timer);
     this.#timer = null;
     this.#unsubscribe?.();

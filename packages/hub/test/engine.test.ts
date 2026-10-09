@@ -163,7 +163,8 @@ const asEngineDevice = (device: Omit<EngineDevice, 'reachable' | 'wantFresh' | '
 /** Two engines on one database are one server, restarted: what they keep is in the store. */
 /** `gate`: what a command waits on once sent — a run that takes its time. `refuse`: what the gateway says instead of acting, when it says something. */
 /** `history`: what the home kept of each reading, for a rule that looks back; `location`: where the home is, for the sun. */
-function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: boolean; gate?: () => Promise<void>; refuse?: (intent: CommandIntent) => GatewayResult | null; history?: EngineHistory; location?: Coordinates } = {}) {
+/** `timers`: where the clock's timers wait, for a test that moves time on itself — none: real timers. */
+function setup(options: { now?: Date; timers?: { at: number; task: () => void }[]; plugRemoved?: boolean; forecastSession?: boolean; gate?: () => Promise<void>; refuse?: (intent: CommandIntent) => GatewayResult | null; history?: EngineHistory; location?: Coordinates } = {}) {
   const sent: CommandIntent[] = [];
   const written: WriteIntent[] = [];
   const recorded: AuditRecord[] = [];
@@ -223,8 +224,10 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
     ...(options.history ? { history: options.history } : {}),
     ...(options.location ? { location: () => options.location! } : {}),
     bus,
-    // A fixed time the test moves on, with real timers.
-    clock: { ...REAL_CLOCK, now: () => now.getTime() },
+    // A fixed time the test moves on, with real timers — or the test's own.
+    clock: options.timers
+      ? { ...REAL_CLOCK, now: () => now.getTime(), setTimeout: (task, ms) => (options.timers!.push({ at: now.getTime() + ms, task }), { clock: 'timer' }), clear: () => {} }
+      : { ...REAL_CLOCK, now: () => now.getTime() },
   });
   const library = new AutomationLibrary(KIT, () => {});
   /** An automation copied from one of the kit's recipes, its settings written into its blocks — as the app makes one. */
@@ -987,6 +990,49 @@ describe('every so many minutes', () => {
     await engine.tick();
     expect(sent).toHaveLength(2);
     engine.stop();
+  });
+
+  test('every minute, each on the minute: the engine looks on the minute and the half, not up to half a minute late', async () => {
+    const timers: { at: number; task: () => void }[] = [];
+    const context = setup({ now: new Date(Date.parse('2026-06-15T05:07:12.345Z')), timers });
+    const { engine, store, sent } = context;
+    const created = store.create({
+      name: 'Every minute',
+      rule: {
+        roles: { switch: { label: 'Plug', capabilities: ['switch'] } },
+        params: { fields: {} },
+        when: [{ every: { value: 60, unit: 's' } }],
+        then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
+      },
+      madeFrom: null,
+      roles: { switch: { device: PLUG, part: 'main' } },
+      groups: {}, starts: {},
+      timeZone: ZONE,
+      recheckMinutes: null,
+    });
+    store.update(created.id, { mode: 'act' });
+    engine.start();
+    // Its first look: at the half minute, just past it.
+    expect(new Date(timers[0]!.at).toISOString()).toBe('2026-06-15T05:07:30.020Z');
+    /** The clock moved to the next timer: what came due runs. */
+    const pass = async () => {
+      const next = timers.shift()!;
+      context.at(new Date(next.at));
+      next.task();
+      await settle();
+    };
+    await pass();
+    expect(sent).toHaveLength(1);
+    await pass();
+    // 05:08:00: the next minute's slot, at once.
+    expect(context.now().toISOString()).toBe('2026-06-15T05:08:00.020Z');
+    expect(sent).toHaveLength(2);
+    await pass();
+    expect(sent).toHaveLength(2);
+    engine.stop();
+    expect(timers).toHaveLength(1);
+    timers.shift()!.task();
+    expect(timers).toHaveLength(0);
   });
 
   test('as clocks go back, both of the repeated hour’s slots: every quarter of an hour, none skipped', async () => {

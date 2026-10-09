@@ -9,10 +9,10 @@ import type { Trigger } from './rule.ts';
 */
 
 /**
- * How often an `every` trigger may run, in seconds — whole minutes: not more
- * often than a look to keep things so, at least twice a day.
+ * How often an `every` trigger may run, in seconds — whole minutes, as the
+ * engine looks on the minute: every minute at most, at least twice a day.
  */
-export const EVERY_SECONDS = { min: 5 * 60, max: 12 * 3600, step: 60 } as const;
+export const EVERY_SECONDS = { min: 60, max: 12 * 3600, step: 60 } as const;
 
 /**
  * How long a condition may be asked to have held, in seconds: more than

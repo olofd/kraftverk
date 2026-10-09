@@ -26,9 +26,10 @@ describe('every so many minutes', () => {
     expect([slotOf(7 * 60 + 40, 15), slotOf(7 * 60 + 45, 15), slotOf(0, 15), slotOf(23 * 60 + 59, 60)]).toEqual([450, 465, 0, 1380]);
   });
 
-  test('is checked: whole minutes, from 5 min to 12 h — kept in seconds', () => {
+  test('is checked: whole minutes, from 1 min to 12 h — kept in seconds', () => {
     expect(checkRule(rule([{ every: { value: 15 * 60, unit: 's' } }]), NO_FUNCTIONS)).toEqual([]);
-    for (const seconds of [60, 12 * 3600 + 60, 450]) expect(checkRule(rule([{ every: { value: seconds, unit: 's' } }]), NO_FUNCTIONS)).toEqual(['when[0].every: from 5 min to 12 h, in steps of 1 min']);
+    expect(checkRule(rule([{ every: { value: 60, unit: 's' } }]), NO_FUNCTIONS)).toEqual([]);
+    for (const seconds of [30, 12 * 3600 + 60, 90]) expect(checkRule(rule([{ every: { value: seconds, unit: 's' } }]), NO_FUNCTIONS)).toEqual(['when[0].every: from 1 min to 12 h, in steps of 1 min']);
     expect(checkRule(rule([{ every: { value: '15' } }]), NO_FUNCTIONS)).toEqual(['when[0].every: expected a length of time, got a string']);
   });
 
