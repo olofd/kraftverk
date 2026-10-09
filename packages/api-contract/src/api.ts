@@ -51,6 +51,17 @@ export type Caller =
   /** An assistant acting for a person: it does what needs no one's yes, and is refused the rest. */
   | { kind: 'agent'; for: string };
 
+/** What kind of caller asks: a person, or an assistant acting for one. */
+export type CallerKind = Caller['kind'];
+
+/**
+ * Every call of an interface of calls, by its path — `'devices.command'`,
+ * `'world'` — what a call is decided by, and named by when it crosses.
+ */
+export type ApiPath<T> = {
+  [K in keyof T & string]: T[K] extends (...args: never[]) => unknown ? K : T[K] extends object ? `${K}.${ApiPath<T[K]>}` : never;
+}[keyof T & string];
+
 /**
  * Everything a home answers, whoever asks and wherever it is kept
  * (docs/PLAN-SHARED-CORE.md, principle 4): `@kraftverk/hub` answers it in

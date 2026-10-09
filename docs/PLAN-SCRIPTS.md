@@ -1048,6 +1048,19 @@ How every slice is done is as in
 
 ### S0. One gate for every call
 
+**Built, 2026-10-09.** What building it changed:
+- **Three kinds, not a flag.** A gate's `kind` is `read`, `act` or
+  `stream`, not `reads: boolean`. `live` keeps answering synchronously, so
+  its refusal is thrown, not a rejected promise.
+- **Roles bind persons only.** An assistant's `for` is an account's name,
+  not a person, so a method with a least role is a person's alone. S6 gives
+  the automation caller a person in `for`, and roles bind it too.
+- **What stayed in the methods:** `people.present` and `people.erase` for
+  someone else, and `setSharing` for a child or another adult, depend on
+  their arguments. So do `notifications.*` (the caller's own inbox) and a
+  node's calls (the caller's own node).
+- **Test:** `packages/hub/test/gate.test.ts`.
+
 - `api-contract`: `ApiPath<T>`.
 - `hub/src/api/gate.ts`: `GATES` for every method, holding today's rules
   only, and the yes rule for callers that are not a person.

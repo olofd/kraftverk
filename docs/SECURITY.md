@@ -28,6 +28,28 @@ browser in regular use stays signed in.
 
 A fresh server with no accounts refuses everything but setup, from anywhere.
 
+### What each caller may call
+
+Behind the session, the home answers each caller through one more gate
+(`packages/hub/src/api/gate.ts`), whichever way it is reached: HTTP, the
+app's own worker, the assistant. Every method of `KraftverkApi` is decided
+there once, and a method the interface gains does not compile until it is:
+
+- whether it **reads**, **acts** or **streams**;
+- the **least role** of the person who asks: inviting, letting in and
+  changing members is an admin's;
+- **which callers** may ask at all: an assistant may not say who a device is
+  with, change the family's zones, or change who is in the family or what
+  anyone shares.
+
+A **yes is a person's**. A caller that is not a person never sends one, and
+what would ask one of it — letting an automation act, a tool that cannot be
+undone, an import that removes things — is refused instead, with no token
+to send back. The gateway holds the same rule for its own confirmations.
+
+What depends on a call's arguments stays the method's to say: oneself or
+someone else, a draft one started, a node of one's own.
+
 ## Creating the first account
 
 The first account can only be created from the **home network**, so a fresh

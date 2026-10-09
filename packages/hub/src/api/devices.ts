@@ -226,7 +226,6 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
       },
 
       async setPeople(id, given) {
-        if (caller.kind === 'agent') throw new ApiError('forbidden', 'An assistant cannot say who a device is with');
         const device = deviceOf(id);
         const was = hub.devicePeople.of(device.id);
         const at = new Date().toISOString();

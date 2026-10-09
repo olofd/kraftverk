@@ -6,6 +6,7 @@ import { configurationApi } from './configuration.ts';
 import { connectionsApi } from './connections.ts';
 import { devicesApi } from './devices.ts';
 import { familyWideApi } from './family.ts';
+import { gated } from './gate.ts';
 import { homesApi } from './homes.ts';
 import { zonesApi } from './zones.ts';
 import { presenceApi } from './presence.ts';
@@ -29,7 +30,7 @@ import { transportsApi } from './transports.ts';
  * person's yes is sent back with — is the hub's.
  */
 export function familyApi(hub: Hub, caller: Caller): KraftverkApi {
-  return {
+  const api: KraftverkApi = {
     ...devicesApi(hub, caller),
     ...connectionsApi(hub, caller),
     ...setupApi(hub, caller),
@@ -51,6 +52,8 @@ export function familyApi(hub: Hub, caller: Caller): KraftverkApi {
     ...nodesApi(hub, caller),
     ...liveApi(hub, caller),
   };
+  // Every call behind its gate (gate.ts): who may ask at all, and a yes only from a person.
+  return gated(api, caller, (id) => hub.people.roleOf(id));
 }
 
 export { actorOf, intentOf } from './caller.ts';

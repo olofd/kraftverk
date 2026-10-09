@@ -40,9 +40,12 @@ export function peopleApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'people'
   const { record } = scopeOf(hub, caller);
   /** Who asks, by their person id: none for an assistant, or a server's account not yet anyone's (W3.7). */
   const me = caller.kind === 'person' ? (caller.id ?? null) : null;
-  /** An admin's to do. A server's account that names no person is every server account is: an administrator. */
+  /**
+   * An admin's to do, when it is someone else's: an assistant never gets
+   * here (gate.ts). A server's account that names no person is every server
+   * account is: an administrator.
+   */
   const asAdmin = () => {
-    if (caller.kind === 'agent') throw new ApiError('forbidden', 'An assistant cannot change who is in the family');
     if (me !== null && hub.people.roleOf(me) !== 'admin') throw new ApiError('forbidden', 'Only an admin of the family can do that');
   };
   const personOf = (id: string) => {
@@ -63,7 +66,7 @@ export function peopleApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'people'
         if (hub.people.members().length) throw new ApiError('conflict', 'This family has people in it already: ask one of its admins to invite you');
         const checked = checkChain(input.chain);
         if (!checked.ok) throw new ApiError('invalid', `That is not who you say: ${checked.problem}`);
-        if (caller.kind !== 'person' || (me !== null && me !== checked.person.id)) throw new ApiError('forbidden', 'A family is founded by the person it is for');
+        if (me !== null && me !== checked.person.id) throw new ApiError('forbidden', 'A family is founded by the person it is for');
         const name = input.name.trim();
         if (!(name.length >= 1 && name.length <= 60)) throw new ApiError('invalid', 'A family’s name is 1 to 60 characters');
         if (!['family', 'household', 'friends', 'other'].includes(input.kind)) throw new ApiError('invalid', 'A family is a family, a household, friends, or something else');
@@ -109,7 +112,6 @@ export function peopleApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'people'
       },
 
       async invite(input) {
-        asAdmin();
         if (!['admin', 'member', 'child'].includes(input.role)) throw new ApiError('invalid', 'A member is an admin, a member, or a child');
         const forName = input.forName?.trim() || null;
         if (forName && forName.length > 60) throw new ApiError('invalid', 'Who it is for is at most 60 characters');
@@ -124,12 +126,10 @@ export function peopleApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'people'
       },
 
       async invitations() {
-        asAdmin();
         return hub.invitations.list();
       },
 
       async approve(invitationId) {
-        asAdmin();
         const invitation = hub.invitations.get(invitationId);
         if (!invitation || invitation.status !== 'waiting' || !invitation.usedBy) throw new ApiError('not-found', 'No one waits on that invitation');
         const at = new Date().toISOString();
@@ -144,7 +144,6 @@ export function peopleApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'people'
       },
 
       async revokeInvitation(invitationId) {
-        asAdmin();
         if (!hub.invitations.get(invitationId)) throw new ApiError('not-found', 'No such invitation');
         const invitation = hub.invitations.revoke(invitationId, new Date().toISOString())!;
         record('invitation.revoked', 'family', hub.family.get()!.id, `Took back an invitation${invitation.forName ? ` for ${invitation.forName}` : ''}`);
@@ -163,7 +162,6 @@ export function peopleApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'people'
       },
 
       async setSharing(id, changes) {
-        if (caller.kind === 'agent') throw new ApiError('forbidden', 'An assistant cannot change what anyone shares');
         const person = personOf(id);
         if (!person.member) throw new ApiError('not-found', 'They are not in the family');
         // Each adult their own; an admin a child's — and a child never their own.
@@ -187,7 +185,6 @@ export function peopleApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'people'
       },
 
       async update(id, changes) {
-        asAdmin();
         const was = personOf(id);
         if (!was.member) throw new ApiError('not-found', 'They are not in the family');
         if (changes.color !== undefined && !COLOR.test(changes.color)) throw new ApiError('invalid', 'A colour is "#rrggbb", in lowercase');

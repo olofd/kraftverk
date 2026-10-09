@@ -30,15 +30,11 @@ export function zonesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'zones'> 
     if (!zone) throw new ApiError('not-found', 'No such zone');
     return zone;
   };
-  const asPerson = () => {
-    if (caller.kind === 'agent') throw new ApiError('forbidden', 'An assistant cannot change the family’s zones');
-  };
   return {
     zones: {
       list: async (options = {}) => hub.places.zones(options).map(zoneView),
 
       async add(input) {
-        asPerson();
         if (!input.location) throw new ApiError('invalid', 'A zone is somewhere: its latitude, longitude and size');
         checked(input);
         if (input.key !== undefined && (!KEY.test(input.key) || hub.places.zoneKeyTaken(input.key))) throw new ApiError('conflict', `"${input.key}" is not a free key: lowercase letters, digits and dashes, and not another zone's`);
@@ -48,7 +44,6 @@ export function zonesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'zones'> 
       },
 
       async update(id, changes) {
-        asPerson();
         const was = zoneOf(id);
         checked(changes);
         if (changes.key !== undefined && changes.key !== was.key && (!KEY.test(changes.key) || hub.places.zoneKeyTaken(changes.key, was.id))) throw new ApiError('conflict', `"${changes.key}" is not a free key: lowercase letters, digits and dashes, and not another zone's`);
@@ -60,7 +55,6 @@ export function zonesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'zones'> 
       },
 
       async remove(id) {
-        asPerson();
         const zone = zoneOf(id);
         if (zone.removedAt) return zoneView(zone);
         const gone = hub.places.archiveZone(zone.id)!;

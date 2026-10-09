@@ -81,7 +81,10 @@ always-running machine must be.
 `createHub` (`Hub`), which the server runs and the app runs for a home of
 its own; `createFollower`, which the app runs for a server's home;
 `hub.as(caller)`, the whole of `KraftverkApi` (`src/api/`), which every
-route of the server adapts to; the live stream's outbox (`src/live/`).
+route of the server adapts to, each call behind its gate
+(`src/api/gate.ts`: whether it reads, acts or streams, the least role of
+who asks, which callers may ask at all, and a yes a person's alone); the
+live stream's outbox (`src/live/`).
 Both roles are one node's parts (`src/node/parts.ts`: its stores, the node
 it declares itself to be, its session manager, its gateway, its setup),
 each with the few things its role decides handed in. Around them, what
