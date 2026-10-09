@@ -1,6 +1,10 @@
 # Scripts in TypeScript: research, and a proposal
 
-**Status:** research and a proposal, 2026-10-09. Nothing here is built. It
+**Status:** research and a proposal, 2026-10-09. Nothing here is built.
+How it is built — and the five places where reading the code changed the
+proposal (a script's shape declared in code, scripts named through roles,
+live reads, pure functions, a gate for every call) — is
+[PLAN-SCRIPTS.md](PLAN-SCRIPTS.md). It
 replaces the one paragraph phase C4 had in
 [PLAN-AUTOMATION-LANGUAGE.md](PLAN-AUTOMATION-LANGUAGE.md) ("a sandboxed
 opt-in script step") with what the owner asked for: scripts written in
