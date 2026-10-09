@@ -285,12 +285,13 @@ Each slice green and pushed; e2e for each in the browser first.
   counts on an event and says the count, run it; a webhook called with
   `curl` starting an automation; the variables card at 375 px.
 
-## 6. Decisions for the owner
+## 6. Decided (the owner, 2026-10-09)
 
-1. **The word:** variables (`home.var.x`), or another?
-2. **Whose:** a home's only (as modes), or the family's too
-   (`family.var.x`, e.g. "away on holiday" across homes)?
-3. **The file:** definitions only (proposed), or current values too?
-4. **Webhooks:** reachable only where the server is (proposed), and
-   through which address from outside — the NUC's own, or a relay?
-5. **MQTT:** the house broker only at first (proposed), or any broker?
+1. **The word:** variables — `home.var.x`, `variables:`, "Your home's
+   variables".
+2. **Whose:** each home's, as modes are. A family's own can come later.
+3. **The file:** definitions only; current values stay out of it, as a
+   home's mode does.
+4. **Webhooks:** on the server's own address, as far as the network lets it
+   be reached; no relay. A home kept in a browser receives none, and says so.
+5. **MQTT:** the house broker first.
