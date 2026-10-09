@@ -13,7 +13,7 @@
  *   node scripts/build-home-worker.mjs --watch    and again on every change
  */
 
-import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 
@@ -63,11 +63,37 @@ const options = {
   legalComments: 'linked',
 };
 
+/*
+  The script editor's language service (docs/PLAN-SCRIPTS.md §11.2), in a
+  worker of its own: client/public/script/language.js — TypeScript 6, some
+  megabytes, loaded only when a script is edited — and lib.json beside it:
+  the language's own declarations (ES2022 and what it references, no DOM),
+  read from the TypeScript the language package depends on. TypeScript
+  names Node's modules where it runs under Node, never in a browser: left
+  out of the bundle.
+*/
+const SCRIPT = join(CLIENT, 'public', 'script');
+mkdirSync(SCRIPT, { recursive: true });
+const languagePackage = createRequire(require.resolve('@kraftverk/script-language/package.json'));
+const lib = dirname(languagePackage.resolve('typescript/lib/lib.es2022.d.ts'));
+writeFileSync(
+  join(SCRIPT, 'lib.json'),
+  JSON.stringify(Object.fromEntries(readdirSync(lib).filter((name) => /^lib\.(es|decorators).*\.d\.ts$/.test(name)).map((name) => [name, readFileSync(join(lib, name), 'utf8')])))
+);
+const language = {
+  ...options,
+  entryPoints: [join(CLIENT, 'src/platform/script/worker.ts')],
+  outfile: join(SCRIPT, 'language.js'),
+  external: ['fs', 'path', 'os', 'crypto', 'buffer', 'inspector', 'perf_hooks', 'module', 'url', 'util', 'source-map-support', 'node:*'],
+};
+
 if (watch) {
   const watching = await context(options);
   await watching.watch();
+  await (await context(language)).watch();
   console.log('[home worker] built; rebuilding on change');
 } else {
   await build(options);
-  console.log(`[home worker] built: ${OUT}`);
+  await build(language);
+  console.log(`[home worker] built: ${OUT}, and the script editor's language service: ${SCRIPT}`);
 }

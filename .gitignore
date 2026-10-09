@@ -21,6 +21,7 @@ server/data/
 # Expo / Metro
 # A browser's own home, built beside the app (client/scripts/build-home-worker.mjs)
 client/public/home/
+client/public/script/
 client/public/map/
 .expo/
 .expo-shared/

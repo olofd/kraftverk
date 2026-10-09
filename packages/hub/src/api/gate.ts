@@ -113,6 +113,7 @@ export const GATES = {
   'scripts.update': noScript('act', 'write a script'),
   'scripts.remove': noScript('act', 'remove a script'),
   'scripts.check': read,
+  'scripts.types': read,
   'configuration.vocabulary': read,
   'configuration.schema': read,
   'configuration.export': noScript('read', 'export the family'),

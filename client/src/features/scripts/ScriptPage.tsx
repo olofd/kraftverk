@@ -25,7 +25,7 @@ export const tidyUp = step(
     answer: t.text(),
     memory: { times: t.count() },
   },
-  async ({ after }: { after: number }, { memory }: { memory: { times: number } }) => {
+  async ({ after }, { memory }) => {
     memory.times += 1;
     log(\`Asked \${memory.times} times\`);
     return \`Empty for \${after / 60} min\`;
@@ -35,7 +35,7 @@ export const tidyUp = step(
 /** How warm it feels, from the temperature and how humid it is. */
 export const feelsLike = fn(
   { args: [t.number({ unit: '°C' }), t.number({ unit: '%' })], returns: t.number({ unit: '°C' }) },
-  (temp: number, humidity: number) => temp - (100 - humidity) / 5,
+  (temp, humidity) => temp - (100 - humidity) / 5,
 );
 `;
 
@@ -159,6 +159,14 @@ function ScriptForm({ script }: { script: ScriptView | null }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const { check, error } = useRead(source);
+  // The home's types, for the editor's checking and completion: asked once, as the page opens.
+  const [types, setTypes] = useState<string | null>(null);
+  useEffect(() => {
+    api.scripts
+      .types()
+      .then(setTypes)
+      .catch(() => setTypes(null));
+  }, [api]);
 
   const changed = script === null || name.trim() !== script.name || source !== script.source;
   const problems = check?.problems.length ?? 0;
@@ -229,7 +237,7 @@ function ScriptForm({ script }: { script: ScriptView | null }) {
           </Text>
           <Input aria-label="Its name" placeholder="Tidy up" size="$4" maxLength={60} value={name} onChangeText={setName} />
         </YStack>
-        <ScriptEditor value={source} onChange={setSource} problems={check?.problems ?? []} label="The script" />
+        <ScriptEditor value={source} onChange={setSource} problems={check?.problems ?? []} label="The script" types={types} />
         <ErrorText>{error}</ErrorText>
         {check?.shape ? <Declared shape={check.shape} /> : null}
       </YStack>

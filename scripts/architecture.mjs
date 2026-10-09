@@ -71,6 +71,8 @@ const MAY_IMPORT = {
   holder: ['device-sdk', 'gateway', 'api-contract'],
   'automation-engine': ['device-sdk', 'automation', 'gateway', 'api-contract', 'holder'],
   store: ['device-sdk', 'identity', 'automation', 'gateway', 'home-file', 'api-contract', 'holder', 'automation-engine'],
+  // The script editor's language service: TypeScript 6 over files in memory, where the editor is. An edge: never the hub's.
+  'script-language': ['script'],
   // Scripts in TypeScript: compiled, their shape read, the guest SDK and the port a sandbox is reached through. Knows no engine.
   script: ['device-sdk', 'automation'],
   // A sandbox over QuickJS as WebAssembly: what runs scripts on a server and in a browser.
@@ -83,7 +85,7 @@ const MAY_IMPORT = {
   ui: ['device-sdk', 'map'],
 };
 /** The edges among the core packages: the rest is shared. */
-const EDGE_PACKAGES = new Set(['api-client', 'ui']);
+const EDGE_PACKAGES = new Set(['api-client', 'ui', 'script-language']);
 const SHARED_PACKAGES = Object.keys(MAY_IMPORT).filter((name) => !EDGE_PACKAGES.has(name));
 /** What an integration or a device package may import of the core: the contract, and the language to declare recipes in. */
 const DEVICE_MAY_IMPORT = new Set(['device-sdk', 'automation']);

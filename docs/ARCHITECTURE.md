@@ -158,6 +158,8 @@ packages/
                                                          sandbox, the guest SDK, the port a sandbox is reached through; pure
                                                          (docs/PLAN-SCRIPTS.md)
   script-wasm/           @kraftverk/script-wasm          a script sandbox over QuickJS-NG as WebAssembly: a server's and a browser's
+  script-language/       @kraftverk/script-language      the script editor's language service: TypeScript 6 over files in memory, in
+                                                         the editor's worker; an edge, never the hub's
   message-port/          @kraftverk/message-port         a home's API and a transport over a message port: served on one side, the
                                                          same interface on the other — a browser's page and the hub in its worker; pure
   gateway/               @kraftverk/gateway              the action gateway's rules: pure, run by whichever holder has the connection

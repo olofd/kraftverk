@@ -33,6 +33,8 @@ export function scriptRoutes(deps: AppDeps): Hono {
     return c.json(await familyFor(deps, c).scripts.check(input.source));
   });
 
+  api.get('/scripts/types', async (c) => c.json({ types: await familyFor(deps, c).scripts.types() }));
+
   api.get('/scripts/:id', async (c) => c.json(await familyFor(deps, c).scripts.get(c.req.param('id'))));
 
   api.patch('/scripts/:id', async (c) => {

@@ -9,3 +9,4 @@
 export * from './engine.ts';
 export * from './compile.ts';
 export * from './read.ts';
+export * from './types.ts';

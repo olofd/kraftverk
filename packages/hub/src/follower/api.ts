@@ -413,6 +413,7 @@ export function followerApi(h: Follower): KraftverkApi {
       update: (id, changes) => home.scripts.update(id, changes),
       remove: (id) => home.scripts.remove(id),
       check: (source) => home.scripts.check(source),
+      types: () => home.scripts.types(),
     },
     occupancy: {
       now: (homeId) => home.occupancy.now(homeId),

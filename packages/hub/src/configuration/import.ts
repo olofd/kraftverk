@@ -876,7 +876,7 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
           const homeId = entry.home ? (deps.places.homeByKey(entry.home)?.id ?? null) : null;
           // Who it acts for: the person the file names, when they are here — else whoever imports it, saying yes by doing so.
           const named = entry.actsFor ? (personIdOf(deps, document, entry.actsFor) ?? null) : null;
-          const actingFor = named ?? (by.kind === 'person' ? by.id : null);
+          const actingFor = named ?? (by.kind === 'person' && by.id && deps.people.get(by.id) ? by.id : null);
           deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, groups: result.groups, starts: result.starts, scripts: result.scripts, world: result.world, homeId, timeZone: entry.clock, mode: why.length ? 'off' : entry.mode, actingFor, recheckMinutes: entry.recheckMinutes });
           writeLabels(deps, { automation: id }, entry.labels);
           (existing ? applied.automations.changed : applied.automations.added).push(key);

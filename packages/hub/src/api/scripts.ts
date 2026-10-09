@@ -1,5 +1,7 @@
 import { ApiError, type Caller, type KraftverkApi, type ScriptView } from '@kraftverk/api-contract';
 import type { ScriptProblem } from '@kraftverk/automation';
+import { capabilitiesOf, partsOf } from '@kraftverk/device-sdk';
+import { typesOf } from '@kraftverk/script';
 import type { ScriptRecord } from '@kraftverk/store';
 
 import type { Hub } from '../node/hub.ts';
@@ -79,6 +81,24 @@ export function scriptsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'script
         scripts.store.remove(id);
         scripts.forget(id);
         record('script.removed', 'script', id, `Removed the script "${script.name}"`, { key: script.key });
+      },
+
+      async types() {
+        // Each device the home has now, by key: its parts with what each can be told, and what it reports — never where it is.
+        const devices = hub.catalog.list().flatMap((record) => {
+          if (record.removedAt) return [];
+          const description = hub.sessions.description(record);
+          return [
+            {
+              key: record.key,
+              name: record.name,
+              type: record.typeId,
+              parts: partsOf(description, record.name).map((part) => ({ id: part.id, label: part.label, capabilities: capabilitiesOf(description, part.id) })),
+              readings: description.attributes.filter((attribute) => attribute.quantity !== 'position').map((attribute) => ({ key: attribute.key, label: attribute.label, value: attribute.value })),
+            },
+          ];
+        });
+        return typesOf({ devices });
       },
 
       async check(source) {

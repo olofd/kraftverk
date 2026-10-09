@@ -28,6 +28,10 @@ sandbox is reached through. No engine of its own: the place gives one.
     slice at a time on the caller's thread. Text is all that crosses, both
     ways. A `ScriptFault` says why a script stopped: what it threw, its
     time, its memory, its stack, a stop, or its syntax.
+  - **The types.** `typesOf(home)` writes the `kraftverk.d.ts` a script is
+    checked against in the editor: the SDK's own declarations, and each
+    device of one home by key — its readings typed, and each part's
+    capabilities with their commands and arguments, one interface each.
   - **The contract.** `@kraftverk/script/conformance` is what every engine
     does alike: the WebAssembly engine runs it in `bun test`, and the
     phone's engine will run it on the phone.

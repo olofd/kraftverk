@@ -22,7 +22,10 @@ export type YamlEditorProps = {
 };
 
 /** A script's editor: a text and its problems, as a YAML editor's, with no schema. */
-export type ScriptEditorProps = Omit<YamlEditorProps, 'schema'>;
+export type ScriptEditorProps = Omit<YamlEditorProps, 'schema'> & {
+  /** The types it is written against, for this home (`scripts.types()`): what the web's editor checks and completes with. Null until they come. */
+  types?: string | null;
+};
 
 /** A connection's secrets as a person says them: "localKey" is "local key". */
 export const secretWords = (fields: readonly string[]): string => fields.map((field) => field.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()).join(', ');

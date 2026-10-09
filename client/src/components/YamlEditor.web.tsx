@@ -200,6 +200,8 @@ export function lookOf(colors: Colors): Extension {
         { tag: [tags.number, tags.bool, tags.null], color: colors.success },
         { tag: [tags.comment, tags.lineComment], color: colors.muted, fontStyle: 'italic' },
         { tag: [tags.typeName, tags.labelName, tags.meta], color: colors.warning },
+        // A script's words of the language: what TypeScript says with, beside what it says.
+        { tag: [tags.keyword, tags.controlKeyword, tags.definitionKeyword, tags.moduleKeyword, tags.operatorKeyword], color: colors.accent, fontWeight: '600' },
         { tag: [tags.punctuation, tags.separator, tags.squareBracket, tags.brace], color: colors.muted },
       ])
     ),

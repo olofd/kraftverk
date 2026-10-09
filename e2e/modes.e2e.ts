@@ -24,7 +24,8 @@ test('a home set to away from the home screen, by its owner; a mode of the famil
   const name = unique('Guests over');
   await page.getByRole('textbox', { name: 'A mode of your own' }).fill(name);
   await press(page, 'Add a mode');
-  await expect(page.getByText(name, { exact: true })).toBeVisible();
+  // Shown: in its list, and as a choice of the home's mode, as each comes.
+  await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
   await page.goto('/');
   await expect(page.getByRole('radiogroup', { name: /^Whether anyone is home, at / }).first().getByRole('radio', { name })).toBeVisible();
   // Home again, as it was: no other test finds the home away.

@@ -213,7 +213,8 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
           ...(input.homeId !== undefined ? { homeId: input.homeId } : {}),
           ...(input.mode ? { mode: input.mode } : {}),
           // The yes it acts on is the person's who gave it: what its scripts do, they do for them.
-          ...(needsConfirming ? { actingFor: caller.kind === 'person' ? (caller.id ?? null) : null } : {}),
+          // A person the family knows: an account that names no one of it gives a yes, and acts for nobody.
+          ...(needsConfirming ? { actingFor: caller.kind === 'person' && caller.id && hub.people.get(caller.id) ? caller.id : null } : {}),
           ...(input.recheckMinutes !== undefined ? { recheckMinutes: input.recheckMinutes } : {}),
         })!;
         const said =

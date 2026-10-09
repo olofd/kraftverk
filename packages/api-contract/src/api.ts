@@ -259,6 +259,8 @@ export interface KraftverkApi {
     remove(id: string): Promise<void>;
     /** A script read as the home's engine reads it, nothing kept: what it declares, or what is wrong with it, by line. */
     check(source: string): Promise<ScriptCheck>;
+    /** The types a script is written against, for this home: the SDK and each device, by key — what the editor checks and completes with. */
+    types(): Promise<string>;
   };
   /** A home in one file (docs/CONFIG.md): what a file may name here, its schema, an export, an import in two steps. */
   configuration: {

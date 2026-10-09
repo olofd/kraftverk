@@ -247,6 +247,7 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
       update: (id, changes) => call('PATCH', `/scripts/${enc(id)}`, changes),
       remove: async (id) => void (await call('DELETE', `/scripts/${enc(id)}`)),
       check: (source) => call('POST', '/scripts/check', { source }),
+      types: async () => (await get<{ types: string }>('/scripts/types')).types,
     },
 
     configuration: {

@@ -151,6 +151,20 @@ test('a script run by an automation turns a plug off, through the gateway, as th
   await runIt(page);
 });
 
+test('the editor knows the home: a device’s key completes as it is typed, and a mistake of types is marked and said', async ({ page }) => {
+  const plug = unique('Desk plug');
+  await addPlug(page, plug);
+  await page.goto('/scripts/new');
+  // TypeScript, in its worker: an input's type comes from what the step declares, and a mistake with it is said where it is.
+  await write(page, ["import { step, t } from 'kraftverk';", '', "export const go = step({ inputs: { level: t.number() } }, async ({ level }) => {", "  const said: string = level;", '});', ''].join('\n'));
+  await expect(page.getByText("Line 4, column 9: Type 'number' is not assignable to type 'string'.")).toBeVisible();
+  // And it offers this home's devices by key, asked for as the key is begun.
+  await write(page, ["import { step, home } from 'kraftverk';", '', 'export const off = step({}, async () => {', "  const plug = home.devices['"].join('\n'));
+  await page.keyboard.press('Control+Space');
+  const completions = page.locator('.cm-tooltip-autocomplete');
+  await expect(completions.getByText(plug.toLowerCase().replace(/ /g, '-'), { exact: true })).toBeVisible();
+});
+
 test.describe('run with no server', () => {
   test.use({ as: ALONE });
 

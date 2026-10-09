@@ -1156,6 +1156,29 @@ building it changed:
 - **The file's version 18:** `{ script: key }` under `uses`, `run script:`,
   script calls, and `acts for:`.
 
+**B4 built, 2026-10-09.** The editor knows the home. TypeScript's colours
+come from CodeMirror. Its checking, completion and hover come from
+TypeScript 6's language service, in a worker of its own (`public/script/language.js`,
+3.6 MB, loaded only when a script is open), checking against `kraftverk.d.ts`.
+That file is made by the hub (`scripts.types()`) and the same with a server
+or without one. In `e2e/scripts.e2e.ts` an input's type comes from what the
+step declares, a mistake is said where it is, and a device's key completes.
+What building it changed:
+- **TypeScript 6 is already the client's.** The new package depends on it,
+  pinned, beside the repository's TypeScript 7. `@typescript/typescript6`
+  is not needed, and `@typescript/vfs` reads its TypeScript's types, so the
+  compiler is passed to it cast.
+- **The home's types are the hub's to make**, not the app's from its
+  vocabulary (§11.1): the hub has every description, and answers the same
+  everywhere.
+- **The SDK's declarations are written by hand** beside the guest SDK
+  (`packages/script/src/types.ts`), not emitted from it. `kraftverk/api` is
+  typed loosely for now; emitting the contract's declarations for it is left.
+- **Each capability is a named interface:** members reached through an
+  indexed type lose their words on hover.
+- **Type problems are listed under the editor** beside the hub's, and Save
+  is not held back by them: the hub reads a script whatever its types say.
+
 What browser first changes in the slices:
 - **The editor is a web component of its own**, `ScriptEditor.web.tsx`,
   beside `YamlEditor.web.tsx`. It is not yet an Expo DOM component; the

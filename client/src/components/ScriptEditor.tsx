@@ -7,6 +7,6 @@ import type { ScriptEditorProps } from './ProblemList';
  * web's is an editor of its own (`ScriptEditor.web.tsx`); the phone's comes
  * with its WebView (S2).
  */
-export function ScriptEditor({ minLines = 16, ...props }: ScriptEditorProps) {
+export function ScriptEditor({ minLines = 16, types: _types, ...props }: ScriptEditorProps) {
   return <YamlEditor {...props} minLines={minLines} />;
 }

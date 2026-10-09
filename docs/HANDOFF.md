@@ -255,11 +255,12 @@ is in [AUTOMATION-LANGUAGE-STATUS.md](AUTOMATION-LANGUAGE-STATUS.md).
 
 **Scripts in TypeScript** ([PLAN-SCRIPTS.md](PLAN-SCRIPTS.md), browser first,
 2026-10-09): S0 (one gate for every call), B1 (QuickJS as WebAssembly on
-the server and in a browser's own home) and B2 (scripts kept, read as they
-are typed, in the file as version 17) are built. Next is B3: the `run
-script` step and script functions, a script acting for the person who let
-its automation act. Then B4: the editor's language service. The phone
-waits for an app environment to try it in.
+the server and in a browser's own home), B2 (scripts kept, read as they are
+typed), B3 (the `run script` step and script functions, a script acting for
+the person who let its automation act; the file's version 18) and B4 (the
+editor: TypeScript 6's language service in a worker, against the home's
+types) are built. The phone waits for an app environment to try it in;
+what is left besides is the plan's S10.
 
 ## What is built, and what is not
 

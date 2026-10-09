@@ -1,0 +1,25 @@
+{
+  "name": "@kraftverk/script-language",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The script editor's language service: TypeScript 6 over files kept in memory, checking a script against the SDK's types and the home's, completing and explaining as it is typed. Run where the editor is: a browser's worker. Never the hub's.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "node ../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kraftverk/script": "*",
+    "@typescript/vfs": "^1.6.5",
+    "typescript": "~6.0.3"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14"
+  }
+}
