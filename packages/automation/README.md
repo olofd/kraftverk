@@ -206,6 +206,8 @@ Lengths of time are in seconds, named as a file says them: `wait.for`,
 | `remember` | `remember: timesCharged` with `as: memory.timesCharged + 1` | remember a value for later steps and later runs: one of what the automation declares under `memory:`, converted to its unit and held to its range |
 | `setMode` | `set mode: away` — with `at: cabin` | put a home in a mode, by its key — the automation's own, unless `at` names another — as a person would from its screen, on its timeline as the automation's |
 | `setVariable` | `set variable: guests` with `to: true` — and `at: cabin` | set one of a home's variables (docs/PLAN-VARIABLES-AND-TRIGGERS.md) to a value of its kind, in its unit and range; read by every automation as `home.var.guests` |
+| `startTimer` | `start timer: laundry` — with `for: 50 min` | start one of a home's timers for its own length, or so long: it ends on its own, to the second and across a restart |
+| `stopTimer` | `stop timer: laundry` | stop one of a home's timers: not running, not ended |
 | `count` | `count: dryerRuns` — `by: -1`, or `reset: true` | count one of a home's counters up by one, by so many, or back to its start |
 | `notify` | `notify: everyone` with `title: …`, `text: …` and `level: warning` | tell a person, a role people fill, or `everyone`: their inbox, and a push to their phones; a value in braces said as it is then — `{station.charge}`, `{run.who}`. Said, not sent, in watch mode |
 

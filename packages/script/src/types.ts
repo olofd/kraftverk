@@ -132,7 +132,7 @@ ${Object.entries(UNIT_TYPES).map(([name, unit]) => `  /** A number in ${unitSpec
   }
 
   /** A home, as a script sees it: its rooms, who is there, its modes and variables now — and set. */
-  export interface Home<Rooms = Record<string, Room>, Vars = Record<string, unknown>, Counters extends string = string> {
+  export interface Home<Rooms = Record<string, Room>, Vars = Record<string, unknown>, Counters extends string = string, Timers extends string = string> {
     readonly id: string;
     readonly key: string;
     readonly name: string;
@@ -156,6 +156,10 @@ ${Object.entries(UNIT_TYPES).map(([name, unit]) => `  /** A number in ${unitSpec
     count(key: Counters, by?: number): Promise<unknown>;
     /** One of its counters back to what it starts as. */
     resetCounter(key: Counters): Promise<unknown>;
+    /** One of its timers started, as this run starts it: for its own length, or so many seconds. Its state is in \`vars\`: "running", "ended"... */
+    startTimer(key: Timers, seconds?: number): Promise<unknown>;
+    /** One of its timers stopped: not running, not ended. */
+    stopTimer(key: Timers): Promise<unknown>;
   }
 
   /** A person of the family, as a script sees them: where they are, as far as they share. */
@@ -209,8 +213,8 @@ export function typesOf(home: ScriptHome): string {
     const rooms = `{ ${each.rooms.map((room, index) => `${doc(room.name)} readonly ${roomNames[index]}: Room;`).join(' ')} }`;
     // Each variable by its key, of its field's type: a time of day not set yet is nothing.
     const vars = `{ ${each.variables.map((variable) => `${doc(variable.field.title)} readonly ${variable.key}: ${typeOf(valueTypeOf(variable.field))}${variable.kind === 'time' ? ' | null' : ''};`).join(' ')} }`;
-    const counters = each.variables.filter((variable) => variable.kind === 'counter').map((variable) => JSON.stringify(variable.key)).join(' | ') || 'never';
-    return `${doc(each.name)} readonly ${homeNames[at]}: Home<${rooms}, ${vars}, ${counters}>;`;
+    const keysOf = (kind: string) => each.variables.filter((variable) => variable.kind === kind).map((variable) => JSON.stringify(variable.key)).join(' | ') || 'never';
+    return `${doc(each.name)} readonly ${homeNames[at]}: Home<${rooms}, ${vars}, ${keysOf('counter')}, ${keysOf('timer')}>;`;
   });
   const modesOn = (axis: string): string => home.modes.filter((mode) => mode.axis === axis).map((mode) => JSON.stringify(mode.key)).join(' | ') || 'never';
   // Every capability any device has, declared once.

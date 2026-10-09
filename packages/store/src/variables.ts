@@ -16,16 +16,25 @@ export type VariableRecord = {
   key: string;
   kind: VariableKind;
   field: ConfigField;
+  /** A timer's: how long it runs when started without saying, in seconds. */
+  length?: number;
   position: number;
   createdAt: string;
   removedAt: string | null;
 };
 
-/** A variable's value now: what was set, when, by whom. None set: what it starts as is the hub's to say. */
-export type VariableValueRecord = { value: Value; setAt: string; by: Actor };
+/**
+ * A variable's value now: what was set, when, by whom — and, a timer, when
+ * it ends running, or what was left as it was paused. None set: what it
+ * starts as is the hub's to say.
+ */
+export type VariableValueRecord = { value: Value; setAt: string; by: Actor; deadline: string | null; leftMs: number | null };
 
-type VariableRow = { id: string; home_id: string; key: string; kind: VariableKind; field: string; position: number; created_at: string; removed_at: string | null };
-type ValueRow = { value: string; set_at: string; actor_kind: ActorKind; actor_id: string | null; actor_name: string };
+/** A timer's: when it ends, running; what is left, paused. */
+export type TimerKept = { deadline: string | null; leftMs: number | null };
+
+type VariableRow = { id: string; home_id: string; key: string; kind: VariableKind; field: string; length: number | null; position: number; created_at: string; removed_at: string | null };
+type ValueRow = { value: string; set_at: string; actor_kind: ActorKind; actor_id: string | null; actor_name: string; deadline: string | null; left_ms: number | null };
 
 const recordOf = (row: VariableRow): VariableRecord => ({
   id: row.id,
@@ -33,13 +42,14 @@ const recordOf = (row: VariableRow): VariableRecord => ({
   key: row.key,
   kind: row.kind,
   field: JSON.parse(row.field) as ConfigField,
+  ...(row.length !== null ? { length: row.length } : {}),
   position: row.position,
   createdAt: row.created_at,
   removedAt: row.removed_at,
 });
 
-/** What a variable is: its key, kind and field. */
-type Declared = Pick<VariableRecord, 'key' | 'kind' | 'field'>;
+/** What a variable is: its key, kind and field — and a timer's length. */
+type Declared = Pick<VariableRecord, 'key' | 'kind' | 'field' | 'length'>;
 
 export class VariableStore {
   readonly #db: SqlDatabase;
@@ -69,7 +79,7 @@ export class VariableStore {
 
   add(homeId: string, input: Declared, at: string, id = newId('v')): VariableRecord {
     const position = (this.#db.query<{ next: number }, [string]>('SELECT COALESCE(MAX(position), -1) + 1 AS next FROM variable WHERE home_id = ?').get(homeId)?.next ?? 0) as number;
-    this.#db.query('INSERT INTO variable (id, home_id, key, kind, field, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, homeId, input.key, input.kind, JSON.stringify(input.field), position, at);
+    this.#db.query('INSERT INTO variable (id, home_id, key, kind, field, length, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(id, homeId, input.key, input.kind, JSON.stringify(input.field), input.length ?? null, position, at);
     return this.get(id)!;
   }
 
@@ -78,7 +88,7 @@ export class VariableStore {
     const was = this.get(id);
     if (!was) return null;
     const next = { ...was, ...changes };
-    this.#db.query('UPDATE variable SET key = ?, kind = ?, field = ? WHERE id = ?').run(next.key, next.kind, JSON.stringify(next.field), id);
+    this.#db.query('UPDATE variable SET key = ?, kind = ?, field = ?, length = ? WHERE id = ?').run(next.key, next.kind, JSON.stringify(next.field), next.kind === 'timer' ? (next.length ?? null) : null, id);
     return this.get(id);
   }
 
@@ -92,15 +102,26 @@ export class VariableStore {
   /** Its value now, as set; null when none has been. */
   value(id: string): VariableValueRecord | null {
     const row = this.#db.query<ValueRow, [string]>('SELECT * FROM variable_value WHERE variable_id = ?').get(id);
-    return row ? { value: JSON.parse(row.value) as Value, setAt: row.set_at, by: { kind: row.actor_kind, id: row.actor_id, name: row.actor_name } as Actor } : null;
+    return row ? { value: JSON.parse(row.value) as Value, setAt: row.set_at, by: { kind: row.actor_kind, id: row.actor_id, name: row.actor_name } as Actor, deadline: row.deadline, leftMs: row.left_ms } : null;
   }
 
-  /** Its value set, by someone, at a time. */
-  set(id: string, value: Value, by: Actor, at: string): void {
+  /** Its value set, by someone, at a time — a timer with when it ends, or what is left. */
+  set(id: string, value: Value, by: Actor, at: string, timer: TimerKept = { deadline: null, leftMs: null }): void {
     this.#db
-      .query('INSERT INTO variable_value (variable_id, value, set_at, actor_kind, actor_id, actor_name) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (variable_id) DO UPDATE SET value = excluded.value, set_at = excluded.set_at, actor_kind = excluded.actor_kind, actor_id = excluded.actor_id, actor_name = excluded.actor_name')
-      .run(id, JSON.stringify(value), at, by.kind, 'id' in by ? (by.id ?? null) : null, by.name);
+      .query(
+        'INSERT INTO variable_value (variable_id, value, set_at, actor_kind, actor_id, actor_name, deadline, left_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (variable_id) DO UPDATE SET value = excluded.value, set_at = excluded.set_at, actor_kind = excluded.actor_kind, actor_id = excluded.actor_id, actor_name = excluded.actor_name, deadline = excluded.deadline, left_ms = excluded.left_ms'
+      )
+      .run(id, JSON.stringify(value), at, by.kind, 'id' in by ? (by.id ?? null) : null, by.name, timer.deadline, timer.leftMs);
   }
+
+  /** The timers running now, in every home: what a restart takes up again, each ending at its deadline. */
+  running(): { id: string; homeId: string; key: string; deadline: string }[] {
+    return this.#db
+      .query<{ id: string; home_id: string; key: string; deadline: string }, []>("SELECT v.id, v.home_id, v.key, x.deadline FROM variable v JOIN variable_value x ON x.variable_id = v.id WHERE v.kind = 'timer' AND v.removed_at IS NULL AND x.deadline IS NOT NULL")
+      .all()
+      .map((row) => ({ id: row.id, homeId: row.home_id, key: row.key, deadline: row.deadline }));
+  }
+
 
   /** Back to what it starts as: no value set. */
   clear(id: string): void {

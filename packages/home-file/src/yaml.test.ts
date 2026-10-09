@@ -252,8 +252,8 @@ automations:
 
   test('YAML that is not YAML, a missing version, and one written by a newer kraftverk', () => {
     expect(readConfig('devices: [').problems[0]).toMatchObject({ line: 1 });
-    expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 20" at its top');
-    expect(readConfig('kraftverk: 21').problems[0]).toMatchObject({ message: 'It was written by a newer kraftverk (version 21); this one reads up to version 20', line: 1, column: 12 });
+    expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 21" at its top');
+    expect(readConfig('kraftverk: 22').problems[0]).toMatchObject({ message: 'It was written by a newer kraftverk (version 22); this one reads up to version 21', line: 1, column: 12 });
   });
 
   test('a home\'s variables: each its kind, read as the app makes one — and what does not fit, said where it is', () => {

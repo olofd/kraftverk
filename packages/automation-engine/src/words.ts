@@ -12,7 +12,7 @@ export const actsOn = (automation: AutomationRecord, rule: Rule): string | undef
 
 export const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 /** The steps that do something to the world — what a run's summary says it did. */
-export const ACTS: ReadonlySet<string> = new Set(['command', 'write', 'start', 'setMode', 'setVariable', 'count', 'notify']);
+export const ACTS: ReadonlySet<string> = new Set(['command', 'write', 'start', 'setMode', 'setVariable', 'count', 'startTimer', 'stopTimer', 'notify']);
 /** An automation as a step names it: “Charge the scooter” — or one that is gone. */
 export const quoted = (name: string | null): string => (name === null ? 'an automation you no longer have' : `“${name}”`);
 /** A step as done: "Turned Heater plug off", "Set Scooter plug’s Live readings to on", "Started “Charge the scooter”", "Ran “Tidy up”", "Counted “Dryer runs” up by one", "Told everyone: …"; anything else, "Sent …". */
@@ -23,6 +23,8 @@ export const pastOf = (what: string) =>
       ? `Started ${what.slice(6).replace(/ and wait until it ends.*$/, '')}`
       : /^count /i.test(what)
         ? `Counted ${what.slice(6)}`
+        : /^stop /i.test(what)
+          ? `Stopped ${what.slice(5)}`
         : /^tell /i.test(what)
           ? `Told ${what.slice(5)}`
           : `Sent ${lowerFirst(what)}`;

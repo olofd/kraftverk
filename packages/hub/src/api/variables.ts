@@ -52,6 +52,9 @@ export function variablesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'vari
       value: variable.removedAt ? null : hub.variables.now(variable.homeId, variable.key),
       setAt: kept?.setAt ?? null,
       by: kept?.by.name ?? null,
+      length: variable.length ?? null,
+      endsAt: kept?.deadline ?? null,
+      leftMs: kept?.leftMs ?? null,
       removedAt: variable.removedAt,
     };
   };
@@ -69,7 +72,7 @@ export function variablesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'vari
         const home = homeOf(homeId);
         declared(input);
         if (hub.variableStore.byKey(home.id, input.key)) throw new ApiError('conflict', `${home.name} has a variable "${input.key}" already`);
-        const variable = hub.variableStore.add(home.id, { key: input.key, kind: input.kind, field: input.field }, now());
+        const variable = hub.variableStore.add(home.id, { key: input.key, kind: input.kind, field: input.field, ...(input.length !== undefined ? { length: input.length } : {}) }, now());
         record('variable.added', variable.id, `Added the variable ${variable.field.title} to ${home.name}`);
         hub.variables.changed(home.id);
         return viewOf(variable);
@@ -77,7 +80,9 @@ export function variablesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'vari
 
       async update(id, changes) {
         const was = variableOf(id);
-        const next = { key: changes.key ?? was.key, kind: changes.kind ?? was.kind, field: changes.field ?? was.field };
+        const kind = changes.kind ?? was.kind;
+        const length = changes.length ?? was.length;
+        const next = { key: changes.key ?? was.key, kind, field: changes.field ?? was.field, ...(kind === 'timer' && length !== undefined ? { length } : {}) };
         declared(next);
         if (next.key !== was.key) {
           if (hub.variableStore.byKey(was.homeId, next.key)) throw new ApiError('conflict', `The home has a variable "${next.key}" already`);
@@ -94,6 +99,7 @@ export function variablesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'vari
       async remove(id) {
         const was = variableOf(id);
         const variable = hub.variableStore.remove(id, now())!;
+        hub.variables.forget(id);
         record('variable.removed', id, `Let the variable ${was.field.title} go`);
         hub.variables.changed(was.homeId);
         return viewOf(variable);
@@ -103,6 +109,14 @@ export function variablesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'vari
         const variable = byKey(homeId, key);
         const set = refusing(() => hub.variables.set(variable.homeId, key, value, by));
         if (set.changed) record('variable.set', variable.id, `${variable.field.title} is ${variableValueText(variable, set.value)}, was ${variableValueText(variable, set.previous)}`);
+        return viewOf(variable);
+      },
+
+      async timer(homeId, key, action) {
+        const variable = byKey(homeId, key);
+        const set = refusing(() => hub.variables.timer(variable.homeId, key, action, by));
+        const said = { start: 'started', stop: 'stopped', pause: 'paused', resume: 'resumed' }[action.action];
+        if (set.changed || action.action === 'start') record('variable.set', variable.id, `${variable.field.title}: ${said}`);
         return viewOf(variable);
       },
 

@@ -335,6 +335,7 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
       remove: (id) => call('DELETE', `/variables/${encodeURIComponent(id)}`),
       set: (homeId, key, value) => call('PUT', `/homes/${encodeURIComponent(homeId)}/variables/${encodeURIComponent(key)}`, { value }),
       count: (homeId, key, count = {}) => call('POST', `/homes/${encodeURIComponent(homeId)}/variables/${encodeURIComponent(key)}/count`, count),
+      timer: (homeId, key, action) => call('POST', `/homes/${encodeURIComponent(homeId)}/variables/${encodeURIComponent(key)}/timer`, action),
     },
     occupancy: {
       now: async (homeId) => (await get<{ occupancy: OccupancyView[] }>(`/homes/${encodeURIComponent(homeId)}/occupancy`)).occupancy,

@@ -403,6 +403,7 @@ export class Hub {
     this.presence.start();
     this.occupancy.start();
     this.modes.start();
+    this.variables.start();
     this.changeLog.start();
     this.#stopFreshness = keepWatchedFresh(this.attention, (device, until, close) => this.sessions.get(device)?.wantFresh?.(until, close));
   }
@@ -420,6 +421,7 @@ export class Hub {
     this.presence.stop();
     this.occupancy.stop();
     this.modes.stop();
+    this.variables.stop();
     // Runs end and holds are let go before their automations' rows are: nothing steps, or fires, into an emptied home.
     this.engine.clear();
     await this.sessions.closeAll();
@@ -430,7 +432,7 @@ export class Hub {
     this.audit.record({ at: new Date().toISOString(), kind: 'database.reset', actor: by, summary: `The database was reset: ${rows} rows across ${tables.length} tables`, detail: { tables } });
     // Back to the state a fresh home starts in: no devices, so no sessions.
     await this.sessions.sync(this.catalog.list());
-    if (this.#started) (this.sampler.start(), this.presence.start(), this.occupancy.start(), this.modes.start());
+    if (this.#started) (this.sampler.start(), this.presence.start(), this.occupancy.start(), this.modes.start(), this.variables.start());
     this.bus.publish({ kind: 'changed', deviceId: null });
     return { tables, rows };
   }
@@ -454,6 +456,7 @@ export class Hub {
     this.presence.stop();
     this.occupancy.stop();
     this.modes.stop();
+    this.variables.stop();
     this.changeLog.stop();
     this.setup.stop();
     this.nearby.stop();

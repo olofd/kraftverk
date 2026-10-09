@@ -49,6 +49,8 @@ const STEPS: Record<Keys<Step>, string> = {
   remember: 'remember:',
   setVariable: 'set variable:',
   count: 'count:',
+  startTimer: 'start timer:',
+  stopTimer: 'stop timer:',
   waitFor: 'wait for:',
   repeat: 'repeat:',
   try: 'try:',

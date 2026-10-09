@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import type { KraftverkApi, VariableInput } from '@kraftverk/api-contract';
+import type { KraftverkApi, TimerAction, VariableInput } from '@kraftverk/api-contract';
 import { VARIABLE_KINDS } from '@kraftverk/automation';
 import { acceptInvitation } from '@kraftverk/hub';
 import { isUnit, KEY, MODE_AXES, MODE_KEY, NODE_ID, nodeId, type PolicyValueName } from '@kraftverk/device-sdk';
@@ -99,12 +99,19 @@ export function familyRoutes(deps: AppDeps): Hono {
     z.object({ type: z.literal('enum'), ...presented, options: z.array(z.object({ value: z.string().min(1).max(40), label: z.string().trim().min(1).max(60) }).strict()).min(1).max(30), default: z.string().max(40).optional() }).strict(),
     z.object({ type: z.literal('string'), ...presented, default: z.string().max(500).optional() }).strict(),
   ]);
-  const VARIABLE = z.object({ key: z.string().min(1).max(40), kind: z.enum(VARIABLE_KINDS), field: FIELD }).strict();
+  const VARIABLE = z.object({ key: z.string().min(1).max(40), kind: z.enum(VARIABLE_KINDS), field: FIELD, length: z.number().int().positive().max(7 * 24 * 3600).optional() }).strict();
   api.get('/homes/:id/variables', async (c) => c.json({ variables: await familyFor(deps, c).variables.list(c.req.param('id'), { removed: c.req.query('removed') === 'true' }) }));
   api.post('/homes/:id/variables', async (c) => c.json(await familyFor(deps, c).variables.add(c.req.param('id'), (await body(c, VARIABLE)) as VariableInput)));
   api.patch('/variables/:id', async (c) => c.json(await familyFor(deps, c).variables.update(c.req.param('id'), (await body(c, VARIABLE.partial())) as Partial<VariableInput>)));
   api.delete('/variables/:id', async (c) => c.json(await familyFor(deps, c).variables.remove(c.req.param('id'))));
   api.put('/homes/:id/variables/:key', async (c) => c.json(await familyFor(deps, c).variables.set(c.req.param('id'), c.req.param('key'), (await body(c, z.object({ value: z.union([z.boolean(), z.number().finite(), z.string().max(500)]) }).strict())).value)));
+  const TIMER = z.discriminatedUnion('action', [
+    z.object({ action: z.literal('start'), seconds: z.number().positive().max(7 * 24 * 3600).optional() }).strict(),
+    z.object({ action: z.literal('stop') }).strict(),
+    z.object({ action: z.literal('pause') }).strict(),
+    z.object({ action: z.literal('resume') }).strict(),
+  ]);
+  api.post('/homes/:id/variables/:key/timer', async (c) => c.json(await familyFor(deps, c).variables.timer(c.req.param('id'), c.req.param('key'), (await body(c, TIMER)) as TimerAction)));
   api.post('/homes/:id/variables/:key/count', async (c) => c.json(await familyFor(deps, c).variables.count(c.req.param('id'), c.req.param('key'), await body(c, z.object({ by: z.number().int().optional(), reset: z.boolean().optional() }).strict()))));
   // Which spaces have someone in them: whoever they are.
   api.get('/homes/:id/occupancy', async (c) => c.json({ occupancy: await familyFor(deps, c).occupancy.now(c.req.param('id')) }));

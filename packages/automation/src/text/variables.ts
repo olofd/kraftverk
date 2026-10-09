@@ -1,6 +1,6 @@
 import { convert, UNITS, isUnit, type ConfigField, type Unit } from '@kraftverk/device-sdk';
 
-import { VARIABLE_KINDS, variableProblems, type VariableKind, type VariableSpec } from '../variables.ts';
+import { timerField, VARIABLE_KINDS, variableProblems, type VariableKind, type VariableSpec } from '../variables.ts';
 import { parseExpr } from './expr.ts';
 
 /*
@@ -23,7 +23,7 @@ type Fail = (message: string, path: Path) => never;
 
 const isRecord = (data: unknown): data is Record<string, unknown> => typeof data === 'object' && data !== null && !Array.isArray(data);
 
-const KEYS = ['kind', 'title', 'description', 'starts', 'unit', 'min', 'max', 'step', 'options'] as const;
+const KEYS = ['kind', 'title', 'description', 'starts', 'unit', 'min', 'max', 'step', 'options', 'for'] as const;
 
 /** "dryerRuns" is "Dryer runs", as the app calls a variable the file gives no title. */
 const titleOf = (key: string): string => {
@@ -51,10 +51,22 @@ export function variableFromConfig(key: string, data: unknown, path: Path, fail:
   const described = typeof data.description === 'string' && data.description.trim() ? { description: data.description.trim() } : {};
   const starts = data.starts;
   const only = (names: readonly string[]) => {
-    for (const name of ['unit', 'min', 'max', 'step', 'options'] as const) if (data[name] !== undefined && !names.includes(name)) fail(`A ${kind} has no "${name}"`, [...path, name]);
+    for (const name of ['unit', 'min', 'max', 'step', 'options', 'for'] as const) if (data[name] !== undefined && !names.includes(name)) fail(`A ${kind} has no "${name}"`, [...path, name]);
   };
   let field: ConfigField;
+  let length: number | undefined;
   switch (kind) {
+    case 'timer': {
+      only(['for']);
+      if (starts !== undefined) fail('A timer starts not running', [...path, 'starts']);
+      // How long it runs when started without saying: a length of time, kept in seconds.
+      const given = data.for === undefined ? fail('A timer says how long it runs: "for: 45 min"', [...path, 'for']) : numberOf(data.for, [...path, 'for'], fail);
+      const seconds = given.unit ? convert(given.value, given.unit, 's') : null;
+      if (seconds === null) return fail('A timer runs for a length of time: "45 min"', [...path, 'for']);
+      length = Math.round(seconds);
+      field = timerField(title, typeof described.description === 'string' ? described.description : undefined);
+      break;
+    }
     case 'toggle':
       only([]);
       if (starts !== undefined && typeof starts !== 'boolean') fail('A toggle starts as true or false', [...path, 'starts']);
@@ -108,7 +120,7 @@ export function variableFromConfig(key: string, data: unknown, path: Path, fail:
       break;
     }
   }
-  const spec: VariableSpec = { key, kind, field };
+  const spec: VariableSpec = { key, kind, field, ...(length !== undefined ? { length } : {}) };
   const problems = variableProblems(spec);
   if (problems.length) fail(problems[0]!, path);
   return spec;
@@ -140,6 +152,7 @@ export function variableToConfig(spec: VariableSpec): Record<string, unknown> {
     ...(number && number.min !== undefined && !(kind === 'counter' && number.min === 0) ? { min: numberText(number.min, number.unit) } : {}),
     ...(number?.max !== undefined ? { max: numberText(number.max, number.unit) } : {}),
     ...(number?.step !== undefined ? { step: numberText(number.step, number.unit) } : {}),
-    ...(field.type === 'enum' ? { options: Object.fromEntries(field.options.map((option) => [option.value, option.label])) } : {}),
+    ...(field.type === 'enum' && kind !== 'timer' ? { options: Object.fromEntries(field.options.map((option) => [option.value, option.label])) } : {}),
+    ...(kind === 'timer' && spec.length !== undefined ? { for: numberText(spec.length, 's') } : {}),
   };
 }

@@ -177,7 +177,7 @@ describe('a rule, written and read back', () => {
     expect(read.rule).toBeNull();
     expect(read.issues).toEqual([
       { message: 'It ends where a value was expected', path: ['automations', 'x', 'do', 1, 'make sure'], offset: 15 },
-      { message: 'Not a step: "jump". A step starts with turn on, turn off, switch, send, set, set mode, set variable, count, notify, wait, wait until, wait for, make sure, if, watch, repeat, for each, try, stop, answer, start, run script or remember', path: ['automations', 'x', 'do', 2] },
+      { message: 'Not a step: "jump". A step starts with turn on, turn off, switch, send, set, set mode, set variable, count, start timer, stop timer, notify, wait, wait until, wait for, make sure, if, watch, repeat, for each, try, stop, answer, start, run script or remember', path: ['automations', 'x', 'do', 2] },
       { message: '"wait until" needs "at most": every wait has its limit: then the run stops, not having succeeded', path: ['automations', 'x', 'do', 3] },
     ]);
   });

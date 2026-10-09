@@ -1,6 +1,7 @@
 import type { CapabilityName } from '@kraftverk/device-sdk';
 
 import { EVERYONE, NOTIFY_LEVELS, OWN_HOME, SEQUENCE_LIMITS, type Command, type Expr, type Step, type Write } from '../rule.ts';
+import { TIMER_SECONDS } from '../variables.ts';
 import type { FieldSpec, KindDocs, KindIcon } from './spec.ts';
 
 /*
@@ -10,7 +11,7 @@ import type { FieldSpec, KindDocs, KindIcon } from './spec.ts';
   seconds.
 */
 
-export type StepKind = 'command' | 'write' | 'wait' | 'waitUntil' | 'waitFor' | 'ensure' | 'choose' | 'watch' | 'repeat' | 'forEach' | 'try' | 'stop' | 'answer' | 'start' | 'script' | 'remember' | 'setMode' | 'setVariable' | 'count' | 'notify';
+export type StepKind = 'command' | 'write' | 'wait' | 'waitUntil' | 'waitFor' | 'ensure' | 'choose' | 'watch' | 'repeat' | 'forEach' | 'try' | 'stop' | 'answer' | 'start' | 'script' | 'remember' | 'setMode' | 'setVariable' | 'count' | 'startTimer' | 'stopTimer' | 'notify';
 
 /** A step of one kind. */
 export type StepOf<K extends StepKind> = K extends StepKind ? Extract<Step, Record<K, unknown>> : never;
@@ -595,6 +596,46 @@ const COUNT: StepSpec<'count'> = {
   },
 };
 
+const START_TIMER: StepSpec<'startTimer'> = {
+  kind: 'startTimer',
+  label: 'Start a timer',
+  icon: 'clock',
+  says: 'Start one of the home’s timers — for its own length, or as long as you say — and it ends on its own.',
+  atOnce: true,
+  fields: [
+    { data: ['startTimer', 'key'], key: 'start timer', type: { type: 'variable' }, required: true, label: 'Which timer' },
+    { data: ['startTimer', 'for'], key: 'for', type: { type: 'duration', min: TIMER_SECONDS.min, max: TIMER_SECONDS.max }, required: false, label: 'For', help: 'Its own length, unless you say.' },
+    { data: ['startTimer', 'at'], key: 'at', type: { type: 'place', kinds: ['home'] }, required: false, label: 'Of which home', help: 'This automation’s own, unless you choose another.' },
+  ],
+  blank: () => ({ startTimer: { key: '' } }),
+  line: (step, say) => (step.startTimer.key ? `Start ${say.variable(step.startTimer.key, step.startTimer.at)}${step.startTimer.for ? ` for ${say.seconds(step.startTimer.for)}` : ''}` : 'Start a timer not chosen yet'),
+  brief: (step, say) => `start ${say.variable(step.startTimer.key, step.startTimer.at)}`,
+  docs: {
+    summary:
+      'Start one of a home’s timers — the automation’s own home, unless `at` names another — for its own length, or `for` so long: it runs, and ends on its own at its time, to the second and across a restart. Started while it runs, it starts again. What waits for it: `changes: home.var.<key>` with `to: ended`.',
+    examples: ['start timer: laundry', 'start timer: laundry\nfor: 50 min'],
+  },
+};
+
+const STOP_TIMER: StepSpec<'stopTimer'> = {
+  kind: 'stopTimer',
+  label: 'Stop a timer',
+  icon: 'x-circle',
+  says: 'Stop one of the home’s timers: it does not run, and it does not end.',
+  atOnce: true,
+  fields: [
+    { data: ['stopTimer', 'key'], key: 'stop timer', type: { type: 'variable' }, required: true, label: 'Which timer' },
+    { data: ['stopTimer', 'at'], key: 'at', type: { type: 'place', kinds: ['home'] }, required: false, label: 'Of which home', help: 'This automation’s own, unless you choose another.' },
+  ],
+  blank: () => ({ stopTimer: { key: '' } }),
+  line: (step, say) => (step.stopTimer.key ? `Stop ${say.variable(step.stopTimer.key, step.stopTimer.at)}` : 'Stop a timer not chosen yet'),
+  brief: (step, say) => `stop ${say.variable(step.stopTimer.key, step.stopTimer.at)}`,
+  docs: {
+    summary: 'Stop one of a home’s timers — the automation’s own home, unless `at` names another: not running, and not ended, so nothing waiting for its end starts.',
+    examples: ['stop timer: laundry'],
+  },
+};
+
 const NOTIFY: StepSpec<'notify'> = {
   kind: 'notify',
   label: 'Tell someone',
@@ -638,11 +679,13 @@ export const STEP_KINDS: { readonly [K in StepKind]: StepSpec<K> } = {
   setMode: SET_MODE,
   setVariable: SET_VARIABLE,
   count: COUNT,
+  startTimer: START_TIMER,
+  stopTimer: STOP_TIMER,
   notify: NOTIFY,
 };
 
 /** The order the editor offers them in. */
-export const STEP_KIND_ORDER: readonly StepKind[] = ['command', 'write', 'setMode', 'setVariable', 'count', 'notify', 'wait', 'waitUntil', 'waitFor', 'ensure', 'choose', 'watch', 'repeat', 'forEach', 'try', 'stop', 'answer', 'start', 'script', 'remember'];
+export const STEP_KIND_ORDER: readonly StepKind[] = ['command', 'write', 'setMode', 'setVariable', 'count', 'startTimer', 'stopTimer', 'notify', 'wait', 'waitUntil', 'waitFor', 'ensure', 'choose', 'watch', 'repeat', 'forEach', 'try', 'stop', 'answer', 'start', 'script', 'remember'];
 
 /** Which kind a step is — by its key; one of no kind is an error, never taken for another. */
 export function stepKind(step: Step): StepKind {

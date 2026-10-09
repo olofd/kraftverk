@@ -743,6 +743,41 @@ do:
     reset: true
 ```
 
+### `start timer` — Start a timer
+
+Start one of a home’s timers — the automation’s own home, unless `at` names another — for its own length, or `for` so long: it runs, and ends on its own at its time, to the second and across a restart. Started while it runs, it starts again. What waits for it: `changes: home.var.<key>` with `to: ended`.
+
+| Word | Holds | |
+|---|---|---|
+| `start timer` | one of the home’s variables, by its key: under `variables` of its home | needed |
+| `for` | a length of time, `2 min` — 1 s to 7 d | if you like |
+| `at` | a place: `home`, the automation’s own, or a role a home, a zone or a space fills — `{ zone: key }`, `{ space: key }` under `uses` | if you like |
+
+```yaml
+do:
+  - start timer: laundry
+```
+
+```yaml
+do:
+  - start timer: laundry
+    for: 50 min
+```
+
+### `stop timer` — Stop a timer
+
+Stop one of a home’s timers — the automation’s own home, unless `at` names another: not running, and not ended, so nothing waiting for its end starts.
+
+| Word | Holds | |
+|---|---|---|
+| `stop timer` | one of the home’s variables, by its key: under `variables` of its home | needed |
+| `at` | a place: `home`, the automation’s own, or a role a home, a zone or a space fills — `{ zone: key }`, `{ space: key }` under `uses` | if you like |
+
+```yaml
+do:
+  - stop timer: laundry
+```
+
 ### `notify` — Tell someone
 
 Tell people something — a role a person fills, a role people fill, or `everyone` in the family — in their inbox, and pushed to their phones and browsers: a `title`, more `text` if you like, as news unless `level` says `warning` or `alarm`. A value in braces is said as it is then, in its unit: `{station.charge}`, `{run.who}`. In watch mode it is said, not sent.

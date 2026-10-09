@@ -30,6 +30,8 @@ import {
   type Write,
   VARIABLE_KIND_WORDS,
   variableStartExpr,
+  TIMER_SECONDS,
+  secondsText,
 } from '@kraftverk/automation';
 import { capabilitiesOf, capabilityIn, isScalarType, MAIN_PART, valueTypeOf, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
 import { Chips, haptic, Icon, IconLabel } from '@kraftverk/ui';
@@ -170,6 +172,7 @@ function StepFields({ path, step, set }: { path: ListPath; step: Step; set: (ste
   if ('remember' in step) return <RememberFields remember={step.remember} set={(remember) => set({ remember })} />;
   if ('script' in step) return <ScriptFields script={step.script} set={(script) => set({ script })} />;
   if ('setVariable' in step || 'count' in step) return <VariableFields path={path} step={step} set={set} />;
+  if ('startTimer' in step || 'stopTimer' in step) return <TimerFields path={path} step={step} set={set} />;
   return <Fields fields={stepSpec(step).fields} construct={step} set={set} path={path} />;
 }
 
@@ -369,7 +372,7 @@ function VariableFields({ path, step, set }: { path: ListPath; step: Extract<Ste
   const editor = useEditor();
   const counting = 'count' in step;
   const it = counting ? step.count : step.setVariable;
-  const variables = editor.variablesAt(it.at).filter((variable) => !counting || variable.kind === 'counter');
+  const variables = editor.variablesAt(it.at).filter((variable) => (counting ? variable.kind === 'counter' : variable.kind !== 'timer'));
   const spec = variables.find((variable) => variable.key === it.key);
   const where = stepSpec(step).fields.filter((field) => field.key === 'at');
   const homes = editor.world.places.filter((place) => place.kind === 'home').length;
@@ -439,6 +442,59 @@ function VariableFields({ path, step, set }: { path: ListPath; step: Extract<Ste
               </Text>
             </YStack>
           )}
+        </YStack>
+      ) : null}
+    </YStack>
+  );
+}
+
+/** One of the home's timers started — for its own length, or as long as said — or stopped. */
+function TimerFields({ path, step, set }: { path: ListPath; step: Extract<Step, { startTimer: unknown }> | Extract<Step, { stopTimer: unknown }>; set: (step: Step) => void }) {
+  const editor = useEditor();
+  const starting = 'startTimer' in step;
+  const it = starting ? step.startTimer : step.stopTimer;
+  const timers = editor.variablesAt(it.at).filter((variable) => variable.kind === 'timer');
+  const spec = timers.find((variable) => variable.key === it.key);
+  const where = stepSpec(step).fields.filter((field) => field.key === 'at');
+  const homes = editor.world.places.filter((place) => place.kind === 'home').length;
+  const put = (changes: { key?: string; for?: Expr | undefined }) => {
+    if (!starting) return set({ stopTimer: { ...step.stopTimer, ...(changes.key !== undefined ? { key: changes.key } : {}) } });
+    const { for: _for, ...rest } = step.startTimer;
+    const length = 'for' in changes ? changes.for : step.startTimer.for;
+    set({ startTimer: { ...rest, ...(changes.key !== undefined ? { key: changes.key } : {}), ...(length ? { for: length } : {}) } });
+  };
+  return (
+    <YStack gap="$2.5">
+      {homes > 1 || it.at ? <Fields fields={where} construct={step} set={set} path={path} /> : null}
+      {timers.length ? (
+        <YStack gap="$1">
+          <Label>Which timer</Label>
+          <Picker
+            label="Which timer"
+            chosen={spec?.field.title ?? (it.key || null)}
+            placeholder="Choose a timer"
+            options={timers.map((variable) => ({ key: variable.key, title: variable.field.title, subtitle: variable.length ? `Runs for ${secondsText(variable.length)}` : undefined, value: variable.key, selected: variable === spec }))}
+            onPick={(key) => put({ key })}
+          />
+        </YStack>
+      ) : (
+        <Text fontSize={13} color="$muted" lineHeight={19}>
+          The home has no timer yet: add one in App settings › Variables.
+        </Text>
+      )}
+      {starting && spec ? (
+        <YStack gap="$1.5">
+          <Label>How long</Label>
+          <Chips
+            label="For how long"
+            options={[
+              { value: false, label: `Its own${spec.length ? `, ${secondsText(spec.length)}` : ''}` },
+              { value: true, label: 'As long as I say' },
+            ]}
+            value={Boolean(step.startTimer.for)}
+            onChange={(own) => put({ for: own ? (step.startTimer.for ?? { value: Math.max(1, Math.round((spec.length ?? 600) / 60)), unit: 'min' }) : undefined })}
+          />
+          {step.startTimer.for ? <DurationField label="How long" value={durationOf(step.startTimer.for)} max={TIMER_SECONDS.max} onChange={(next) => put({ for: next ?? { value: 1, unit: 'min' } })} /> : null}
         </YStack>
       ) : null}
     </YStack>

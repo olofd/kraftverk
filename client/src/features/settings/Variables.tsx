@@ -59,7 +59,7 @@ function HomeVariables({ home, titled }: { home: HomeView; titled: boolean }) {
                     variable={variable}
                     taken={taken}
                     onSave={async (input) => {
-                      await api.variables.update(variable.id, { field: input.field });
+                      await api.variables.update(variable.id, { field: input.field, ...(input.length !== undefined ? { length: input.length } : {}) });
                       setOpen(null);
                       await reload();
                     }}
@@ -127,13 +127,15 @@ function VariableForm({
   onCancel?: () => void;
   onRemove?: () => Promise<void>;
 }) {
-  const typed = variable ? variableTypedOf(variable) : null;
+  const typed = variable ? variableTypedOf({ ...variable, ...(variable.length !== null ? { length: variable.length } : { length: undefined }) }) : null;
   const [title, setTitle] = useState(typed?.title ?? '');
   const [kind, setKind] = useState<VariableKind>(typed?.kind ?? 'toggle');
   const [unit, setUnit] = useState(typed?.unit ?? '');
   const [min, setMin] = useState(typed?.min !== undefined && typed.min !== null ? String(typed.min) : '');
   const [max, setMax] = useState(typed?.max !== undefined && typed.max !== null ? String(typed.max) : '');
   const [options, setOptions] = useState(typed?.options?.join(', ') ?? '');
+  // A timer's length, in minutes: what a person says it in.
+  const [minutes, setMinutes] = useState(typed?.length ? String(Math.round((typed.length / 60) * 100) / 100) : '45');
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -144,17 +146,18 @@ function VariableForm({
     const value = parseNumberText(text);
     return value === null ? { value: null, problem: `${what} is a number: "${text.trim()}" is not one` } : { value, problem: null };
   };
-  const [least, most] = [number(min, 'At least'), number(max, 'At most')];
+  const [least, most, runs] = [number(min, 'At least'), number(max, 'At most'), number(minutes, 'How long')];
+  const length = kind === 'timer' && runs.value !== null ? Math.round(runs.value * 60) : undefined;
   const field: ConfigField = variableFieldOf(
     { title, kind, unit: typedUnit && isUnit(typedUnit) ? typedUnit : null, min: least.value, max: most.value, options: options.split(',') },
     variable?.field
   );
   const key = variable?.key ?? variableKeyFrom(title, taken);
   const problems = title.trim()
-    ? [...(typedUnit && !isUnit(typedUnit) ? [`"${typedUnit}" is not a unit kraftverk knows: °C, kWh, %, W`] : []), ...[least.problem, most.problem].filter((each): each is string => each !== null), ...variableProblems({ key, kind, field })]
+    ? [...(typedUnit && !isUnit(typedUnit) ? [`"${typedUnit}" is not a unit kraftverk knows: °C, kWh, %, W`] : []), ...[least.problem, most.problem, runs.problem].filter((each): each is string => each !== null), ...variableProblems({ key, kind, field, ...(length !== undefined ? { length } : {}) })]
     : [];
   const ranged = kind === 'number' || kind === 'counter';
-  const changed = !variable || JSON.stringify(field) !== JSON.stringify(variable.field);
+  const changed = !variable || JSON.stringify(field) !== JSON.stringify(variable.field) || (kind === 'timer' && length !== (variable.length ?? undefined));
 
   const doing = async (work: () => Promise<void>, failed: string) => {
     haptic();
@@ -201,6 +204,11 @@ function VariableForm({
           </Labelled>
         </XStack>
       ) : null}
+      {kind === 'timer' ? (
+        <Labelled label="Runs for, in minutes">
+          <Input aria-label="How long it runs" placeholder="45" inputMode="decimal" size="$4" value={minutes} onChangeText={setMinutes} />
+        </Labelled>
+      ) : null}
       {kind === 'choice' ? (
         <Labelled label="Options, by commas">
           <Input aria-label="Its options" placeholder="Washing, Drying, Done" size="$4" value={options} onChangeText={setOptions} />
@@ -223,13 +231,14 @@ function VariableForm({
           opacity={!title.trim() || problems.length > 0 || busy || !changed ? 0.5 : 1}
           onPress={() =>
             void doing(async () => {
-              await onSave({ key, kind, field });
+              await onSave({ key, kind, field, ...(length !== undefined ? { length } : {}) });
               if (variable) return;
               setTitle('');
               setUnit('');
               setMin('');
               setMax('');
               setOptions('');
+              setMinutes('45');
             }, variable ? 'It could not be changed' : 'The variable could not be added')
           }
         >

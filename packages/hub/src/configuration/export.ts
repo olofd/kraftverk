@@ -230,7 +230,7 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
         policy: { ...deps.policyOf(home.id).values() },
         spaces: spaceTree(deps.spaces.spaces(home.id), (id) => labelKeys(labelled.spaces[id])),
         openings: openingsOf(deps.spaces, home.id),
-        variables: Object.fromEntries(deps.variables.list(home.id).map((variable) => [variable.key, { kind: variable.kind, field: variable.field }])),
+        variables: Object.fromEntries(deps.variables.list(home.id).map((variable) => [variable.key, { kind: variable.kind, field: variable.field, ...(variable.length !== undefined ? { length: variable.length } : {}) }])),
       };
     }
   }

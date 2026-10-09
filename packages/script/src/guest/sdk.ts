@@ -221,6 +221,10 @@ const homeOf = (info: HomeInfo) =>
     count: (key: string, by = 1): Promise<unknown> => call(['run', 'count'], [{ home: info.id, key, by }]),
     /** One of its counters back to what it starts as. */
     resetCounter: (key: string): Promise<unknown> => call(['run', 'count'], [{ home: info.id, key, reset: true }]),
+    /** One of its timers started, as this run starts it: for its own length, or so many seconds. */
+    startTimer: (key: string, seconds?: number): Promise<unknown> => call(['run', 'timer'], [{ home: info.id, key, action: 'start', ...(seconds !== undefined ? { seconds } : {}) }]),
+    /** One of its timers stopped: not running, not ended. */
+    stopTimer: (key: string): Promise<unknown> => call(['run', 'timer'], [{ home: info.id, key, action: 'stop' }]),
   });
 
 const homesNow = (): HomeInfo[] => read({ homes: true });

@@ -12,7 +12,7 @@ import type { MapRegionAsk, MapRegionsView } from './map.ts';
 import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DevicePeople, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, FamilyElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
 import type { FoundFamily, InvitationInput, InvitationMade, InvitationView, Joined, MemberChanges, PersonView, SharingChanges, SharingLevel, PresenceView, NotificationView, WebPushSubscription } from './people.ts';
-import type { HomeInput, HomeView, ZoneInput, ZoneView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView, OccupancyView, ModeView, ModeInput, HomeModeView, ModeSet, ModeAxis, VariableView, VariableInput, VariableCount } from './homes.ts';
+import type { HomeInput, HomeView, ZoneInput, ZoneView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView, OccupancyView, ModeView, ModeInput, HomeModeView, ModeSet, ModeAxis, VariableView, VariableInput, VariableCount, TimerAction } from './homes.ts';
 import type { MediaData, MediaView, NewMedia } from './media.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, FamilyView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
 import type { ScriptInput, ScriptTried, ScriptTry, ScriptView } from './scripts.ts';
@@ -361,6 +361,8 @@ export interface KraftverkApi {
     set(homeId: string, key: string, value: Value): Promise<VariableView>;
     /** A counter counted, by its key: by one, by so many, or back to its start — held to its range. */
     count(homeId: string, key: string, count?: VariableCount): Promise<VariableView>;
+    /** A timer started, stopped, paused or resumed, by its key. */
+    timer(homeId: string, key: string, action: TimerAction): Promise<VariableView>;
   };
   /** Which spaces of a home have someone in them, whoever they are (§8.9). */
   occupancy: {

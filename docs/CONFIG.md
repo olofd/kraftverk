@@ -77,6 +77,7 @@ homes:                            # each by its key, in their order
       target: { kind: number, starts: 21 °C, min: 16 °C, max: 25 °C }
       laundry: { kind: choice, options: { washing: Washing, drying: Drying, done: Done } }
       wake: { kind: time, title: Wake at, starts: "06:45" }
+      oven: { kind: timer, for: 20 min }   # ends on its own: changes: home.var.oven, to: ended
   cabin:
     name: Lake cabin
     type: cabin
@@ -187,7 +188,7 @@ default.
 `variables:` are its own typed values, each by a key in camelCase: a
 `toggle`, a `number` — in a `unit`, between a `min` and a `max`, in
 `step`s — a `choice` of its `options`, `text`, a `time` of day, a
-`counter` (whole, from nought unless it says its `min`). Each may say its
+`counter` (whole, from nought unless it says its `min`), a `timer` (`for:` how long it runs; it holds its state — `idle`, `running`, `paused`, `ended` — and ends on its own). Each may say its
 `title` — none: made from its key — a `description`, and what it `starts`
 as. A kind alone is enough: `note: text`. The file says what each is, never
 what it holds: that is the home's, set by its people, scripts and
@@ -556,6 +557,7 @@ nothing wrong — and write back the same.
 | 18 | Automations run scripts: a role under `uses` may be filled by one of the family's scripts (`{ script: key }`), run by a `run script:` step and its functions called in an expression (`feel.feelsLike(…)`); and an automation that acts says who it acts for (`acts for:`, a person by key) — what its scripts do, they do for them. Nothing older says them, so nothing changes |
 | 19 | A home's variables (`variables:`, each by key with its `kind` and perhaps its `title`, `description`, what it `starts` as, a number's `unit`, `min`, `max` and `step`, a choice's `options`; docs/PLAN-VARIABLES-AND-TRIGGERS.md), read by an automation as `home.var.key` and changed by its `set variable:` and `count:` steps. Nothing older says them, so nothing changes |
 | 20 | More that starts an automation (docs/PLAN-VARIABLES-AND-TRIGGERS.md §3): `on start: 1 min`, once as kraftverk starts; `changes:` a reading or a variable — with `from`, `to`, `by at least`, and `run.from`, `run.to` in its run; an `at` time from a home's time variable (`at: home.var.wake`); and an `at` only in `months` or on `dates` (`"12-01..12-24"`). `every` may be every minute. Nothing older says them, so nothing changes |
+| 21 | A home's timers: a variable of `kind: timer`, with `for:` how long it runs when started without saying; started and stopped by `start timer:` (with `for:`) and `stop timer:`, and read as its state — `idle`, `running`, `paused`, `ended`. Nothing older says them, so nothing changes |
 
 **An integration's own entries.** A change to what a type is reached by —
 a way it no longer has — is not the document's shape, but a home kept

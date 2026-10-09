@@ -13,7 +13,7 @@
 import type { FileMigration, FileTypes } from '@kraftverk/device-sdk';
 
 /** The version this kraftverk writes. */
-export const CURRENT_VERSION = 20;
+export const CURRENT_VERSION = 21;
 
 /** Each version's document, as data, made into the next version's. */
 export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unknown>) => Record<string, unknown>>> = {
@@ -52,6 +52,8 @@ export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unkno
   18: (document) => document,
   // Version 20 may start an automation as kraftverk starts (`on start:`), as something changes (`changes:`, with `from`, `to`, `by at least`), at a time of a home's variable, and only in `months` or on `dates`: nothing older does, so nothing changes.
   19: (document) => document,
+  // Version 21 may declare a home's timers (`kind: timer`, with `for:` how long it runs) and start and stop them (`start timer:`, `stop timer:`): nothing older does, so nothing changes.
+  20: (document) => document,
 };
 
 /**

@@ -272,11 +272,18 @@ export type VariableView = {
   value: Value | null;
   setAt: string | null;
   by: string | null;
+  /** A timer's: how long it runs when started without saying, in seconds — and, running, when it ends; paused, what is left, in ms. */
+  length: number | null;
+  endsAt: string | null;
+  leftMs: number | null;
   removedAt: string | null;
 };
 
-/** A variable made or changed: its key, its kind, its field (its title, its unit and range, what it starts as). */
-export type VariableInput = { key: string; kind: VariableKind; field: ConfigField };
+/** A variable made or changed: its key, its kind, its field (its title, its unit and range, what it starts as) — a timer's length, in seconds. */
+export type VariableInput = { key: string; kind: VariableKind; field: ConfigField; length?: number };
+
+/** What is done to a timer: started — for its length, or so many seconds — stopped, paused, resumed. */
+export type TimerAction = { action: 'start'; seconds?: number } | { action: 'stop' } | { action: 'pause' } | { action: 'resume' };
 
 /** A counter counted: by one, by so many (down, below nought), or back to its start. */
 export type VariableCount = { by?: number; reset?: boolean };

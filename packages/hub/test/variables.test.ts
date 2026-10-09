@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import type { LiveUpdate } from '@kraftverk/api-contract';
-import type { Rule } from '@kraftverk/automation';
+import { timerField, type Rule } from '@kraftverk/automation';
 
 import { aHome, refusal, settle, type TestHome } from './a-home.ts';
 
@@ -159,6 +159,64 @@ describe('a home’s variables', () => {
     expect(runs).toHaveLength(1);
     expect(runs[0]!.why).toBe('“Laundry” changed from “Drying” to “Done”');
     expect(t.hub.variables.now(home, 'note')).toBe('drying');
+  });
+
+  test('a timer: started, it ends on its own — paused, it keeps what is left; stopped, it does not end; set, it is refused', async () => {
+    const OVEN = { key: 'oven', kind: 'timer', field: timerField('Oven'), length: 60 } as const;
+    const oven = await t.home.variables.add(home, OVEN);
+    expect(oven).toMatchObject({ value: 'idle', length: 60, endsAt: null });
+    const started = await t.home.variables.timer(home, 'oven', { action: 'start', seconds: 1 });
+    expect(started.value).toBe('running');
+    expect(Date.parse(started.endsAt!) - Date.now()).toBeLessThanOrEqual(1000);
+    await settle(1150);
+    expect(t.hub.variables.now(home, 'oven')).toBe('ended');
+    // Paused, what is left is kept; resumed, it runs from there.
+    await t.home.variables.timer(home, 'oven', { action: 'start' });
+    const paused = await t.home.variables.timer(home, 'oven', { action: 'pause' });
+    expect(paused).toMatchObject({ value: 'paused', endsAt: null });
+    expect(paused.leftMs).toBeGreaterThan(59_000);
+    expect((await t.home.variables.timer(home, 'oven', { action: 'resume' })).value).toBe('running');
+    // Stopped: not running, and it does not end.
+    expect((await t.home.variables.timer(home, 'oven', { action: 'stop' })).value).toBe('idle');
+    expect((await refusal(t.home.variables.set(home, 'oven', 'ended'))).message).toBe('Oven is a timer: start it, or stop it');
+    expect((await refusal(t.home.variables.timer(home, 'oven', { action: 'start', seconds: 8 * 24 * 3600 }))).message).toBe('A timer runs from a second to a week');
+    expect((await refusal(t.home.variables.timer(home, 'nothing', { action: 'start' }))).kind).toBe('not-found');
+  });
+
+  test('a timer renamed while it runs still ends; one only a step starts cannot be renamed under it', async () => {
+    const oven = await t.home.variables.add(home, { key: 'oven', kind: 'timer', field: timerField('Oven'), length: 60 });
+    await t.home.variables.timer(home, 'oven', { action: 'start', seconds: 1 });
+    await t.home.variables.update(oven.id, { key: 'stove' });
+    await settle(1150);
+    expect(t.hub.variables.now(home, 'stove')).toBe('ended');
+    await t.home.automations.create({ name: 'Bake', rule: { roles: {}, params: { fields: {} }, when: [{ every: { value: 5, unit: 'min' } }], then: [{ startTimer: { key: 'stove' } }] }, roles: {}, groups: {}, starts: {}, world: {}, timeZone: 'Europe/Stockholm' });
+    expect((await refusal(t.home.variables.update(oven.id, { key: 'oven' }))).message).toBe('“Bake” uses "stove": change it first');
+  });
+
+  test('a timer running as kraftverk stops is taken up as it starts again — one whose time passed meanwhile ends then', async () => {
+    await t.home.variables.add(home, { key: 'oven', kind: 'timer', field: timerField('Oven'), length: 60 });
+    await t.home.variables.timer(home, 'oven', { action: 'start', seconds: 1 });
+    t.hub.variables.stop();
+    await settle(1100);
+    expect(t.hub.variables.now(home, 'oven')).toBe('running');
+    t.hub.variables.start();
+    await settle(50);
+    expect(t.hub.variables.now(home, 'oven')).toBe('ended');
+  });
+
+  test('an automation starts a timer, and another waits for its end', async () => {
+    await t.home.variables.add(home, { key: 'oven', kind: 'timer', field: timerField('Oven'), length: 60 });
+    await t.home.variables.add(home, GUESTS);
+    const starting = await acting({ roles: {}, params: { fields: {} }, when: [{ every: { value: 5, unit: 'min' } }], then: [{ startTimer: { key: 'oven', for: { value: 1, unit: 's' } } }] });
+    const waiting = await acting({ roles: {}, params: { fields: {} }, when: [{ changes: { variable: { key: 'oven', at: 'home' } }, to: { value: 'ended' } }], then: [{ setVariable: { key: 'guests', to: { value: true } } }] });
+    expect((await t.home.automations.list()).find((each) => each.id === starting.id)?.sentence).toBe('Every 5 min, start “Oven”.');
+    t.hub.engine.start();
+    await t.hub.engine.tick();
+    await t.home.automations.start(starting.id);
+    await settle(1400);
+    expect((await t.home.automations.runs(starting.id))[0]!.summary).toBe('Started “Oven” for 1 s');
+    expect(t.hub.variables.now(home, 'guests')).toBe(true);
+    expect((await t.home.automations.runs(waiting.id))[0]!.why).toBe('“Oven” changed from “Running” to “Ended”');
   });
 
   test('a script sets and counts them — but does not declare them', async () => {

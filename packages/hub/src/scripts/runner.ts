@@ -201,20 +201,23 @@ export async function runScriptStep(hub: Hub, run: StepRun): Promise<ScriptStepD
       say({ what: `Told ${told.length === 1 ? (hub.world.personName(told[0]!) ?? 'someone') : `${told.length} people`}: “${title}”`, outcome: told.length ? 'done' : 'failed', detail: null });
       return { told };
     }
-    if (what !== 'setMode' && what !== 'setVariable' && what !== 'count') throw new Error(refusalText(new ApiError('not-found', `A run does not "${what}"`)));
+    if (what !== 'setMode' && what !== 'setVariable' && what !== 'count' && what !== 'timer') throw new Error(refusalText(new ApiError('not-found', `A run does not "${what}"`)));
     // One of the family's homes — the one named, or the run's own — never an id it does not know.
     const named = typeof given.home === 'string' ? given.home : null;
     const home = named ? (hub.places.home(named) && !hub.places.home(named)!.removedAt ? named : null) : hub.world.home(run.homeId);
     if (!home) throw new Error(refusalText(new ApiError('not-found', 'There is no such home')));
-    if (what === 'setVariable' || what === 'count') {
+    if (what === 'setVariable' || what === 'count' || what === 'timer') {
       const key = String(given.key ?? '');
       const record = hub.variableStore.byKey(home, key);
       const title = record?.field.title ?? key;
       try {
+        const action = given.action === 'stop' ? ({ action: 'stop' } as const) : ({ action: 'start', ...(typeof given.seconds === 'number' ? { seconds: given.seconds } : {}) } as const);
         const set =
           what === 'count'
             ? hub.variables.count(home, key, given.reset === true ? { reset: true } : { by: typeof given.by === 'number' ? given.by : 1 }, run.actor as Actor, run.cause)
-            : hub.variables.set(home, key, given.value as Value, run.actor as Actor, run.cause);
+            : what === 'timer'
+              ? hub.variables.timer(home, key, action, run.actor as Actor, run.cause)
+              : hub.variables.set(home, key, given.value as Value, run.actor as Actor, run.cause);
         say({ what: `“${title}” is ${record ? variableValueText(record, set.value) : String(set.value)} now`, outcome: 'done', detail: set.changed ? null : 'It was already' });
         return { home, key, value: set.value };
       } catch (error) {

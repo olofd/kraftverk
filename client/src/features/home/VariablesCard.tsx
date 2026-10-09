@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, variableLine, type HomeView, type VariableView } from '@kraftverk/api-client';
+import { countdownText, describeError, timerLeft, variableLine, type HomeView, type TimerAction, type VariableView } from '@kraftverk/api-client';
 import type { Value } from '@kraftverk/device-sdk';
-import { Card, Chips, haptic, Icon, SectionLabel, Toggle } from '@kraftverk/ui';
+import { Card, Chips, haptic, Icon, SectionLabel, Toggle, type IconName } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { useTone } from '../../components/tone';
@@ -23,6 +23,7 @@ export function useHomeVariables(homeId: string | null): {
   variables: VariableView[] | null;
   set: (key: string, value: Value) => Promise<void>;
   count: (key: string, count: { by?: number; reset?: boolean }) => Promise<void>;
+  timer: (key: string, action: TimerAction) => Promise<void>;
   problem: string | null;
   reload: () => Promise<void>;
 } {
@@ -57,19 +58,20 @@ export function useHomeVariables(homeId: string | null): {
   );
   const set = useCallback(async (key: string, value: Value) => (homeId ? changing(() => api.variables.set(homeId, key, value), 'It could not be set') : undefined), [api, homeId, changing]);
   const count = useCallback(async (key: string, by: { by?: number; reset?: boolean }) => (homeId ? changing(() => api.variables.count(homeId, key, by), 'It could not be counted') : undefined), [api, homeId, changing]);
-  return { variables, set, count, problem, reload };
+  const timer = useCallback(async (key: string, action: TimerAction) => (homeId ? changing(() => api.variables.timer(homeId, key, action), 'The timer could not be changed') : undefined), [api, homeId, changing]);
+  return { variables, set, count, timer, problem, reload };
 }
 
 /** A home's variables, on the home screen: none, no card. */
 export function VariablesCard({ home, titled }: { home: HomeView; titled: boolean }) {
-  const { variables, set, count, problem } = useHomeVariables(home.id);
+  const { variables, set, count, timer, problem } = useHomeVariables(home.id);
   if (!variables?.length) return null;
   return (
     <YStack gap="$2">
       <SectionLabel>{titled ? `${home.name}’s variables` : 'Variables'}</SectionLabel>
       <Card gap="$4">
         {variables.map((variable) => (
-          <VariableRow key={variable.id} variable={variable} set={(value) => void set(variable.key, value)} count={(by) => void count(variable.key, by)} />
+          <VariableRow key={variable.id} variable={variable} set={(value) => void set(variable.key, value)} count={(by) => void count(variable.key, by)} timer={(action) => void timer(variable.key, action)} />
         ))}
         {problem ? <ErrorText>{problem}</ErrorText> : null}
       </Card>
@@ -78,7 +80,7 @@ export function VariablesCard({ home, titled }: { home: HomeView; titled: boolea
 }
 
 /** One variable: its title, what it holds, and a way to change it as its kind is changed. */
-function VariableRow({ variable, set, count }: { variable: VariableView; set: (value: Value) => void; count: (by: { by?: number; reset?: boolean }) => void }) {
+function VariableRow({ variable, set, count, timer }: { variable: VariableView; set: (value: Value) => void; count: (by: { by?: number; reset?: boolean }) => void; timer: (action: TimerAction) => void }) {
   const tone = useTone();
   const { field, kind, value } = variable;
   // What it holds is in its control: beneath its title, who set it and when, once someone has. Beside a control, it takes the room left; above one, its own height.
@@ -121,6 +123,8 @@ function VariableRow({ variable, set, count }: { variable: VariableView; set: (v
           <Button width={44} height={44} circular chromeless aria-label={`${field.title}: start over`} icon={<Icon name="rotate-ccw" size={16} color={tone('$muted')} />} onPress={() => count({ reset: true })} />
         </XStack>
       );
+    case 'timer':
+      return <TimerRow variable={variable} title={titled(true)} timer={timer} />;
     case 'number':
     case 'text':
     case 'time':
@@ -131,6 +135,42 @@ function VariableRow({ variable, set, count }: { variable: VariableView; set: (v
         </YStack>
       );
   }
+}
+
+/** A timer: what it is doing, its time counting down, and a way to start, pause, resume or stop it. */
+function TimerRow({ variable, title, timer }: { variable: VariableView; title: ReactNode; timer: (action: TimerAction) => void }) {
+  const tone = useTone();
+  const [now, setNow] = useState(() => Date.now());
+  const running = variable.value === 'running';
+  // A second at a time, while it runs: nothing to count otherwise.
+  useEffect(() => {
+    if (!running) return;
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, [running]);
+  const left = timerLeft(variable, now);
+  const state = variable.field.type === 'enum' ? (variable.field.options.find((option) => option.value === variable.value)?.label ?? '') : '';
+  const button = (label: string, icon: IconName, action: TimerAction) => (
+    <Button width={44} height={44} circular chromeless aria-label={`${variable.field.title}: ${label}`} icon={<Icon name={icon} size={16} color={tone(label === 'stop' ? '$muted' : '$color')} />} onPress={() => timer(action)} />
+  );
+  return (
+    <XStack alignItems="center" gap="$1">
+      {title}
+      <YStack alignItems="flex-end" minWidth={64}>
+        {/* Its time: counting down, held while paused — or, not running, how long it runs, quietly. */}
+        <Text fontSize={17} fontWeight="700" color={variable.value === 'ended' ? '$accent' : left !== null ? '$color' : '$muted'} aria-live={variable.value === 'ended' ? 'polite' : 'off'}>
+          {left !== null ? countdownText(left) : variable.value === 'ended' ? state : variable.length ? countdownText(variable.length * 1000) : state}
+        </Text>
+        {variable.value !== 'ended' ? (
+          <Text fontSize={11} color="$muted" aria-live="polite">
+            {state}
+          </Text>
+        ) : null}
+      </YStack>
+      {variable.value === 'running' ? button('pause', 'pause', { action: 'pause' }) : variable.value === 'paused' ? button('resume', 'play', { action: 'resume' }) : button('start', 'play', { action: 'start' })}
+      {variable.value === 'running' || variable.value === 'paused' ? button('stop', 'square', { action: 'stop' }) : null}
+    </XStack>
+  );
 }
 
 /** A number, words or a time: typed, and saved when it is said to be — not as each key is pressed. */

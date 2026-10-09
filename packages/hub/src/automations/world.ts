@@ -30,7 +30,7 @@ export type WorldDeps = {
   occupancies: Pick<OccupancyStore, 'open'>;
   modes: Pick<Modes, 'now' | 'set'>;
   modeStore: Pick<ModeStore, 'list'>;
-  variables: Pick<Variables, 'specs' | 'now' | 'set'>;
+  variables: Pick<Variables, 'specs' | 'now' | 'set' | 'timer'>;
   notifications: NotificationStore;
   push: PushSender | null;
   record: (entry: AuditRecord) => void;
@@ -147,6 +147,7 @@ export function familyWorld(deps: WorldDeps): EngineWorld & WorldDirectory {
     variable: (homeId, key) => deps.variables.now(homeId, key),
     // An automation's set is a line of its run, not the timeline's: as its devices' commands are.
     setVariable: (homeId, key, value, by, cause) => void deps.variables.set(homeId, key, value, by as Actor, cause),
+    timer: (homeId, key, action, by, cause) => void deps.variables.timer(homeId, key, action, by as Actor, cause),
     notify(people, message, by) {
       const told = [...new Set(people)].filter((person) => member(person));
       for (const person of told) tell(deps.notifications, deps.push, person, { title: message.title, body: message.text, level: message.level, homeId: message.homeId, from: by as Actor });

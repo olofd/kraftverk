@@ -110,7 +110,7 @@ export function ruleUses(written: Rule): {
   starts: string[];
   /** The roles of the scripts it runs, or calls a function of. */
   scripts: string[];
-  /** The home variables it reads, by key, of its own home or one a role fills. */
+  /** The home variables it reads or changes, by key, of its own home or one a role fills: each once. */
   variables: { key: string; at: string }[];
   /** The groups a "for each" goes through. */
   groups: string[];
@@ -185,6 +185,8 @@ export function ruleUses(written: Rule): {
         else if (field.type.type === 'script') scripts.push(String(value));
         else if (field.type.type === 'group') groups.push(String(value));
         else if (field.type.type === 'steps') walkSteps(value as readonly Step[]);
+        // One a step sets, counts, starts or stops: named, as one read is — what renaming it must ask about.
+        else if (field.type.type === 'variable' && value) variables.push({ key: String(value), at: String((fieldValue(step, { ...field, data: [...field.data.slice(0, -1), 'at'] }) as string | undefined) ?? OWN_HOME) });
       }
     }
   };
@@ -192,7 +194,7 @@ export function ruleUses(written: Rule): {
   for (const list of stepListsOf(rule)) walkSteps(list.steps);
   // Each trigger by its kind's fields (kinds/triggers.ts): the events it waits for.
   const events = rule.when.flatMap((trigger) => eventsIn(trigger, triggerSpec(trigger).fields));
-  return { reads, events, awaits, calls, reaches: [...new Set(reaches)], writes, starts: [...new Set(starts)], scripts: [...new Set(scripts)], variables, groups: [...new Set(groups)], windows, world, places: [...places] };
+  return { reads, events, awaits, calls, reaches: [...new Set(reaches)], writes, starts: [...new Set(starts)], scripts: [...new Set(scripts)], variables: variables.filter((each, index) => variables.findIndex((other) => other.key === each.key && other.at === each.at) === index), groups: [...new Set(groups)], windows, world, places: [...places] };
 }
 
 /**

@@ -42,6 +42,7 @@ import {
   type StepLine,
   type Write,
   counted,
+  TIMER_SECONDS,
   variableValueText,
   type VariableSpec,
 } from '@kraftverk/automation';
@@ -638,6 +639,8 @@ export class Runs {
       else if ('setMode' in step) walked = this.#setMode(live, here, step.setMode, depth, within, what());
       else if ('setVariable' in step) walked = await this.#setVariable(live, here, step.setVariable, depth, within, what());
       else if ('count' in step) walked = await this.#count(live, here, step.count, depth, within, what());
+      else if ('startTimer' in step) walked = this.#timer(live, here, 'startTimer', step.startTimer, depth, within, what());
+      else if ('stopTimer' in step) walked = this.#timer(live, here, 'stopTimer', step.stopTimer, depth, within, what());
       else if ('notify' in step) walked = await this.#notify(live, here, step.notify, depth, within, what());
       else if ('repeat' in step) walked = await this.#repeat(live, here, step.repeat, depth, within, what(), mode);
       else if ('forEach' in step) walked = await this.#forEach(live, here, step.forEach, depth, within, what(), mode);
@@ -1016,7 +1019,28 @@ export class Runs {
   }
 
   /** The variable a step changes, of the home it names — or the step failed, and why. */
-  #variableOf(live: LiveRun, here: Here, kind: 'setVariable' | 'count', step: { key: string; at?: string }, depth: number, within: string | null, what: string) {
+  /** A home's timer started — for its length, or so long — or stopped, as the automation: a line of its run. */
+  #timer(live: LiveRun, here: Here, kind: 'startTimer' | 'stopTimer', step: { key: string; for?: Expr; at?: string }, depth: number, within: string | null, what: string): Walked {
+    const found = this.#variableOf(live, here, kind, step, depth, within, what);
+    if (!found) return 'failed';
+    const { world, home, spec } = found;
+    const scope = this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event, live.inputs);
+    const seconds = kind === 'startTimer' && step.for ? this.#seconds(step.for, scope, TIMER_SECONDS.max) : null;
+    if (kind === 'startTimer' && step.for && seconds === null) {
+      this.#add(live, { kind, depth, within, what, outcome: 'failed', detail: 'How long it runs is not known now', until: null });
+      return 'failed';
+    }
+    try {
+      world.timer(home, spec.key, kind === 'startTimer' ? { action: 'start', ...(seconds !== null ? { seconds } : {}) } : { action: 'stop' }, actorOf(here.automation), [...(live.event?.cause ?? []), here.automation.id]);
+    } catch (error) {
+      this.#add(live, { kind, depth, within, what, outcome: 'failed', detail: (error as Error).message, until: null });
+      return 'failed';
+    }
+    this.#add(live, { kind, depth, within, what, outcome: 'done', detail: kind === 'startTimer' ? `It runs for ${secondsText(seconds ?? spec.length ?? 0)}` : 'Stopped', until: null });
+    return 'ok';
+  }
+
+  #variableOf(live: LiveRun, here: Here, kind: 'setVariable' | 'count' | 'startTimer' | 'stopTimer', step: { key: string; at?: string }, depth: number, within: string | null, what: string) {
     const world = this.deps.world;
     const home = this.#homeOf(here, step.at);
     const spec = world && home ? world.variables(home).find((each) => each.key === step.key) : undefined;

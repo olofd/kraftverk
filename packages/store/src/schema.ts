@@ -824,8 +824,10 @@ export const SCHEMA = `
     id         TEXT PRIMARY KEY,
     home_id    TEXT NOT NULL REFERENCES home (id),
     key        TEXT NOT NULL CHECK (key GLOB '[a-z]*' AND key NOT GLOB '*[^A-Za-z0-9]*' AND length(key) <= 40),
-    kind       TEXT NOT NULL CHECK (kind IN ('toggle', 'number', 'choice', 'text', 'time', 'counter')),
+    kind       TEXT NOT NULL CHECK (kind IN ('toggle', 'number', 'choice', 'text', 'time', 'counter', 'timer')),
     field      TEXT NOT NULL CHECK (json_valid(field)),
+    /* A timer's: how long it runs when started without saying, in seconds; none for any other kind. */
+    length     INTEGER CHECK ((kind = 'timer') = (length IS NOT NULL) AND (length IS NULL OR length > 0)),
     position   INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     removed_at TEXT
@@ -839,7 +841,10 @@ export const SCHEMA = `
     set_at      TEXT NOT NULL,
     actor_kind  TEXT NOT NULL CHECK (actor_kind IN ('person', 'agent', 'automation', 'node', 'integration', 'system')),
     actor_id    TEXT,
-    actor_name  TEXT NOT NULL
+    actor_name  TEXT NOT NULL,
+    /* A running timer's end; a paused one's time left, in ms. */
+    deadline    TEXT,
+    left_ms     INTEGER CHECK (left_ms IS NULL OR left_ms >= 0)
   );
 
   /* What said someone was there: each device, once. */

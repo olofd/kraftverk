@@ -985,11 +985,11 @@ function writeVariables(deps: ImportDeps, homeId: string, entry: HomeEntry, at: 
   for (const [key, variable] of Object.entries(entry.variables)) {
     const had = deps.variables.byKey(homeId, key);
     if (!had) {
-      deps.variables.add(homeId, { key, kind: variable.kind, field: variable.field }, at);
+      deps.variables.add(homeId, { key, kind: variable.kind, field: variable.field, ...(variable.length !== undefined ? { length: variable.length } : {}) }, at);
       continue;
     }
     if (sameVariable(had, { key, ...variable })) continue;
-    deps.variables.update(had.id, { kind: variable.kind, field: variable.field });
+    deps.variables.update(had.id, { kind: variable.kind, field: variable.field, ...(variable.length !== undefined ? { length: variable.length } : {}) });
     // What it held, no longer meaning the same — another kind or unit, out of its range — goes back to what it starts as.
     const kept = deps.variables.value(had.id);
     if (kept && !stillHolds(had, variable, kept.value)) deps.variables.clear(had.id);

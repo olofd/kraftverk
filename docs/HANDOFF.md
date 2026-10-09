@@ -7,7 +7,7 @@ data model in [`DATA-MODEL.md`](DATA-MODEL.md). This document holds only what
 those cannot: where things stand right now, and what has been learned the hard
 way. Where it describes code that the plan replaces, the plan is the target.
 
-Last updated 2026-10-08.
+Last updated 2026-10-09.
 
 > **Phase: research and development — strict version 1.** Nobody runs
 > kraftverk in production but its owner, so nothing here is kept backward
@@ -183,6 +183,15 @@ empty: the core names no product, and every device is found, not listed.
   let act, audited. The shared recipes (`standard.*` in the SDK: a battery
   running low, charging between two levels, mains lost) and the packages'
   own (the forecast switch) are what automations are made from.
+- **Home variables and more triggers** (2026-10-09,
+  [PLAN-VARIABLES-AND-TRIGGERS.md](PLAN-VARIABLES-AND-TRIGGERS.md) §7):
+  each home's own typed values — toggle, number, choice, text, time,
+  counter, timer — read as `home.var.x`, set and counted and timed by steps,
+  people (the home screen, App settings › Variables) and scripts
+  (`home.vars`); and triggers `on start`, `changes` (with `run.from`,
+  `run.to`), `at` in months, on dates and from a time variable, `every`
+  from a minute, on the minute. Configuration version 21. V2's schedules,
+  derived variables and history, and T2/T3 (hooks, MQTT), are next.
 
 **Without a server.** The app does not need one. A server is a client-side
 record — address, name — kept in `localStorage` by

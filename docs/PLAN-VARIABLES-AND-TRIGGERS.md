@@ -334,7 +334,9 @@ Not yet: a page of its own for each variable, and its history (V2).
   process, not for an automation made or changed;
 - `months` and `dates` on `at`, through `runsOn`, so the engine and
   rehearsal follow; drawn as twelve toggles and dates typed;
-- `at:` a home's time variable — refused for one of words — and the form
+- `at:` a home's time variable — refused for one of words; late by a
+  minute at most, not the hour a fixed time is caught up by, so a time
+  moved to one just past has not come — and the form
   draws a time, the sun (at it, or so long before or after) or a time
   variable, saying in words what it cannot draw;
 - `changes:` a reading or a variable, with `from`, `to` (written plainly:
@@ -346,3 +348,27 @@ Not yet: a page of its own for each variable, and its history (V2).
 
 Not yet: rehearsing a variable's change — variables keep no history until
 V2, and rehearsal says so.
+
+**V2, timers — 2026-10-09.** The first of V2's four parts:
+
+- a variable of `kind: timer`: its length (`for:`, a second to a week),
+  and its state as what it holds — `idle`, `running`, `paused`, `ended`
+  (`TIMER_STATES`), so `changes: home.var.oven` with `to: ended`, or a
+  condition, waits for it;
+- the hub keeps a running timer's deadline beside its value and ends it by
+  one clock timeout, to the second; a restart takes up what was running and
+  ends at once what passed meanwhile (`Variables.start`);
+- steps `start timer:` (its length, or `for:`) and `stop timer:`; a person
+  starts, pauses, resumes and stops one on the home screen, which counts it
+  down; scripts `home.startTimer(key, seconds?)`, `home.stopTimer(key)`;
+  the API `variables.timer(homeId, key, action)` (`scripted`); a timer is
+  never `set`;
+- the file: version 21.
+
+**Where this round stopped.** V2's other parts are not begun, and nothing
+of them is in the schema: schedules (a week's blocks), derived variables (an
+expression, worked out again as what it reads moves), and history — a
+variable's changes kept as samples are, `average(home.var.x, 1 h)` and
+`ago` over them, a page per variable with its chart, timeline and what uses
+it, and rehearsal reading them. Then T2 (hooks) and T3 (MQTT), as §4 orders
+them.

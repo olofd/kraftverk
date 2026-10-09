@@ -413,6 +413,7 @@ export function followerApi(h: Follower): KraftverkApi {
       remove: (id) => home.variables.remove(id),
       set: (homeId, key, value) => home.variables.set(homeId, key, value),
       count: (homeId, key, count) => home.variables.count(homeId, key, count),
+      timer: (homeId, key, action) => home.variables.timer(homeId, key, action),
     },
     scripts: {
       list: () => home.scripts.list(),

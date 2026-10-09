@@ -118,6 +118,7 @@ export type KindDocs = { summary: string; examples: readonly string[] };
 export type KindIcon =
   | 'clock'
   | 'shuffle'
+  | 'x-circle'
   | 'repeat'
   | 'activity'
   | 'bell'

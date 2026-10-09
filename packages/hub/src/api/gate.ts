@@ -160,6 +160,7 @@ export const GATES = {
   'variables.remove': act,
   'variables.set': scripted,
   'variables.count': scripted,
+  'variables.timer': scripted,
   'occupancy.now': read,
   'occupancy.history': read,
   'zones.list': read,

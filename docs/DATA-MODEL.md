@@ -374,6 +374,7 @@ erDiagram
   person ||--o{ automation_world : "fills"
   automation ||--o{ automation_memory : "remembers"
   automation ||--o{ automation_trigger : "watches with"
+  automation ||--o{ automation_trigger_seen : "saw"
   automation ||--o{ automation_run : "ran"
   automation_run |o--o{ automation_run : "started"
   automation_run ||--o{ automation_run_device : "used"
@@ -711,6 +712,12 @@ erDiagram
     text held_since "2026-10-16T05:00:12Z"
     int fired "1"
   }
+  automation_trigger_seen {
+    text automation_id PK "a-71c2d0e5f9a371c2"
+    text trigger PK "#0 · its id, or its place"
+    text value "56 · JSON, what it last saw"
+    text unit "% · null: none"
+  }
   automation_run {
     text id PK "r-5b2e90c4a1d3f7e2"
     text automation_id FK "a-71c2d0e5f9a371c2"
@@ -893,7 +900,7 @@ each one's master is: this device, or a server by its address.
 | `notification`, `push_endpoint` | What each person was told — by an automation, a device, a person — read or not, kept 90 days; and where each of their apps is woken with it: a browser's push subscription, per node, a secret in effect. A push its service says is gone forgets the app. | `hub.notify`; App settings › Notifications |
 | `presence_stay` | Where people have been: stays at a home or in a zone, and in a room, as intervals — the open ones are where each is now. Worked out from the freshest position of what each carries: arriving inside a geofence, leaving after five minutes out of it; at one home at a time, zones overlapping. A room from a carried device's spot on its own map (a watch a room's beacons hear), anchored where that device is placed: the innermost drawn room it falls in, one at a time, ended when the spot is two minutes old; kept at `places` and above. Kept only as far as each shares (homes alone at home-away, nothing at off) and as long as each says; never on the timeline or in the file. | as positions arrive (`packages/hub/src/presence`) |
 | `mode`, `home_mode`, `home_mode_said` | A home's modes on two axes — presence (home, away, vacation) and the day (day, evening, night) — and the family's own on either, by key; and what set each home's, with who: a setting for good from a time (until the next for good), or one planned from a time until another — a vacation from Saturday — after which the setting for good in force then is again. A setting for good leaves what is planned ahead as it is; set while one planned lasts, it ends it. Every home is in a mode on each axis: home and day until something says otherwise. Which mode was last said on the bus, per home and axis, so what began while nobody listened is said when someone does. Kept two years; the family's own modes in the file, never which a home is in. | the home screen, App settings › Modes, automations (`packages/hub/src/modes`) |
-| `variable`, `variable_value` | A home's variables (docs/PLAN-VARIABLES-AND-TRIGGERS.md): each by a key in camelCase unique among the home's not let go, its kind — toggle, number, choice, text, time, counter — and its field (title, unit, range, options, what it starts as) as JSON, in its order; let go, archived. What each holds now, beside it: the value as JSON, when and by whom it was set — none, what it starts as. Only the last value is kept; the file carries what each is, never what it holds. | the home screen, App settings › Variables, automations and scripts (`packages/hub/src/variables`) |
+| `variable`, `variable_value` | A home's variables (docs/PLAN-VARIABLES-AND-TRIGGERS.md): each by a key in camelCase unique among the home's not let go, its kind — toggle, number, choice, text, time, counter, timer — and its field (title, unit, range, options, what it starts as) as JSON, a timer's length in seconds (only a timer has one), in its order; let go, archived. What each holds now, beside it: the value as JSON, when and by whom it was set — none, what it starts as — and a timer's `deadline` running, or `left_ms` paused: what a restart takes it up by. Only the last value is kept; the file carries what each is, never what it holds. | the home screen, App settings › Variables, automations and scripts (`packages/hub/src/variables`) |
 | `occupancy`, `occupancy_evidence` | Whether a space has someone in it, whoever they are, as intervals, with the devices that said so: a radar while it says so; motion, and five minutes after unless a radar there says nobody is; a count above nought, the most counted its peak; a closed room — every way in a door whose contact says it is shut — with motion that began after the last shut, until a door opens; a person's room stay, by no device (who it was is theirs). Times are when a value changed, never when a device last spoke; just started, nothing is ended for the length of a hold. A floor, a building and the site are occupied while a space within is, a counter there counting what is within. Each change said on the bus. Kept 30 days; never on the timeline or in the file. | as sensors report (`packages/hub/src/occupancy`) |
 | `device_person` | Who a device is with, as intervals: who carries it — its position is theirs, what presence goes by — its usual driver, whose it is, who uses it. One carrier and one driver at a time; one who leaves the family is with none of its devices. | a device's settings; from a file |
 | `place` (zones) | A zone is a place as a home is, with no home beside it: school, work — always somewhere, a circle by its radius, archived when let go. | App settings › Zones; from a file |
@@ -922,6 +929,7 @@ each one's master is: this device, or a server by its address.
 | `automation_world` | Who and where fills each role of the family's world: a person, some people in order, everyone, or a place — a home, a zone, a space of the automation's home. | made, changed |
 | `automation_memory` | What each automation remembers, by name: the value a run last left it, kept across runs, restarts and changes to it. | as a run remembers |
 | `automation_trigger` | Each `becomes` trigger's state, so a restart continues a hold and never fires one twice. | as its conditions are looked at |
+| `automation_trigger_seen` | What each `changes` trigger last saw of what it watches, as JSON in its unit: what a change is from, so a restart sees and does not start. Let go as the automation starts afresh. | as what it watches moves |
 | `automation_run` | Every run, with each step it took; the unended one is running now, written at every step — one at a time, held by a unique index. A restart ends it as interrupted (docs/SEQUENCES.md). | as it runs |
 | `automation_run_device`, `automation_run_role`, `automation_run_key` | A run's log, as the run saw its world: each device it used (its name and type then), which part of which device filled each role, and what each value it kept is (part, label, kind, unit, quantity, the words for on/off and options) — so a log stays whole when a device is renamed, re-described or removed, or a role filled by another. | as a run that takes steps begins, and as a value is first seen |
 | `automation_run_reading`, `automation_run_reach` | Every reading each device a run uses gave while it ran — each time its value or time changed, at the time the device took it and the time the run heard it — and each change in whether it could be reached, and why not. Heard as each device says it on the live bus, whenever a step judges or a switch is made, and every second; at most 20 000 readings a run, gone with its run. What a run's log page draws, and what a run is debugged from. | as devices speak while it runs |

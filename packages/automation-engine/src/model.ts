@@ -123,6 +123,8 @@ export type EngineWorld = {
    * of its kind or in its range.
    */
   setVariable(homeId: string, key: string, value: Value, by: GatewayActor, cause: readonly string[]): void;
+  /** One of a home's timers started — for its length, or so many seconds — or stopped, as an automation. Thrown when it is no timer, or the length is not one. */
+  timer(homeId: string, key: string, action: { action: 'start'; seconds?: number } | { action: 'stop' }, by: GatewayActor, cause: readonly string[]): void;
   /** People told something: each one's inbox, and a push sent on its way. Who was told: members only. */
   notify(people: readonly string[], message: { title: string; text: string | null; level: NotifyLevel; homeId: string | null }, by: GatewayActor): { told: readonly string[] };
 };

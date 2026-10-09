@@ -14,8 +14,8 @@ import { CLOCK_TIME } from './clock.ts';
   and who set it, is the hub's.
 */
 
-/** How a variable holds and changes: yes or no, a number in a unit, one of its options, words, a time of day, a count. */
-export const VARIABLE_KINDS = ['toggle', 'number', 'choice', 'text', 'time', 'counter'] as const;
+/** How a variable holds and changes: yes or no, a number in a unit, one of its options, words, a time of day, a count, a timer. */
+export const VARIABLE_KINDS = ['toggle', 'number', 'choice', 'text', 'time', 'counter', 'timer'] as const;
 
 export type VariableKind = (typeof VARIABLE_KINDS)[number];
 
@@ -27,10 +27,35 @@ export const VARIABLE_KIND_WORDS: Readonly<Record<VariableKind, { label: string;
   text: { label: 'Words', says: 'A line of text: a note for the family, a message to show.' },
   time: { label: 'A time of day', says: 'A time on the clock: when to wake, when quiet hours start.' },
   counter: { label: 'A counter', says: 'A whole number counted up and down: the times the dryer ran.' },
+  timer: { label: 'A timer', says: 'Started for so long, it ends on its own: the laundry, a reminder to check the oven.' },
 };
 
-/** A home's variable, as the language sees it: its key, how it holds, and its field — its title, its type, its range, what it starts as. */
-export type VariableSpec = { key: string; kind: VariableKind; field: ConfigField };
+/**
+ * What a timer holds — its state, which automations read and wait for: not
+ * started (or stopped), running, paused, or ended — run its time out, until
+ * started again.
+ */
+export const TIMER_STATES = [
+  { value: 'idle', label: 'Not running' },
+  { value: 'running', label: 'Running' },
+  { value: 'paused', label: 'Paused' },
+  { value: 'ended', label: 'Ended' },
+] as const;
+
+export type TimerState = (typeof TIMER_STATES)[number]['value'];
+
+/** How long a timer may run, in seconds: a second, up to a week — a wait one timeout keeps. */
+export const TIMER_SECONDS = { min: 1, max: 7 * 24 * 3600 } as const;
+
+/** A timer's field: its title, and its states as its options — what it holds. */
+export const timerField = (title: string, description?: string): ConfigField => ({ type: 'enum', title, ...(description ? { description } : {}), options: TIMER_STATES.map((state) => ({ value: state.value, label: state.label })) });
+
+/**
+ * A home's variable, as the language sees it: its key, how it holds, and
+ * its field — its title, its type, its range, what it starts as — and, a
+ * timer, how long it runs when started without saying (`length`, seconds).
+ */
+export type VariableSpec = { key: string; kind: VariableKind; field: ConfigField; length?: number };
 
 /** A variable's key: a word in camelCase, as a setting's or a memory's name — `guests`, `dryerRuns`. */
 export const VARIABLE_KEY = CAMEL_NAME;
@@ -50,7 +75,7 @@ export function variableProblems(spec: VariableSpec): string[] {
   if (!VARIABLE_KINDS.includes(kind)) return [`A variable is one of: ${VARIABLE_KINDS.join(', ')}`];
   if (!VARIABLE_KEY.test(spec.key)) problems.push(`"${spec.key}": a variable's key is a word in camelCase, as "dryerRuns"`);
   if (typeof field?.title !== 'string' || !field.title.trim() || field.title.length > 60) problems.push('A variable has a title of 1 to 60 characters');
-  const wants: Record<VariableKind, ConfigField['type']> = { toggle: 'boolean', number: 'number', choice: 'enum', text: 'string', time: 'string', counter: 'number' };
+  const wants: Record<VariableKind, ConfigField['type']> = { toggle: 'boolean', number: 'number', choice: 'enum', text: 'string', time: 'string', counter: 'number', timer: 'enum' };
   if (field?.type !== wants[kind]) {
     problems.push(`A ${VARIABLE_KIND_WORDS[kind].label.toLowerCase()} holds ${wants[kind] === 'enum' ? 'one of its options' : wants[kind]}, not ${field?.type}`);
     return problems;
@@ -71,6 +96,12 @@ export function variableProblems(spec: VariableSpec): string[] {
     if (field.step !== undefined && !(field.step > 0)) problems.push('Its step is more than nought');
     if (field.min !== undefined && field.max !== undefined && field.min > field.max) problems.push(`Its least, ${field.min}, is more than its most, ${field.max}`);
   }
+  if (kind === 'timer') {
+    // Its states are its own, not a person's to choose: what automations wait for is the same in every home.
+    if (field.type !== 'enum' || field.options.map((option) => option.value).join() !== TIMER_STATES.map((state) => state.value).join()) problems.push(`A timer holds its states: ${TIMER_STATES.map((state) => state.value).join(', ')}`);
+    if (field.default !== undefined) problems.push('A timer starts not running');
+    if (spec.length === undefined || !Number.isInteger(spec.length) || spec.length < TIMER_SECONDS.min || spec.length > TIMER_SECONDS.max) problems.push('A timer runs for a whole number of seconds, from a second to a week');
+  } else if (spec.length !== undefined) problems.push('Only a timer has a length');
   if (field.type === 'enum' && !field.options?.length) problems.push('A choice has at least one option');
   if (field.type === 'enum' && new Set(field.options.map((option) => option.value)).size !== field.options.length) problems.push('A choice has each option once');
   if (field.type === 'enum' && field.options.some((option) => !option.value || option.value.length > 40)) problems.push('Each option’s value is 1 to 40 characters');
@@ -155,7 +186,7 @@ export function variableKeyFrom(title: string, taken: (key: string) => boolean):
 }
 
 /** A variable as a person first says it: its title and kind — and, by its kind, a unit and range, or options. */
-export type VariableTyped = { title: string; kind: VariableKind; unit?: Unit | null; min?: number | null; max?: number | null; options?: readonly string[] };
+export type VariableTyped = { title: string; kind: VariableKind; unit?: Unit | null; min?: number | null; max?: number | null; options?: readonly string[]; length?: number | null };
 
 /** What a person typed for a variable they made: what the form starts from when they change it. */
 export function variableTypedOf(spec: VariableSpec): VariableTyped {
@@ -164,7 +195,8 @@ export function variableTypedOf(spec: VariableSpec): VariableTyped {
     title: field.title,
     kind: spec.kind,
     ...(field.type === 'number' ? { unit: field.unit ?? null, min: spec.kind === 'counter' && field.min === 0 ? null : (field.min ?? null), max: field.max ?? null } : {}),
-    ...(field.type === 'enum' ? { options: field.options.map((option) => option.label) } : {}),
+    ...(field.type === 'enum' && spec.kind !== 'timer' ? { options: field.options.map((option) => option.label) } : {}),
+    ...(spec.kind === 'timer' ? { length: spec.length ?? null } : {}),
   };
 }
 
@@ -208,6 +240,8 @@ export function variableFieldOf(typed: VariableTyped, was?: ConfigField): Config
       case 'text':
       case 'time':
         return { type: 'string', title, ...described };
+      case 'timer':
+        return timerField(title, was?.description);
     }
   })();
   // What it started as, kept where it still fits what it is now.

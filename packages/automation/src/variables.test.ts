@@ -6,7 +6,7 @@ import { parseExpr, printExpr } from './text/expr.ts';
 import { variableFromConfig, variableToConfig } from './text/variables.ts';
 import type { ConfigField } from '@kraftverk/device-sdk';
 
-import { counted, stillHolds, variableFieldOf, variableKeyFrom, variableProblems, variableStart, variableTypedOf, variableValueText, type VariableSpec } from './variables.ts';
+import { counted, stillHolds, timerField, variableFieldOf, variableKeyFrom, variableProblems, variableStart, variableTypedOf, variableValueText, type VariableSpec } from './variables.ts';
 
 /*
   A home's variables, as the language has them: what each starts as, how a
@@ -98,6 +98,22 @@ describe('a variable', () => {
     const target = variableFromConfig('target', { kind: 'number', starts: '20 °C', step: '0.9 °F' }, [], fail);
     expect(target.field.type === 'number' && target.field.step).toBeCloseTo(0.5);
     expect(variableToConfig({ key: 'tiny', kind: 'number', field: { type: 'number', title: 'Tiny', unit: 'W', default: 0.0000001 } })).toEqual({ kind: 'number', starts: '0.0000001 W' });
+  });
+
+  test('a timer: its states its own, a length from a second to a week — and in a file, for so long', () => {
+    const laundry: VariableSpec = { key: 'laundry', kind: 'timer', field: timerField('Laundry'), length: 45 * 60 };
+    expect(variableProblems(laundry)).toEqual([]);
+    expect(variableStart(laundry)).toBe('idle');
+    expect(variableProblems({ ...laundry, length: 0 })).toEqual(['A timer runs for a whole number of seconds, from a second to a week']);
+    expect(variableProblems({ ...laundry, field: { type: 'enum', title: 'Laundry', options: [{ value: 'on', label: 'On' }] } })).toEqual(['A timer holds its states: idle, running, paused, ended']);
+    expect(variableProblems({ ...RUNS, length: 60 })).toEqual(['Only a timer has a length']);
+    const fail = (message: string): never => {
+      throw new Error(message);
+    };
+    expect(variableFromConfig('laundry', { kind: 'timer', for: '45 min' }, [], fail)).toEqual(laundry);
+    expect(variableToConfig(laundry)).toEqual({ kind: 'timer', for: '45 min' });
+    expect(() => variableFromConfig('laundry', { kind: 'timer' }, [], fail)).toThrow('A timer says how long it runs');
+    expect(variableFieldOf({ title: 'Oven', kind: 'timer' })).toEqual(timerField('Oven'));
   });
 
   test('typed by a person: its key from its title, its field from its kind', () => {

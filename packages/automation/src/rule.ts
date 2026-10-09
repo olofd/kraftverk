@@ -412,6 +412,10 @@ export type Step =
   | { setVariable: { key: string; to: Expr; at?: string } }
   /** A counter counted — up by one, or `by` so many (down, below nought) — or `reset` to what it starts as. */
   | { count: { key: string; by?: Expr; reset?: boolean; at?: string } }
+  /** A timer started — for its length, or `for` so long (seconds) — and ending on its own; started while it runs, it starts again. */
+  | { startTimer: { key: string; for?: Expr; at?: string } }
+  /** A timer stopped: not running, not ended. */
+  | { stopTimer: { key: string; at?: string } }
   /**
    * Tell people something: in their inbox, and pushed to their phones — a
    * person, several (a people role), or everyone in the family (`to`

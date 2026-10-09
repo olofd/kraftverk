@@ -46,6 +46,8 @@ import type { Seen, TriggerState } from './storage.ts';
 
 /** Late, but not too late: a server that was down at 07:00 still acts at 07:20, not at 15:00. */
 const GRACE_MS = 60 * 60_000;
+/** A time a home's variable says is late by a look at most: one moved to a minute just past has not come. */
+const VARIABLE_GRACE_MS = 60_000;
 
 /** The triggers of people and places that are a change seen, not a state found: none fires for how things already are. */
 const seenNotFound = (trigger: RuleTrigger): boolean => {
@@ -93,8 +95,10 @@ export class Triggers {
         const timer = this.#context.clock.setTimeout(() => {
           this.#starting.delete(timer);
           const current = this.deps.store.get(automation.id);
-          // Turned off since, or gone: nothing.
+          // Turned off since, or gone — or changed so this is no longer a trigger on start: nothing.
           if (!current || current.mode === 'off') return;
+          const still = current.rule.when.findIndex((each, at) => triggerKey(each, at) === key);
+          if (still < 0 || !('onStart' in current.rule.when[still]!)) return;
           void this.#runs.runAndKeep(current, seconds ? `Kraftverk started ${secondsText(seconds)} ago` : 'Kraftverk started', key).catch((error) => console.error(`[automations] ${automation.id} could not run as kraftverk started:`, error));
         }, seconds * 1000);
         this.#starting.add(timer);
@@ -449,7 +453,8 @@ export class Triggers {
   async #changed(automation: AutomationRecord, rule: Rule, trigger: Extract<RuleTrigger, { changes: unknown }>, index: number, cause?: readonly string[], quiet = false): Promise<void> {
     const key = triggerKey(trigger, index);
     const cacheKey = `${automation.id}:${key}`;
-    const before = this.#seen.has(cacheKey) ? this.#seen.get(cacheKey)! : this.deps.store.seen(automation.id, key);
+    if (!this.#seen.has(cacheKey)) this.#seen.set(cacheKey, this.deps.store.seen(automation.id, key));
+    const before = this.#seen.get(cacheKey)!;
     const seen = changeSeen(trigger, before, this.#context.scope(automation, rule));
     if (seen.kind === 'unknown' || seen.kind === 'same') return;
     const now = seen.kind === 'first' ? seen.seen : seen.to;
@@ -516,7 +521,8 @@ export class Triggers {
       if (!runsOn(trigger, day)) return false;
       const time = zonedInstant({ ...day, hour, minute }, automation.timeZone);
       const since = now.getTime() - time.getTime();
-      if (since < 0 || since > GRACE_MS) return false;
+      // One taken from a variable is late by a look at most: moved to a time just past, it has not come.
+      if (since < 0 || since > ('variable' in trigger.at ? VARIABLE_GRACE_MS : GRACE_MS)) return false;
       return !Number.isFinite(lastStarted) || lastStarted < time.getTime();
     });
   }

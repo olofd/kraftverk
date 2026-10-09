@@ -936,16 +936,19 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         else if (means !== undefined) {
           if (typeof means !== 'string' || !standardMeaning(means)) problems.push(`${at}.write.means: "${String(means)}" is not a standard meaning`);
         } else if (typeof key !== 'string' || !key.trim()) problems.push(`${at}.write.key: which setting?`);
-      } else if ('setVariable' in step || 'count' in step) {
-        // A home's variable: there, of the kind the step changes — any but a derived one is set; a counter is counted — and given what fits it.
-        const set = 'setVariable' in step ? step.setVariable : step.count;
-        const which = `${at}.${'setVariable' in step ? 'setVariable' : 'count'}.key`;
+      } else if ('setVariable' in step || 'count' in step || 'startTimer' in step || 'stopTimer' in step) {
+        // A home's variable: there, of the kind the step changes — a counter is counted, a timer started and stopped, any other set — and given what fits it.
+        const name = 'setVariable' in step ? 'setVariable' : 'count' in step ? 'count' : 'startTimer' in step ? 'startTimer' : 'stopTimer';
+        const set = 'setVariable' in step ? step.setVariable : 'count' in step ? step.count : 'startTimer' in step ? step.startTimer : step.stopTimer;
+        const which = `${at}.${name}.key`;
         const home = set.at ?? OWN_HOME;
         const known = vocabulary.variables?.(home);
         const found = known?.find((each) => each.key === set.key);
         if (!set.key) problems.push(`${which}: which variable?`);
         else if (known && !found) problems.push(`${which}: ${home === OWN_HOME ? 'its home' : home} has no variable "${set.key}"${known.length ? `: it has ${known.map((each) => each.key).join(', ')}` : ''}`);
         else if (found && 'count' in step && found.kind !== 'counter') problems.push(`${which}: ${found.field.title} is not a counter — set it instead`);
+        else if (found && ('startTimer' in step || 'stopTimer' in step) && found.kind !== 'timer') problems.push(`${which}: ${found.field.title} is not a timer`);
+        else if (found && 'setVariable' in step && found.kind === 'timer') problems.push(`${which}: ${found.field.title} is a timer — start it, or stop it`);
         else if (found && 'setVariable' in step) {
           const to = step.setVariable.to;
           const got = shapes.to ?? { type: 'unknown' };
