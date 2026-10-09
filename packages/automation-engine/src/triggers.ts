@@ -24,7 +24,7 @@ import {
   type Rule,
   type Trigger,
 } from '@kraftverk/automation';
-import { dayAfter, localTime, MAIN_PART, zonedInstant, type ClockTimer } from '@kraftverk/device-sdk';
+import { dayAfter, localTime, MAIN_PART, SYSTEM, zonedInstant, type ClockTimer } from '@kraftverk/device-sdk';
 import type { LiveMessage } from '@kraftverk/holder';
 
 import type { RuleContext } from './context.ts';
@@ -210,6 +210,8 @@ export class Triggers {
   /** What a device said: an event some automation waits for, or a reading some condition reads. And the family's world moving. */
   async hear(message: LiveMessage): Promise<void> {
     if (message.kind === 'presence' || message.kind === 'occupancy' || message.kind === 'mode' || message.kind === 'variable') return this.#heardWorld(message);
+    // A home's variables declared anew: what reads them looks again — a cleared one may have changed what a condition says.
+    if (message.kind === 'variables') return this.#heardWorld({ kind: 'variable', homeId: message.homeId, key: '', value: null, previous: null, by: SYSTEM, cause: [], at: message.at });
     if (message.kind !== 'event' && message.kind !== 'readings') return;
     for (const indexed of this.#concerning(message.deviceId)) {
       const automation = this.deps.store.get(indexed.id) ?? indexed;
@@ -267,7 +269,8 @@ export class Triggers {
         return 'everyone' in fill;
       };
       // A variable set by a run it led to itself — or a chain too long — is not looked at again by it: two would set it back and forth for ever.
-      if (message.kind === 'variable' && (message.cause.includes(automation.id) || message.cause.length >= SEQUENCE_LIMITS.chain)) continue;
+      // Its edge is still kept — set back by its own run, a person setting it again is a change it sees — but it does not start.
+      const quiet = message.kind === 'variable' && (message.cause.includes(automation.id) || message.cause.length >= SEQUENCE_LIMITS.chain);
       for (const [index, trigger] of rule.when.entries()) {
         let why: string | null = null;
         if (message.kind === 'presence') {
@@ -295,7 +298,7 @@ export class Triggers {
           continue;
         }
         // A condition of people and places — or a `becomes` that reads them — looked at again: one a variable's change starts carries the runs that led to it.
-        if (edgeOf(trigger)) this.#becomes(automation, rule, trigger, index, message.kind === 'variable' ? message.cause : undefined);
+        if (edgeOf(trigger)) this.#becomes(automation, rule, trigger, index, message.kind === 'variable' ? message.cause : undefined, quiet);
       }
     }
   }
@@ -306,7 +309,7 @@ export class Triggers {
    * already true. Its state is kept after every change, so a restart resumes
    * a hold with the time it had left and never fires one twice.
    */
-  #becomes(automation: AutomationRecord, rule: Rule, trigger: RuleTrigger, index: number, cause?: readonly string[]): void {
+  #becomes(automation: AutomationRecord, rule: Rule, trigger: RuleTrigger, index: number, cause?: readonly string[], quiet = false): void {
     const edge = edgeOf(trigger);
     if (!edge) return;
     const key = `${automation.id}:${triggerKey(trigger, index)}`;
@@ -340,9 +343,11 @@ export class Triggers {
 
     const turned = !state.last;
     if (turned) {
-      Object.assign(state, { last: true, heldSince: this.#context.now().toISOString(), fired: false });
+      // Turned true by its own run — or a chain too long — it is seen, and dealt with: not a start.
+      Object.assign(state, { last: true, heldSince: this.#context.now().toISOString(), fired: quiet });
       keep();
     }
+    if (quiet) return;
     // True, and already dealt with.
     if (state.fired) return;
 

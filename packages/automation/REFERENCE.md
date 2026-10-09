@@ -664,7 +664,7 @@ do:
 
 ```yaml
 do:
-  - count: guests
+  - count: visitors
     by: -1
 ```
 

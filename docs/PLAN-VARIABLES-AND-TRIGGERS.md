@@ -318,7 +318,8 @@ Each slice green and pushed; e2e for each in the browser first.
 - scripts: `home.vars.key`, `home.setVariable`, `home.count`,
   `home.resetCounter`, typed per home;
 - the app: the variables card on the home screen, App settings ›
-  Variables, the editor's steps and "A variable" as a condition;
+  Variables — each added, and changed: its title, range, options, its key
+  and kind kept — the editor's steps and "A variable" as a condition;
 - the file: version 19, `homes.<key>.variables`.
 
 Not yet: a page of its own for each variable, and its history (V2); T1

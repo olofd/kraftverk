@@ -76,7 +76,7 @@ export function toRemember(schema: ConfigSchema, name: string, measured: Measure
   }
   if (value === null) return { problem: `${field.title} cannot be told now` };
   const checked = checkValue(valueTypeOf(field), value);
-  return checked.ok ? { value } : { problem: `${field.title} ${checked.problem}` };
+  return checked.ok ? { value: checked.value } : { problem: `${field.title} ${checked.problem}` };
 }
 
 /** A number worked out without the float's dust: 0.1 + 0.2 is 0.3. */

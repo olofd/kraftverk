@@ -80,6 +80,30 @@ const withHome = (name: (role: string) => string) => (role: string) => (role ===
 /** Where a place is, after "at": "at home", "at Work". */
 const atPlace = (place: string, name: (role: string) => string) => (place === OWN_HOME ? 'at home' : `at ${name(place)}`);
 
+/** One of a home's variables as its home has it; null when it is not known here. */
+const variableSpec = (key: string, at: string, vocabulary?: RuleVocabulary) => vocabulary?.variables?.(at)?.find((each) => each.key === key) ?? null;
+
+/**
+ * One of a home's variables, by its title as written — “Guests staying”,
+ * another home's as “Cabin’s Wake at” — and one not chosen yet, as that.
+ * Its title kept whole: a phrase lowercased mid-sentence reads as words.
+ */
+export const variableName = (key: string, at: string, name: (role: string) => string, vocabulary?: RuleVocabulary): string => {
+  if (!key) return 'a variable not chosen yet';
+  const title = variableSpec(key, at, vocabulary)?.field.title ?? key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/^./, (first) => first.toUpperCase());
+  return at === OWN_HOME ? `“${title}”` : `${whose(name(at), `“${title}”`)}`;
+};
+
+/** A value one of a home's variables is given or compared with, in its words: its option's label, in its unit — a time not chosen, as that. */
+const variableValueWords = (key: string, at: string, expr: Expr, text: (expr: Expr) => string, vocabulary?: RuleVocabulary): string => {
+  const field = variableSpec(key, at, vocabulary)?.field;
+  if (!('value' in expr) || !field) return text(expr);
+  if (expr.value === null) return 'nothing';
+  if (field.type === 'enum' && typeof expr.value === 'string') return `“${enumLabel(field, expr.value)}”`;
+  if (field.type === 'number' && field.unit && typeof expr.value === 'number' && !expr.unit) return text({ ...expr, unit: field.unit });
+  return text(expr);
+};
+
 const OP_WORDS: Record<CompareOp, string> ={ lt: 'is below', le: 'is at most', gt: 'is above', ge: 'is at least', eq: 'is', ne: 'is not' };
 
 /**
@@ -254,6 +278,10 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
       }
       case 'compare': {
         const comparison = expr as ExprOf<'compare'>;
+        // One of the home's variables compared with a value: the value in its words — its option's, its unit.
+        if ('variable' in comparison.left && !comparison.left.variable.key) return text(comparison.left);
+        if ('variable' in comparison.left && 'value' in comparison.right)
+          return `${text(comparison.left)} ${OP_WORDS[comparison.compare]} ${variableValueWords(comparison.left.variable.key, comparison.left.variable.at, comparison.right, (each) => text(each), vocabulary)}`;
         return started(comparison) ?? chosen(comparison) ?? `${text(comparison.left, unitOf(comparison.right))} ${OP_WORDS[comparison.compare]} ${text(comparison.right, unitOf(comparison.left))}`;
       }
       case 'all':
@@ -265,10 +293,8 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
       case 'memory':
         return memoryWords(rule, (expr as ExprOf<'memory'>).memory);
       case 'variable': {
-        // By its title, as its home says it: "the home's guests staying".
         const { key, at } = (expr as ExprOf<'variable'>).variable;
-        const title = vocabulary?.variables?.(at)?.find((each) => each.key === key)?.field.title ?? key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
-        return `${at === OWN_HOME ? 'the home' : name(at)}’s ${title.charAt(0).toLowerCase()}${title.slice(1)}`;
+        return variableName(key, at, name, vocabulary);
       }
       case 'input':
         // By its name, a noun — "the level it was given" — not its title, which may be a phrase ("Charge to").
@@ -425,6 +451,7 @@ function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (rol
     event: (role, event) => eventWords(rule, role, event),
     mode: (key) => modeWords(key, vocabulary),
     variable: (key, at) => text({ variable: { key, at: at ?? OWN_HOME } }),
+    variableValue: (key, at, expr) => variableValueWords(key, at ?? OWN_HOME, expr, text, vocabulary),
     // Each value in braces said in words: "{Garage station’s charge}".
     message: (words) => sayMessage(words, (expr) => `{${text(expr)}}`),
   };

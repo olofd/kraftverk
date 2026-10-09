@@ -291,6 +291,10 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         problems.push(`${where}: a variable is a home's — home.var.${key}, or one of a home a role fills — and "${at}" is not one`);
         return { type: 'unknown' };
       }
+      if (!key) {
+        problems.push(`${where}: which variable?`);
+        return { type: 'unknown' };
+      }
       const known = vocabulary.variables?.(at);
       if (!known) return { type: 'unknown' };
       const found = known.find((each) => each.key === key);
@@ -888,12 +892,19 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         else if (known && !found) problems.push(`${which}: ${home === OWN_HOME ? 'its home' : home} has no variable "${set.key}"${known.length ? `: it has ${known.map((each) => each.key).join(', ')}` : ''}`);
         else if (found && 'count' in step && found.kind !== 'counter') problems.push(`${which}: ${found.field.title} is not a counter — set it instead`);
         else if (found && 'setVariable' in step) {
+          const to = step.setVariable.to;
           const got = shapes.to ?? { type: 'unknown' };
           const wanted = shapeOf(variableType(found));
-          if (!fits(wanted, got)) problems.push(`${at}.setVariable.to: ${found.field.title} is ${said(wanted)}, not ${said(got)}`);
-          else literalFits(step.setVariable.to, variableType(found), `${at}.setVariable.to`);
+          // Nothing is not a value to set: what it starts as is the home's, and a time not given is a time to choose.
+          if ('value' in to && to.value === null) problems.push(`${at}.setVariable.to: to what?`);
+          else if (!fits(wanted, got)) problems.push(`${at}.setVariable.to: ${found.field.title} is ${said(wanted)}, not ${said(got)}`);
+          else if (found.kind === 'time' && 'value' in to && (typeof to.value !== 'string' || !CLOCK_TIME.test(to.value))) problems.push(`${at}.setVariable.to: ${found.field.title} is a time of day: 07:00`);
+          else literalFits(to, variableType(found), `${at}.setVariable.to`);
         }
-        if ('count' in step && step.count.by !== undefined && !fits({ type: 'number', unit: '' }, shapes.by ?? { type: 'unknown' })) problems.push(`${at}.count.by: by a whole number`);
+        if ('count' in step && step.count.by !== undefined) {
+          const by = step.count.by;
+          if (!fits({ type: 'number', unit: '' }, shapes.by ?? { type: 'unknown' }) || ('value' in by && (typeof by.value !== 'number' || !Number.isInteger(by.value)))) problems.push(`${at}.count.by: by a whole number`);
+        }
         if ('count' in step && step.count.reset && step.count.by !== undefined) problems.push(`${at}.count: start it over, or count it by so many — not both`);
       } else if ('remember' in step) {
         // What it remembers is held to what it is: its kind, and a unit of its dimension.

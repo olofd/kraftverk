@@ -86,9 +86,13 @@ export function variableFromConfig(key: string, data: unknown, path: Path, fail:
       const inUnit = (name: string): number | undefined => {
         const number = written.find((each) => each.name === name);
         if (!number) return undefined;
-        if (!unit) return number.unit ? fail(`"${name}" says ${number.unit}, but the variable has no unit`, [...path, name]) : number.value;
-        const converted = convert(number.value, number.unit ?? unit, unit);
-        return converted === null ? fail(`"${name}" is in ${number.unit}, not a unit of ${unit}`, [...path, name]) : converted;
+        if (!unit || !said) return number.unit ? fail(`"${name}" says ${number.unit}, but the variable has no unit`, [...path, name]) : number.value;
+        // A number with no unit is in the one the variable says: "unit: min, starts: 5" is five minutes.
+        const from = number.unit ?? said;
+        const converted = convert(number.value, from, unit);
+        if (converted === null) return fail(`"${name}" is in ${number.unit}, not a unit of ${unit}`, [...path, name]);
+        // A step is a difference: 1 °F is five ninths of a degree, not -17 °C.
+        return name === 'step' ? converted - (convert(0, from, unit) ?? 0) : converted;
       };
       const [value, min, max, step] = [inUnit('starts'), inUnit('min'), inUnit('max'), inUnit('step')];
       field = {
@@ -117,7 +121,9 @@ function numberText(value: number, unit: Unit | undefined): string | number {
     if (value !== 0 && value % 3_600 === 0) return `${value / 3_600} h`;
     if (value !== 0 && value % 60 === 0) return `${value / 60} min`;
   }
-  return `${value} ${unit}`;
+  // Never "1e-7 W": the reader takes digits, not exponents.
+  const digits = String(value).includes('e') ? value.toFixed(12).replace(/\.?0+$/, '') : String(value);
+  return `${digits} ${unit}`;
 }
 
 /** One of a home's variables as a file writes it: its kind, and only what more it says. */

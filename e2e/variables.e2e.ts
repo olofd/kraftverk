@@ -36,6 +36,19 @@ test('a counter declared in settings, counted on the home screen, and set from e
   expect(set.ok()).toBe(true);
   await expect(page.getByText('7', { exact: true }).first()).toBeVisible();
 
+  // Changed in settings: its title and its most — its key kept, so automations still name it.
+  await page.goto('/settings/variables');
+  await page.getByRole('button', { name: `Change ${title}` }).click();
+  const renamed = `${title} total`;
+  await page.getByRole('textbox', { name: "A variable's title" }).first().fill(renamed);
+  await page.getByRole('textbox', { name: 'At most' }).first().fill('9');
+  await press(page, 'Save');
+  await expect(page.getByText(renamed, { exact: true })).toBeVisible();
+  await expect(page.getByText(`A counter · home.var.${key}`)).toBeVisible();
+  // What it held, 7, still fits: kept.
+  const after = (await (await request.get(`/api/homes/${homes[0].id}/variables`, { headers: HEADERS })).json()).variables.find((each: { key: string }) => each.key === key);
+  expect(after).toMatchObject({ value: 7, field: { title: renamed, max: 9 } });
+
   // Let go: no other test finds it.
   const removed = await request.delete(`/api/variables/${(await set.json()).id}`, { headers: HEADERS });
   expect(removed.ok()).toBe(true);

@@ -74,6 +74,52 @@ describe('a home’s variables', () => {
     expect((await t.home.variables.add(home, TARGET)).value).toBe(21);
   });
 
+  test('a number given as text is kept as a number; one chosen as it starts is kept, so a new start does not change it', async () => {
+    const target = await t.home.variables.add(home, TARGET);
+    expect((await t.home.variables.set(home, 'target', '22' as never)).value).toBe(22);
+    expect(t.hub.variableStore.value(target.id)?.value).toBe(22);
+    await t.home.variables.set(home, 'target', 21);
+    await t.home.variables.update(target.id, { field: { ...TARGET.field, default: 19 } });
+    expect(t.hub.variables.now(home, 'target')).toBe(21);
+  });
+
+  test('declared anew in another unit, what it held is not taken in it: back to what it starts as — and said so', async () => {
+    const target = await t.home.variables.add(home, TARGET);
+    await t.home.variables.set(home, 'target', 22);
+    const heard: string[] = [];
+    const off = t.hub.bus.subscribe((message) => (message.kind === 'variable' ? heard.push(`${String(message.previous)} → ${String(message.value)}`) : undefined));
+    const changed = await t.home.variables.update(target.id, { field: { type: 'number', title: 'Target', unit: '°F', min: 60, max: 80, default: 70 } });
+    off();
+    expect(changed.value).toBe(70);
+    expect(heard).toEqual(['22 → 70']);
+  });
+
+  test('rekeyed while an automation names it: refused, saying which', async () => {
+    const guests = await t.home.variables.add(home, GUESTS);
+    await t.home.automations.create({ name: 'Welcome', rule: { roles: {}, params: { fields: {} }, when: [{ becomes: { variable: { key: 'guests', at: 'home' } } }], then: [{ setMode: { mode: 'home' } }] }, roles: {}, groups: {}, starts: {}, world: {}, timeZone: 'Europe/Stockholm' });
+    expect((await refusal(t.home.variables.update(guests.id, { key: 'visitors' }))).message).toBe('“Welcome” uses "guests": change it first');
+  });
+
+  test('an automation that sets back what started it: started again when a person sets it again at once', async () => {
+    await t.home.variables.add(home, GUESTS);
+    const doorbell = await acting({
+      roles: {},
+      params: { fields: {} },
+      when: [{ becomes: { variable: { key: 'guests', at: 'home' } } }],
+      then: [{ setVariable: { key: 'guests', to: { value: false } } }],
+    });
+    t.hub.engine.start();
+    for (let time = 0; time < 2; time++) {
+      await t.home.variables.set(home, 'guests', true);
+      await settle(300);
+      expect(t.hub.variables.now(home, 'guests')).toBe(false);
+    }
+    const runs = await t.home.automations.runs(doorbell.id);
+    expect(runs).toHaveLength(2);
+    // Said as what it did, not "nothing needed doing".
+    expect(runs[0]!.summary).toBe('Set “Guests staying” to no');
+  });
+
   test('a script sets and counts them — but does not declare them', async () => {
     await t.home.variables.add(home, RUNS);
     const script = t.as({ kind: 'automation', id: 'a-1', name: 'A tidy', for: null, run: { id: 'r-1', askedBy: null } });
@@ -94,7 +140,7 @@ describe('a home’s variables', () => {
     // Listening, as the hub's engine does: what a variable's change starts, it hears.
     t.hub.engine.start();
     // Its steps said in words: what it changes, by its title.
-    expect((await t.home.automations.list()).find((each) => each.id === counting.id)?.sentence).toBe('Every 5 min, count the home’s dryer runs.');
+    expect((await t.home.automations.list()).find((each) => each.id === counting.id)?.sentence).toBe('Every 5 min, count “Dryer runs”.');
     for (let time = 0; time < 3; time++) {
       await t.home.automations.start(counting.id);
       await settle(100);
@@ -103,7 +149,7 @@ describe('a home’s variables', () => {
     expect(t.hub.variables.now(home, 'dryerRuns')).toBe(3);
     expect(t.hub.variables.now(home, 'guests')).toBe(true);
     const runs = await t.home.automations.runs(waiting.id);
-    expect(runs[0]?.why).toBe('The home’s dryer runs is at least 3');
+    expect(runs[0]?.why).toBe('“Dryer runs” is at least 3');
     // At its most it stays there, and says so.
     await t.home.automations.start(counting.id);
     await settle(100);
@@ -126,7 +172,7 @@ describe('a home’s variables', () => {
     await t.home.variables.set(home, 'target', 23);
     const { text } = await t.home.configuration.export({ secrets: 'none' });
     expect(text).toContain('variables:\n      target:\n        kind: number\n        starts: 21 °C\n        min: 16 °C\n        max: 25 °C');
-    expect(text).not.toContain('23');
+    expect(text).not.toContain('23 °C');
     // A counter's title made from its key, and its start at nought, go unsaid.
     expect(text).toContain('      dryerRuns:\n        kind: counter\n        max: 3\n');
     const changed = text.replace('max: 25 °C', 'max: 22 °C').replace('      dryerRuns:\n        kind: counter\n        max: 3\n', '      dryerRuns:\n        kind: counter\n        max: 3\n      note:\n        kind: text\n');

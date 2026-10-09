@@ -1,9 +1,9 @@
 import { ApiError, type Caller, type KraftverkApi, type VariableView } from '@kraftverk/api-contract';
-import { variableProblems, type VariableSpec } from '@kraftverk/automation';
-import type { Value } from '@kraftverk/device-sdk';
+import { ruleUses, variableProblems, variableValueText, type VariableSpec } from '@kraftverk/automation';
 import type { VariableRecord } from '@kraftverk/store';
 
 import type { Hub } from '../node/hub.ts';
+import { VariableRefusal } from '../variables/variables.ts';
 import { actorOf } from './caller.ts';
 
 /*
@@ -13,12 +13,12 @@ import { actorOf } from './caller.ts';
   Each change is said on the bus, so what reads it looks again.
 */
 
-/** A refusal from the controller or the store, said as the family's. */
+/** A refusal from the controller, said as the family's; anything else is a fault, and stays one. */
 const refusing = <T>(work: () => T): T => {
   try {
     return work();
   } catch (error) {
-    throw error instanceof ApiError ? error : new ApiError('invalid', (error as Error).message);
+    throw error instanceof VariableRefusal ? new ApiError(error.kind, error.message) : error;
   }
 };
 
@@ -60,7 +60,6 @@ export function variablesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'vari
     const problems = variableProblems(input);
     if (problems.length) throw new ApiError('invalid', problems.join('; '));
   };
-  const shown = (value: Value | null) => (value === null ? 'nothing' : typeof value === 'boolean' ? (value ? 'yes' : 'no') : String(value));
 
   return {
     variables: {
@@ -80,13 +79,15 @@ export function variablesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'vari
         const was = variableOf(id);
         const next = { key: changes.key ?? was.key, kind: changes.kind ?? was.kind, field: changes.field ?? was.field };
         declared(next);
-        if (next.key !== was.key && hub.variableStore.byKey(was.homeId, next.key)) throw new ApiError('conflict', `The home has a variable "${next.key}" already`);
-        const variable = hub.variableStore.update(id, next)!;
-        // What it held, no longer fitting what it is now, goes back to what it starts as.
-        const kept = hub.variableStore.value(id);
-        if (kept && 'problem' in hub.variables.fit(variable, kept.value)) hub.variableStore.clear(id);
+        if (next.key !== was.key) {
+          if (hub.variableStore.byKey(was.homeId, next.key)) throw new ApiError('conflict', `The home has a variable "${next.key}" already`);
+          // Rekeyed under an automation that names it, that automation would read nothing: changed there first.
+          const using = hub.automations.list().filter((automation) => ruleUses(automation.rule).variables.some((each) => each.key === was.key));
+          if (using.length) throw new ApiError('conflict', `${using.map((automation) => `“${automation.name}”`).join(', ')} ${using.length === 1 ? 'uses' : 'use'} "${was.key}": change ${using.length === 1 ? 'it' : 'them'} first`);
+        }
+        // What it held, no longer meaning the same, goes back to what it starts as — and is said so.
+        const variable = hub.variables.redeclare(was, next, by);
         record('variable.changed', id, `Changed the variable ${variable.field.title}: ${Object.keys(changes).join(', ')}`);
-        hub.variables.changed(variable.homeId);
         return viewOf(variable);
       },
 
@@ -101,14 +102,14 @@ export function variablesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'vari
       async set(homeId, key, value) {
         const variable = byKey(homeId, key);
         const set = refusing(() => hub.variables.set(variable.homeId, key, value, by));
-        if (set.changed) record('variable.set', variable.id, `${variable.field.title} is ${shown(set.value)}, was ${shown(set.previous)}`);
+        if (set.changed) record('variable.set', variable.id, `${variable.field.title} is ${variableValueText(variable, set.value)}, was ${variableValueText(variable, set.previous)}`);
         return viewOf(variable);
       },
 
       async count(homeId, key, count = {}) {
         const variable = byKey(homeId, key);
         const set = refusing(() => hub.variables.count(variable.homeId, key, count, by));
-        if (set.changed) record('variable.set', variable.id, `${variable.field.title} is ${shown(set.value)}, was ${shown(set.previous)}`);
+        if (set.changed) record('variable.set', variable.id, `${variable.field.title} is ${variableValueText(variable, set.value)}, was ${variableValueText(variable, set.previous)}`);
         return viewOf(variable);
       },
     },

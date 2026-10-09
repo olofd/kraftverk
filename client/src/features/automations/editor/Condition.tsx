@@ -1,6 +1,6 @@
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { fieldStart, fitsField, OWN_HOME, scriptRole, triggerIdOf, variableStart, wordsOfName, type CompareOp, type Expr } from '@kraftverk/automation';
+import { fieldStart, fitsField, OWN_HOME, scriptRole, triggerIdOf, variableStartExpr, wordsOfName, type CompareOp, type Expr } from '@kraftverk/automation';
 import type { PartOption } from '@kraftverk/automation';
 import { capabilitiesOf, MAIN_PART, meetsNeed, valueTypeOf, type ConfigField, type ValueType } from '@kraftverk/device-sdk';
 import { Chips, Icon, IconLabel } from '@kraftverk/ui';
@@ -333,7 +333,7 @@ function Variable({ expr, onChange, label }: { expr: Extract<Expr, { compare: un
           chosen={chosen?.field.title ?? (read.key || null)}
           placeholder="Choose a variable"
           options={variables.map((variable) => ({ key: variable.key, title: variable.field.title, subtitle: variable.field.description, value: variable, selected: variable === chosen }))}
-          onPick={(variable) => onChange({ compare: valueTypeOf(variable.field).type === 'number' ? 'ge' : 'eq', left: { variable: { key: variable.key, at: read.at } }, right: { value: variableStart(variable) ?? '' } })}
+          onPick={(variable) => onChange({ compare: valueTypeOf(variable.field).type === 'number' ? 'ge' : 'eq', left: { variable: { key: variable.key, at: read.at } }, right: variableStartExpr(variable) })}
         />
       ) : (
         <Text fontSize={14} color="$muted" lineHeight={20}>
@@ -386,7 +386,6 @@ function ArgSource({ label, field, expr, onChange }: { label: string; field: Con
           options={[
             { value: 'value', label: 'A value' },
             { value: 'reading', label: 'A reading' },
-  { value: 'variable', label: 'A variable' },
           ]}
           value={read ? 'reading' : 'value'}
           onChange={(source) => onChange(source === 'reading' ? { read: { role: '', means: '' } } : fieldStart(field))}

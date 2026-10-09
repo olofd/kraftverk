@@ -1,5 +1,5 @@
 import { ApiError, type DevicePeople, type ImportApplied, type ImportItem, type ImportPlan, type LabelTarget, type PlacementInput } from '@kraftverk/api-contract';
-import { checkBinding, checkRule, isAutomationRole, isPartRole, isPeopleRole, isPersonRole, isPlaceRole, isScriptRole, isWorldRole, keepsSo, sameFill, useOf, useText, type AutomationDraft, type RuleVocabulary, type BoundPart, type GroupRole, type PartRole, type PartUse, type Use, type WorldFill, type WorldUse } from '@kraftverk/automation';
+import { checkBinding, checkRule, stillHolds, variableToConfig, type VariableSpec, isAutomationRole, isPartRole, isPeopleRole, isPersonRole, isPlaceRole, isScriptRole, isWorldRole, keepsSo, sameFill, useOf, useText, type AutomationDraft, type RuleVocabulary, type BoundPart, type GroupRole, type PartRole, type PartUse, type Use, type WorldFill, type WorldUse } from '@kraftverk/automation';
 import type { AutomationEngine, AutomationLibrary, AutomationRecord } from '@kraftverk/automation-engine';
 import { standingProblem, turnOf } from '@kraftverk/map/limits';
 import {
@@ -23,8 +23,6 @@ import {
   type PolicyValues,
   type SavedDeviceId,
   transportOf,
-  checkValue,
-  valueTypeOf,
 } from '@kraftverk/device-sdk';
 import type { SessionManager } from '@kraftverk/holder';
 import {
@@ -973,7 +971,7 @@ function spaceChanges(deps: ImportDeps, homeId: string | null, entry: HomeEntry)
   for (const [key, variable] of Object.entries(entry.variables)) {
     const had = homeId ? deps.variables.byKey(homeId, key) : null;
     if (!had) declared!.push(variable.field.title);
-    else if (had.kind !== variable.kind || JSON.stringify(had.field) !== JSON.stringify(variable.field)) redeclared!.push(variable.field.title);
+    else if (!sameVariable(had, { key, ...variable })) redeclared!.push(variable.field.title);
   }
   return [...said('spaces added', added!), ...said('spaces changed', changed!), ...said('openings added', opened!), ...said('openings changed', reopened!), ...said('variables added', declared!), ...said('variables changed', redeclared!)];
 }
@@ -990,12 +988,16 @@ function writeVariables(deps: ImportDeps, homeId: string, entry: HomeEntry, at: 
       deps.variables.add(homeId, { key, kind: variable.kind, field: variable.field }, at);
       continue;
     }
-    if (had.kind === variable.kind && JSON.stringify(had.field) === JSON.stringify(variable.field)) continue;
+    if (sameVariable(had, { key, ...variable })) continue;
     deps.variables.update(had.id, { kind: variable.kind, field: variable.field });
+    // What it held, no longer meaning the same — another kind or unit, out of its range — goes back to what it starts as.
     const kept = deps.variables.value(had.id);
-    if (kept && !checkValue(valueTypeOf(variable.field), kept.value).ok) deps.variables.clear(had.id);
+    if (kept && !stillHolds(had, variable, kept.value)) deps.variables.clear(had.id);
   }
 }
+
+/** Whether two declarations of a variable say the same, as a file says them: not by the order their fields were kept in. */
+const sameVariable = (a: VariableSpec, b: VariableSpec): boolean => JSON.stringify(variableToConfig(a)) === JSON.stringify(variableToConfig(b));
 
 /** A home's spaces and openings written as its entry has them, by key: parents before what is inside them. */
 function writeSpaces(deps: ImportDeps, homeId: string, entry: HomeEntry, notes: string[] = []): void {

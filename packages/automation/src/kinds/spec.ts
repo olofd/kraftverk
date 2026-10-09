@@ -157,7 +157,7 @@ export type Say = {
   many(role: string): boolean;
   /** A mode by its key, as the family calls it: "Away". */
   mode(key: string): string;
-  /** A home's variable, by its key, as its home says it: "the home's guests staying" — `at` its own, unless a role names another. */
+  /** A home's variable, by its key and title: “Guests staying” — `at` its own, unless a role names another. */
   variable(key: string, at?: string): string;
   /** An event a role's part raises, in its own words: "mains lost". */
   event(role: string, event: string): string;

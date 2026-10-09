@@ -28,7 +28,7 @@ export const NO_WORLD: WorldOptions = { people: [], places: [], modes: [], varia
 const KINDS: Record<PlaceKind, string> = { home: 'A home', zone: 'A zone', space: 'A room' };
 
 /** The family's people, places, modes and variables, as an editor offers them: members, each home and its rooms, the zones. */
-export function worldOptionsOf(people: readonly PersonView[], zones: readonly ZoneView[], modes: readonly ModeView[], homes: readonly HomeSpaces[], variables: readonly VariableView[] = []): WorldOptions {
+export function worldOptionsOf(people: readonly PersonView[], zones: readonly ZoneView[], modes: readonly ModeView[], homes: readonly HomeSpaces[], variables: readonly Pick<VariableView, 'homeId' | 'key' | 'kind' | 'field'>[] = []): WorldOptions {
   const members = people.filter((person) => person.member).map((person) => ({ id: person.id, name: person.shownAs }));
   const places = [
     ...homes.map(({ home }) => ({ id: home.id, kind: 'home' as const, name: home.name, subtitle: KINDS.home, homeId: home.id })),

@@ -3,7 +3,10 @@ import { describe, expect, test } from 'bun:test';
 import { checkRule } from './check.ts';
 import type { Rule } from './rule.ts';
 import { parseExpr, printExpr } from './text/expr.ts';
-import { counted, variableFieldOf, variableKeyFrom, variableProblems, variableStart, type VariableSpec } from './variables.ts';
+import { variableFromConfig, variableToConfig } from './text/variables.ts';
+import type { ConfigField } from '@kraftverk/device-sdk';
+
+import { counted, stillHolds, variableFieldOf, variableKeyFrom, variableProblems, variableStart, variableTypedOf, variableValueText, type VariableSpec } from './variables.ts';
 
 /*
   A home's variables, as the language has them: what each starts as, how a
@@ -37,6 +40,64 @@ describe('a variable', () => {
     expect(variableProblems({ ...GUESTS, field: { type: 'number', title: 'Guests' } })).toEqual(['A yes or no holds boolean, not number']);
     expect(variableProblems({ key: 'target', kind: 'number', field: { type: 'number', title: 'Target', min: 16, max: 25, default: 30 } })).toEqual(['What it starts as must be at most 25']);
     expect(variableProblems({ key: 'wake', kind: 'time', field: { type: 'string', title: 'Wake', default: 'soon' } })).toEqual(['"soon" is not a time of day: 07:00']);
+  });
+
+  test('starts within its range, whatever it is', () => {
+    expect(variableStart({ key: 'cold', kind: 'number', field: { type: 'number', title: 'Cold', max: -5 } })).toBe(-5);
+    expect(variableStart({ key: 'warm', kind: 'number', field: { type: 'number', title: 'Warm', min: 10 } })).toBe(10);
+    expect(variableStart({ key: 'down', kind: 'counter', field: { type: 'number', title: 'Down', integer: true, min: -10, max: -5 } })).toBe(-5);
+  });
+
+  test('declared only as a file can carry it: no unit on a counter, a time in seconds, a step above nought', () => {
+    expect(variableProblems({ ...RUNS, field: { ...RUNS.field, unit: 'W' } as never })).toEqual(['A counter counts: it has no unit']);
+    expect(variableProblems({ ...RUNS, field: { ...RUNS.field, max: 2.5 } as ConfigField })).toEqual(['A counter’s least, most and start are whole numbers']);
+    expect(variableProblems({ key: 'pause', kind: 'number', field: { type: 'number', title: 'Pause', unit: 'min' } })).toEqual(['A length of time is kept in seconds']);
+    expect(variableProblems({ key: 'target', kind: 'number', field: { type: 'number', title: 'Target', step: 0 } })).toEqual(['Its step is more than nought']);
+    expect(variableProblems({ ...GUESTS, field: { ...GUESTS.field, words: { true: 'Here', false: 'Gone' } } as ConfigField })).toEqual(['A variable does not say "words"']);
+  });
+
+  test('what it holds still means the same, declared anew: its kind, its unit, its range', () => {
+    const field = { type: 'number', title: 'Target', unit: '°C', max: 25 } as const;
+    const target: VariableSpec = { key: 'target', kind: 'number', field };
+    expect(stillHolds(target, { ...target, field: { ...field, title: 'Warmth' } }, 21)).toBe(true);
+    expect(stillHolds(target, { ...target, field: { ...field, max: 20 } }, 21)).toBe(false);
+    expect(stillHolds(target, { ...target, field: { ...field, unit: '°F' } }, 21)).toBe(false);
+    expect(stillHolds(target, { ...target, kind: 'counter', field: { ...field, integer: true } }, 21)).toBe(false);
+  });
+
+  test('said in its own words: an option by its label, a number in its unit, words quoted', () => {
+    expect(variableValueText({ field: { type: 'enum', title: 'Laundry', options: [{ value: 'drying', label: 'Drying' }] } }, 'drying')).toBe('“Drying”');
+    expect(variableValueText({ field: { type: 'number', title: 'Target', unit: '°C' } }, 21)).toBe('21 °C');
+    expect(variableValueText(GUESTS, true)).toBe('yes');
+    expect(variableValueText({ field: { type: 'string', title: 'Wake' } }, '06:45')).toBe('06:45');
+    expect(variableValueText({ field: { type: 'string', title: 'Note' } }, 'Back at six')).toBe('“Back at six”');
+    expect(variableValueText(RUNS, null)).toBe('nothing');
+  });
+
+  test('changed by a person: its options keep the values automations name them by; what it starts as kept while it fits', () => {
+    const laundry: ConfigField = { type: 'enum', title: 'Laundry', options: [{ value: 'wash', label: 'Washing' }, { value: 'done', label: 'Done' }], default: 'done' };
+    expect(variableFieldOf({ title: 'Laundry', kind: 'choice', options: ['Washing', 'Drying', 'Done'] }, laundry)).toEqual({
+      type: 'enum',
+      title: 'Laundry',
+      options: [{ value: 'wash', label: 'Washing' }, { value: 'drying', label: 'Drying' }, { value: 'done', label: 'Done' }],
+      default: 'done',
+    });
+    expect(variableFieldOf({ title: 'Laundry', kind: 'choice', options: ['Washing'] }, laundry)).toEqual({ type: 'enum', title: 'Laundry', options: [{ value: 'wash', label: 'Washing' }] });
+    // A length of time said in minutes is kept in seconds.
+    expect(variableFieldOf({ title: 'Pause', kind: 'number', unit: 'min', min: 1, max: 30 })).toEqual({ type: 'number', title: 'Pause', unit: 's', min: 60, max: 1800 });
+    expect(variableTypedOf({ key: 'runs', kind: 'counter', field: RUNS.field })).toEqual({ title: 'Dryer runs', kind: 'counter', unit: null, min: null, max: 3 });
+  });
+
+  test('in a file: a number with no unit is in the one it says; a step is a difference; written back the same', () => {
+    const fail = (message: string): never => {
+      throw new Error(message);
+    };
+    const pause = variableFromConfig('pause', { kind: 'number', unit: 'min', starts: 5, max: 30 }, [], fail);
+    expect(pause.field).toEqual({ type: 'number', title: 'Pause', unit: 's', max: 1800, default: 300 });
+    expect(variableToConfig(pause)).toEqual({ kind: 'number', starts: '5 min', max: '30 min' });
+    const target = variableFromConfig('target', { kind: 'number', starts: '20 °C', step: '0.9 °F' }, [], fail);
+    expect(target.field.type === 'number' && target.field.step).toBeCloseTo(0.5);
+    expect(variableToConfig({ key: 'tiny', kind: 'number', field: { type: 'number', title: 'Tiny', unit: 'W', default: 0.0000001 } })).toEqual({ kind: 'number', starts: '0.0000001 W' });
   });
 
   test('typed by a person: its key from its title, its field from its kind', () => {

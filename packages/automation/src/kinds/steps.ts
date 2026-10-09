@@ -37,8 +37,10 @@ export type StepSay = {
   event(role: string, event: string): string;
   /** A mode by its key, as the family calls it: "Away". */
   mode(key: string): string;
-  /** A home's variable, by its key, as its home says it: "the home's guests staying". */
+  /** A home's variable, by its key and title: “Guests staying”. */
   variable(key: string, at?: string): string;
+  /** A value a variable is given, in its words: its option's label, in its unit. */
+  variableValue(key: string, at: string | undefined, expr: Expr): string;
   /** Words with values in braces, as they would read: "The charge is {Garage station's charge}". */
   message(text: string): string;
 };
@@ -562,8 +564,8 @@ const SET_VARIABLE: StepSpec<'setVariable'> = {
     { data: ['setVariable', 'at'], key: 'at', type: { type: 'place', kinds: ['home'] }, required: false, label: 'Of which home', help: 'This automation’s own, unless you choose another.' },
   ],
   blank: () => ({ setVariable: { key: '', to: { value: true } } }),
-  line: (step, say) => `Set ${say.variable(step.setVariable.key, step.setVariable.at)} to ${say.expr(step.setVariable.to)}`,
-  brief: (step, say) => `set ${say.variable(step.setVariable.key, step.setVariable.at)} to ${say.expr(step.setVariable.to)}`,
+  line: (step, say) => (step.setVariable.key ? `Set ${say.variable(step.setVariable.key, step.setVariable.at)} to ${say.variableValue(step.setVariable.key, step.setVariable.at, step.setVariable.to)}` : 'Set a variable not chosen yet'),
+  brief: (step, say) => (step.setVariable.key ? `set ${say.variable(step.setVariable.key, step.setVariable.at)} to ${say.variableValue(step.setVariable.key, step.setVariable.at, step.setVariable.to)}` : 'set a variable not chosen yet'),
   docs: {
     summary:
       'Set one of a home’s variables, by its key — the automation’s own home, unless `at` names another — to a value of its kind, in its unit and range: read by every automation as `home.var.<key>`, and one that waits for it looks again. Not a device: nothing passes the gateway, and it is a line of the run. Already so, nothing changes.',
@@ -584,12 +586,12 @@ const COUNT: StepSpec<'count'> = {
     { data: ['count', 'at'], key: 'at', type: { type: 'place', kinds: ['home'] }, required: false, label: 'Of which home', help: 'This automation’s own, unless you choose another.' },
   ],
   blank: () => ({ count: { key: '' } }),
-  line: (step, say) => (step.count.reset ? `Start ${say.variable(step.count.key, step.count.at)} over` : `Count ${say.variable(step.count.key, step.count.at)}${step.count.by ? ` by ${say.expr(step.count.by)}` : ' up by 1'}`),
+  line: (step, say) => (step.count.reset ? `Start ${say.variable(step.count.key, step.count.at)} over` : `Count ${say.variable(step.count.key, step.count.at)}${step.count.by ? ` by ${say.expr(step.count.by)}` : ' up by one'}`),
   brief: (step, say) => (step.count.reset ? `start ${say.variable(step.count.key, step.count.at)} over` : `count ${say.variable(step.count.key, step.count.at)}${step.count.by ? ` by ${say.expr(step.count.by)}` : ''}`),
   docs: {
     summary:
       'Count one of a home’s counters — the automation’s own home, unless `at` names another — up by one, or `by` a whole number (below nought, down), held to its range; or `reset` it to what it starts as. Read as `home.var.<key>` by every automation.',
-    examples: ['count: dryerRuns', 'count: guests\nby: -1', 'count: dryerRuns\nreset: true'],
+    examples: ['count: dryerRuns', 'count: visitors\nby: -1', 'count: dryerRuns\nreset: true'],
   },
 };
 

@@ -29,7 +29,7 @@ import {
   type StepKind,
   type Write,
   VARIABLE_KIND_WORDS,
-  variableStart,
+  variableStartExpr,
 } from '@kraftverk/automation';
 import { capabilitiesOf, capabilityIn, isScalarType, MAIN_PART, valueTypeOf, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
 import { Chips, haptic, Icon, IconLabel } from '@kraftverk/ui';
@@ -41,7 +41,7 @@ import { confirmAction } from '../../../platform/confirm';
 import { ConditionField } from './Condition';
 import { pickPart, useEditor } from './context';
 import { Fields } from './Field';
-import { DurationField, durationOf, Label, NumberField, ValueField } from './fields';
+import { DurationField, durationOf, Label, NumberField, TimeField, ValueField } from './fields';
 
 
 /*
@@ -386,19 +386,23 @@ function VariableFields({ path, step, set }: { path: ListPath; step: Extract<Ste
             placeholder={counting ? 'Choose a counter' : 'Choose a variable'}
             options={variables.map((variable) => ({ key: variable.key, title: variable.field.title, subtitle: VARIABLE_KIND_WORDS[variable.kind].label, value: variable, selected: variable === spec }))}
             onPick={(variable) =>
-              set(counting ? { count: { ...step.count, key: variable.key } } : { setVariable: { ...step.setVariable, key: variable.key, to: { value: variableStart(variable) } } })
+              set(counting ? { count: { ...step.count, key: variable.key } } : { setVariable: { ...step.setVariable, key: variable.key, to: variableStartExpr(variable) } })
             }
           />
         </YStack>
       ) : (
         <Text fontSize={13} color="$muted" lineHeight={19}>
-          {counting ? 'The home has no counter yet: add one under Variables, in its settings.' : 'The home has no variables yet: add one under Variables, in its settings.'}
+          {counting ? 'The home has no counter yet: add one in App settings › Variables.' : 'The home has no variables yet: add one in App settings › Variables.'}
         </Text>
       )}
       {spec && !counting ? (
         <YStack gap="$1">
           <Label>To</Label>
-          <ArgField label="To" type={valueTypeOf(spec.field)} expr={step.setVariable.to} onChange={(to) => set({ setVariable: { ...step.setVariable, to } })} />
+          {spec.kind === 'time' && (!('value' in step.setVariable.to) || typeof step.setVariable.to.value === 'string' || step.setVariable.to.value === null) ? (
+            <TimeField label="To" value={'value' in step.setVariable.to && typeof step.setVariable.to.value === 'string' ? step.setVariable.to.value : '07:00'} onChange={(time) => set({ setVariable: { ...step.setVariable, to: { value: time } } })} />
+          ) : (
+            <ArgField label="To" type={valueTypeOf(spec.field)} expr={step.setVariable.to} onChange={(to) => set({ setVariable: { ...step.setVariable, to } })} />
+          )}
         </YStack>
       ) : null}
       {spec && counting ? (

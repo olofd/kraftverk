@@ -83,7 +83,7 @@ export function familyRoutes(deps: AppDeps): Hono {
   // A home's variables: declared, and set by a person or a script. What fits a kind is the hub's to say.
   const presented = { title: z.string().trim().min(1).max(60), description: z.string().max(300).optional() };
   const FIELD = z.discriminatedUnion('type', [
-    z.object({ type: z.literal('boolean'), ...presented, default: z.boolean().optional(), words: z.object({ true: z.string().min(1).max(30), false: z.string().min(1).max(30) }).strict().optional() }).strict(),
+    z.object({ type: z.literal('boolean'), ...presented, default: z.boolean().optional() }).strict(),
     z
       .object({
         type: z.literal('number'),
@@ -92,14 +92,12 @@ export function familyRoutes(deps: AppDeps): Hono {
         min: z.number().finite().optional(),
         max: z.number().finite().optional(),
         step: z.number().positive().finite().optional(),
-        precision: z.number().int().min(0).max(6).optional(),
         integer: z.boolean().optional(),
         default: z.number().finite().optional(),
-        presentation: z.literal('slider').optional(),
       })
       .strict(),
     z.object({ type: z.literal('enum'), ...presented, options: z.array(z.object({ value: z.string().min(1).max(40), label: z.string().trim().min(1).max(60) }).strict()).min(1).max(30), default: z.string().max(40).optional() }).strict(),
-    z.object({ type: z.literal('string'), ...presented, default: z.string().max(500).optional(), presentation: z.literal('multiline').optional() }).strict(),
+    z.object({ type: z.literal('string'), ...presented, default: z.string().max(500).optional() }).strict(),
   ]);
   const VARIABLE = z.object({ key: z.string().min(1).max(40), kind: z.enum(VARIABLE_KINDS), field: FIELD }).strict();
   api.get('/homes/:id/variables', async (c) => c.json({ variables: await familyFor(deps, c).variables.list(c.req.param('id'), { removed: c.req.query('removed') === 'true' }) }));

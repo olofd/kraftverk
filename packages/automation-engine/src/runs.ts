@@ -42,6 +42,7 @@ import {
   type StepLine,
   type Write,
   counted,
+  variableValueText,
   type VariableSpec,
 } from '@kraftverk/automation';
 import { attributeMeaning, MAIN_PART, readingOf, type Actor, type AutomationId, type Value } from '@kraftverk/device-sdk';
@@ -1028,7 +1029,7 @@ export class Runs {
 
   /** A variable given its new value, as the automation: already so, nothing; said on the bus with the runs that led to it. */
   #putVariable(live: LiveRun, here: Here, world: EngineWorld, home: string, spec: VariableSpec, value: Value, kind: 'setVariable' | 'count', depth: number, within: string | null, what: string): Walked {
-    const shown = (held: Value | null) => (held === null ? 'nothing' : typeof held === 'number' ? `${held}${spec.field.type === 'number' && spec.field.unit ? ` ${spec.field.unit}` : ''}` : typeof held === 'boolean' ? (held ? 'yes' : 'no') : String(held));
+    const shown = (held: Value | null) => variableValueText(spec, held);
     if (world.variable(home, spec.key) === value) {
       this.#add(live, { kind, depth, within, what, outcome: 'already', detail: `It is ${shown(value)} now`, until: null });
       return 'ok';
@@ -1039,7 +1040,7 @@ export class Runs {
       this.#add(live, { kind, depth, within, what, outcome: 'failed', detail: (error as Error).message, until: null });
       return 'failed';
     }
-    this.#add(live, { kind, depth, within, what, outcome: 'done', detail: `${spec.field.title} is ${shown(value)} now`, until: null });
+    this.#add(live, { kind, depth, within, what, outcome: 'done', detail: `“${spec.field.title}” is ${shown(value)} now`, until: null });
     return 'ok';
   }
 

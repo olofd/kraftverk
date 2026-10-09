@@ -152,7 +152,7 @@ function Typed({ variable, set }: { variable: VariableView; set: (value: Value) 
           ) : null}
         </XStack>
       ) : kind === 'time' ? (
-        <TimeField label={field.title} value={typeof draft === 'string' ? draft : '07:00'} onChange={(next) => setDraft(next)} />
+        <TimeField label={field.title} value={typeof draft === 'string' ? draft : ''} onChange={(next) => setDraft(next)} />
       ) : (
         <Input
           flex={1}

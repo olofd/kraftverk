@@ -1,4 +1,6 @@
-import { CAMEL_NAME, checkValue, valueTypeOf, type ConfigField, type Unit, type ValueType } from '@kraftverk/device-sdk';
+import { CAMEL_NAME, checkValue, convert, isUnit, UNITS, valueTypeOf, type ConfigField, type Unit, type ValueType } from '@kraftverk/device-sdk';
+
+import type { Expr } from './rule.ts';
 
 import { CLOCK_TIME } from './clock.ts';
 
@@ -53,12 +55,25 @@ export function variableProblems(spec: VariableSpec): string[] {
     problems.push(`A ${VARIABLE_KIND_WORDS[kind].label.toLowerCase()} holds ${wants[kind] === 'enum' ? 'one of its options' : wants[kind]}, not ${field?.type}`);
     return problems;
   }
+  if (spec.key.length > 40) problems.push(`"${spec.key}": a variable's key is at most 40 characters`);
+  // Only what a configuration file can say of one (text/variables.ts): a home carried in it comes back as it was.
+  const extra = Object.keys(field).filter((name) => !['type', 'title', 'description', 'default', 'unit', 'min', 'max', 'step', 'integer', 'options'].includes(name));
+  if (extra.length) problems.push(`A variable does not say ${extra.map((name) => `"${name}"`).join(', ')}`);
   if (field.type === 'number') {
-    if (kind === 'counter' && !field.integer) problems.push('A counter counts in whole numbers');
+    const range = [field.min, field.max, field.step, field.default].filter((each): each is number => typeof each === 'number');
+    if (range.some((each) => !Number.isFinite(each) || Math.abs(each) >= 1e12)) problems.push('Its numbers are below a million million');
+    if (kind === 'counter') {
+      if (!field.integer) problems.push('A counter counts in whole numbers');
+      if (field.unit) problems.push('A counter counts: it has no unit');
+      if (range.some((each) => !Number.isInteger(each))) problems.push('A counter’s least, most and start are whole numbers');
+    } else if (field.integer) problems.push('Only a counter is whole numbers alone');
+    if (field.unit && UNITS[field.unit]?.dimension === 'time' && field.unit !== 's') problems.push('A length of time is kept in seconds');
+    if (field.step !== undefined && !(field.step > 0)) problems.push('Its step is more than nought');
     if (field.min !== undefined && field.max !== undefined && field.min > field.max) problems.push(`Its least, ${field.min}, is more than its most, ${field.max}`);
   }
   if (field.type === 'enum' && !field.options?.length) problems.push('A choice has at least one option');
   if (field.type === 'enum' && new Set(field.options.map((option) => option.value)).size !== field.options.length) problems.push('A choice has each option once');
+  if (field.type === 'enum' && field.options.some((option) => !option.value || option.value.length > 40)) problems.push('Each option’s value is 1 to 40 characters');
   if (field.default !== undefined) {
     const fits = checkValue(valueTypeOf(field), field.default);
     if (!fits.ok) problems.push(`What it starts as ${fits.problem}`);
@@ -67,14 +82,43 @@ export function variableProblems(spec: VariableSpec): string[] {
   return problems;
 }
 
-/** What a variable starts as, before anyone sets it: its default — or nothing, none, nought, its first option. */
+/** What a variable starts as, before anyone sets it: its default — or nothing, none, its first option; nought, or the nearest its range allows. */
 export function variableStart(spec: VariableSpec): string | number | boolean | null {
   const { field } = spec;
   if (field.default !== undefined) return field.default;
   if (field.type === 'boolean') return false;
-  if (field.type === 'number') return spec.kind === 'counter' ? Math.max(0, field.min ?? 0) : (field.min ?? 0);
+  if (field.type === 'number') return Math.min(Math.max(0, field.min ?? Number.NEGATIVE_INFINITY), field.max ?? Number.POSITIVE_INFINITY);
   if (field.type === 'enum') return field.options[0]?.value ?? null;
   return spec.kind === 'time' ? null : '';
+}
+
+/**
+ * Whether what a variable holds still means the same once it is declared
+ * anew: of the same kind, in the same unit, and fitting it — one that does
+ * not goes back to what it starts as.
+ */
+export function stillHolds(before: Pick<VariableSpec, 'kind' | 'field'>, after: Pick<VariableSpec, 'kind' | 'field'>, value: unknown): boolean {
+  if (before.kind !== after.kind || before.field.type !== after.field.type) return false;
+  if (before.field.type === 'number' && after.field.type === 'number' && before.field.unit !== after.field.unit) return false;
+  if (after.kind === 'time' && (typeof value !== 'string' || !CLOCK_TIME.test(value))) return false;
+  return checkValue(valueTypeOf(after.field), value).ok;
+}
+
+/** What a variable holds, in words — its option's label, yes or no, a number in its unit — as a run's line and the timeline say it. */
+export function variableValueText(spec: Pick<VariableSpec, 'field'>, value: unknown): string {
+  const { field } = spec;
+  if (value === null || value === undefined || value === '') return 'nothing';
+  if (typeof value === 'boolean') return field.type === 'boolean' && field.words ? field.words[value ? 'true' : 'false'].toLowerCase() : value ? 'yes' : 'no';
+  if (field.type === 'enum' && typeof value === 'string') return `“${field.options.find((option) => option.value === value)?.label ?? value}”`;
+  if (typeof value === 'number' && field.type === 'number' && field.unit) return `${value} ${field.unit}`;
+  return typeof value === 'string' && field.type === 'string' && !CLOCK_TIME.test(value) ? `“${value}”` : String(value);
+}
+
+/** What a variable is first given or compared with, as a value an editor starts from: what it starts as, in its unit — a time with none, seven in the morning. */
+export function variableStartExpr(spec: VariableSpec): Expr {
+  const start = variableStart(spec);
+  if (spec.kind === 'time') return { value: typeof start === 'string' ? start : '07:00' };
+  return spec.field.type === 'number' && spec.field.unit && isUnit(spec.field.unit) ? { value: start, unit: spec.field.unit } : { value: start };
 }
 
 /**
@@ -113,29 +157,61 @@ export function variableKeyFrom(title: string, taken: (key: string) => boolean):
 /** A variable as a person first says it: its title and kind — and, by its kind, a unit and range, or options. */
 export type VariableTyped = { title: string; kind: VariableKind; unit?: Unit | null; min?: number | null; max?: number | null; options?: readonly string[] };
 
+/** What a person typed for a variable they made: what the form starts from when they change it. */
+export function variableTypedOf(spec: VariableSpec): VariableTyped {
+  const { field } = spec;
+  return {
+    title: field.title,
+    kind: spec.kind,
+    ...(field.type === 'number' ? { unit: field.unit ?? null, min: spec.kind === 'counter' && field.min === 0 ? null : (field.min ?? null), max: field.max ?? null } : {}),
+    ...(field.type === 'enum' ? { options: field.options.map((option) => option.label) } : {}),
+  };
+}
+
 /**
  * The field a variable is declared with, from what a person typed: a
  * counter whole from nought, a number in its unit and range, a choice of
- * its options — each option's value its label in camelCase.
+ * its options — each new option's value its label in camelCase. Changing
+ * one (`was`), what the form does not say is kept: its description, its
+ * step, an option's value by its label — what automations name it by —
+ * and what it starts as, while that still fits.
  */
-export function variableFieldOf(typed: VariableTyped): ConfigField {
+export function variableFieldOf(typed: VariableTyped, was?: ConfigField): ConfigField {
   const title = typed.title.trim();
-  const range = { ...(typed.min !== undefined && typed.min !== null ? { min: typed.min } : {}), ...(typed.max !== undefined && typed.max !== null ? { max: typed.max } : {}) };
-  switch (typed.kind) {
-    case 'toggle':
-      return { type: 'boolean', title };
-    case 'number':
-      return { type: 'number', title, ...(typed.unit ? { unit: typed.unit } : {}), ...range };
-    case 'counter':
-      return { type: 'number', title, integer: true, min: 0, ...range };
-    case 'choice': {
-      const labels = [...new Set((typed.options ?? []).map((option) => option.trim()).filter(Boolean))];
-      const values = new Set<string>();
-      return { type: 'enum', title, options: labels.map((label) => ({ value: variableKeyFrom(label, (key) => values.has(key)), label })).map((option) => (values.add(option.value), option)) };
+  // A length of time is kept in seconds, whatever it is said in: its range converted to them.
+  const unit: Unit | null = typed.unit && typed.kind === 'number' ? (UNITS[typed.unit].dimension === 'time' ? 's' : typed.unit) : null;
+  const inUnit = (value: number | null | undefined) => (value === undefined || value === null ? null : typed.unit && unit && typed.unit !== unit ? (convert(value, typed.unit, unit) ?? value) : value);
+  const [min, max] = [inUnit(typed.min), inUnit(typed.max)];
+  const range = { ...(min !== null ? { min } : {}), ...(max !== null ? { max } : {}) };
+  const described = was?.description ? { description: was.description } : {};
+  const made = ((): ConfigField => {
+    switch (typed.kind) {
+      case 'toggle':
+        return { type: 'boolean', title, ...described };
+      case 'number':
+        return { type: 'number', title, ...described, ...(unit ? { unit } : {}), ...range, ...(was?.type === 'number' && was.step !== undefined && was.unit === (unit ?? undefined) ? { step: was.step } : {}) };
+      case 'counter':
+        return { type: 'number', title, ...described, integer: true, min: 0, ...range };
+      case 'choice': {
+        const labels = [...new Set((typed.options ?? []).map((option) => option.trim()).filter(Boolean))];
+        const kept = was?.type === 'enum' ? was.options : [];
+        const values = new Set<string>(kept.filter((option) => labels.includes(option.label)).map((option) => option.value));
+        const options = labels.map((label) => {
+          const before = kept.find((option) => option.label === label);
+          if (before) return before;
+          const value = variableKeyFrom(label, (key) => values.has(key));
+          values.add(value);
+          return { value, label };
+        });
+        return { type: 'enum', title, ...described, options };
+      }
+      case 'text':
+      case 'time':
+        return { type: 'string', title, ...described };
     }
-    case 'text':
-      return { type: 'string', title };
-    case 'time':
-      return { type: 'string', title };
-  }
+  })();
+  // What it started as, kept where it still fits what it is now.
+  const start = was?.default;
+  const sameUnit = was?.type !== 'number' || made.type !== 'number' || was.unit === made.unit;
+  return start !== undefined && was?.type === made.type && sameUnit && checkValue(valueTypeOf(made), start).ok ? ({ ...made, default: start } as ConfigField) : made;
 }
