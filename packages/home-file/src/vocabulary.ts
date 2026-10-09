@@ -9,6 +9,7 @@ import {
   type ProtocolDeclaration,
   type TypeEntry,
 } from '@kraftverk/device-sdk';
+import type { ScriptShape } from '@kraftverk/automation';
 
 /*
   What a configuration may name (docs/CONFIG.md): the installed device types,
@@ -42,8 +43,8 @@ export type Vocabulary = {
   devices: { key: string; type: string; name: string; parts: string[] }[];
   /** The automations the server has now, by key. */
   automations: { key: string; name: string }[];
-  /** The family's scripts now, by key, with their ids: what an automation's role may name. */
-  scripts: { id: string; key: string; name: string }[];
+  /** The family's scripts now, by key, with their ids and what each declares (null: it does not read): what an automation's role may name, and its steps and their inputs, completed. */
+  scripts: { id: string; key: string; name: string; shape: ScriptShape | null }[];
   /** The family's homes now, by key: what an automation may be for. */
   homes: { id: string; key: string; name: string }[];
   /** The family's people now, by their keys in a file — one with no key of their own yet, by their id. */

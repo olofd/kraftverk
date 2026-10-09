@@ -8,6 +8,7 @@
  */
 
 export * from './check.ts';
+export * from './complete.ts';
 export * from './document.ts';
 export * from './entries.ts';
 export * from './migrate.ts';

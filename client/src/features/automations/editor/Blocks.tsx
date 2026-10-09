@@ -468,7 +468,7 @@ function ScriptFields({ script: step, set }: { script: Extract<Step, { script: u
           placeholder={runnable.length ? 'Choose a script' : 'No script has a step yet'}
           options={runnable.map((each) => ({ key: each.id, title: each.name, subtitle: Object.keys(each.shape!.steps).map(wordsOfName).join(' · '), value: each, selected: each.id === filled }))}
           onPick={(picked) => {
-            const made = scriptRole(editor.draft, picked.id, picked.name);
+            const made = scriptRole(editor.draft, picked);
             editor.change(() => made.draft);
             // Another script's steps and inputs are not this one's.
             set({ role: made.role });

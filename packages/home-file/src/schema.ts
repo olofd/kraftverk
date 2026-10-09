@@ -262,7 +262,6 @@ const EXPRESSION: Schema = {
 const STEPS: Schema = { type: 'array', items: { $ref: '#/$defs/step' } };
 
 /** A step: made from the language's own description of each kind (@kraftverk/automation, kinds/) — its fields under its verb, or its own words' forms. */
-const STEP: Schema = stepJsonSchema();
 
 /** What starts an automation: made from the language's own description of each kind (@kraftverk/automation, kinds/). */
 const TRIGGER: Schema = triggerJsonSchema();
@@ -383,7 +382,7 @@ function automationSchema(vocabulary: Vocabulary): Schema {
 
 /** The pieces every schema here refers to. */
 function definitions(vocabulary: Vocabulary): Record<string, Schema> {
-  return { device: deviceSchema(vocabulary.types), automation: automationSchema(vocabulary), space: SPACE, step: STEP, trigger: TRIGGER, expression: EXPRESSION, duration: DURATION };
+  return { device: deviceSchema(vocabulary.types), automation: automationSchema(vocabulary), space: SPACE, step: stepJsonSchema(vocabulary.scripts), trigger: TRIGGER, expression: EXPRESSION, duration: DURATION };
 }
 
 /** The whole configuration document's schema. */

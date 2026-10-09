@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { autocompletion, closeBrackets, completionKeymap } from '@codemirror/autocomplete';
+import { autocompletion, closeBrackets, completionKeymap, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
+import { keysOffered } from '@kraftverk/home-file';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { yaml, yamlLanguage } from '@codemirror/lang-yaml';
 import { bracketMatching, HighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language';
@@ -7,8 +8,8 @@ import { lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint';
 import { Compartment, EditorState, RangeSetBuilder, type Extension } from '@codemirror/state';
 import { Decoration, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, hoverTooltip, keymap, lineNumbers, tooltips, ViewPlugin, type DecorationSet, type ViewUpdate } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
-import { stateExtensions, updateSchema } from 'codemirror-json-schema';
-import { yamlCompletion, yamlSchemaHover } from 'codemirror-json-schema/yaml';
+import { getJSONSchema, jsonPointerForPosition, stateExtensions, updateSchema } from 'codemirror-json-schema';
+import { parseYAMLDocumentState, yamlCompletion, yamlSchemaHover } from 'codemirror-json-schema/yaml';
 import { useTheme, YStack } from 'tamagui';
 
 import { ProblemList, type TextProblem, type YamlEditorProps } from './ProblemList';
@@ -68,6 +69,8 @@ export function YamlEditor({ value, onChange, problems = [], schema = null, labe
           yaml(),
           stateExtensions(schema ?? undefined),
           yamlLanguage.data.of({ autocomplete: yamlCompletion() }),
+          // The first key of a map not yet begun, which YAML reads as a value: a script step's inputs under with, a setting's fields.
+          yamlLanguage.data.of({ autocomplete: firstKeyCompletion }),
           autocompletion(),
           // Above the page, not inside the editor's scrolling box: a completion near its edge is not cut off.
           tooltips({ position: 'fixed', parent: document.body }),
@@ -154,6 +157,48 @@ const hangingIndent = ViewPlugin.fromClass(
   },
   { decorations: (plugin) => plugin.decorations }
 );
+
+/**
+ * The first key of a map not yet begun: a word alone on its line under
+ * `with:` is, to YAML, that key's value — not a key yet — so the schema's
+ * completion offers nothing there. The key above it, and what the schema
+ * takes under it as what is written chooses (`keysOffered`): each with its
+ * title, and its default after it. Where the map has begun, the schema's
+ * own completion does it.
+ */
+function firstKeyCompletion(context: CompletionContext): CompletionResult | null {
+  const { state } = context;
+  const line = state.doc.lineAt(context.pos);
+  const typed = /^(\s+)([A-Za-z_][\w-]*)?$/.exec(line.text.slice(0, context.pos - line.from));
+  if (!typed || (!typed[2] && !context.explicit)) return null;
+  const indent = typed[1]!.length;
+  // The key above it: the nearest line written less deep, ending in "key:".
+  let above = line.number - 1;
+  while (above >= 1 && !state.doc.line(above).text.trim()) above--;
+  if (above < 1) return null;
+  const keyLine = state.doc.line(above);
+  const key = /^(\s*(?:-\s+)?)([^\s:#][^:#]*):\s*$/.exec(keyLine.text);
+  const schema = getJSONSchema(state);
+  if (!key || key[1]!.length >= indent || !schema) return null;
+  const pointer = jsonPointerForPosition(state, keyLine.from + key[1]!.length + 1, 1, 'yaml');
+  const { data } = parseYAMLDocumentState(state);
+  // Begun already — a map under it — the schema's own completion offers the rest.
+  const now = pointer.split('/').slice(1).reduce<unknown>((into, part) => (into && typeof into === 'object' ? (into as Record<string, unknown>)[part] : undefined), data);
+  if (now && typeof now === 'object') return null;
+  const offered = keysOffered(schema, pointer, data);
+  if (!offered.length) return null;
+  return {
+    from: line.from + indent,
+    options: offered.map((each) => ({
+      label: each.name,
+      type: 'property',
+      ...(each.title ? { detail: each.title } : {}),
+      ...(each.description ? { info: each.description } : {}),
+      apply: `${each.name}: ${each.fallback === undefined ? '' : String(each.fallback)}`,
+    })),
+    validFor: /^[\w-]*$/,
+  };
+}
 
 export const editableAs = (readOnly: boolean): Extension => [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)];
 

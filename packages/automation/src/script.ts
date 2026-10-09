@@ -33,6 +33,18 @@ export type ScriptShape = {
   functions: Record<string, ScriptFunctionShape>;
 };
 
+/**
+ * The role a script fills when it is named by its key alone — a step's
+ * `run script: tidy-up` — as the file's reader makes it, the form makes it,
+ * and the writer knows it: `tidyUp`, labelled "Tidy up".
+ */
+export function scriptRoleOf(key: string): { role: string; label: string } {
+  const words = key.split('-').filter(Boolean);
+  const role = words.map((word, at) => (at ? word.charAt(0).toUpperCase() + word.slice(1) : word)).join('');
+  const label = words.join(' ');
+  return { role, label: label.charAt(0).toUpperCase() + label.slice(1) };
+}
+
 /** What is wrong with a script, and where, when it is known: its line and column, counted from 1. */
 export type ScriptProblem = { message: string; line: number | null; column: number | null };
 

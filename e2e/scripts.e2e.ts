@@ -135,14 +135,14 @@ async function runIt(page: Page) {
   await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
   const key = (await page.getByText(/ · written in TypeScript$/).innerText()).split(' · ')[0]!;
 
-  // An automation that runs it, written as YAML, and started.
+  // An automation that runs it, written as YAML — the script by its key where the step runs it, no role to write — and started.
   const automation = unique('Evening tidy');
   await page.goto('/automations/new');
   await page.getByText('As YAML', { exact: true }).click();
   const yaml = page.getByRole('textbox', { name: 'New automation, as configuration' });
   await yaml.click();
   await page.keyboard.press('ControlOrMeta+a');
-  await page.keyboard.insertText([`name: ${automation}`, 'mode: watch', 'clock: Europe/Stockholm', 'uses:', `  tidy: { script: ${key} }`, 'do:', '  - run script: tidy', ''].join('\n'));
+  await page.keyboard.insertText([`name: ${automation}`, 'mode: watch', 'clock: Europe/Stockholm', 'do:', `  - run script: ${key}.off`, ''].join('\n'));
   await expect(page.getByText('Ready', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Create' }).click();
   const main = page.getByRole('main');

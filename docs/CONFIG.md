@@ -167,6 +167,16 @@ secrets:
 and dashes — made from its name when it is added and changeable afterwards. A
 file names things by key; an import matches by key.
 
+**A script, where a step runs it.** `- run script: feels-like.feelsLike`
+names the script by its key and the step after a dot — its key alone when
+it has one step — with no role to write under `uses`: the role is made as
+`feelsLike: { script: feels-like }` would make it, and an export writes it
+back so. A role of its own is still written in full — a label of its own,
+or a script whose functions a condition calls (`feel.feelsLike(…)`) needs
+one: `uses: { feel: { script: feels-like } }`. Editors complete each
+script's steps, and under `with` the step's inputs, each with its
+default.
+
 **Spaces, places and labels** (docs/PLAN-WORLD-MODEL.md §8.5, §8.7, §8.13).
 A home's `spaces:` are a tree under the home itself — buildings, floors,
 rooms, areas, stairs, the outdoors — each by a key no other space of that

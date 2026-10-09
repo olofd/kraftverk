@@ -1228,9 +1228,16 @@ meet in the form, not only in YAML:
 - **What the engine fixed on the way:** an input the automation does not
   give takes the step's declared default, and a run that ran a script says
   so ("Ran “Tidy up”"), not "Nothing needed doing".
-- **Left:** script functions in the form's condition builder; YAML's
-  shorthand (`run script: tidy-up.tidyUp`) and completion; "Used by" on a
-  script's page.
+- **YAML's shorthand and completion, built after:** `run script:
+  tidy-up.tidyUp` with no role under `uses` — the role made as its key
+  makes it (`scriptRoleOf`), by the reader, the form and the writer alike,
+  so a step made in the form reads so in its YAML and round-trips exactly.
+  The step schema offers each script's `key.step` and its inputs under
+  `with` (the vocabulary carries each script's shape). The first key of a
+  map not yet begun is YAML's value, not a key, which codemirror-json-schema
+  does not complete: `client/src/components/yamlFirstKey.ts` does.
+- **Left:** script functions in the form's condition builder; "Used by" on
+  a script's page.
 
 What browser first changes in the slices:
 - **The editor is a web component of its own**, `ScriptEditor.web.tsx`,

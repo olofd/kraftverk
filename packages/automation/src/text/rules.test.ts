@@ -275,3 +275,33 @@ describe('units', () => {
     expect(checkBinding(set({ setting: 'inputLimit', to: '50 °C' }).rule!, () => [station(3000) as never])).toEqual(['St: Input limit is set in W, not °C']);
   });
 });
+
+describe('a script, by its key where a step runs it', () => {
+  test('run script: key.step — its role made as uses would have it, written back so, and read back as it went', () => {
+    const read = ruleFromConfig({ do: [{ 'run script': 'tidy-up.tidyUp', with: { after: '10 min' } }, { if: 'true', then: [{ 'run script': 'tidy-up' }] }] }, ['a']);
+    expect(read.issues).toEqual([]);
+    expect(read.rule!.roles).toEqual({ tidyUp: { script: true, label: 'Tidy up' } });
+    expect(read.uses).toEqual({ tidyUp: { script: 'tidy-up' } });
+    expect(read.rule!.then[0]).toEqual({ script: { role: 'tidyUp', step: 'tidyUp', args: { after: { value: 10, unit: 'min' } } } });
+    // The same script, run twice: one role.
+    expect((read.rule!.then[1] as unknown as { choose: { then: unknown[] } }).choose.then[0]).toEqual({ script: { role: 'tidyUp' } });
+    const written = ruleToConfig(read.rule!, read.uses);
+    expect(written.uses).toEqual({});
+    expect(written.do).toEqual([{ 'run script': 'tidy-up.tidyUp', with: { after: '10 min' } }, { if: true, then: [{ 'run script': 'tidy-up' }] }]);
+    expect(ruleFromConfig(written as Record<string, unknown>, ['a']).rule).toEqual(read.rule);
+  });
+
+  test('the long form stays where it says more: a label of its own, or a function a condition calls', () => {
+    const labelled = ruleFromConfig({ uses: { tidy: { script: 'tidy-up', label: 'The tidy' } }, do: [{ 'run script': 'tidy' }] }, ['a']);
+    expect(ruleToConfig(labelled.rule!, labelled.uses).uses).toEqual({ tidy: { script: 'tidy-up', label: 'The tidy' } });
+    const called = ruleFromConfig({ uses: { tidyUp: { script: 'tidy-up' } }, 'only if': 'tidyUp.feelsLike(20, 50) > 18', do: [{ 'run script': 'tidyUp' }] }, ['a']);
+    expect(called.issues).toEqual([]);
+    expect(ruleToConfig(called.rule!, called.uses)).toMatchObject({ uses: { tidyUp: { script: 'tidy-up' } }, do: [{ 'run script': 'tidyUp' }] });
+    // A key whose role name is another role's: a role of its own, written in full.
+    const taken = ruleFromConfig({ uses: { tidyUp: 'desk-plug' }, do: [{ 'turn off': 'tidyUp' }, { 'run script': 'tidy-up' }] }, ['a']);
+    expect(taken.uses).toMatchObject({ tidyUp2: { script: 'tidy-up' } });
+    const again = ruleToConfig(taken.rule!, taken.uses);
+    expect(again.uses).toMatchObject({ tidyUp2: { script: 'tidy-up' } });
+    expect(ruleFromConfig(again as Record<string, unknown>, ['a']).rule).toEqual(taken.rule);
+  });
+});

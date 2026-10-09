@@ -910,7 +910,7 @@ do:
 
 ### `run script` — Run a script
 
-Run one of the steps of the script filling a role (docs/PLAN-SCRIPTS.md): given its inputs under `with`, the rest their defaults. It may read the home, act — through the gateway, as this automation, for the person who let it act — and wait, within its run; in watch mode it says what it would do. What it answers is remembered, with `remember as`, as one of what this automation remembers. `step` says which of its steps, when it has several.
+Run one of the steps of a script (docs/PLAN-SCRIPTS.md) — by its key and the step after a dot, `tidy-up.tidyUp`, with no role to write; or by the role it fills, under `uses` — given its inputs under `with`, the rest their defaults. It may read the home, act — through the gateway, as this automation, for the person who let it act — and wait, within its run; in watch mode it says what it would do. What it answers is remembered, with `remember as`, as one of what this automation remembers. `step` says which of its steps, when it has several.
 
 | Word | Holds | |
 |---|---|---|
@@ -921,7 +921,9 @@ Run one of the steps of the script filling a role (docs/PLAN-SCRIPTS.md): given 
 
 ```yaml
 do:
-  - run script: tidy
+  - run script: tidy-up.tidyUp
+    with:
+      after: 10 min
 ```
 
 ```yaml

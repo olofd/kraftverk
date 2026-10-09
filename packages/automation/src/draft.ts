@@ -3,6 +3,7 @@ import { capabilitiesOf, capabilityIn, meetsNeed, partName, partsOf, type Automa
 import { usedRoles } from './edit.ts';
 import { NO_SETTINGS, withSettings } from './evaluate.ts';
 import { isAutomationRole, isGroupRole, isPartRole, isScriptRole, isWorldRole, roleKind, type Rule } from './rule.ts';
+import { scriptRoleOf } from './script.ts';
 import { KEYWORDS } from './text/expr.ts';
 
 /*
@@ -136,17 +137,23 @@ export function automationRole<D extends AutomationDraft>(draft: D, automation: 
   };
 }
 
-/** The role a script fills in the draft, to be run: the one it already fills, or a new one — named and labelled as the script is called now. */
-export function scriptRole<D extends AutomationDraft>(draft: D, script: string, name: string): { draft: D; role: string } {
-  const found = Object.entries(draft.scripts ?? {}).find(([, filled]) => filled === script);
+/**
+ * The role a script fills in the draft, to be run: the one it already fills,
+ * or a new one — named and labelled from its key as a file's
+ * `run script: tidy-up` makes it (`scriptRoleOf`), so its YAML says it so.
+ */
+export function scriptRole<D extends AutomationDraft>(draft: D, script: { id: string; key: string }): { draft: D; role: string } {
+  const found = Object.entries(draft.scripts ?? {}).find(([, filled]) => filled === script.id);
   if (found) return { draft, role: found[0] };
-  const role = roleName(draft.rule, name);
+  const made = scriptRoleOf(script.key);
+  let role = made.role;
+  for (let at = 2; draft.rule.roles[role]; at++) role = `${made.role}${at}`;
   return {
     role,
     draft: {
       ...draft,
-      rule: { ...draft.rule, roles: { ...draft.rule.roles, [role]: { script: true, label: name } } },
-      scripts: { ...draft.scripts, [role]: script },
+      rule: { ...draft.rule, roles: { ...draft.rule.roles, [role]: { script: true, label: made.label } } },
+      scripts: { ...draft.scripts, [role]: script.id },
     },
   };
 }

@@ -467,8 +467,8 @@ const SCRIPT: StepSpec<'script'> = {
   brief: (step, say) => `run ${say.name(step.script.role)}${givenTo(step.script.args, say)}`,
   docs: {
     summary:
-      'Run one of the steps of the script filling a role (docs/PLAN-SCRIPTS.md): given its inputs under `with`, the rest their defaults. It may read the home, act — through the gateway, as this automation, for the person who let it act — and wait, within its run; in watch mode it says what it would do. What it answers is remembered, with `remember as`, as one of what this automation remembers. `step` says which of its steps, when it has several.',
-    examples: ['run script: tidy', 'run script: tidy\nstep: tidyUp\nwith:\n  after: 10 min\nremember as: lastPower'],
+      'Run one of the steps of a script (docs/PLAN-SCRIPTS.md) — by its key and the step after a dot, `tidy-up.tidyUp`, with no role to write; or by the role it fills, under `uses` — given its inputs under `with`, the rest their defaults. It may read the home, act — through the gateway, as this automation, for the person who let it act — and wait, within its run; in watch mode it says what it would do. What it answers is remembered, with `remember as`, as one of what this automation remembers. `step` says which of its steps, when it has several.',
+    examples: ['run script: tidy-up.tidyUp\nwith:\n  after: 10 min', 'run script: tidy\nstep: tidyUp\nwith:\n  after: 10 min\nremember as: lastPower'],
   },
 };
 

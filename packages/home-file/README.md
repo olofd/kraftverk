@@ -16,7 +16,10 @@ read and edit (docs/CONFIG.md).
   of an older version (`kraftverk: n`, one migration per change, each with
   a kept fixture); an automation's and a device's own entry, as an export
   writes it (`automationEntryFrom`, `deviceEntryFrom`) — the same functions
-  the master's export and the app's YAML of one use.
+  the master's export and the app's YAML of one use; and the keys a map
+  not yet begun may take there (`keysOffered`), as what is written chooses
+  among the schema's alternatives — what an editor completes where YAML
+  still reads a value.
 - **Does not:** touch a database or a device, or seal a secret with a
   passphrase — the hub's (`passphraseSealing`), asked for as a port. Planning
   what a document would change, applying it, and keeping a snapshot of a

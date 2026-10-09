@@ -107,7 +107,7 @@ export function homeVocabulary(deps: Pick<ConfigDeps, 'catalog' | 'automations' 
   return vocabularyOf(deps.types.all(), (id) => deps.protocols.get(id), {
     devices: deps.catalog.list().map((device) => ({ key: device.key, type: device.typeId, name: device.name, parts: partsOf(device.description).map((part) => part.id) })),
     automations: deps.automations.list().map((automation) => ({ key: automation.key, name: automation.name })),
-    scripts: deps.scripts.store.list().map((script) => ({ id: script.id, key: script.key, name: script.name })),
+    scripts: deps.scripts.store.list().map((script) => ({ id: script.id, key: script.key, name: script.name, shape: deps.scripts.readKept(script).shape })),
     homes: homes.map((home) => ({ id: home.id, key: home.key, name: home.name })),
     // One with no key of their own yet is named by their id: a file names them so.
     people: deps.people.members().map((person) => ({ id: person.id, key: person.fileKey ?? person.id, name: person.shownAs })),

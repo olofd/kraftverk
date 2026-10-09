@@ -41,7 +41,7 @@ export function NewAutomation({ from, running = null }: { from: string | null; r
     api.scripts
       .get(running.script)
       .then((script) => {
-        const made = scriptRole(EMPTY, script.id, script.name);
+        const made = scriptRole(EMPTY, script);
         setScriptName(script.name);
         setStart({ draft: { ...made.draft, name: script.name, rule: { ...made.draft.rule, then: [{ script: { role: made.role, step: running.step } }] } }, madeFrom: null, view: 'form' });
       })

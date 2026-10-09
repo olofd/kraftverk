@@ -1,11 +1,13 @@
 import { CAPABILITIES, MAIN_PART, type CapabilityName } from '@kraftverk/device-sdk';
 
 import { WEEKDAYS, type Weekday } from '../clock.ts';
-import { ruleCommands, ruleUses } from '../reads.ts';
+import { ruleCommands, ruleExpressions, ruleUses } from '../reads.ts';
 import { fieldValue, withField, type FieldSpec } from '../kinds/spec.ts';
-import { STEP_KIND_ORDER, STEP_KINDS, stepSpec, type StepKind, type StepReader, type StepSpec } from '../kinds/steps.ts';
+import { branchesOf, STEP_KIND_ORDER, STEP_KINDS, stepSpec, type StepKind, type StepReader, type StepSpec } from '../kinds/steps.ts';
 import { TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerFields, triggerKindOfVerbs } from '../kinds/triggers.ts';
-import { isWhileRunning, isWorldRole, roleKind, TRIGGER_ID, WHILE_RUNNING, type Expr, type RoleKind, type RuleTrigger, type RoleSpec, type Rule, type Step } from '../rule.ts';
+import { expressionsIn } from '../kinds/exprs.ts';
+import { isScriptRole, isWhileRunning, isWorldRole, roleKind, TRIGGER_ID, WHILE_RUNNING, type Expr, type RoleKind, type RuleTrigger, type RoleSpec, type Rule, type Step } from '../rule.ts';
+import { scriptRoleOf } from '../script.ts';
 import { parseExpr, printExpr } from './expr.ts';
 import { settingsFromConfig, settingsToConfig } from './settings.ts';
 
@@ -343,10 +345,35 @@ export type RuleEntry = {
 export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { rule: Rule | null; uses: Record<string, Use>; issues: Issue[] } {
   // The roles a script fills, looked for first: what its expressions call a script's function on.
   const reader = new Reader(new Set(Object.entries(isRecord(entry.uses) ? entry.uses : {}).flatMap(([role, data]) => (isRecord(data) && 'script' in data ? [role] : []))));
-  const when = tryRead(reader, () => reader.triggers(entry.when, [...path, 'when'])) ?? [];
+  // A script named by its key where a step runs it — `run script: tidy-up.tidyUp` — and in no role: its role made, as `uses` would have it.
+  const usesNamed = new Set(Object.keys(isRecord(entry.uses) ? entry.uses : {}));
+  const byKey = new Map<string, string>();
+  const shorthand = (steps: readonly Step[]): Step[] =>
+    steps.map((step) => {
+      let next = step;
+      if ('script' in step && !usesNamed.has(step.script.role) && /^[a-z0-9]+(-[a-z0-9]+)*(\.[A-Za-z][A-Za-z0-9]*)?$/.test(step.script.role)) {
+        const [key, named] = step.script.role.split('.') as [string, string | undefined];
+        let role = byKey.get(key);
+        if (!role) {
+          const made = scriptRoleOf(key);
+          role = made.role;
+          for (let at = 2; usesNamed.has(role) || [...byKey.values()].includes(role); at++) role = `${made.role}${at}`;
+          byKey.set(key, role);
+        }
+        next = { script: { ...step.script, role, ...(named && step.script.step === undefined ? { step: named } : {}) } };
+      }
+      // Only a branch that changed is written again: one it does not have stays so.
+      for (const branch of branchesOf(next)) {
+        const read = shorthand(branch.steps);
+        if (read.some((each, at) => each !== branch.steps[at])) next = withField(next, branch.field, read);
+      }
+      return next;
+    });
+  const when = (tryRead(reader, () => reader.triggers(entry.when, [...path, 'when'])) ?? []).map((trigger) => (trigger.then ? { ...trigger, then: shorthand(trigger.then) } : trigger));
   const condition = 'only if' in entry ? tryRead(reader, () => reader.expr(entry['only if'], [...path, 'only if'])) : undefined;
-  const then = tryRead(reader, () => reader.steps(entry.do, [...path, 'do'])) ?? [];
-  const otherwise = 'if a step fails' in entry ? tryRead(reader, () => reader.steps(entry['if a step fails'], [...path, 'if a step fails'])) : undefined;
+  const then = shorthand(tryRead(reader, () => reader.steps(entry.do, [...path, 'do'])) ?? []);
+  const otherwise = 'if a step fails' in entry ? (tryRead(reader, () => reader.steps(entry['if a step fails'], [...path, 'if a step fails'])) ?? undefined) : undefined;
+  const otherwiseRead = otherwise ? shorthand(otherwise) : otherwise;
   const params = tryRead(reader, () => settingsFromConfig(entry.settings, [...path, 'settings'], (message, at) => reader.fail(message, at))) ?? { fields: {} };
   // What it remembers: written as its settings are, each the value it starts from.
   const memory = 'memory' in entry ? tryRead(reader, () => settingsFromConfig(entry.memory, [...path, 'memory'], (message, at) => reader.fail(message, at), 'memory')) : null;
@@ -356,9 +383,13 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
   // What a trigger starting it while it runs does: let go, unless it says otherwise.
   const whileRunning = 'while running' in entry ? tryRead(reader, () => (isWhileRunning(entry['while running']) ? entry['while running'] : reader.fail(`Expected one of ${Object.keys(WHILE_RUNNING).join(', ')}`, [...path, 'while running']))) : null;
 
-  const steps: RuleBody = { when, ...(condition !== undefined && condition !== null ? { if: condition } : {}), then, ...(otherwise !== undefined && otherwise !== null ? { otherwise } : {}) };
+  const steps: RuleBody = { when, ...(condition !== undefined && condition !== null ? { if: condition } : {}), then, ...(otherwiseRead !== undefined && otherwiseRead !== null ? { otherwise: otherwiseRead } : {}) };
   const roles: Record<string, RoleSpec> = {};
   const uses: Record<string, Use> = {};
+  for (const [key, role] of byKey) {
+    roles[role] = { script: true, label: scriptRoleOf(key).label };
+    uses[role] = { script: key };
+  }
   const usesData = entry.uses ?? {};
   if (!isRecord(usesData)) reader.issues.push({ message: '"uses" is a map: each role, and what fills it', path: [...path, 'uses'] });
   else {
@@ -454,7 +485,7 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
     ...(whileRunning && whileRunning !== 'skip' ? { whileRunning } : {}),
     ...(condition !== undefined && condition !== null ? { if: condition } : {}),
     then,
-    ...(otherwise !== undefined && otherwise !== null ? { otherwise } : {}),
+    ...(otherwiseRead !== undefined && otherwiseRead !== null ? { otherwise: otherwiseRead } : {}),
   };
   return { rule, uses, issues: [] };
 }
@@ -482,6 +513,16 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
   };
   const time = (value: Expr): unknown => ('value' in value && typeof value.value === 'string' && /^\d{2}:\d{2}$/.test(value.value) ? value.value : expr(value));
 
+  // The scripts written by key where a step runs them, with no role in `uses`: a role no expression calls a function of, named and labelled as its key makes it (scriptRoleOf).
+  const called = new Set([...ruleExpressions(rule)].flatMap((top) => [...expressionsIn(top)].flatMap((each) => ('script' in each ? [each.script] : []))));
+  const byKey = new Map(
+    Object.entries(rule.roles).flatMap(([role, spec]) => {
+      const use = uses[role];
+      if (!isScriptRole(spec) || !use || !('script' in use) || called.has(role)) return [];
+      const made = scriptRoleOf(use.script);
+      return made.role === role && made.label === spec.label ? [[role, use.script] as const] : [];
+    })
+  );
   // A step by its kind's words of its own, or its fields under its verb, in its kind's order (kinds/steps.ts).
   const step = (each: Step): Record<string, unknown> => {
     const spec = stepSpec(each);
@@ -490,6 +531,12 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
     for (const field of spec.fields) {
       const value = fieldValue(each, field);
       if (value !== undefined) written[field.key] = fieldText(field, value);
+    }
+    // A script by its key, and its step after a dot: `run script: tidy-up.tidyUp`.
+    const key = 'script' in each ? byKey.get(each.script.role) : undefined;
+    if ('script' in each && key !== undefined) {
+      const { 'run script': _role, step: named, ...rest } = written;
+      return { 'run script': `${key}${named ? `.${String(named)}` : ''}`, ...rest };
     }
     return written;
   };
@@ -541,6 +588,7 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
 
   const usesOut: Record<string, unknown> = {};
   for (const [role, spec] of Object.entries(rule.roles)) {
+    if (byKey.has(role)) continue;
     const use = uses[role];
     const kind = roleKind(spec);
     const inferred = inferredRole(rule, role, kind);
