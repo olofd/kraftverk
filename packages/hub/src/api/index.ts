@@ -16,6 +16,7 @@ import { notificationsApi } from './notifications.ts';
 import { mediaApi } from './media.ts';
 import { labelsApi } from './labels.ts';
 import { peopleApi } from './people.ts';
+import { scriptsApi } from './scripts.ts';
 import { spacesApi } from './spaces.ts';
 import { integrationsApi } from './integrations.ts';
 import { liveApi } from './live.ts';
@@ -37,6 +38,7 @@ export function familyApi(hub: Hub, caller: Caller): KraftverkApi {
     ...transportsApi(hub),
     ...integrationsApi(hub),
     ...automationsApi(hub, caller),
+    ...scriptsApi(hub),
     ...familyWideApi(hub, caller),
     ...homesApi(hub, caller),
     ...zonesApi(hub, caller),

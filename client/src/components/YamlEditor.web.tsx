@@ -155,10 +155,10 @@ const hangingIndent = ViewPlugin.fromClass(
   { decorations: (plugin) => plugin.decorations }
 );
 
-const editableAs = (readOnly: boolean): Extension => [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)];
+export const editableAs = (readOnly: boolean): Extension => [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)];
 
 /** Problems as the editor marks them: at their line and column, kept inside the text as it is now. */
-function diagnosticsOf(state: EditorState, problems: readonly TextProblem[]): Diagnostic[] {
+export function diagnosticsOf(state: EditorState, problems: readonly TextProblem[]): Diagnostic[] {
   return problems.flatMap((problem) => {
     if (!problem.line || problem.line > state.doc.lines) return [];
     const line = state.doc.line(problem.line);
@@ -169,10 +169,10 @@ function diagnosticsOf(state: EditorState, problems: readonly TextProblem[]): Di
   });
 }
 
-type Colors = { background: string; card: string; color: string; muted: string; border: string; accent: string; warning: string; success: string; danger: string };
+export type Colors = { background: string; card: string; color: string; muted: string; border: string; accent: string; warning: string; success: string; danger: string };
 
 /** The app's own colours, light or dark, on the editor and its highlighting. */
-function lookOf(colors: Colors): Extension {
+export function lookOf(colors: Colors): Extension {
   const mono = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
   return [
     EditorView.theme({

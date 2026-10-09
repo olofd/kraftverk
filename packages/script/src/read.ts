@@ -1,7 +1,7 @@
-import { SCRIPT_LIMITS, type ScriptFunctionShape, type ScriptShape, type ScriptStepShape } from '@kraftverk/automation';
+import { SCRIPT_LIMITS, type ScriptCheck, type ScriptFunctionShape, type ScriptProblem, type ScriptShape, type ScriptStepShape } from '@kraftverk/automation';
 import { isUnit, type ConfigField, type ConfigSchema } from '@kraftverk/device-sdk';
 
-import { compileScript, type Compiled, type ScriptProblem } from './compile.ts';
+import { compileScript, type Compiled } from './compile.ts';
 import { ScriptFault, type Sandbox, type ScriptEngine } from './engine.ts';
 import { GUEST_SDK } from './generated/guest.ts';
 
@@ -20,7 +20,7 @@ const IMPORTS: readonly string[] = ['kraftverk'];
 const NAME = /^[a-z][A-Za-z0-9]*$/;
 
 /** A script read: its JavaScript and its shape, or what is wrong with it. */
-export type ReadScript = { compiled: Compiled | null; shape: ScriptShape | null; problems: ScriptProblem[] };
+export type ReadScript = ScriptCheck & { compiled: Compiled | null };
 
 const problem = (message: string, at: { line?: number | null; column?: number | null } = {}): ScriptProblem => ({ message, line: at.line ?? null, column: at.column ?? null });
 

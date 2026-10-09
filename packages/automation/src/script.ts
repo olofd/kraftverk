@@ -29,6 +29,12 @@ export type ScriptShape = {
   functions: Record<string, ScriptFunctionShape>;
 };
 
+/** What is wrong with a script, and where, when it is known: its line and column, counted from 1. */
+export type ScriptProblem = { message: string; line: number | null; column: number | null };
+
+/** A script read: what it declares, or what is wrong with it. */
+export type ScriptCheck = { shape: ScriptShape | null; problems: ScriptProblem[] };
+
 /** How far a script may go: each said in words where it is reached. */
 export const SCRIPT_LIMITS = {
   /** The longest a script's source may be, in bytes. */

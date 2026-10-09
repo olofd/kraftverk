@@ -1,5 +1,11 @@
 
 
+import { router } from 'expo-router';
+import { Button, Text, XStack, YStack } from 'tamagui';
+
+import { PATHS } from '@kraftverk/api-client';
+import { Icon } from '@kraftverk/ui';
+
 import { ErrorText } from '../../components/ErrorText';
 import { Loading } from '../../components/Loading';
 import { Screen } from '../../components/Screen';
@@ -30,6 +36,19 @@ export function AutomationsScreen() {
           empty="An automation is steps your devices take — “power the charger, wait for its plug, switch it on, and make sure it draws” — started by you, at a time, or when something holds. Build one block by block, or start from a recipe."
         />
       ) : null}
+      <XStack alignItems="center" justifyContent="space-between" gap="$3" paddingTop="$2">
+        <YStack flex={1} gap={2}>
+          <Text role="heading" aria-level={2} fontSize={18} fontWeight="700" color="$color">
+            Scripts
+          </Text>
+          <Text fontSize={14} color="$muted" lineHeight={20}>
+            What an automation does, written in TypeScript.
+          </Text>
+        </YStack>
+        <Button size="$4" icon={<Icon name="code" size={16} />} onPress={() => router.push(PATHS.scripts.new)}>
+          Write one
+        </Button>
+      </XStack>
     </Screen>
   );
 }

@@ -21,6 +21,9 @@ export type YamlEditorProps = {
   minLines?: number;
 };
 
+/** A script's editor: a text and its problems, as a YAML editor's, with no schema. */
+export type ScriptEditorProps = Omit<YamlEditorProps, 'schema'>;
+
 /** A connection's secrets as a person says them: "localKey" is "local key". */
 export const secretWords = (fields: readonly string[]): string => fields.map((field) => field.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()).join(', ');
 

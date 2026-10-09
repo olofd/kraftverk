@@ -1,3 +1,4 @@
+import type { ScriptProblem } from '@kraftverk/automation';
 import { transform } from 'sucrase';
 
 /*
@@ -7,9 +8,6 @@ import { transform } from 'sucrase';
   Hermes too. Nothing is type-checked here: that is the editor's. Lines stay
   where they were, so a fault inside names the line as written.
 */
-
-/** What is wrong with a script, and where, when it is known. */
-export type ScriptProblem = { message: string; line: number | null; column: number | null };
 
 /** A script compiled: its JavaScript, and the names it imports. */
 export type Compiled = { code: string; imports: readonly string[] };

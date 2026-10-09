@@ -1,4 +1,4 @@
-import type { AutomationDraft, Rule } from '@kraftverk/automation';
+import type { AutomationDraft, Rule, ScriptCheck } from '@kraftverk/automation';
 import type { Challenge, SignIn, Statement } from '@kraftverk/identity';
 import type { AutomationId, ConfigValues, ConnectionId, LinkId, NodeId, PolicyValueName, ResourceKind, SavedDeviceId, SetupActionResult, Value } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
@@ -238,6 +238,11 @@ export interface KraftverkApi {
     rehearse(subject: { draft: AutomationDraft; timeZone: string } | { automation: AutomationId }, hours?: number): Promise<Rehearsal>;
     /** A recipe copied into a rule of its own, its settings — held to their schema — written into its blocks. */
     fromRecipe(recipe: string, params: Record<string, Value>): Promise<Rule>;
+  };
+  /** Scripts in TypeScript, for automations (docs/PLAN-SCRIPTS.md). */
+  scripts: {
+    /** A script read as the home's engine reads it, nothing kept: what it declares, or what is wrong with it, by line. */
+    check(source: string): Promise<ScriptCheck>;
   };
   /** A home in one file (docs/CONFIG.md): what a file may name here, its schema, an export, an import in two steps. */
   configuration: {

@@ -240,6 +240,9 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
         'automation' in subject ? get(`/automations/${enc(subject.automation)}/rehearse`, { hours }) : call('POST', '/automations/rehearse', { ...subject.draft, timeZone: subject.timeZone, ...(hours ? { hours } : {}) }),
       fromRecipe: (recipe, params) => call('POST', `/automations/recipes/${enc(recipe)}/copy`, { params }),
     },
+    scripts: {
+      check: (source) => call('POST', '/scripts/check', { source }),
+    },
 
     configuration: {
       vocabulary: () => get('/config/vocabulary'),

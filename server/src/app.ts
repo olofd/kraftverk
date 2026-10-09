@@ -15,6 +15,7 @@ import { isPrivate, normaliseIp } from './auth/trust.ts';
 import type { ServerConfig } from './config.ts';
 import { assistantRoutes } from './routes/assistant.ts';
 import { automationRoutes } from './routes/automations.ts';
+import { scriptRoutes } from './routes/scripts.ts';
 import { configurationRoutes } from './routes/configuration.ts';
 import type { AppDeps } from './routes/context.ts';
 import { deviceRoutes } from './routes/devices.ts';
@@ -154,6 +155,7 @@ export function createApp(deps: AppDeps) {
   api.route('/', linkRoutes(deps));
   api.route('/', transportRoutes(deps));
   api.route('/', automationRoutes(deps));
+  api.route('/', scriptRoutes(deps));
   api.route('/', configurationRoutes(deps, auth.confirm));
   api.route('/', assistantRoutes(deps));
   api.route('/', liveRoutes(deps, upgradeWebSocket, allowed));

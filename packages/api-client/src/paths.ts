@@ -18,6 +18,7 @@
     /automations[/new]
     /automations/<id>[/edit[?view=yaml]|/configuration]
     /automations/<id>/runs/<run>
+    /scripts/new                            a script, written and read
     /integrations/<id>
     /integrations/<id>/accounts/<account>   an integration's own: an account,
     /integrations/<id>/gateways/<gateway>   or a gateway
@@ -96,6 +97,11 @@ export const PATHS = {
     edit: (id: string, view: 'form' | 'yaml' = 'form') => `/automations/${at(id)}/edit${query({ view: view === 'yaml' ? 'yaml' : undefined })}`,
     configuration: (id: string) => `/automations/${at(id)}/configuration`,
     run: (id: string, run: string) => `/automations/${at(id)}/runs/${at(run)}`,
+  },
+
+  /** Scripts in TypeScript, for automations (docs/PLAN-SCRIPTS.md). */
+  scripts: {
+    new: '/scripts/new',
   },
 
   integrations: {

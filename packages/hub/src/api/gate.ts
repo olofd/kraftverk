@@ -104,6 +104,7 @@ export const GATES = {
   'automations.runLog': read,
   'automations.rehearse': read,
   'automations.fromRecipe': read,
+  'scripts.check': read,
   'configuration.vocabulary': read,
   'configuration.schema': read,
   'configuration.export': read,
