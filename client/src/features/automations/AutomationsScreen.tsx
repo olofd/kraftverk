@@ -54,7 +54,9 @@ function Scripts() {
                     {script.name}
                   </Text>
                   <Text fontSize={13} color={script.problems.length ? '$warning' : '$muted'}>
-                    {script.problems.length ? `${script.problems.length} thing${script.problems.length === 1 ? '' : 's'} to fix` : [`${Object.keys(script.shape?.steps ?? {}).length} step`, `${Object.keys(script.shape?.functions ?? {}).length} function`].map((said) => (said.startsWith('1 ') ? said : `${said}s`)).join(' · ')}
+                    {script.problems.length
+                      ? `${script.problems.length} thing${script.problems.length === 1 ? '' : 's'} to fix`
+                      : [`${Object.keys(script.shape?.steps ?? {}).length} step`, `${Object.keys(script.shape?.functions ?? {}).length} function`, ...(script.usedBy.length ? [`used by ${script.usedBy.length} automation`] : [])].map((said) => (/(^|by )1 /.test(said) ? said : `${said}s`)).join(' · ')}
                   </Text>
                 </YStack>
                 <Icon name="chevron-right" size={16} />

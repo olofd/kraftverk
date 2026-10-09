@@ -27,7 +27,7 @@ const NOT_A_FUNCTION = 'Export only functions, each by its name: "export async f
 describe('a script', () => {
   test('is kept when it reads: its key from its name, what it declares, who wrote it — and on the timeline', async () => {
     const kept = await t.home.scripts.create({ name: 'Feels like', source: FEELS });
-    expect(kept).toMatchObject({ key: 'feels-like', name: 'Feels like', source: FEELS, problems: [], updatedBy: 'olof' });
+    expect(kept).toMatchObject({ key: 'feels-like', name: 'Feels like', source: FEELS, problems: [], updatedBy: 'olof', usedBy: [] });
     expect(Object.keys(kept.shape?.functions ?? {})).toEqual(['feelsLike']);
     expect(await t.home.scripts.list()).toEqual([kept]);
     expect(await t.home.scripts.get(kept.id)).toEqual(kept);
@@ -112,6 +112,8 @@ describe('a script', () => {
       timeZone: 'Europe/Stockholm',
     });
     expect(made.problems).toEqual([]);
+    // The script says who runs it.
+    expect((await t.home.scripts.get(script.id)).usedBy).toEqual([{ id: made.id, name: 'Evening tidy' }]);
     // The live stream, as an app listens: each line of the run as it happens.
     const heard: LiveUpdate[] = [];
     const stream = t.home.live((update) => void heard.push(update));

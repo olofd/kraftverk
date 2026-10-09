@@ -21,6 +21,8 @@ export type ScriptView = {
   updatedAt: string;
   /** Who last changed it, as they were called then. */
   updatedBy: string;
+  /** The automations that run it, or call one of its functions: each by its id and name, as they are now. */
+  usedBy: { id: string; name: string }[];
 };
 
 /** One of a script's steps to try now, as written: which, and what it is given, each in its input's unit. */

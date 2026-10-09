@@ -5,7 +5,7 @@ import { Button, Input, Spinner, Text, XStack, YStack } from 'tamagui';
 import type { ConfigField, ConfigSchema, ConfigValues, Value } from '@kraftverk/device-sdk';
 import type { ScriptCheck, ScriptShape } from '@kraftverk/automation';
 import { describeError, PATHS, type ScriptTried, type ScriptView } from '@kraftverk/api-client';
-import { Card, haptic, Icon, SchemaForm } from '@kraftverk/ui';
+import { Card, haptic, Icon, RowSeparator, SchemaForm } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { Loading } from '../../components/Loading';
@@ -284,6 +284,37 @@ function useRead(source: string): { check: ScriptCheck | null; current: boolean;
   return { check: read?.check ?? null, current: read?.source === source, error };
 }
 
+/** The automations that run a kept script, or call one of its functions: each a way to its page. */
+function UsedBy({ automations }: { automations: ScriptView['usedBy'] }) {
+  return (
+    <YStack gap="$2" role="region" aria-label="Used by">
+      <Text role="heading" aria-level={2} fontSize={18} fontWeight="700" color="$color">
+        Used by
+      </Text>
+      {automations.length ? (
+        <Card inset>
+          {automations.map((automation, index) => (
+            <YStack key={automation.id}>
+              {index ? <RowSeparator /> : null}
+              <XStack role="link" aria-label={automation.name} cursor="pointer" padding="$3" gap="$3" alignItems="center" pressStyle={{ opacity: 0.6 }} onPress={() => router.push(PATHS.automations.one(automation.id))}>
+                <Icon name="zap" size={16} />
+                <Text flex={1} fontSize={15} fontWeight="600" color="$color">
+                  {automation.name}
+                </Text>
+                <Icon name="chevron-right" size={16} />
+              </XStack>
+            </YStack>
+          ))}
+        </Card>
+      ) : (
+        <Text fontSize={14} color="$muted" lineHeight={20}>
+          No automation runs it yet: "Run it when…" under one of its steps makes one.
+        </Text>
+      )}
+    </YStack>
+  );
+}
+
 /** The script itself: its name, its source, what it declares, and keeping it. */
 function ScriptForm({ script }: { script: ScriptView | null }) {
   const { api } = useFamily();
@@ -331,7 +362,8 @@ function ScriptForm({ script }: { script: ScriptView | null }) {
   };
   const remove = async () => {
     if (!script) return;
-    if (!(await confirmAction(`Remove "${script.name}"?`, 'Its source is gone with it: export it first to keep a copy.', 'Remove', 'careful'))) return;
+    const using = script.usedBy.length ? ` ${script.usedBy.map((each) => `“${each.name}”`).join(', ')} ${script.usedBy.length === 1 ? 'runs' : 'run'} it: ${script.usedBy.length === 1 ? 'it has' : 'they have'} nothing to run then.` : '';
+    if (!(await confirmAction(`Remove "${script.name}"?`, `Its source is gone with it: export it first to keep a copy.${using}`, 'Remove', 'careful'))) return;
     setBusy(true);
     try {
       await api.scripts.remove(script.id);
@@ -380,6 +412,7 @@ function ScriptForm({ script }: { script: ScriptView | null }) {
         <ErrorText>{error}</ErrorText>
         <ErrorText>{typesProblem}</ErrorText>
         {check?.shape ? <Declared shape={check.shape} source={source} current={current} kept={script && !changed ? script.id : null} /> : null}
+        {script ? <UsedBy automations={script.usedBy} /> : null}
       </YStack>
     </Screen>
   );

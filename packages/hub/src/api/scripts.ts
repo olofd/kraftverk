@@ -32,7 +32,11 @@ export function scriptsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'script
 
   const viewOf = (script: ScriptRecord): ScriptView => {
     const read = scripts.readKept(script);
-    return { id: script.id, key: script.key, name: script.name, source: script.source, shape: read.shape, problems: read.problems, updatedAt: script.updatedAt, updatedBy: script.updatedBy.name };
+    const usedBy = hub.automations
+      .list()
+      .filter((automation) => Object.values(automation.scripts ?? {}).includes(script.id))
+      .map((automation) => ({ id: automation.id, name: automation.name }));
+    return { id: script.id, key: script.key, name: script.name, source: script.source, shape: read.shape, problems: read.problems, updatedAt: script.updatedAt, updatedBy: script.updatedBy.name, usedBy };
   };
   const scriptOf = (id: string): ScriptRecord => {
     const script = scripts.store.get(id);

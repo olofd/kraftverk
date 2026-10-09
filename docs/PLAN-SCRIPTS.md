@@ -1242,7 +1242,10 @@ meet in the form, not only in YAML:
   reading of a part — one whose unit converts to the argument's, or of its
   type — and its answer compared, in its unit. Picked, its script fills a
   role (`scriptRole`), as a step's does.
-- **Left:** "Used by" on a script's page.
+- **"Used by", built after:** a script's view says which automations run it
+  or call one of its functions (`ScriptView.usedBy`, from the roles it
+  fills); its page lists them, each a way there, the scripts' list counts
+  them, and removing it says which are left with nothing to run.
 
 What browser first changes in the slices:
 - **The editor is a web component of its own**, `ScriptEditor.web.tsx`,

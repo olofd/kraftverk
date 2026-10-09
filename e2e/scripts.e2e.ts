@@ -196,6 +196,8 @@ test('a script’s step, run when… — an automation made from it in the form,
   await expect(page.getByText('Ready', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Keep it' }).click();
   await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
+  const scriptPage = page.url();
+  await expect(page.getByRole('region', { name: 'Used by' }).getByText(/^No automation runs it yet/)).toBeVisible();
 
   // Run it when…: the form, its step in it, its input's default said — when it runs still to choose.
   await page.getByRole('button', { name: 'Run Hello when…' }).click();
@@ -212,6 +214,12 @@ test('a script’s step, run when… — an automation made from it in the form,
   await expect(activity.getByText(`Ran “${name}” (hello)`).first()).toBeVisible();
   await activity.getByText(`Ran “${name}” (hello)`).first().click();
   await expect(page.getByText('Hello after 120 s').first()).toBeVisible();
+
+  // The script says who runs it, each a way there.
+  await page.goto(scriptPage);
+  await page.getByRole('region', { name: 'Used by' }).getByRole('link', { name }).click();
+  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
+  await expect(page).toHaveURL(/\/automations\//);
 });
 
 test('a script’s function in a condition built in the form: a part’s reading given it, its answer compared', async ({ page, request }) => {
