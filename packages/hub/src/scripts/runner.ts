@@ -46,7 +46,13 @@ const refusalText = (error: unknown): string =>
 const faultWords = (fault: ScriptFault): string => `${fault.message}${fault.line ? ` (line ${fault.line})` : ''}`;
 
 /** What a call the gate counts as acting did, in words for the run's log. */
-export type Said = { what: string; outcome: 'done' | 'refused' | 'failed' | 'unverified'; detail: string | null };
+export type Said = {
+  what: string;
+  outcome: 'done' | 'refused' | 'failed' | 'unverified';
+  detail: string | null;
+  /** A line the script said with `log`, not something it did: what a run tried from the editor gives the browser's console. */
+  said?: true;
+};
 
 /** What a device reports now, by key — never where it is: a position is not a script's to read. */
 const readingsOf = (hub: Hub, id: string): Record<string, Value> =>
@@ -121,7 +127,7 @@ export async function runScriptStep(hub: Hub, run: StepRun): Promise<ScriptStepD
   const host: HostFunctions = {
     sync: {
       __log: (text) => {
-        if (lines++ < SCRIPT_LIMITS.logLines) say({ what: text.slice(0, 500), outcome: 'done', detail: null });
+        if (lines++ < SCRIPT_LIMITS.logLines) say({ what: text.slice(0, 500), outcome: 'done', detail: null, said: true });
         else quietLines++;
         return '';
       },

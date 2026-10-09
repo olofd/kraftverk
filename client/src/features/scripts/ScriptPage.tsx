@@ -85,6 +85,21 @@ function Fields({ label, fields }: { label: string; fields: readonly ConfigField
   );
 }
 
+/**
+ * A step tried, in the browser's console as well: what the script said with
+ * `log` as its own lines, what it did beside them, its answer, its fault —
+ * each under the step's name, as a developer reads a run.
+ */
+function toConsole(name: string, tried: ScriptTried) {
+  const at = `[${name}]`;
+  for (const line of tried.lines) {
+    if (line.kind === 'log') console.log(at, line.what);
+    else (line.outcome === 'refused' || line.outcome === 'failed' ? console.warn : console.info)(at, line.what, ...(line.detail ? [`— ${line.detail}`] : []));
+  }
+  if (tried.fault) console.error(at, tried.fault);
+  else console.info(at, tried.answer === null ? 'done' : 'answered', ...(tried.answer === null ? [] : [tried.answer]));
+}
+
 /** What a value is, as a person reads it. */
 const valueWords = (value: Value | null): string => (value === null ? 'nothing' : typeof value === 'string' ? value : JSON.stringify(value));
 
@@ -106,7 +121,9 @@ function TryStep({ source, name, inputs, current }: { source: string; name: stri
     setBusy(true);
     setError(null);
     try {
-      setTried(await api.scripts.run({ source, step: name, inputs: Object.fromEntries(Object.keys(inputs.fields).map((key) => [key, (values[key] ?? null) as Value])), ...(yes ? { yes } : {}) }));
+      const found = await api.scripts.run({ source, step: name, inputs: Object.fromEntries(Object.keys(inputs.fields).map((key) => [key, (values[key] ?? null) as Value])), ...(yes ? { yes } : {}) });
+      toConsole(name, found);
+      setTried(found);
     } catch (err) {
       setTried(null);
       setError(describeError(err) || 'It could not be run');

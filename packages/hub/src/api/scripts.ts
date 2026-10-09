@@ -100,7 +100,7 @@ export function scriptsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'script
         if (!declared) throw new ApiError('not-found', `It has no step "${input.step}"`);
         // What it remembers, as it starts: nothing kept, so each try begins afresh.
         const memory = Object.fromEntries(Object.entries(declared.memory.fields).flatMap(([key, field]) => (field.default === undefined ? [] : [[key, field.default]])));
-        const lines: Said[] = [];
+        const lines: ScriptTried['lines'] = [];
         const asked: ScriptTried['asked'] = [];
         const done = await runScriptStep(hub, {
           script: { name: 'The script', compiled: read.compiled, shape: read.shape, calls: read.calls },
@@ -113,7 +113,7 @@ export function scriptsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'script
           cause: [],
           deadline: hub.clock.now() + TRY_SECONDS * 1000,
           signal: new AbortController().signal,
-          say: (line) => void lines.push(line),
+          say: ({ said, ...line }: Said) => void lines.push({ kind: said ? 'log' : 'act', ...line }),
           yes: input.yes ?? {},
           asked: (need) => void asked.push(need),
         });

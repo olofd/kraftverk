@@ -170,7 +170,10 @@ describe('a script', () => {
     expect(tried.fault).toBeNull();
     expect(tried.answer).toBe('Off after 90 s');
     expect(tried.memory).toEqual({ times: 1 });
-    expect(tried.lines.map((line) => line.what)).toEqual(['Heater plug: switch.set on false', 'People: ; homes: home; this one Home']);
+    expect(tried.lines.map((line) => [line.kind, line.what])).toEqual([
+      ['act', 'Heater plug: switch.set on false'],
+      ['log', 'People: ; homes: home; this one Home'],
+    ]);
     expect((await t.home.devices.get(plug.id)).readings.find((reading) => reading.key === 'on')?.value).toBe(false);
     expect(await t.home.scripts.list()).toEqual([]);
     // A step it does not have, and one that throws: said, not thrown.

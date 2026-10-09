@@ -34,7 +34,8 @@ export type ScriptTry = {
 
 /** A step tried: what it did, line by line as a run's log says it; its answer; what it would remember — or why it failed. Nothing is kept. */
 export type ScriptTried = {
-  lines: { what: string; outcome: 'done' | 'refused' | 'failed' | 'unverified'; detail: string | null }[];
+  /** Each as it came: `log` a line the script said, `act` something it did — a command, a mode set, people told. */
+  lines: { kind: 'log' | 'act'; what: string; outcome: 'done' | 'refused' | 'failed' | 'unverified'; detail: string | null }[];
   answer: Value | null;
   memory: Record<string, Value>;
   fault: string | null;
