@@ -3,11 +3,12 @@ import { router, useFocusEffect } from 'expo-router';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
 import { describeError, PATHS, type ScriptView } from '@kraftverk/api-client';
-import { Card, Icon, RowSeparator } from '@kraftverk/ui';
+import { Card, haptic, Icon, RowSeparator } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { Loading } from '../../components/Loading';
 import { Screen } from '../../components/Screen';
+import { useTone } from '../../components/tone';
 import { useFamily } from '../../state/FamilyProvider';
 import { AutomationList } from './AutomationList';
 import { useAutomations } from './useAutomations';
@@ -15,6 +16,7 @@ import { useAutomations } from './useAutomations';
 /** The family's scripts (docs/PLAN-SCRIPTS.md), read each time the page is shown: one written elsewhere is there when it is back. */
 function Scripts() {
   const { api } = useFamily();
+  const tone = useTone();
   const [scripts, setScripts] = useState<ScriptView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   useFocusEffect(
@@ -37,8 +39,9 @@ function Scripts() {
             {scripts?.length ? `${scripts.length} script${scripts.length === 1 ? '' : 's'}, in TypeScript` : 'What an automation does, written in TypeScript.'}
           </Text>
         </YStack>
-        <Button size="$4" icon={<Icon name="code" size={16} />} aria-label="Write a script" onPress={() => router.push(PATHS.scripts.new)}>
-          Write one
+        {/* As "New" above, quieter: the page's own action is a new automation. */}
+        <Button size="$4" chromeless borderWidth={1} borderColor="$borderColor" color="$color" icon={<Icon name="plus" size={16} color={tone('$accent')} />} aria-label="Write a script" onPress={() => (haptic(), router.push(PATHS.scripts.new))}>
+          New
         </Button>
       </XStack>
       <ErrorText>{error}</ErrorText>
@@ -48,7 +51,9 @@ function Scripts() {
             <YStack key={script.id}>
               {index ? <RowSeparator /> : null}
               <XStack role="link" aria-label={script.name} cursor="pointer" padding="$3" gap="$3" alignItems="center" pressStyle={{ opacity: 0.6 }} onPress={() => router.push(PATHS.scripts.one(script.id))}>
-                <Icon name="code" size={16} />
+                <YStack width={36} height={36} borderRadius="$3" alignItems="center" justifyContent="center" backgroundColor="$backgroundPress">
+                  <Icon name="code" size={16} color={tone('$accent')} />
+                </YStack>
                 <YStack flex={1} gap={2}>
                   <Text fontSize={15} fontWeight="600" color="$color">
                     {script.name}
@@ -59,7 +64,7 @@ function Scripts() {
                       : [`${Object.keys(script.shape?.steps ?? {}).length} step`, `${Object.keys(script.shape?.functions ?? {}).length} function`, ...(script.usedBy.length ? [`used by ${script.usedBy.length} automation`] : [])].map((said) => (/(^|by )1 /.test(said) ? said : `${said}s`)).join(' · ')}
                   </Text>
                 </YStack>
-                <Icon name="chevron-right" size={16} />
+                <Icon name="chevron-right" size={16} color={tone('$muted')} />
               </XStack>
             </YStack>
           ))}

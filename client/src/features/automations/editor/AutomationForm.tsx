@@ -491,10 +491,12 @@ function Uses({ problems }: { problems: readonly string[] }) {
       {/* Each script it runs: which of the family's, changed here for every block running it. */}
       {scripts.map(([role, spec]) => {
         const filled = editor.draft.scripts?.[role];
+        const script = editor.scripts.find((each) => each.id === filled);
         return (
           <YStack key={role} gap="$1.5">
             <Text fontSize={13} fontWeight="600" color="$muted">
-              {spec.label}
+              {/* Its own label, when it has one other than the script's name; else what kind of thing it is. */}
+              {script && spec.label !== script.name && spec.label.toLowerCase() !== script.key.replace(/-/g, ' ') ? spec.label : 'A script'}
             </Text>
             <Picker
               label={spec.label}

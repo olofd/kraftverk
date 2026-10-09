@@ -132,7 +132,7 @@ export function YamlEditor({ value, onChange, problems = [], schema = null, labe
  * margin: in YAML the indentation says what belongs to what, and a
  * continuation at the margin reads as a line of its own.
  */
-const hangingIndent = ViewPlugin.fromClass(
+export const hangingIndent = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
     constructor(view: EditorView) {

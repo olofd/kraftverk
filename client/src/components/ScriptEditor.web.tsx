@@ -12,7 +12,7 @@ import { apiOver, type MessageEnd } from '@kraftverk/message-port';
 import type { ScriptLanguage } from '@kraftverk/script-language';
 
 import { ProblemList, type ScriptEditorProps, type TextProblem } from './ProblemList';
-import { diagnosticsOf, editableAs, lookOf } from './YamlEditor.web';
+import { diagnosticsOf, editableAs, hangingIndent, lookOf } from './YamlEditor.web';
 
 /** How long typing rests before the language service is asked what is wrong. */
 const CHECK_AFTER_MS = 300;
@@ -132,6 +132,8 @@ export function ScriptEditor({ value, onChange, problems = [], label, minLines =
           EditorState.tabSize.of(2),
           indentUnit.of('  '),
           EditorView.lineWrapping,
+          // A long line wraps indented as it began: a phone is narrow.
+          hangingIndent,
           javascript({ typescript: true }),
           checked,
           autocompletion({ override: [complete] }),

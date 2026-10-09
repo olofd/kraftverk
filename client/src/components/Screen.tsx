@@ -27,6 +27,8 @@ type Props = {
   /** Beside the title, on the right: the device's picture. The status then sits under the title. */
   aside?: ReactNode;
   children: ReactNode;
+  /** A wider column, for what reads better wide: code. */
+  wide?: boolean;
   /**
    * Kept below the page, not scrolled with it: what a form saves with — Cancel
    * and Save, and whether it can be saved — always in reach.
@@ -38,7 +40,8 @@ type Props = {
  * Shared page chrome: safe-area padding, a centred max-width column so the web
  * build doesn't stretch to 2000px, pull-to-refresh, and the offline banner.
  */
-export function Screen({ title, subtitle, back, backTo, status, aside, children, footer }: Props) {
+export function Screen({ title, subtitle, back, backTo, status, aside, children, footer, wide = false }: Props) {
+  const column = wide ? 880 : 560;
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { homeReach, refresh, views } = useDevices();
@@ -70,7 +73,7 @@ export function Screen({ title, subtitle, back, backTo, status, aside, children,
         />
       }
     >
-      <YStack width="100%" maxWidth={560} gap="$4">
+      <YStack width="100%" maxWidth={column} gap="$4">
         {back ? (
           // The way back, as navigation: reachable by Tab, operable by Enter, and a landmark to jump to.
           // Never wider than the screen: a long name — an automation's, a device's — is cut short, not pushed past its edge.
@@ -132,7 +135,7 @@ export function Screen({ title, subtitle, back, backTo, status, aside, children,
     <YStack flex={1} backgroundColor="$background">
       {page}
       <YStack borderTopWidth={1} borderColor="$borderColor" backgroundColor="$card" paddingHorizontal={16} paddingTop={12} paddingBottom={insets.bottom + 12} alignItems="center">
-        <YStack width="100%" maxWidth={560}>
+        <YStack width="100%" maxWidth={column}>
           {footer}
         </YStack>
       </YStack>
