@@ -55,9 +55,11 @@ const host = <T>(fn: T | undefined, what: string): T => {
 
 /** One call of the home's API, by its path: its answer, or the refusal it was, thrown. */
 const call = async (path: readonly string[], args: readonly unknown[]): Promise<unknown> => {
+  // Outside a step, refused as it is — forbidden — not as a call that failed.
+  const reach = host(typeof __call === 'undefined' ? undefined : __call, 'reach the home');
   let answer: string;
   try {
-    answer = await host(typeof __call === 'undefined' ? undefined : __call, 'reach the home')(JSON.stringify({ path, args }));
+    answer = await reach(JSON.stringify({ path, args }));
   } catch (error) {
     const said = error instanceof Error ? error.message : String(error);
     let refusal: { kind?: string; message?: string; problems?: string[] } = {};
@@ -147,7 +149,8 @@ const named = <Info, Made>(what: string, list: () => readonly Info[], nameOf: (i
   };
   return new Proxy({} as Record<string, Made>, {
     get: (_, name) => {
-      if (typeof name !== 'string' || name === 'then') return undefined;
+      // What every object has — toJSON, toString, a symbol — is not a name of the family's: logged or printed, it is an object.
+      if (typeof name !== 'string' || name === 'then' || name === 'toJSON' || name in Object.prototype) return Reflect.get(Object.prototype, name);
       const info = now().get(name);
       if (info === undefined) throw new KraftverkError('not-found', `There is no ${what} "${name}"`);
       return make(info);
@@ -293,7 +296,8 @@ const callFn = (text: string): string => {
 /** One of its steps, run with its arguments in order — what it remembers among them, at `memory` — its answer and its memory after, as JSON. */
 const callStep = async (text: string): Promise<string> => {
   const { name, args, memory } = JSON.parse(text) as { name: string; args: unknown[]; memory: number | null };
-  const answer = await exportedFn(name)(...args);
+  // An input given as nothing is not given: its default in the code applies.
+  const answer = await exportedFn(name)(...args.map((arg) => (arg === null ? undefined : arg)));
   return JSON.stringify({ answer: answer ?? null, memory: memory === null ? {} : args[memory] });
 };
 

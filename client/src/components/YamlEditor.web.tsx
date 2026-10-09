@@ -194,7 +194,8 @@ function firstKeyCompletion(context: CompletionContext): CompletionResult | null
       type: 'property',
       ...(each.title ? { detail: each.title } : {}),
       ...(each.description ? { info: each.description } : {}),
-      apply: `${each.name}: ${each.fallback === undefined ? '' : String(each.fallback)}`,
+      // Text YAML would read as something else — "a: b", "# not a comment", a leading quote — quoted.
+      apply: `${each.name}: ${each.fallback === undefined ? '' : typeof each.fallback === 'string' && /^[\s'"&*!|>%@`[{]|: | #|[\s:]$/.test(each.fallback) ? JSON.stringify(each.fallback) : String(each.fallback)}`,
     })),
     validFor: /^[\w-]*$/,
   };

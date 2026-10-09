@@ -111,6 +111,10 @@ export type LiveRun = {
   log: { look: () => void; stop: () => void } | null;
   /** Where its step count starts: what it may take is counted from its first step — and, apart, from the first of its `if a step fails` steps. */
   budgetFrom: number;
+  /** The lines its scripts said and did beneath their steps: in its log, never counted as its own steps. */
+  scriptLines: number;
+  /** How many of those there were where its step count starts. */
+  scriptLinesFrom: number;
 };
 
 /** How steps came out: as they should, not, stopped by someone — or ended by a `stop` step, as it went. */
@@ -461,6 +465,8 @@ export class Runs {
       heard: new Map(),
       log: null,
       budgetFrom: 0,
+      scriptLines: 0,
+      scriptLinesFrom: 0,
     };
     const stepped = takesSteps(rule);
     if (stepped) {
@@ -482,6 +488,7 @@ export class Runs {
       if ((walked === 'failed' || walked === 'stopped') && rule.otherwise?.length) {
         // What it does after counts its steps apart: a run that took all it may still takes these.
         live.budgetFrom = run.steps.length;
+        live.scriptLinesFrom = live.scriptLines;
         await this.#walk(live, here, rule.otherwise, 0, walked === 'stopped' ? `After it was stopped by ${live.stoppedBy}` : 'After a step did not succeed', 'otherwise');
       }
     } catch (error) {
@@ -607,7 +614,8 @@ export class Runs {
       if (stopping()) return 'stopped';
       const kind = stepKind(step);
       // Whatever it repeats, a run ends: so many steps, and no more.
-      if (live.run.steps.length - live.budgetFrom >= SEQUENCE_LIMITS.steps) {
+      // Its own steps: what its scripts said beneath theirs is theirs, held to a script's own budget.
+      if (live.run.steps.length - live.budgetFrom - (live.scriptLines - live.scriptLinesFrom) >= SEQUENCE_LIMITS.steps) {
         this.#add(live, { kind, depth, within, what: 'No more steps', outcome: 'failed', detail: `It has taken ${SEQUENCE_LIMITS.steps} steps, as many as one run may`, until: null });
         return 'failed';
       }
@@ -910,7 +918,10 @@ export class Runs {
         memory,
         deadline: this.#context.now().getTime() + seconds * 1000,
         signal: stop.signal,
-        say: (line) => void this.#add(live, { kind: 'script', depth: depth + 1, within: what, what: line.what, outcome: line.outcome, detail: line.detail ?? '', until: null }, line.said === true),
+        say: (line) => {
+          live.scriptLines++;
+          this.#add(live, { kind: 'script', depth: depth + 1, within: what, what: line.what, outcome: line.outcome, detail: line.detail ?? '', until: null }, line.said === true);
+        },
       });
     } finally {
       live.wake.delete(wake);

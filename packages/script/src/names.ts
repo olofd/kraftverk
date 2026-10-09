@@ -20,11 +20,12 @@ function scriptName(text: string): string {
 
 /** Each of several things named, in the order given: the second Maria is `maria2`. */
 export function scriptNames(texts: readonly string[]): string[] {
-  const taken = new Map<string, number>();
+  const taken = new Set<string>();
   return texts.map((text) => {
     const name = scriptName(text);
-    const seen = (taken.get(name) ?? 0) + 1;
-    taken.set(name, seen);
-    return seen === 1 ? name : `${name}${seen}`;
+    let given = name;
+    for (let at = 2; taken.has(given); at++) given = `${name}${at}`;
+    taken.add(given);
+    return given;
   });
 }

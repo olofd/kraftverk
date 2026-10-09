@@ -120,6 +120,32 @@ describe('reading a script', () => {
     ]);
   });
 
+  test('signatures as people write them: defaults beyond one token, a type of its own with null, read-only members, escapes, an @ in words, a range it starts in', () => {
+    const read = readScript(
+      [
+        "import type { Duration, Kept } from 'kraftverk';",
+        "type Mode = 'eco' | 'boost' | 'it\\'s';",
+        '/** Tries. */',
+        'export async function go(',
+        '  /** Below. @description Ask x@y.z first */',
+        '  low: number = -1,',
+        '  every: Duration = 5 * 60,',
+        '  mode: Mode | null = null,',
+        '  memory: Kept<{ readonly times: number; /** @max -5 */ debt: number }>,',
+        '): Promise<void> {}',
+        '',
+      ].join('\n'),
+      engine
+    );
+    expect(read.problems).toEqual([]);
+    const step = read.shape!.steps.go!;
+    expect(step.inputs.fields.low).toEqual({ type: 'number', title: 'Below', description: 'Ask x@y.z first', default: -1 });
+    // An expression is the code's own default, at run time: none in the shape.
+    expect(step.inputs.fields.every).toEqual({ type: 'number', title: 'Every', unit: 's', min: 0 });
+    expect(step.inputs.fields.mode).toMatchObject({ type: 'enum', options: [{ value: 'eco' }, { value: 'boost' }, { value: "it's" }] });
+    expect(step.memory.fields).toEqual({ times: { type: 'number', title: 'Times', default: 0 }, debt: { type: 'number', title: 'Debt', max: -5, default: -5 } });
+  });
+
   test('a script longer than a script may be', () => {
     expect(readScript(`// ${'x'.repeat(70_000)}\n`, engine).problems.map((each) => each.message)).toEqual(['A script is at most 64 KB']);
   });

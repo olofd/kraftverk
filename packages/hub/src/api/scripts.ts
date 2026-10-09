@@ -1,8 +1,9 @@
 import { ApiError, type Caller, type KraftverkApi, type ScriptTried, type ScriptView } from '@kraftverk/api-contract';
 import type { ScriptProblem } from '@kraftverk/automation';
+import type { AutomationRecord } from '@kraftverk/automation-engine';
+import type { Value } from '@kraftverk/device-sdk';
 import { subjectOf } from '@kraftverk/gateway';
 import { typesOf, type ReadScript } from '@kraftverk/script';
-import type { AutomationRecord } from '@kraftverk/automation-engine';
 import type { ScriptRecord } from '@kraftverk/store';
 
 import type { Hub } from '../node/hub.ts';
@@ -142,7 +143,8 @@ export function scriptsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'script
         const done = await runScriptStep(hub, {
           script: { name: 'The script', compiled: read.compiled, shape: read.shape, calls: read.calls },
           step: input.step,
-          inputs: input.inputs,
+          // What it is not given — or is given as nothing — is its declared default, as an automation's step gives it.
+          inputs: Object.fromEntries(Object.entries(declared.inputs.fields).map(([key, field]) => [key, input.inputs[key] ?? (field.default as Value | undefined) ?? null])),
           memory,
           caller,
           actor: actorOf(caller),

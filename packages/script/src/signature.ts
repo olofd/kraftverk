@@ -89,9 +89,12 @@ function docIn(between: string): Doc {
   const first = all.search(/(^|\s)@\w/);
   const text = (first === -1 ? all : all.slice(0, first)).trim();
   const tags: Record<string, string> = {};
-  for (const tag of all.slice(first === -1 ? all.length : first).matchAll(/@(\w+)\s*([^@]*)/g)) tags[tag[1]!] = tag[2]!.trim();
+  for (const tag of ` ${all.slice(first === -1 ? all.length : first)}`.matchAll(/\s@(\w+)\s*((?:(?!\s@\w)[\s\S])*)/g)) tags[tag[1]!] = tag[2]!.trim();
   return { text, tags };
 }
+
+/** A string literal's value, as written between its quotes: its escapes undone. */
+const unquoted = (literal: string): string => literal.slice(1, -1).replace(/\\(.)/g, '$1');
 
 /** A length of time as a tag says it — "90", "90 s", "1 min", "2 h" — in seconds. */
 function secondsOf(text: string): number | null {
@@ -150,7 +153,7 @@ export function readSignatures(source: string): Signatures {
   };
   const primaryAt = (i: number): [TypeNode, number] => {
     const at = tokens[i]?.start ?? source.length;
-    if (is(i, tt.string)) return [{ kind: 'string', value: text(i).slice(1, -1), at }, i + 1];
+    if (is(i, tt.string)) return [{ kind: 'string', value: unquoted(text(i)), at }, i + 1];
     if (is(i, tt._void) || is(i, tt._null) || is(i, tt._true) || is(i, tt._false) || is(i, tt.num)) return [{ kind: 'literal', text: text(i), at }, i + 1];
     if (is(i, tt.braceL)) return objectAt(i);
     if (is(i, tt.name)) {
@@ -177,6 +180,8 @@ export function readSignatures(source: string): Signatures {
     i = expect(i, tt.braceL, '"{"');
     const members: Member[] = [];
     while (!is(i, tt.braceR)) {
+      // Read-only or not, a member is a member.
+      if (text(i) === 'readonly' && is(i + 1, tt.name)) i++;
       if (!is(i, tt.name)) throw new Unreadable('Each of what it remembers is a name and its type: "times: number"', tokens[i]?.start ?? source.length);
       const doc = docBefore(i);
       const name = text(i);
@@ -208,7 +213,11 @@ export function readSignatures(source: string): Signatures {
     const title = doc.text.replace(/\.$/, '').trim() || wordsOf(name);
     const presented = { title, ...(doc.tags.description ? { description: doc.tags.description } : {}) };
     // A value that may be missing: the type it is when it is there.
-    const given = type.kind === 'union' ? type.of.filter((each) => !(each.kind === 'literal' && (each.text === 'null' || each.text === 'undefined')) && !(each.kind === 'name' && each.name === 'undefined')) : [type];
+    const flat = (each: TypeNode): TypeNode[] => {
+      const one = resolved(each);
+      return one.kind === 'union' ? one.of.flatMap(flat) : [one];
+    };
+    const given = flat(type).filter((each) => !(each.kind === 'literal' && (each.text === 'null' || each.text === 'undefined')) && !(each.kind === 'name' && each.name === 'undefined'));
     const defaultText = doc.tags.default ?? initial;
     if (given.length > 1 || given[0]!.kind === 'string') {
       if (!given.every((each) => each.kind === 'string')) throw new Unreadable(`A choice is of words only: 'eco' | 'boost'`, type.at);
@@ -268,7 +277,7 @@ export function readSignatures(source: string): Signatures {
       const field = fieldOf(member.type, member.doc, member.name, null);
       // What it starts as, before it has been kept: nothing, none, the first choice.
       if (field.default === undefined && field.type !== 'timestamp') {
-        if (field.type === 'number') field.default = field.min !== undefined && field.min > 0 ? field.min : 0;
+        if (field.type === 'number') field.default = Math.min(Math.max(0, field.min ?? 0), field.max ?? Number.POSITIVE_INFINITY);
         else if (field.type === 'boolean') field.default = false;
         else if (field.type === 'string') field.default = '';
         else if (field.type === 'enum') field.default = field.options[0]!.value;
@@ -322,8 +331,18 @@ export function readSignatures(source: string): Signatures {
         [type, j] = typeAt(j + 1);
         let initial: string | null = null;
         if (is(j, tt.eq)) {
-          initial = text(j + 1);
-          j += 2;
+          // To the next comma or the end, at its own depth: `= -1`, `= 5 * 60`, `= { a: 1 }`.
+          const from = j + 1;
+          let depth = 0;
+          for (j = from; j < tokens.length; j++) {
+            if (is(j, tt.parenL) || is(j, tt.bracketL) || is(j, tt.braceL) || is(j, tt.dollarBraceL)) depth++;
+            else if (is(j, tt.parenR) || is(j, tt.bracketR) || is(j, tt.braceR)) {
+              if (depth === 0) break;
+              depth--;
+            } else if (is(j, tt.comma) && depth === 0) break;
+          }
+          const written = source.slice(tokens[from]?.start ?? 0, tokens[j - 1]?.end ?? 0).trim();
+          initial = /^-?\d+(\.\d+)?$|^(true|false)$|^'[^']*'$|^"[^"]*"$/.test(written) ? written : null;
         }
         params.push({ name: param, doc, type, initial, at });
         if (is(j, tt.comma)) j++;

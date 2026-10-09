@@ -298,6 +298,8 @@ function useRead(source: string): { check: ScriptCheck | null; current: boolean;
   const { api } = useFamily();
   const [read, setRead] = useState<{ source: string; check: ScriptCheck } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The source a reading of failed: done with, as far as reading goes — the error says why — not read forever. */
+  const [failed, setFailed] = useState<string | null>(null);
   const asked = useRef(0);
   useEffect(() => {
     const ask = ++asked.current;
@@ -308,15 +310,17 @@ function useRead(source: string): { check: ScriptCheck | null; current: boolean;
           if (ask !== asked.current) return;
           setRead({ source, check });
           setError(null);
+          setFailed(null);
         })
         .catch((err: unknown) => {
           if (ask !== asked.current) return;
           setError(describeError(err) || 'It could not be read');
+          setFailed(source);
         });
     }, READ_AFTER_MS);
     return () => clearTimeout(timer);
   }, [api, source]);
-  return { check: read?.check ?? null, current: read?.source === source, error };
+  return { check: read?.check ?? null, current: read?.source === source || failed === source, error };
 }
 
 /** The automations that run a kept script, or call one of its functions: each a way to its page. */

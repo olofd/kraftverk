@@ -7,7 +7,7 @@ import { branchesOf, STEP_KIND_ORDER, STEP_KINDS, stepSpec, type StepKind, type 
 import { TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerFields, triggerKindOfVerbs } from '../kinds/triggers.ts';
 import { expressionsIn } from '../kinds/exprs.ts';
 import { isScriptRole, isWhileRunning, isWorldRole, roleKind, TRIGGER_ID, WHILE_RUNNING, type Expr, type RoleKind, type RuleTrigger, type RoleSpec, type Rule, type Step } from '../rule.ts';
-import { scriptRoleOf } from '../script.ts';
+import { SCRIPT_KEY, scriptRoleOf } from '../script.ts';
 import { parseExpr, printExpr } from './expr.ts';
 import { settingsFromConfig, settingsToConfig } from './settings.ts';
 
@@ -351,7 +351,8 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
   const shorthand = (steps: readonly Step[]): Step[] =>
     steps.map((step) => {
       let next = step;
-      if ('script' in step && !usesNamed.has(step.script.role) && /^[a-z0-9]+(-[a-z0-9]+)*(\.[A-Za-z][A-Za-z0-9]*)?$/.test(step.script.role)) {
+      const [maybeKey, maybeStep, ...beyond] = 'script' in step ? step.script.role.split('.') : [];
+      if ('script' in step && !usesNamed.has(step.script.role) && maybeKey && SCRIPT_KEY.test(maybeKey) && !beyond.length && (maybeStep === undefined || /^[A-Za-z][A-Za-z0-9]*$/.test(maybeStep))) {
         const [key, named] = step.script.role.split('.') as [string, string | undefined];
         let role = byKey.get(key);
         if (!role) {
@@ -518,7 +519,7 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
   const byKey = new Map(
     Object.entries(rule.roles).flatMap(([role, spec]) => {
       const use = uses[role];
-      if (!isScriptRole(spec) || !use || !('script' in use) || called.has(role)) return [];
+      if (!isScriptRole(spec) || !use || !('script' in use) || called.has(role) || !SCRIPT_KEY.test(use.script)) return [];
       const made = scriptRoleOf(use.script);
       return made.role === role && made.label === spec.label ? [[role, use.script] as const] : [];
     })

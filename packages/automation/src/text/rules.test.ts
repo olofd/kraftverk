@@ -291,6 +291,15 @@ describe('a script, by its key where a step runs it', () => {
     expect(ruleFromConfig(written as Record<string, unknown>, ['a']).rule).toEqual(read.rule);
   });
 
+  test('a key that begins with a digit makes a role that begins with a letter — one the checker takes — and reads back so', () => {
+    const read = ruleFromConfig({ do: [{ 'run script': '1-minute-tidy' }] }, ['a']);
+    expect(read.rule!.roles).toEqual({ script1MinuteTidy: { script: true, label: '1 minute tidy' } });
+    expect(checkRule(read.rule!, {})).toEqual([]);
+    const written = ruleToConfig(read.rule!, read.uses);
+    expect(written.do).toEqual([{ 'run script': '1-minute-tidy' }]);
+    expect(ruleFromConfig(written as Record<string, unknown>, ['a']).rule).toEqual(read.rule);
+  });
+
   test('the long form stays where it says more: a label of its own, or a function a condition calls', () => {
     const labelled = ruleFromConfig({ uses: { tidy: { script: 'tidy-up', label: 'The tidy' } }, do: [{ 'run script': 'tidy' }] }, ['a']);
     expect(ruleToConfig(labelled.rule!, labelled.uses).uses).toEqual({ tidy: { script: 'tidy-up', label: 'The tidy' } });

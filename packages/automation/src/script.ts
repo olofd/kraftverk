@@ -40,10 +40,15 @@ export type ScriptShape = {
  */
 export function scriptRoleOf(key: string): { role: string; label: string } {
   const words = key.split('-').filter(Boolean);
-  const role = words.map((word, at) => (at ? word.charAt(0).toUpperCase() + word.slice(1) : word)).join('');
+  const joined = words.map((word, at) => (at ? word.charAt(0).toUpperCase() + word.slice(1) : word)).join('');
+  // A role begins with a letter: "1-minute-tidy" is `script1MinuteTidy`.
+  const role = /^[a-z]/.test(joined) ? joined : `script${joined.charAt(0).toUpperCase()}${joined.slice(1)}`;
   const label = words.join(' ');
   return { role, label: label.charAt(0).toUpperCase() + label.slice(1) };
 }
+
+/** A script's key as a step names it by its key alone (`run script: tidy-up`): what the file's reader takes for a key, and the writer writes so. */
+export const SCRIPT_KEY = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /** What is wrong with a script, and where, when it is known: its line and column, counted from 1. */
 export type ScriptProblem = { message: string; line: number | null; column: number | null };
