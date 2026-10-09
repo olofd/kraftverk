@@ -72,10 +72,15 @@ export class Configuration {
     return homeVocabulary(this.#deps);
   }
 
-  /** The JSON Schema of a file: the installed types, their settings, ways and secrets — nothing you have, as anyone may ask for it. */
+  /**
+   * The JSON Schema of a file: the installed types, their settings, ways and
+   * secrets — nothing you have, as anyone may ask for it: no device, no
+   * automation, no script. The app's editors make theirs from the vocabulary
+   * (entryJsonSchema), as the family it is signed in to.
+   */
   schema(): unknown {
-    const { devices: _devices, automations: _automations, ...installed } = this.vocabulary();
-    return configJsonSchema({ ...installed, devices: [], automations: [] });
+    const { devices: _devices, automations: _automations, scripts: _scripts, ...installed } = this.vocabulary();
+    return configJsonSchema({ ...installed, devices: [], automations: [], scripts: [] });
   }
 
   /**

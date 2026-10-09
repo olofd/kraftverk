@@ -70,6 +70,8 @@ class WasmSandbox implements Sandbox {
   readonly #memory: WasmMemory;
   #cpu = 0;
   #deadline: number | null = null;
+  /** The limit of the slice running now: the sandbox's, or a call's own. */
+  #sliceMs = 0;
   /** What the engine's memory has grown by while this sandbox ran, its slices before this one counted. */
   #grown = 0;
   /** How big the engine's memory was as this slice began. */
@@ -152,7 +154,7 @@ class WasmSandbox implements Sandbox {
     });
   }
 
-  call(name: string, text: string): string {
+  call(name: string, text: string, sliceMs?: number): string {
     return this.#slice(() => {
       const handle = this.#invoke(name, text);
       try {
@@ -161,7 +163,7 @@ class WasmSandbox implements Sandbox {
       } finally {
         handle.dispose();
       }
-    });
+    }, sliceMs);
   }
 
   callAsync(name: string, text: string, signal?: AbortSignal): Promise<string> {
@@ -193,11 +195,12 @@ class WasmSandbox implements Sandbox {
     this.#runtime.dispose();
   }
 
-  /** One slice: run until it comes back, or until its deadline, counting the work. */
-  #slice<T>(work: () => T): T {
+  /** One slice: run until it comes back, or until its deadline — the sandbox's, or `sliceMs` — counting the work. */
+  #slice<T>(work: () => T, sliceMs = this.#limits.sliceMs): T {
     if (this.#disposed || this.#stopped) throw new ScriptFault('stopped', 'The script was stopped');
     const started = now();
-    this.#deadline = started + this.#limits.sliceMs;
+    this.#sliceMs = sliceMs;
+    this.#deadline = started + sliceMs;
     this.#sliceBytes = this.#memory.buffer.byteLength;
     try {
       return work();
@@ -309,7 +312,7 @@ class WasmSandbox implements Sandbox {
     if (/interrupted/i.test(message)) {
       if (this.#stopped) return new ScriptFault('stopped', 'The script was stopped');
       if (this.#overMemory) return needed();
-      return new ScriptFault('time', `It ran for more than ${this.#limits.sliceMs} ms without waiting`, at);
+      return new ScriptFault('time', `It ran for more than ${this.#sliceMs} ms without waiting`, at);
     }
     if (/out of memory/i.test(message)) return needed();
     if (/stack overflow|call stack size/i.test(message)) return new ScriptFault('stack', 'It called itself too deeply', at);

@@ -254,9 +254,14 @@ export interface KraftverkApi {
     get(id: string): Promise<ScriptView>;
     /** Kept, when it reads without a problem; refused with each problem, by line, when it does not. */
     create(input: ScriptInput): Promise<ScriptView>;
-    /** Its name, its key, or its source changed: a new source is read first, and refused as a new script is. */
-    update(id: string, changes: Partial<ScriptInput>): Promise<ScriptView>;
-    remove(id: string): Promise<void>;
+    /**
+     * Its name, its key, or its source changed: a new source is read first, and refused as a new script is.
+     * A new source changes what the automations that act with it do: one acting for someone else asks a yes
+     * (`confirmation`), and acts for the one who gave it after.
+     */
+    update(id: string, changes: Partial<ScriptInput> & { confirmation?: string }): Promise<ScriptView>;
+    /** Gone: an automation that acts with it has nothing to run after, so that asks a yes first (`confirmation`). */
+    remove(id: string, confirmation?: string): Promise<void>;
     /** A script read as the home's engine reads it, nothing kept: what it declares, or what is wrong with it, by line. */
     check(source: string): Promise<ScriptCheck>;
     /**

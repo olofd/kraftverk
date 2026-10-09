@@ -91,6 +91,21 @@ export const CONFORMANCE: readonly ConformanceCase[] = [
       }),
   },
   {
+    name: 'holds a call to its own limit, when it is given one: shorter than the sandbox’s',
+    run: (engine) =>
+      inSandbox(
+        engine,
+        async (sandbox) => {
+          sandbox.evaluate('globalThis.spin = (text) => { const until = Date.now() + Number(text); while (Date.now() < until) {} return "done"; };', 'a.js');
+          same(sandbox.call('spin', '1', 200), 'done', 'within its limit');
+          const fault = await faultOf(() => sandbox.call('spin', '150', 20));
+          same([fault.kind, fault.message], ['time', 'It ran for more than 20 ms without waiting'], 'past it');
+        },
+        NO_HOST,
+        { memoryBytes: 8 * 1024 * 1024, stackBytes: 256 * 1024, sliceMs: 1_000 }
+      ),
+  },
+  {
     name: 'stops at its memory, and its stack',
     run: (engine) =>
       inSandbox(

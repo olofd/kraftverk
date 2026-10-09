@@ -101,8 +101,8 @@ export type StepRun = {
   asked?: (need: { key: string; token: string; what: string }) => void;
 };
 
-/** What a command is, for a yes to it: its device, part, capability and command. */
-const yesKey = (args: readonly unknown[]): string => args.slice(0, 4).map(String).join('/');
+/** What a command is, for a yes to it: its device, part, capability and command — and what it is given, as the gateway's token is for exactly that. */
+const yesKey = (args: readonly unknown[]): string => `${args.slice(0, 4).map(String).join('/')} ${JSON.stringify((args[4] as { args?: unknown } | undefined)?.args ?? {})}`;
 
 /** One of a script's steps, run in a sandbox of its own and held to its budgets: its answer and its memory after, or why it failed. */
 export async function runScriptStep(hub: Hub, run: StepRun): Promise<ScriptStepDone> {
@@ -120,87 +120,108 @@ export async function runScriptStep(hub: Hub, run: StepRun): Promise<ScriptStepD
   let acts = 0;
   let lines = 0;
   let quietLines = 0;
+  /** Over its budget of work, the run is stopped — not refused something it could catch and carry on from. */
+  let overBudget = false;
   const budget = () => {
-    if (sandbox.cpuMs > SCRIPT_LIMITS.stepCpuMs) throw new Error(`It worked for more than ${SCRIPT_LIMITS.stepCpuMs / 1000} s: stopped`);
+    if (sandbox.cpuMs <= SCRIPT_LIMITS.stepCpuMs) return;
+    overBudget = true;
+    deadline.abort();
+    throw new Error(refusalText(new ApiError('forbidden', `It worked for more than ${SCRIPT_LIMITS.stepCpuMs / 1000} s: stopped`)));
+  };
+  /** One more change: counted against what a step may change. */
+  const acted = () => {
+    if (++acts > SCRIPT_LIMITS.acts) throw new Error(refusalText(new ApiError('forbidden', `A script's step changes something at most ${SCRIPT_LIMITS.acts} times`)));
   };
 
+  // Every way out of the sandbox is a moment its work is counted: a loop that logs, reads or sleeps is stopped too.
   const host: HostFunctions = {
     sync: {
       __log: (text) => {
+        budget();
         if (lines++ < SCRIPT_LIMITS.logLines) say({ what: text.slice(0, 500), outcome: 'done', detail: null, said: true });
         else quietLines++;
         return '';
       },
-      __read: (text) => answerRead(hub, text, run.homeId),
+      __read: (text) => {
+        budget();
+        return answerRead(hub, text, run.homeId);
+      },
     },
     async: {
-    __call: async (text) => {
-          budget();
-          const { path, args } = JSON.parse(text) as { path: string[]; args: unknown[] };
-          if (++calls > SCRIPT_LIMITS.calls) throw new Error(refusalText(new ApiError('forbidden', `A script's step calls the home at most ${SCRIPT_LIMITS.calls} times`)));
-          // What the run itself does: tell people, set a mode — as its steps do.
-          if (path[0] === 'run') return JSON.stringify(runCall(path[1] ?? '', args[0] as Record<string, unknown>));
-          const at = callAt(api, path);
-          const gate = (GATES as Record<string, { kind: string } | undefined>)[path.join('.')];
-          if (!at || !gate) throw new Error(refusalText(new ApiError('not-found', `The home has no "${path.join('.')}"`)));
-          if (gate.kind !== 'read' && ++acts > SCRIPT_LIMITS.acts) throw new Error(refusalText(new ApiError('forbidden', `A script's step changes something at most ${SCRIPT_LIMITS.acts} times`)));
-          try {
-            const isCommand = path.join('.') === 'devices.command';
-            // A yes the person gave to this command, from the try before: with it, as theirs.
-            const yes = isCommand ? run.yes?.[yesKey(args)] : undefined;
-            if (yes) args[4] = { ...(args[4] as object), confirmation: yes };
-            const answer = await at.fn.apply(at.owner, args);
-            const token = isCommand ? (answer as { needsConfirmation?: string } | null)?.needsConfirmation : undefined;
-            if (token) run.asked?.({ key: yesKey(args), token, what: (answer as { detail?: string }).detail ?? 'It asks for a yes' });
-            if (gate.kind !== 'read') say(saidOf(path.join('.'), args, answer));
-            return JSON.stringify(answer ?? null);
-          } catch (error) {
-            if (gate.kind !== 'read') say({ what: path.join('.'), outcome: 'refused', detail: error instanceof Error ? error.message : String(error) });
-            throw new Error(refusalText(error));
-          }
-        },
-        __wait: (text) =>
-          new Promise<string>((resolve, reject) => {
-            const ms = Math.min(Math.max(0, Number(text) || 0), Math.max(0, run.deadline - hub.clock.now()));
-            const timer = hub.clock.setTimeout(() => (run.signal.removeEventListener('abort', stopped), resolve('')), ms);
-            const stopped = () => (hub.clock.clear(timer), reject(new Error(refusalText(new ApiError('conflict', 'Stopped')))));
-            run.signal.addEventListener('abort', stopped, { once: true });
-          }),
+      __call: async (text) => {
+        budget();
+        const { path, args } = JSON.parse(text) as { path: string[]; args: unknown[] };
+        if (++calls > SCRIPT_LIMITS.calls) throw new Error(refusalText(new ApiError('forbidden', `A script's step calls the home at most ${SCRIPT_LIMITS.calls} times`)));
+        // What the run itself does: tell people, set a mode — as its steps do, each a change counted.
+        if (path[0] === 'run') {
+          acted();
+          return JSON.stringify(runCall(path[1] ?? '', args[0] as Record<string, unknown>));
+        }
+        const at = callAt(api, path);
+        const gate = (GATES as Record<string, { kind: string } | undefined>)[path.join('.')];
+        if (!at || !gate) throw new Error(refusalText(new ApiError('not-found', `The home has no "${path.join('.')}"`)));
+        if (gate.kind !== 'read') acted();
+        try {
+          const isCommand = path.join('.') === 'devices.command';
+          // A yes the person gave to this very command — these arguments — from the try before: with it, as theirs.
+          const yes = isCommand ? run.yes?.[yesKey(args)] : undefined;
+          if (yes) args[4] = { ...(args[4] as object), confirmation: yes };
+          const answer = await at.fn.apply(at.owner, args);
+          const token = isCommand ? (answer as { needsConfirmation?: string } | null)?.needsConfirmation : undefined;
+          if (token) run.asked?.({ key: yesKey(args), token, what: (answer as { detail?: string }).detail ?? 'It asks for a yes' });
+          if (gate.kind !== 'read') say(saidOf(path.join('.'), args, answer));
+          return JSON.stringify(answer ?? null);
+        } catch (error) {
+          if (gate.kind !== 'read') say({ what: path.join('.'), outcome: 'refused', detail: error instanceof Error ? error.message : String(error) });
+          throw new Error(refusalText(error));
+        }
       },
-    };
+      __wait: (text) => {
+        budget();
+        return new Promise<string>((resolve, reject) => {
+          const ms = Math.min(Math.max(0, Number(text) || 0), Math.max(0, run.deadline - hub.clock.now()));
+          const timer = hub.clock.setTimeout(() => (run.signal.removeEventListener('abort', stopped), resolve('')), ms);
+          const stopped = () => (hub.clock.clear(timer), reject(new Error(refusalText(new ApiError('conflict', 'Stopped')))));
+          run.signal.addEventListener('abort', stopped, { once: true });
+        });
+      },
+    },
+  };
 
-    /** What the run itself does, as its steps would: tell people, set a mode. */
-    const runCall = (what: string, given: Record<string, unknown>): unknown => {
-      if (what === 'notify') {
-        const title = String(given.title ?? '').slice(0, 120);
-        if (!title) throw new Error(refusalText(new ApiError('invalid', 'Telling someone says something: a title')));
-        const people = Array.isArray(given.to) ? (given.to as string[]) : hub.world.members();
-        const { told } = hub.world.notify(people, { title, text: typeof given.text === 'string' ? given.text.slice(0, 1000) : null, level: 'info', homeId: hub.world.home(run.homeId) }, run.actor);
-        say({ what: `Told ${told.length === 1 ? (hub.world.personName(told[0]!) ?? 'someone') : `${told.length} people`}: “${title}”`, outcome: told.length ? 'done' : 'failed', detail: null });
-        return { told };
-      }
-      if (what === 'setMode') {
-        const home = typeof given.home === 'string' ? given.home : hub.world.home(run.homeId);
-        if (!home) throw new Error(refusalText(new ApiError('not-found', 'There is no such home')));
-        hub.world.setMode(home, String(given.mode), run.actor, run.cause);
-        say({ what: `${hub.world.placeName({ id: home, kind: 'home' }) ?? 'The home'} is ${String(given.mode)} now`, outcome: 'done', detail: null });
-        return { home, mode: given.mode };
-      }
-      throw new Error(refusalText(new ApiError('not-found', `A run does not "${what}"`)));
-    };
+  /** What the run itself does, as its steps would: tell people, set a mode — of one of the family's homes. */
+  const runCall = (what: string, given: Record<string, unknown>): unknown => {
+    if (what === 'notify') {
+      const title = String(given.title ?? '').slice(0, 120);
+      if (!title) throw new Error(refusalText(new ApiError('invalid', 'Telling someone says something: a title')));
+      const people = Array.isArray(given.to) ? (given.to as string[]) : hub.world.members();
+      const { told } = hub.world.notify(people, { title, text: typeof given.text === 'string' ? given.text.slice(0, 1000) : null, level: 'info', homeId: hub.world.home(run.homeId) }, run.actor);
+      say({ what: `Told ${told.length === 1 ? (hub.world.personName(told[0]!) ?? 'someone') : `${told.length} people`}: “${title}”`, outcome: told.length ? 'done' : 'failed', detail: null });
+      return { told };
+    }
+    if (what === 'setMode') {
+      // One of the family's homes — the one named, or the run's own — never an id it does not know.
+      const named = typeof given.home === 'string' ? given.home : null;
+      const home = named ? (hub.places.home(named) ? named : null) : hub.world.home(run.homeId);
+      if (!home) throw new Error(refusalText(new ApiError('not-found', 'There is no such home')));
+      hub.world.setMode(home, String(given.mode), run.actor, run.cause);
+      say({ what: `${hub.world.placeName({ id: home, kind: 'home' }) ?? 'The home'} is ${String(given.mode)} now`, outcome: 'done', detail: null });
+      return { home, mode: given.mode };
+    }
+    throw new Error(refusalText(new ApiError('not-found', `A run does not "${what}"`)));
+  };
 
-    /** A call that changed something, said as the run's log says a step: a command by its device and what came of it. */
-    const saidOf = (path: string, args: unknown[], answer: unknown): Said => {
-      if (path === 'devices.command') {
-        const [id, part, capability, command, body] = args as [string, string, string, string, { args?: Record<string, unknown> }];
-        const device = hub.catalog.get(id as never);
-        const result = answer as { outcome: string; detail?: string };
-        const outcome = result.outcome === 'verified' ? 'done' : result.outcome === 'unverified' ? 'unverified' : result.outcome === 'refused' ? 'refused' : 'failed';
-        const said = Object.entries(body?.args ?? {}).map(([name, value]) => `${name} ${JSON.stringify(value)}`).join(', ');
-        return { what: `${device?.name ?? 'A device'}${part !== 'main' ? ` (${part})` : ''}: ${capability}.${command}${said ? ` ${said}` : ''}`, outcome, detail: result.detail ?? null };
-      }
-      return { what: path, outcome: 'done', detail: null };
-    };
+  /** A call that changed something, said as the run's log says a step: a command by its device and what came of it. */
+  const saidOf = (path: string, args: unknown[], answer: unknown): Said => {
+    if (path === 'devices.command') {
+      const [id, part, capability, command, body] = args as [string, string, string, string, { args?: Record<string, unknown> }];
+      const device = hub.catalog.get(id as never);
+      const result = answer as { outcome: string; detail?: string };
+      const outcome = result.outcome === 'verified' ? 'done' : result.outcome === 'unverified' ? 'unverified' : result.outcome === 'refused' ? 'refused' : 'failed';
+      const said = Object.entries(body?.args ?? {}).map(([name, value]) => `${name} ${JSON.stringify(value)}`).join(', ');
+      return { what: `${device?.name ?? 'A device'}${part !== 'main' ? ` (${part})` : ''}: ${capability}.${command}${said ? ` ${said}` : ''}`, outcome, detail: result.detail ?? null };
+    }
+    return { what: path, outcome: 'done', detail: null };
+  };
 
   const sandbox: Sandbox = engine.open({ memoryBytes: SCRIPT_LIMITS.stepMemoryBytes, stackBytes: SCRIPT_LIMITS.stepStackBytes, sliceMs: SCRIPT_LIMITS.sliceMs }, host);
   // Its run's deadline: what it waits for is refused then, as when its run is stopped.
@@ -216,6 +237,8 @@ export async function runScriptStep(hub: Hub, run: StepRun): Promise<ScriptStepD
     const done = JSON.parse(answer) as { answer: Value | null; memory: Record<string, Value> };
     return { answer: done.answer, memory: done.memory };
   } catch (error) {
+    // Stopped for its work: said so, whatever it made of the refusal inside.
+    if (overBudget) return { fault: `It worked for more than ${SCRIPT_LIMITS.stepCpuMs / 1000} s: stopped` };
     if (error instanceof ScriptFault) {
       if (error.kind === 'stopped' && !run.signal.aborted) return { fault: "It ran past its run's time, and was stopped" };
       // A refusal it did not catch: said in its own words.
@@ -255,10 +278,11 @@ export function scriptRunner(hub: Hub): ScriptRunner {
       const read = readable(scriptId);
       if (!read.ok) return { value: null, detail: read.problem };
       // Pure: a sandbox of its own for the call, nothing of the home lent — it cannot keep anything from one look to the next.
-      const sandbox = scripts.engine!.open({ memoryBytes: SCRIPT_LIMITS.functionMemoryBytes, stackBytes: 256 * 1024, sliceMs: SCRIPT_LIMITS.functionMs }, { sync: { __log: () => '' }, async: {} });
+      // Loaded — the SDK, its top level — as it is read; the call itself held to a function's own limit.
+      const sandbox = scripts.engine!.open({ memoryBytes: SCRIPT_LIMITS.functionMemoryBytes, stackBytes: 256 * 1024, sliceMs: SCRIPT_LIMITS.describeMs }, { sync: { __log: () => '' }, async: {} });
       try {
         loadScript(sandbox, read.runnable.compiled);
-        const value = JSON.parse(sandbox.call('__fn', JSON.stringify({ name: fn, args }))) as Value | null;
+        const value = JSON.parse(sandbox.call('__fn', JSON.stringify({ name: fn, args }), SCRIPT_LIMITS.functionMs)) as Value | null;
         return { value, detail: null };
       } catch (error) {
         return { value: null, detail: error instanceof ScriptFault ? faultWords(error) : String(error) };

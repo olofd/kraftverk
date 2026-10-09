@@ -43,12 +43,14 @@ export function scriptRoutes(deps: AppDeps): Hono {
   api.get('/scripts/:id', async (c) => c.json(await familyFor(deps, c).scripts.get(c.req.param('id'))));
 
   api.patch('/scripts/:id', async (c) => {
-    const changes = await body(c, z.object({ key: KEY.optional(), name: NAME.optional(), source: SOURCE.optional() }).strict());
+    const changes = await body(c, z.object({ key: KEY.optional(), name: NAME.optional(), source: SOURCE.optional(), confirmation: z.string().optional() }).strict());
     return c.json(await familyFor(deps, c).scripts.update(c.req.param('id'), changes));
   });
 
   api.delete('/scripts/:id', async (c) => {
-    await familyFor(deps, c).scripts.remove(c.req.param('id'));
+    // A yes, when one is given: in the body, as a change's is.
+    const given = c.req.header('content-type')?.includes('json') ? await body(c, z.object({ confirmation: z.string().optional() }).strict()) : {};
+    await familyFor(deps, c).scripts.remove(c.req.param('id'), given.confirmation);
     return c.json({ ok: true });
   });
 

@@ -1,5 +1,5 @@
-import type { ScriptProblem } from '@kraftverk/automation';
-import { readScript, type ReadScript, type ScriptEngine } from '@kraftverk/script';
+import { SCRIPT_LIMITS, type ScriptProblem } from '@kraftverk/automation';
+import { limitedEngine, readScript, type ReadScript, type ScriptEngine } from '@kraftverk/script';
 import type { ScriptRecord, ScriptStore } from '@kraftverk/store';
 
 /*
@@ -22,7 +22,8 @@ export class ScriptCatalogue {
 
   constructor(store: ScriptStore, engine: ScriptEngine | null) {
     this.store = store;
-    this.engine = engine;
+    // Every sandbox shares the engine's memory: at most so many at once.
+    this.engine = engine && limitedEngine(engine, SCRIPT_LIMITS.sandboxes);
   }
 
   /** A source as this place's engine reads it: what it declares, or its problems. Nothing kept. */

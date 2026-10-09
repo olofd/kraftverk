@@ -29,7 +29,7 @@ export type HostFunctions = {
 };
 
 /** Why a script stopped, in its own kind, said as it is. */
-export type FaultKind = 'threw' | 'time' | 'memory' | 'stack' | 'stopped' | 'syntax';
+export type FaultKind = 'threw' | 'time' | 'memory' | 'stack' | 'stopped' | 'syntax' | 'busy';
 
 /** A script that stopped: what it threw, or which limit it reached, and where, when it is known. */
 export class ScriptFault extends Error {
@@ -50,8 +50,11 @@ export class ScriptFault extends Error {
 export interface Sandbox {
   /** Runs `code` at the top level, within one slice: its last value, as JSON text (`null` when it has none). */
   evaluate(code: string, filename: string): string;
-  /** Calls a global function by name with `text` as its one argument, within one slice: what it returns, which must be text. */
-  call(name: string, text: string): string;
+  /**
+   * Calls a global function by name with `text` as its one argument, within one slice: what it returns, which must be text.
+   * `sliceMs`: this call's own limit, in place of the sandbox's — a function loaded under one, and held to a shorter.
+   */
+  call(name: string, text: string, sliceMs?: number): string;
   /**
    * The same, for a function that may wait on the host: what its promise
    * comes to. Each thing the host promised that comes is one more slice.
@@ -62,6 +65,30 @@ export interface Sandbox {
   readonly cpuMs: number;
   /** Lets go of its heap. Anything still waiting is stopped. */
   dispose(): void;
+}
+
+/**
+ * An engine that opens at most `most` sandboxes at once: one more is
+ * refused (`busy`) until one is let go — every sandbox shares the engine's
+ * memory, so too many at once would make each other fail.
+ */
+export function limitedEngine(engine: ScriptEngine, most: number): ScriptEngine {
+  let open = 0;
+  return {
+    open(limits, host) {
+      if (open >= most) throw new ScriptFault('busy', `More than ${most} scripts are running at once: try again when one has ended`);
+      const sandbox = engine.open(limits, host);
+      open++;
+      let gone = false;
+      const dispose = sandbox.dispose.bind(sandbox);
+      return Object.assign(sandbox, {
+        dispose() {
+          if (!gone) (gone = true), open--;
+          dispose();
+        },
+      });
+    },
+  };
 }
 
 /** What opens sandboxes: one per place, made once. */

@@ -411,7 +411,7 @@ export function followerApi(h: Follower): KraftverkApi {
       get: (id) => home.scripts.get(id),
       create: (input) => home.scripts.create(input),
       update: (id, changes) => home.scripts.update(id, changes),
-      remove: (id) => home.scripts.remove(id),
+      remove: (id, confirmation) => home.scripts.remove(id, confirmation),
       check: (source) => home.scripts.check(source),
       run: (input) => home.scripts.run(input),
       types: () => home.scripts.types(),

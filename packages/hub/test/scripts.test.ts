@@ -189,7 +189,8 @@ describe('a script', () => {
     // It carries a load: the gateway turns it off only with the person's yes — asked for, then given.
     const asked = await t.home.scripts.run({ source, step: 'off', inputs: { after: 90 } });
     expect(asked.fault).toContain('needs explicit confirmation');
-    expect(asked.asked).toEqual([{ key: `${plug.id}/main/switch/set`, token: expect.any(String), what: expect.stringContaining('Power is') }]);
+    // For exactly that command: the device, its part, the command, and what it is given.
+    expect(asked.asked).toEqual([{ key: `${plug.id}/main/switch/set {"on":false}`, token: expect.any(String), what: expect.stringContaining('Power is') }]);
     const tried = await t.home.scripts.run({ source, step: 'off', inputs: { after: 90 }, yes: { [asked.asked[0]!.key]: asked.asked[0]!.token } });
     expect(tried.fault).toBeNull();
     expect(tried.answer).toBe('Off after 90 s');
@@ -233,5 +234,43 @@ describe('what a kept script reads as', () => {
     expect(reads).toBe(2);
     catalogue.readKept(script);
     expect(reads).toBe(2);
+  });
+});
+
+describe('what a script may reach', () => {
+  const SCRIPT = { kind: 'automation', id: 'a-1', name: 'A tidy', for: null, run: { id: 'r-1', askedBy: null } } as const;
+
+  test('changes only what it is let: a device, through the gateway — never the limits the gateway holds it to, nor scripts', async () => {
+    const asked = t.as(SCRIPT);
+    expect((await refusal(asked.policy.set('loadWatts', 9_000))).message).toStartWith('A script cannot change that');
+    expect((await refusal(asked.links.add({ kind: 'feeds', from: { device: 'x' as never }, to: { device: 'y' as never } } as never))).kind).toBe('forbidden');
+    expect((await refusal(asked.scripts.check(FEELS))).kind).toBe('forbidden');
+    const plug = await t.added('Heater plug', { typeId: 'test.plug' });
+    expect((await asked.devices.command(plug.id, 'main', 'switch', 'set', { args: { on: true } })).outcome).toBe('verified');
+  });
+
+  test('the open schema of a file names none of the family’s scripts', async () => {
+    await t.home.scripts.create({ name: 'Feels like', source: FEELS });
+    expect(JSON.stringify(await t.home.configuration.schema())).not.toContain('feels-like');
+  });
+
+  test('removing one an acting automation runs asks a yes first: it has nothing to run after', async () => {
+    const script = await t.home.scripts.create({ name: 'Tidy up', source: TIDY });
+    const made = await t.home.automations.create({
+      name: 'Evening tidy',
+      rule: { roles: { tidy: { script: true, label: 'Tidy' } }, params: { fields: {} }, when: [], then: [{ script: { role: 'tidy' } }] },
+      roles: {},
+      groups: {},
+      starts: {},
+      scripts: { tidy: script.id },
+      timeZone: 'Europe/Stockholm',
+    });
+    const letting = await refusal(t.home.automations.update(made.id, { mode: 'act' }));
+    await t.home.automations.update(made.id, { mode: 'act', confirmation: letting.needsConfirmation! });
+    const asked = await refusal(t.home.scripts.remove(script.id));
+    expect(asked).toMatchObject({ kind: 'needs-yes', message: '“Evening tidy” acts on its own with it: without it, it has nothing to run.' });
+    expect((await t.home.scripts.get(script.id)).id).toBe(script.id);
+    await t.home.scripts.remove(script.id, asked.needsConfirmation!);
+    expect((await refusal(t.home.scripts.get(script.id))).kind).toBe('not-found');
   });
 });

@@ -4,7 +4,9 @@ import { ApiError, type ApiPath, type Caller, type CallerKind, type KraftverkApi
   One gate every call of a home passes (docs/PLAN-SCRIPTS.md §7.2): for
   each method of `KraftverkApi`, whether it reads, acts or streams, the
   least role of the person who asks, and which kinds of caller may ask at
-  all. A method the interface gains does not compile until it is decided
+  all. A script reads what the family reads, and changes only what is
+  listed as `scripted`: devices, through the gateway, and a home's mode —
+  never the policy, links or connections the gateway's own checks rest on. A method the interface gains does not compile until it is decided
   here. What depends on a call's arguments — oneself or someone else, a
   draft that is one's own — is still the method's to say.
 
@@ -32,7 +34,14 @@ const PEOPLE: readonly CallerKind[] = ['person'];
 const NOT_SCRIPTS: readonly CallerKind[] = ['person', 'agent'];
 
 const read: Gate = { kind: 'read', least: null, callers: ANYONE };
-const act: Gate = { kind: 'act', least: null, callers: ANYONE };
+/**
+ * A change a person or an assistant may make — never a script. What a script
+ * may change is listed, `scripted`: an act not said to be one is closed to
+ * it, so what the API gains is closed to scripts until it is decided here.
+ */
+const act: Gate = { kind: 'act', least: null, callers: NOT_SCRIPTS, what: 'change that: a script tells devices what to do and sets a home’s mode, through the gateway' };
+/** A change a script may make too (docs/PLAN-SCRIPTS.md §7.3): telling a device, through the gateway; a home's mode. */
+const scripted: Gate = { kind: 'act', least: null, callers: ANYONE };
 /** A person's to do, never an assistant's. */
 const people = (kind: GateKind, what: string): Gate => ({ kind, least: null, callers: PEOPLE, what });
 /** An admin's to do. */
@@ -61,10 +70,10 @@ export const GATES = {
   'devices.history': read,
   'devices.changes': read,
   'devices.events': read,
-  'devices.command': act,
-  'devices.write': act,
+  'devices.command': scripted,
+  'devices.write': scripted,
   'devices.query': read,
-  'devices.tool': act,
+  'devices.tool': scripted,
   'devices.join': act,
   problems: read,
   needsYou: read,
@@ -112,8 +121,8 @@ export const GATES = {
   'scripts.create': noScript('act', 'write a script'),
   'scripts.update': noScript('act', 'write a script'),
   'scripts.remove': noScript('act', 'remove a script'),
-  'scripts.check': read,
-  'scripts.types': read,
+  'scripts.check': noScript('read', 'read a script'),
+  'scripts.types': noScript('read', 'read a script'),
   'scripts.run': noScript('act', 'run a script'),
   'configuration.vocabulary': read,
   'configuration.schema': read,
@@ -143,8 +152,8 @@ export const GATES = {
   'modes.update': act,
   'modes.remove': act,
   'modes.of': read,
-  'modes.set': act,
-  'modes.cancel': act,
+  'modes.set': scripted,
+  'modes.cancel': scripted,
   'occupancy.now': read,
   'occupancy.history': read,
   'zones.list': read,

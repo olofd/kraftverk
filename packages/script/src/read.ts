@@ -62,7 +62,8 @@ export function readScript(source: string, engine: ScriptEngine): ReadScript {
     return problems.length ? { compiled, shape: null, calls: {}, problems } : { compiled, shape, calls, problems };
   } catch (error) {
     if (!(error instanceof ScriptFault)) throw error;
-    return { compiled, shape: null, calls: {}, ...(error.kind === 'time' ? { passing: true as const } : {}), problems: [problem(error.kind === 'time' ? `Its top level ran for more than ${SCRIPT_LIMITS.describeMs} ms: keep the work inside its steps and functions` : error.message, error)] };
+    // Out of time, or too many at once: the moment's, not the script's.
+    return { compiled, shape: null, calls: {}, ...(error.kind === 'time' || error.kind === 'busy' ? { passing: true as const } : {}), problems: [problem(error.kind === 'time' ? `Its top level ran for more than ${SCRIPT_LIMITS.describeMs} ms: keep the work inside its steps and functions` : error.message, error)] };
   } finally {
     sandbox.dispose();
   }

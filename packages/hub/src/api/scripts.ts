@@ -1,6 +1,8 @@
 import { ApiError, type Caller, type KraftverkApi, type ScriptTried, type ScriptView } from '@kraftverk/api-contract';
 import type { ScriptProblem } from '@kraftverk/automation';
+import { subjectOf } from '@kraftverk/gateway';
 import { typesOf, type ReadScript } from '@kraftverk/script';
+import type { AutomationRecord } from '@kraftverk/automation-engine';
 import type { ScriptRecord } from '@kraftverk/store';
 
 import type { Hub } from '../node/hub.ts';
@@ -57,6 +59,24 @@ export function scriptsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'script
     return read;
   };
 
+  /** Who asks, as a person the family knows: whom an automation acts for after their yes. */
+  const asking = caller.kind === 'person' && caller.id && hub.people.get(caller.id) ? caller.id : null;
+  /** The automations that act, running a script: what changing it changes, and removing it leaves with nothing to run. */
+  const actingWith = (id: string) => hub.automations.list().filter((automation) => automation.mode === 'act' && Object.values(automation.scripts ?? {}).includes(id));
+  /**
+   * A change to what automations that act do is a deliberate act, as changing
+   * one's rule is (docs/PLAN-SCRIPTS.md §4.5): asked once, for those it
+   * concerns — `those` — or refused with the question, and its token.
+   */
+  const yesFor = (those: readonly AutomationRecord[], what: string, said: (one: boolean) => string, confirmation: string | undefined): void => {
+    if (!those.length) return;
+    const subject = subjectOf({ script: what, automations: those.map((each) => each.id), by: actorOf(caller) });
+    if (hub.yes.lettingAct.accept(confirmation, subject)) return;
+    const names = those.map((each) => `“${each.name}”`).join(', ');
+    const one = those.length === 1;
+    throw new ApiError('needs-yes', `${names} ${one ? 'acts' : 'act'} on ${one ? 'its' : 'their'} own with it: ${said(one)}`, { needsConfirmation: hub.yes.lettingAct.ask(subject) });
+  };
+
   return {
     scripts: {
       list: async () => scripts.store.list().map(viewOf),
@@ -79,8 +99,15 @@ export function scriptsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'script
         const name = changes.name === undefined ? undefined : nameOf(changes.name);
         if (changes.key !== undefined && changes.key !== was.key) checkKey(changes.key, !scripts.store.keyFree(changes.key, id), 'script', 'tidy-up');
         const read = changes.source !== undefined && changes.source !== was.source ? readable(changes.source) : null;
+        // What it says now is what they do: an automation acting for someone else acts, after the yes, for whoever gave it.
+        const others = read ? actingWith(id).filter((automation) => automation.actingFor !== asking) : [];
+        yesFor(others, `${id} ${changes.source}`, (one) => (one ? 'changing what it says changes what it does, and it acts for you after.' : 'changing what it says changes what they do, and they act for you after.'), changes.confirmation);
         const script = scripts.store.update(id, { ...(name !== undefined ? { name } : {}), ...(changes.key !== undefined ? { key: changes.key } : {}), ...(changes.source !== undefined ? { source: changes.source } : {}) }, actorOf(caller), new Date().toISOString())!;
         if (read) scripts.keep(id, script.source, read);
+        for (const automation of others) {
+          hub.automations.update(automation.id, { actingFor: asking });
+          hub.bus.publish({ kind: 'automation', automationId: automation.id });
+        }
         const said = [
           ...(script.name !== was.name ? [`renamed it "${script.name}"`] : []),
           ...(script.key !== was.key ? [`its key is "${script.key}"`] : []),
@@ -90,8 +117,9 @@ export function scriptsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'script
         return viewOf(script);
       },
 
-      async remove(id) {
+      async remove(id, confirmation) {
         const script = scriptOf(id);
+        yesFor(actingWith(id), `${id} removed`, (one) => (one ? 'without it, it has nothing to run.' : 'without it, they have nothing to run.'), confirmation);
         scripts.store.remove(id);
         scripts.forget(id);
         record('script.removed', 'script', id, `Removed the script "${script.name}"`, { key: script.key });
