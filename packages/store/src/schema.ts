@@ -1141,7 +1141,7 @@ export const SCHEMA = `
     actor_kind    TEXT NOT NULL CHECK (actor_kind IN ('person', 'agent', 'automation', 'node', 'integration', 'system')),
     actor_id      TEXT,
     actor_name    TEXT NOT NULL,
-    resource_kind TEXT CHECK (resource_kind IN ('device', 'node', 'automation', 'account', 'transport', 'family', 'home', 'zone', 'person')),
+    resource_kind TEXT CHECK (resource_kind IN ('device', 'node', 'automation', 'account', 'transport', 'family', 'home', 'zone', 'person', 'mode')),
     resource      TEXT,
     summary       TEXT NOT NULL,
     detail        TEXT,

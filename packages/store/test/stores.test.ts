@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import { MAIN_PART, nodeId, type AuditRecord } from '@kraftverk/device-sdk';
+import { MAIN_PART, RESOURCE_KINDS, nodeId, type AuditRecord, type ResourceKind } from '@kraftverk/device-sdk';
 
 import {
   HomeSettings,
@@ -67,6 +67,17 @@ for (const driver of DRIVERS) {
       expect(audit.recent({ resourceKind: 'device', resource: 'd-one' }).map((entry) => entry.summary)).toEqual(['Renamed One', 'Added One']);
       expect(audit.recent({ resourceKind: 'automation' })[0]?.detail).toEqual({ steps: 2 });
       expect(audit.recent({ limit: 1 })).toHaveLength(1);
+    });
+
+    test('the timeline keeps a line sent twice once, about anything it can be about, and refuses aloud what it cannot hold', () => {
+      const audit = new AuditLog(database);
+      for (const resourceKind of RESOURCE_KINDS) {
+        const line = { at: at(4), kind: 'thing.done', actor: actor('person', 'olof'), resourceKind, resource: `${resourceKind}-1`, summary: 'Done' } as const;
+        audit.record(line);
+        audit.record(line);
+        expect(audit.recent({ resourceKind, resource: `${resourceKind}-1` }), resourceKind).toHaveLength(1);
+      }
+      expect(() => audit.record({ at: at(4), kind: 'thing.done', actor: actor('person', 'olof'), resourceKind: 'nothing' as ResourceKind, resource: 'x', summary: 'Done' })).toThrow();
     });
 
     test('settings are kept until changed, by the names the schema lists; policy values only within their range, and a home’s its own', () => {

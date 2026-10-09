@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { ACTOR_KINDS } from '@kraftverk/device-sdk';
+import { ACTOR_KINDS, RESOURCE_KINDS } from '@kraftverk/device-sdk';
 
 import { SCHEMA } from '../src/index.ts';
 
@@ -35,6 +35,11 @@ describe('every table', () => {
         if (/_by$/.test(column.name)) expect(column.line, `${name}.${column.name}: who did it is an actor, or a reference`).toMatch(/REFERENCES/);
       }
     }
+  });
+
+  test('says what a line of the timeline is about as a kind among the kinds', () => {
+    const kinds = `(${RESOURCE_KINDS.map((kind) => `'${kind}'`).join(', ')})`;
+    for (const { name, body } of tables) for (const column of columns(body)) if (/(^|_)resource_kind$/.test(column.name)) expect(column.line, `${name}.${column.name}`).toContain(`IN ${kinds}`);
   });
 
   test('keeps an instant as text, and an interval that ends after it starts', () => {

@@ -18,8 +18,8 @@ export class AuditLog {
   record(entry: AuditRecord): void {
     try {
       this.#db
-        // Sent again by a node that was not sure it arrived: the entry already kept.
-        .query<unknown, (string | null)[]>('INSERT OR IGNORE INTO audit (at, kind, actor_kind, actor_id, actor_name, resource_kind, resource, summary, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        // Sent again by a node that was not sure it arrived: the entry already kept. Only that: an entry the table refuses is a mistake, and says so.
+        .query<unknown, (string | null)[]>('INSERT INTO audit (at, kind, actor_kind, actor_id, actor_name, resource_kind, resource, summary, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING')
         .run(
           entry.at,
           entry.kind,
