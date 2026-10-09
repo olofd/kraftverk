@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@jitl/quickjs-ng-wasmfile-release-sync": "^0.32.0",
     "@kraftverk/api-contract": "*",
     "@kraftverk/automation": "*",
     "@kraftverk/automation-engine": "*",
@@ -22,6 +23,7 @@
     "@kraftverk/hub": "*",
     "@kraftverk/identity": "*",
     "@kraftverk/map": "*",
+    "@kraftverk/script-wasm": "*",
     "@kraftverk/store": "*",
     "hono": "^4.13.1",
     "pmtiles": "^4.5.0",

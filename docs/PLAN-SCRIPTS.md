@@ -1065,6 +1065,37 @@ Each step from B2 on ends with an end-to-end test in both.
 | B4 | S7, S8 | The typed SDK and the editor; e2e: a completion and a marked type error, then a run |
 | later | S1, S2, S9, S10 | The phone, and what is left |
 
+**B1 built, 2026-10-09.** What building it changed:
+- **QuickJS for WebAssembly cannot count its memory.** It has no
+  `malloc_usable_size` there, and counts 8 bytes a block, so a runtime
+  limited to 2 MB held 24 MB. A runtime's own limit stops only one
+  allocation larger than it. So `@kraftverk/script-wasm` holds memory
+  itself:
+  - The engine's WebAssembly memory is made there, with a maximum (320 MB
+    unless the place says less); an allocation past it fails inside as
+    "out of memory".
+  - A sandbox is charged with what that memory grows by while it runs, and
+    stopped past its own limit.
+
+  The phone's module, in C, can count properly and should.
+- **The port is generic.** `HostFunctions` is `{ sync, async }`, global
+  functions of one text argument, and a `Sandbox` evaluates, calls and
+  calls-and-waits by a global's name. The four names of §6.2 are the guest
+  SDK's, not the engine's, so the phone's module has nothing of kraftverk
+  to know.
+- **For now a script imports `kraftverk` alone.** `kraftverk/api` comes with
+  the script step (B3). An import used only as a type is erased, and so is
+  no import.
+- **`t.instant()`, not `t.time()`.** The language's fields have an instant
+  (`timestamp`) and no time of day.
+- **sucrase in a browser bundle.** sucrase writes `from "module"` into its
+  ESM output as text, which the architecture check's browser bundle took
+  for an import. The check now names that one text as known (`KNOWN_TEXT`),
+  and excuses nothing else.
+- **Proof in the browser, until B2's.** The home worker makes the engine
+  before it opens a home, and says so when it cannot. `e2e/local.e2e.ts`
+  holds that it never says so.
+
 What browser first changes in the slices:
 - **The editor is a web component of its own**, `ScriptEditor.web.tsx`,
   beside `YamlEditor.web.tsx`. It is not yet an Expo DOM component; the

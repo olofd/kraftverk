@@ -71,7 +71,11 @@ const MAY_IMPORT = {
   holder: ['device-sdk', 'gateway', 'api-contract'],
   'automation-engine': ['device-sdk', 'automation', 'gateway', 'api-contract', 'holder'],
   store: ['device-sdk', 'identity', 'automation', 'gateway', 'home-file', 'api-contract', 'holder', 'automation-engine'],
-  hub: ['device-sdk', 'identity', 'map', 'automation', 'gateway', 'home-file', 'api-contract', 'holder', 'automation-engine', 'store'],
+  // Scripts in TypeScript: compiled, their shape read, the guest SDK and the port a sandbox is reached through. Knows no engine.
+  script: ['device-sdk', 'automation'],
+  // A sandbox over QuickJS as WebAssembly: what runs scripts on a server and in a browser.
+  'script-wasm': ['script'],
+  hub: ['device-sdk', 'identity', 'map', 'automation', 'gateway', 'home-file', 'api-contract', 'holder', 'automation-engine', 'store', 'script'],
   // A home and a transport over a message port: served on one side, the same interface on the other.
   'message-port': ['device-sdk', 'identity', 'automation', 'gateway', 'home-file', 'api-contract'],
   // The edges: the API over HTTP, and the React kit.
@@ -419,6 +423,16 @@ const PLATFORM_MODULE = new RegExp(
  * is taken — `yaml`'s, which reads `process` — not the one the app runs.)
  */
 const STAND_IN = /^\/\/ node:[\w/]+$|=\s*\(\(\) => \(\{\}\)\);/m;
+
+/**
+ * Text in a dependency that reads as an import of a platform module and is
+ * not one, each said exactly and why, taken out before a bundle is read.
+ * Nothing else is excused.
+ */
+const KNOWN_TEXT = [
+  // sucrase (packages/script) writes this into the ESM it outputs, for TypeScript's `import x = require()`: a string it emits, never run here.
+  'import {createRequire as CREATE_REQUIRE_NAME} from "module";',
+];
 function platformInBundles() {
   const roots = [
     ...SHARED_PACKAGES.map((name) => `packages/${name}/`),
@@ -450,7 +464,7 @@ function platformInBundles() {
           found.push(`${root}${entry.slice(2)}: does not bundle for a browser — ${String(error.stderr ?? error.message).trim().split('\n').slice(-3).join(' ')}`);
           continue;
         }
-        const bundle = readFileSync(outfile, 'utf8');
+        const bundle = KNOWN_TEXT.reduce((text, known) => text.split(known).join(''), readFileSync(outfile, 'utf8'));
         const match = PLATFORM_MODULE.exec(bundle) ?? STAND_IN.exec(bundle);
         if (match) found.push(`${root}${entry.slice(2)}: its browser bundle needs a platform module (${match[0].trim()}) — a dependency needs Node or Bun`);
       }
@@ -549,7 +563,7 @@ function oldRootNames() {
  */
 const CONTRACT = 'packages/api-contract/src';
 /** Every package that could declare a shape of the API again beside it, and the server and app. */
-const CONTRACT_USERS = /^(server\/src|client\/src|client\/app|packages\/(api-client|ui|hub|store|home-file|automation-engine|holder|gateway)\/src)\//;
+const CONTRACT_USERS = /^(server\/src|client\/src|client\/app|packages\/(api-client|ui|hub|store|home-file|automation-engine|holder|gateway|script|script-wasm)\/src)\//;
 
 function contractCopies() {
   // Every file of the contract: a shape is declared in the file of its area, and re-exported from the index.

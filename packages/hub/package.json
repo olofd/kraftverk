@@ -24,6 +24,7 @@
     "@kraftverk/home-file": "*",
     "@kraftverk/identity": "*",
     "@kraftverk/map": "*",
+    "@kraftverk/script": "*",
     "@kraftverk/store": "*",
     "@noble/ciphers": "^2.4.0",
     "@noble/hashes": "^2.4.0"

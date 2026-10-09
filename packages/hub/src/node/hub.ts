@@ -3,6 +3,7 @@ import { isPosition, REAL_CLOCK, SYSTEM, type Actor, type AuditRecord, type Cloc
 import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
 import { ActionGateway, Confirmations, type GatewayPolicy } from '@kraftverk/gateway';
 import { LiveBus, SessionManager } from '@kraftverk/holder';
+import type { ScriptEngine } from '@kraftverk/script';
 import {
   AuditLog,
   AutomationStore,
@@ -86,6 +87,13 @@ export type HubOptions = {
   clock?: Clock;
   /** How this place wakes an app with a notification: the server's web push. None on a phone. */
   push?: PushSender;
+  /**
+   * What runs this place's scripts (docs/PLAN-SCRIPTS.md §8): QuickJS as
+   * WebAssembly on a server and in a browser. None where there is no engine
+   * yet — a phone, until its own — and an automation that uses a script
+   * says so there.
+   */
+  scripts?: ScriptEngine;
   /** Frames nobody has described may be sent, by a type's raw-frame tool. Never in an app. */
   allowRawFrames?: boolean;
   /** For a setup helper that calls a vendor's API once — fetching a key. */
@@ -194,6 +202,8 @@ export class Hub {
   readonly notifications: NotificationStore;
   /** How this place wakes an app with a notification; none where nothing sends a push. */
   readonly push: PushSender | null;
+  /** What runs this place's scripts; none where it has no engine. */
+  readonly scripts: ScriptEngine | null;
   readonly presence: Presence;
   /** Whether each space has someone in it, kept: from what stands there. */
   readonly occupancies: OccupancyStore;
@@ -303,6 +313,7 @@ export class Hub {
     this.notifications = new NotificationStore(db);
     this.stays = new PresenceStore(db);
     this.push = options.push ?? null;
+    this.scripts = options.scripts ?? null;
     this.occupancies = new OccupancyStore(db);
     this.modeStore = new ModeStore(db);
     this.modes = new Modes({ store: this.modeStore, places: this.places, bus: this.bus, clock: options.clock });

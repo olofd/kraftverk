@@ -1,0 +1,25 @@
+{
+  "name": "@kraftverk/script-wasm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A script sandbox over QuickJS-NG as WebAssembly: what runs scripts on a server and in a browser's home worker. The place gives it the .wasm.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node ../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@jitl/quickjs-ng-wasmfile-release-sync": "^0.32.0",
+    "@kraftverk/script": "*",
+    "quickjs-emscripten-core": "^0.32.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

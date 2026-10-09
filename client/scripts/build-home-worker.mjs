@@ -1,6 +1,7 @@
 /**
  * Builds a browser's own home — the hub in its worker — beside the app:
- * client/public/home/worker.js and the sqlite3.wasm it loads beside itself.
+ * client/public/home/worker.js, and the sqlite3.wasm and quickjs.wasm (the
+ * engine its scripts run in, docs/PLAN-SCRIPTS.md) it loads beside itself.
  * docs/PLAN-SHARED-CORE.md, "SQLite in the app".
  *
  * Bundled here rather than by Metro: Metro's workers are alpha, and SQLite's
@@ -25,6 +26,7 @@ const watch = process.argv.includes('--watch');
 
 mkdirSync(OUT, { recursive: true });
 copyFileSync(require.resolve('@sqlite.org/sqlite-wasm/sqlite3.wasm'), join(OUT, 'sqlite3.wasm'));
+copyFileSync(require.resolve('@jitl/quickjs-ng-wasmfile-release-sync/wasm'), join(OUT, 'quickjs.wasm'));
 
 /*
   The map's renderer (MapLibre GL, docs/PLAN-MAPS.md), beside the app too:

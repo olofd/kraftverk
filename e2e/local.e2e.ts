@@ -20,6 +20,11 @@ async function write(page: Page, label: string, text: string) {
 }
 
 test('without a server, the app keeps its own home: a simulated plug added, switched through its own gateway, and an automation run', async ({ page }) => {
+  // The worker makes its script engine before it opens the home, and says so if it cannot (docs/PLAN-SCRIPTS.md).
+  const noScripts: string[] = [];
+  page.on('console', (message) => {
+    if (message.text().startsWith('Scripts cannot run')) noScripts.push(message.text());
+  });
   await page.goto('/devices/add');
   await press(page, 'Smart plugs');
   await press(page, 'Tuya smart plug');
@@ -30,6 +35,7 @@ test('without a server, the app keeps its own home: a simulated plug added, swit
   await press(page, 'Save');
 
   await expect(page.getByText('240 W', { exact: true }).filter({ visible: true }).first()).toBeVisible();
+  expect(noScripts, 'scripts run in this browser’s own home').toEqual([]);
   const power = page.getByRole('switch').first();
   await expect(power).toHaveAttribute('aria-checked', 'true');
 

@@ -25,3 +25,4 @@ export * from './text/expr.ts';
 export * from './text/rules.ts';
 export * from './text/settings.ts';
 export * from './message.ts';
+export * from './script.ts';

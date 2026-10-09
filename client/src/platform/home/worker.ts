@@ -3,6 +3,7 @@ import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import { personalApi, type DeviceKeys } from '@kraftverk/hub';
 import { keyId, newWebCryptoPair, webCryptoKey, type WebCryptoPair } from '@kraftverk/identity';
 import { apiOver, hear, serveApi, transportOver, type MessageEnd } from '@kraftverk/message-port';
+import { wasmScriptEngine } from '@kraftverk/script-wasm';
 import { fromSqliteWasm, PERSONAL_SCHEMA, PersonalStore, schemaFingerprint, sealedWithKey, type SqlDatabase, type SqliteWasmDatabase } from '@kraftverk/store';
 
 import { appFollower, appHub, readyDatabase } from './hub';
@@ -39,6 +40,18 @@ const POOL = { name: 'kraftverk-home', directory: '.kraftverk-home' } as const;
 const FREE_WITHIN_MS = 15_000;
 
 const scope = globalThis as unknown as MessageEnd;
+
+/**
+ * What runs this browser's scripts: QuickJS as WebAssembly, its .wasm
+ * served beside this worker (scripts/build-home-worker.mjs). Made once, the
+ * first time a home of its own is opened; none, said once, when it cannot be.
+ */
+let scripts: Promise<Awaited<ReturnType<typeof wasmScriptEngine>> | undefined> | null = null;
+const scriptEngine = () =>
+  (scripts ??= wasmScriptEngine({ location: new URL('./quickjs.wasm', import.meta.url).href }).catch((error: unknown) => {
+    console.warn(`Scripts cannot run in this browser: ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  }));
 const say = (message: ToPage) => scope.postMessage(message);
 
 /** A directory of the origin's private file system, as far as it is used here. */
@@ -227,7 +240,8 @@ async function openFamily(open: Extract<ToWorker, { kind: 'open' }>): Promise<Fa
     };
   }
 
-  const hub = appHub({ ...place, familyId: open.family!.id, ...(other ? { copy: other } : {}) });
+  const engine = await scriptEngine();
+  const hub = appHub({ ...place, familyId: open.family!.id, ...(other ? { copy: other } : {}), ...(engine ? { scripts: engine } : {}) });
   await hub.start();
   const stopServing = serveApi(hub.as(callerOf(open.person)), scope, 'api');
   return {

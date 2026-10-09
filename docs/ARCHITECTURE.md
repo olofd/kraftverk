@@ -154,6 +154,10 @@ packages/
   hub/                   @kraftverk/hub                  a home, running: what is installed, devices' views, setup, history,
                                                          attention, automations, the configuration — wired over the ports
                                                          the place it runs gives it; the server's and the app's alike; pure
+  script/                @kraftverk/script               scripts in TypeScript for automations: compiled, their shape read in a
+                                                         sandbox, the guest SDK, the port a sandbox is reached through; pure
+                                                         (docs/PLAN-SCRIPTS.md)
+  script-wasm/           @kraftverk/script-wasm          a script sandbox over QuickJS-NG as WebAssembly: a server's and a browser's
   message-port/          @kraftverk/message-port         a home's API and a transport over a message port: served on one side, the
                                                          same interface on the other — a browser's page and the hub in its worker; pure
   gateway/               @kraftverk/gateway              the action gateway's rules: pure, run by whichever holder has the connection

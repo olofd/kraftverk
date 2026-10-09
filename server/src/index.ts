@@ -17,6 +17,7 @@ import { scopedHttp } from './platform/http.ts';
 import { MapRegions } from './platform/map/regions.ts';
 import { TileStore } from './platform/map/tiles.ts';
 import { installedFromDisk } from './platform/packages.ts';
+import { serverScripts } from './platform/script.ts';
 import { thisNode } from './platform/node.ts';
 import { serverSecrets } from './platform/secrets.ts';
 import { ConfigSnapshot } from './platform/snapshot.ts';
@@ -130,6 +131,8 @@ const hub = createHub({
   node: thisNode(database, besideDatabase(config, 'node-id')),
   // Notifications pushed to people's browsers: this server's key, kept beside its database; who to contact about them, as push services ask.
   push: webPush(besideDatabase(config, 'push', 'vapid.json'), process.env.PUSH_CONTACT ?? 'mailto:push@kraftverk.invalid'),
+  // Scripts in automations: QuickJS as WebAssembly, or none, said once, when it cannot be made here.
+  scripts: await serverScripts((message) => console.warn(message)),
 });
 if (config.clockRate > 1) console.log(`CLOCK: the home's time runs ${config.clockRate} times real time.`);
 

@@ -29,6 +29,10 @@
       // The broker runs as a process of its own: its CLI, and what the supervisor launches.
       "entry": ["src/broker/cli.ts", "src/broker/main.ts", "src/broker/launcher.ts"]
     },
+    "packages/script": {
+      // The guest SDK runs inside a sandbox: scripts/gen-script-guest.ts bundles it into src/generated/guest.ts, never imported.
+      "entry": ["src/guest/sdk.ts"]
+    },
     "packages/sign-in/apple": {
       // Metro picks client.web.ts on the web from the import of ./client, which knip cannot follow.
       "entry": ["src/client.web.ts"]

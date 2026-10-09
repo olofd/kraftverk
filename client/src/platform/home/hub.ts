@@ -1,6 +1,6 @@
 import type { TransportDefinition, TransportFactory } from '@kraftverk/device-sdk';
 import type { KraftverkApi } from '@kraftverk/api-contract';
-import { createFollower, createHub, installedFrom, passphraseSealing, type Follower, type Hub, type Installed } from '@kraftverk/hub';
+import { createFollower, createHub, installedFrom, passphraseSealing, type Follower, type Hub, type HubOptions, type Installed } from '@kraftverk/hub';
 import { AuditLog, createSchema, NodeStore, prepareDatabase, SCHEMA, schemaStateOf, transportStore, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import { INTEGRATIONS, TRANSPORTS } from '../../generated/installed';
@@ -36,6 +36,8 @@ export type AppPlace = {
   transport: (definition: TransportDefinition) => TransportFactory | null;
   /** Every write to hardware refused: an app's switch, off every launch. */
   readOnly: () => boolean;
+  /** What runs scripts here: a browser's WebAssembly engine; none on a phone until its own (docs/PLAN-SCRIPTS.md). */
+  scripts?: HubOptions['scripts'];
 };
 
 const log = (level: 'info' | 'warn' | 'error', message: string) => console[level === 'info' ? 'log' : level](message);
@@ -81,6 +83,7 @@ export function appHub(place: AppPlace & { familyId: string; copy?: SqlDatabase 
     log,
     familyId: place.familyId,
     ...(place.copy ? { copy: place.copy } : {}),
+    ...(place.scripts ? { scripts: place.scripts } : {}),
   });
 }
 
