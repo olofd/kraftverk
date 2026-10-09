@@ -15,6 +15,8 @@ export const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.
 export const ACTS: ReadonlySet<string> = new Set(['command', 'write', 'start', 'setMode', 'notify']);
 /** An automation as a step names it: “Charge the scooter” — or one that is gone. */
 export const quoted = (name: string | null): string => (name === null ? 'an automation you no longer have' : `“${name}”`);
-/** A step as done: "Turned Heater plug off", "Set Scooter plug’s Live readings to on", "Started “Charge the scooter”"; anything else, "Sent …". */
+/** A step as done: "Turned Heater plug off", "Set Scooter plug’s Live readings to on", "Started “Charge the scooter”", "Ran “Tidy up”"; anything else, "Sent …". */
 export const pastOf = (what: string) =>
-  /^turn /i.test(what) ? `Turned ${what.slice(5)}` : /^set /i.test(what) ? `Set ${what.slice(4)}` : /^start /i.test(what) ? `Started ${what.slice(6).replace(/ and wait until it ends.*$/, '')}` : `Sent ${lowerFirst(what)}`;
+  /^run /i.test(what)
+    ? `Ran ${what.slice(4).replace(/, remembering what it answers as .*$/, '')}`
+    : /^turn /i.test(what) ? `Turned ${what.slice(5)}` : /^set /i.test(what) ? `Set ${what.slice(4)}` : /^start /i.test(what) ? `Started ${what.slice(6).replace(/ and wait until it ends.*$/, '')}` : `Sent ${lowerFirst(what)}`;

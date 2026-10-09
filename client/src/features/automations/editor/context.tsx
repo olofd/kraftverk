@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
-import type { AutomationView, DeviceView, FunctionView, RecipeView } from '@kraftverk/api-client';
+import type { AutomationView, DeviceView, FunctionView, RecipeView, ScriptView } from '@kraftverk/api-client';
 import { capitalise, describeExpr, describeSteps, describeTriggers, draftOfRecipe, eachAt, eachNames, eachSaid, EMPTY_DRAFT, partOptions, partRole, roleSaid, writtenAttribute, type AutomationDraft, type AutomationFunction, type Expr, type ListPath, type PartOption, type RoleBinding, type RuleVocabulary, type Step, type Trigger } from '@kraftverk/automation';
 import { capabilitiesOf, meetsNeed, type CapabilityNeed, type DeviceDescription, type SavedDeviceId } from '@kraftverk/device-sdk';
 
@@ -29,6 +29,8 @@ export type EditorKit = {
   devices: readonly DeviceView[];
   /** The other automations: what a "start" block may start. */
   automations: readonly AutomationView[];
+  /** The family's scripts: what a "run a script" block may run, and what each declares. */
+  scripts: readonly ScriptView[];
   functions: readonly FunctionView[];
   /** The device a new one was started from: its parts are offered first. */
   prefer?: string | null;
@@ -40,11 +42,12 @@ export type EditorKit = {
 
 const EditorContext = createContext<EditorKit | null>(null);
 
-/** What the editor needs from the home: the recipes and functions it offers, and the automations a step may start. */
+/** What the editor needs from the home: the recipes and functions it offers, the automations a step may start, and the scripts one may run. */
 export function useEditorKit() {
   const { api } = useFamily();
-  const { value, error } = useAnswer(() => Promise.all([api.automations.kit(), api.automations.list()]), [api]);
-  return { kit: value?.[0] ?? null, automations: value?.[1] ?? null, error };
+  // A place that runs no scripts has none to offer: not a failure of the editor.
+  const { value, error } = useAnswer(() => Promise.all([api.automations.kit(), api.automations.list(), api.scripts.list().catch(() => [])]), [api]);
+  return { kit: value?.[0] ?? null, automations: value?.[1] ?? null, scripts: value?.[2] ?? null, error };
 }
 
 export function EditorProvider({ kit, children }: { kit: EditorKit; children: ReactNode }) {
@@ -55,7 +58,7 @@ export function EditorProvider({ kit, children }: { kit: EditorKit; children: Re
 export function useEditor() {
   const kit = useContext(EditorContext);
   if (!kit) throw new Error('The editor is used outside its provider');
-  const { draft, devices, automations, functions, prefer, world } = kit;
+  const { draft, devices, automations, scripts, functions, prefer, world } = kit;
 
   return useMemo(() => {
     const deviceOf = (binding: RoleBinding | undefined) => (binding ? devices.find((device) => device.id === binding.device) : undefined);
@@ -76,6 +79,8 @@ export function useEditor() {
     const vocabulary: RuleVocabulary = {
       fn: (id) => (functions.find((fn) => fn.id === id) as unknown as AutomationFunction | undefined) ?? null,
       ...(world.modes.length ? { modes: () => world.modes } : {}),
+      // What the script filling a role declares: its steps' inputs and answers, its functions.
+      script: (role) => scripts.find((script) => script.id === draft.scripts?.[role])?.shape ?? null,
       attribute: (role, target) => {
         const bound = partOf(role);
         return bound ? writtenAttribute(bound.description, bound.part, target) : null;
@@ -107,7 +112,7 @@ export function useEditor() {
     /** Whether a block's part is chosen: a role of the draft's, or what a "for each" calls each part. */
     const chosen = (role: string): boolean => Boolean(role && (draft.rule.roles[role] || each[role]));
     return { ...kit, name, partOf, vocabulary, said, saidExpr, saidTrigger, parts, offering, chosen };
-  }, [kit, draft, devices, automations, functions, prefer, world]);
+  }, [kit, draft, devices, automations, scripts, functions, prefer, world]);
 }
 
 /** A part picked for a block: the role it fills — its own, or a new one — and the draft with it. */

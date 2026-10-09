@@ -136,6 +136,21 @@ export function automationRole<D extends AutomationDraft>(draft: D, automation: 
   };
 }
 
+/** The role a script fills in the draft, to be run: the one it already fills, or a new one — named and labelled as the script is called now. */
+export function scriptRole<D extends AutomationDraft>(draft: D, script: string, name: string): { draft: D; role: string } {
+  const found = Object.entries(draft.scripts ?? {}).find(([, filled]) => filled === script);
+  if (found) return { draft, role: found[0] };
+  const role = roleName(draft.rule, name);
+  return {
+    role,
+    draft: {
+      ...draft,
+      rule: { ...draft.rule, roles: { ...draft.rule.roles, [role]: { script: true, label: name } } },
+      scripts: { ...draft.scripts, [role]: script },
+    },
+  };
+}
+
 /** The draft without the roles nothing uses any more: what is kept. */
 export function pruned<D extends AutomationDraft>(draft: D): D {
   const used = usedRoles(draft.rule);
@@ -148,6 +163,7 @@ export const rolesOf = (rule: Rule) => ({
   parts: Object.entries(rule.roles).filter(([, spec]) => roleKind(spec) === 'part'),
   groups: Object.entries(rule.roles).filter(([, spec]) => roleKind(spec) === 'group'),
   automations: Object.entries(rule.roles).filter(([, spec]) => roleKind(spec) === 'automation'),
+  scripts: Object.entries(rule.roles).filter(([, spec]) => roleKind(spec) === 'script'),
   /** People and places. */
   world: Object.entries(rule.roles).filter(([, spec]) => isWorldRole(spec)),
 });

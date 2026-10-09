@@ -91,12 +91,12 @@ describe('a script', () => {
     const script = await t.home.scripts.create({
       name: 'Tidy up',
       source: [
-        "import { devices, log, type Kept } from 'kraftverk';",
-        'export async function off(memory: Kept<{ times: number }>): Promise<string> {',
+        "import { devices, log, type Duration, type Kept } from 'kraftverk';",
+        'export async function off(/** @default 5 min */ after: Duration, memory: Kept<{ times: number }>): Promise<string> {',
         '  const plug = devices.heaterPlug;',
         '  await plug.turnOff();',
         '  memory.times += 1;',
-        "  log(`Turned it off, ${memory.times} times now`);",
+        "  log(`Turned it off, ${memory.times} times now, after ${after} s`);",
         '  return plug.name;',
         '}',
         '',
@@ -126,7 +126,8 @@ describe('a script', () => {
     expect(steps[0]).toEqual([0, 'Run “Tidy up”, remembering what it answers as last tidy', 'done', 'Answered Heater plug']);
     expect(steps.slice(1).map(([depth, what]) => [depth, what])).toEqual([
       [1, 'Heater plug: switch.set on false'],
-      [1, 'Turned it off, 1 times now'],
+      // Not given its input by the automation: its declared default.
+      [1, 'Turned it off, 1 times now, after 300 s'],
     ]);
     expect((await t.home.devices.get(plug.id)).readings.find((reading) => reading.key === 'on')?.value).toBe(false);
     // Said live, line by line, under the automation's name: the script's step, what it did, its own words, the run's end.
@@ -136,9 +137,9 @@ describe('a script', () => {
     expect(lines).toEqual(
       expect.arrayContaining([
         ['Evening tidy', 'step', 'Heater plug: switch.set on false', 'done'],
-        ['Evening tidy', 'log', 'Turned it off, 1 times now', 'done'],
+        ['Evening tidy', 'log', 'Turned it off, 1 times now, after 300 s', 'done'],
         ['Evening tidy', 'step', 'Run “Tidy up”, remembering what it answers as last tidy', 'done'],
-        ['Evening tidy', 'ended', expect.any(String), 'acted'],
+        ['Evening tidy', 'ended', 'Ran “Tidy up”', 'acted'],
       ])
     );
   });

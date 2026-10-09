@@ -877,8 +877,8 @@ export class Runs {
     const name = script.step ?? (names.length === 1 ? names[0] : undefined);
     const declared = name !== undefined ? shape?.steps[name] : undefined;
     const scope = this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event, live.inputs);
-    // What it is given, each in its input's unit — as it declares them, where it reads.
-    const inputs: Record<string, Value> = {};
+    // What it is given, each in its input's unit — as it declares them, where it reads; what it is not given, its declared default.
+    const inputs: Record<string, Value> = Object.fromEntries(Object.entries(declared?.inputs.fields ?? {}).flatMap(([input, field]) => (field.default === undefined ? [] : [[input, field.default as Value]])));
     for (const [input, expr] of Object.entries(script.args ?? {})) {
       const measured = await measure(expr, scope).catch(() => ({ value: null, unit: null }));
       const kept = declared ? toRemember(declared.inputs, input, measured) : { value: measured.value };
@@ -1204,7 +1204,9 @@ export class Runs {
     const steps = split < 0 ? live.run.steps : live.run.steps.slice(0, split);
     const later = split < 0 ? [] : live.run.steps.slice(split);
     // What a retry did is no deed of its own: "Try 2 of 3".
-    const done = steps.filter((step) => ACTS.has(step.kind) && (step.outcome === 'done' || step.outcome === 'already' || step.outcome === 'unverified') && !/^Try \d+ of/.test(step.within ?? ''));
+    // A script run is a deed; what it said and did beneath it is its own (kept within it).
+    const ranScript = (step: RunStep) => step.kind === 'script' && !steps.some((other) => other !== step && other.kind === 'script' && other.what === step.within);
+    const done = steps.filter((step) => (ACTS.has(step.kind) || ranScript(step)) && (step.outcome === 'done' || step.outcome === 'already' || step.outcome === 'unverified') && !/^Try \d+ of/.test(step.within ?? ''));
     // What it changed: what was already so is no deed of its own.
     const changed = done.filter((step) => step.outcome !== 'already').map((step) => lowerFirst(pastOf(step.what)));
     const made = steps.filter((step) => step.kind === 'ensure' && step.outcome === 'met').map((step) => step.detail);

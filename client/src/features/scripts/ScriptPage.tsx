@@ -109,7 +109,7 @@ const valueWords = (value: Value | null): string => (value === null ? 'nothing' 
  * What it did, line by line; what it answered and would remember; and a
  * yes asked for, given by running it again.
  */
-function TryStep({ source, name, inputs, current }: { source: string; name: string; inputs: ConfigSchema; current: boolean }) {
+function TryStep({ source, name, inputs, current, kept }: { source: string; name: string; inputs: ConfigSchema; current: boolean; kept: string | null }) {
   const { api } = useFamily();
   const tone = useTone();
   const [values, setValues] = useState<ConfigValues>(() => Object.fromEntries(Object.entries(inputs.fields).map(([key, field]) => [key, field.default as ConfigValues[string]])));
@@ -142,6 +142,17 @@ function TryStep({ source, name, inputs, current }: { source: string; name: stri
         <Text flex={1} fontSize={12} color="$muted" lineHeight={17}>
           As you, as written — not kept. What it does to a device is done.
         </Text>
+      </XStack>
+      {/* Run when something happens: an automation that runs this step, its trigger still to choose — of the script as kept. */}
+      <XStack alignItems="center" gap="$3">
+        <Button size="$3" chromeless borderWidth={1} borderColor="$accent" color="$accent" icon={<Icon name="zap" size={14} color={tone('$accent')} />} disabled={!kept} opacity={kept ? 1 : 0.5} onPress={() => kept && (haptic(), router.push(PATHS.automations.running(kept, name)))} aria-label={`Run ${wordsOf(name)} when…`}>
+          Run it when…
+        </Button>
+        {kept ? null : (
+          <Text flex={1} fontSize={12} color="$muted" lineHeight={17}>
+            Keep it first: an automation runs it as it is kept.
+          </Text>
+        )}
       </XStack>
       <ErrorText>{error}</ErrorText>
       {tried ? (
@@ -198,7 +209,7 @@ function About({ text }: { text: string | null }) {
 }
 
 /** What a script declares, as a person reads it: its steps and its functions, each with what it takes and gives — and each step tried. */
-function Declared({ shape, source, current }: { shape: ScriptShape; source: string; current: boolean }) {
+function Declared({ shape, source, current, kept }: { shape: ScriptShape; source: string; current: boolean; kept: string | null }) {
   const steps = Object.entries(shape.steps);
   const functions = Object.entries(shape.functions);
   return (
@@ -220,7 +231,7 @@ function Declared({ shape, source, current }: { shape: ScriptShape; source: stri
           <Fields label="It takes" fields={fieldsOf(step.inputs)} />
           <Fields label="It answers" fields={step.answer ? [step.answer] : []} />
           <Fields label="It remembers" fields={fieldsOf(step.memory)} />
-          <TryStep key={name} source={source} name={name} inputs={step.inputs} current={current} />
+          <TryStep key={name} source={source} name={name} inputs={step.inputs} current={current} kept={kept} />
         </Card>
       ))}
       {functions.map(([name, fn]) => (
@@ -368,7 +379,7 @@ function ScriptForm({ script }: { script: ScriptView | null }) {
         <ScriptEditor value={source} onChange={setSource} problems={check?.problems ?? []} label="The script" types={types} formatter={formatter} />
         <ErrorText>{error}</ErrorText>
         <ErrorText>{typesProblem}</ErrorText>
-        {check?.shape ? <Declared shape={check.shape} source={source} current={current} /> : null}
+        {check?.shape ? <Declared shape={check.shape} source={source} current={current} kept={script && !changed ? script.id : null} /> : null}
       </YStack>
     </Screen>
   );

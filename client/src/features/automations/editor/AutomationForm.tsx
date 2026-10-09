@@ -68,7 +68,7 @@ export function AutomationForm({
   onView?: (view: View) => void;
 }) {
   const { devices, loading } = useDevices();
-  const { kit, automations, error } = useEditorKit();
+  const { kit, automations, scripts, error } = useEditorKit();
   const world = useWorldOptions();
   const [draft, setDraft] = useState<Draft>(initial);
   /** The home it is for, as its YAML may say anew: whose rooms its blocks offer. */
@@ -76,7 +76,7 @@ export function AutomationForm({
   const title = existing ? existing.name : 'New automation';
 
   // Its devices too, before it is drawn: what fills each role is named from them, in the form and in its YAML.
-  if (!kit || !automations || !world || loading) {
+  if (!kit || !automations || !scripts || !world || loading) {
     return (
       <Screen back={back.label} backTo={back.to} title={title}>
         <Loading error={error} />
@@ -90,6 +90,7 @@ export function AutomationForm({
         change: (next) => setDraft((current) => next(current)),
         devices: devices.filter((device) => !device.removedAt),
         automations: automations.filter((automation) => automation.id !== existing?.id),
+        scripts,
         functions: kit.functions,
         prefer: prefer ?? null,
         world,
@@ -438,8 +439,8 @@ function Problems({ list }: { list: readonly string[] }) {
 function Uses({ problems }: { problems: readonly string[] }) {
   const editor = useEditor();
   const tone = useTone();
-  const { parts, groups, automations, world } = rolesOf(editor.draft.rule);
-  if (!parts.length && !groups.length && !automations.length && !world.length) return null;
+  const { parts, groups, automations, scripts, world } = rolesOf(editor.draft.rule);
+  if (!parts.length && !groups.length && !automations.length && !scripts.length && !world.length) return null;
   const choices = (spec: (typeof parts)[number][1]) => editor.parts((description, part) => (isPartRole(spec) || isGroupRole(spec)) && meetsNeed(spec, capabilitiesOf(description, part)));
   // What another automation already uses for the same roles, in one tap: a stop made after its start.
   const fits = (role: string, binding: RoleBinding) => {
@@ -448,7 +449,7 @@ function Uses({ problems }: { problems: readonly string[] }) {
   };
   const same = sameParts(editor.draft, editor.automations, fits).slice(0, 2);
   return (
-    <Group icon="box" title="Uses" summary={`${parts.length + groups.length + automations.length + world.length}`}>
+    <Group icon="box" title="Uses" summary={`${parts.length + groups.length + automations.length + scripts.length + world.length}`}>
       <Problems list={problems} />
       {same.map((other) => (
         <Button
@@ -487,6 +488,24 @@ function Uses({ problems }: { problems: readonly string[] }) {
           <GroupParts role={role} label={spec.label} />
         </YStack>
       ))}
+      {/* Each script it runs: which of the family's, changed here for every block running it. */}
+      {scripts.map(([role, spec]) => {
+        const filled = editor.draft.scripts?.[role];
+        return (
+          <YStack key={role} gap="$1.5">
+            <Text fontSize={13} fontWeight="600" color="$muted">
+              {spec.label}
+            </Text>
+            <Picker
+              label={spec.label}
+              chosen={editor.scripts.find((script) => script.id === filled)?.name ?? null}
+              placeholder="Choose a script"
+              options={editor.scripts.map((script) => ({ key: script.id, title: script.name, subtitle: script.key, value: script.id, selected: script.id === filled }))}
+              onPick={(id) => editor.change((draft) => ({ ...draft, scripts: { ...draft.scripts, [role]: id } }))}
+            />
+          </YStack>
+        );
+      })}
       {/* Each person, people and place it names: who and where, changed here for every block naming them. */}
       {world.map(([role, spec]) => {
         const kind = roleKind(spec) as 'person' | 'people' | 'place';

@@ -188,6 +188,32 @@ test('the editor knows the home: a device’s name completes as it is typed, a m
   await expect(step.getByText(`${plug}: switch.set on false`)).toBeVisible();
 });
 
+test('a script’s step, run when… — an automation made from it in the form, started: its own words in the run, its default given', async ({ page }) => {
+  const name = unique('Hello');
+  await page.goto('/scripts/new');
+  await page.getByLabel('Its name').fill(name);
+  await write(page, ["import { log, type Duration } from 'kraftverk';", '', '/** Says it ran. */', 'export async function hello(', '  /** @default 2 min */', '  after: Duration,', '): Promise<string> {', '  log(`Hello after ${after} s`);', "  return 'Said hello';", '}', ''].join('\n'));
+  await expect(page.getByText('Ready', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Keep it' }).click();
+  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
+
+  // Run it when…: the form, its step in it, its input's default said — when it runs still to choose.
+  await page.getByRole('button', { name: 'Run Hello when…' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'New automation' })).toBeVisible();
+  await page.getByText(`Run ${name} (hello)`).click();
+  await expect(page.getByText('Not given: it takes 2 min.')).toBeVisible();
+  await page.getByRole('button', { name: 'Create' }).click();
+  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
+
+  const main = page.getByRole('main');
+  await main.getByRole('button', { name: `Start ${name}` }).click();
+  expect(await answer(page, true)).toContain('started by you it acts');
+  const activity = page.getByRole('region', { name: 'Activity' });
+  await expect(activity.getByText(`Ran “${name}” (hello)`).first()).toBeVisible();
+  await activity.getByText(`Ran “${name}” (hello)`).first().click();
+  await expect(page.getByText('Hello after 120 s').first()).toBeVisible();
+});
+
 test.describe('run with no server', () => {
   test.use({ as: ALONE });
 

@@ -93,6 +93,8 @@ export const PATHS = {
   automations: {
     list: '/automations',
     new: (device?: string) => `/automations/new${query({ device })}`,
+    /** A new one that runs a step of one of the family's scripts: its form, the step in it, when it runs still to choose. */
+    running: (script: string, step: string) => `/automations/new${query({ script, step })}`,
     one: (id: string) => `/automations/${at(id)}`,
     /** Its editor: the view a query, so switching between the form and its YAML keeps what is being changed. */
     edit: (id: string, view: 'form' | 'yaml' = 'form') => `/automations/${at(id)}/edit${query({ view: view === 'yaml' ? 'yaml' : undefined })}`,

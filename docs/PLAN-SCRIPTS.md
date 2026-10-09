@@ -1214,6 +1214,24 @@ family's world is there by name. What it changed:
   `forceLinting` does nothing once a check has run, so a `needsRefresh`
   effect does it.
 
+**Scripts in the automation editor, 2026-10-09.** A script and an automation
+meet in the form, not only in YAML:
+- **"Run a script" is drawn** (`Blocks.tsx`, `ScriptFields`): the family's
+  scripts that have a step, then which step when there are several, then
+  each input as its signature declares it — a `Duration` as a length of
+  time, its `@default` said when not given — and "remember what it answers
+  as". The script fills a role (`scriptRole`, `@kraftverk/automation`), as
+  an automation started does; "Uses" lists it, to change for every block.
+- **Run it when…** on a script's page, for each step of a kept script,
+  opens a new automation's form (`/automations/new?script=…&step=…`) with
+  the step in it: what starts it is all there is to choose.
+- **What the engine fixed on the way:** an input the automation does not
+  give takes the step's declared default, and a run that ran a script says
+  so ("Ran “Tidy up”"), not "Nothing needed doing".
+- **Left:** script functions in the form's condition builder; YAML's
+  shorthand (`run script: tidy-up.tidyUp`) and completion; "Used by" on a
+  script's page.
+
 What browser first changes in the slices:
 - **The editor is a web component of its own**, `ScriptEditor.web.tsx`,
   beside `YamlEditor.web.tsx`. It is not yet an Expo DOM component; the

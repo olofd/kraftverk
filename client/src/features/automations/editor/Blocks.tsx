@@ -3,6 +3,7 @@ import { Button, Text, XStack, YStack } from 'tamagui';
 
 import {
   automationRole,
+  scriptRole,
   paramText,
   blankStep,
   branchesOf,
@@ -164,6 +165,7 @@ function StepFields({ path, step, set }: { path: ListPath; step: Step; set: (ste
   if ('write' in step) return <WriteFields path={path} write={step.write} set={(write) => set({ write })} />;
   if ('start' in step) return <StartFields start={step.start} waits={mayWait(path)} set={(start) => set({ start })} />;
   if ('remember' in step) return <RememberFields remember={step.remember} set={(remember) => set({ remember })} />;
+  if ('script' in step) return <ScriptFields script={step.script} set={(script) => set({ script })} />;
   return <Fields fields={stepSpec(step).fields} construct={step} set={set} path={path} />;
 }
 
@@ -435,6 +437,100 @@ function StartFields({ start, waits, set }: { start: Extract<Step, { start: unkn
 }
 
 /**
+ * One of the family's scripts run (docs/PLAN-SCRIPTS.md): which script, which
+ * of its steps — its only one needs no choosing — each of that step's inputs
+ * as its signature declares it, a length of time as one, and what it answers
+ * remembered. A script with no step is not offered: there is nothing to run.
+ */
+/** A script's step by name, as a person says it: "tidyUp" is "Tidy up". */
+const wordsOfName = (name: string): string => {
+  const words = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
+function ScriptFields({ script: step, set }: { script: Extract<Step, { script: unknown }>['script']; set: (script: Extract<Step, { script: unknown }>['script']) => void }) {
+  const editor = useEditor();
+  const filled = editor.draft.scripts?.[step.role];
+  const script = editor.scripts.find((each) => each.id === filled);
+  const steps = Object.entries(script?.shape?.steps ?? {});
+  // Its only step, when it says none.
+  const name = step.step ?? (steps.length === 1 ? steps[0]![0] : null);
+  const declared = name ? script?.shape?.steps[name] : undefined;
+  const runnable = editor.scripts.filter((each) => Object.keys(each.shape?.steps ?? {}).length > 0);
+  const memory = editor.draft.rule.memory?.fields ?? {};
+  return (
+    <YStack gap="$2.5">
+      <YStack gap="$1">
+        <Label>Which script</Label>
+        <Picker
+          label="Which script"
+          chosen={script?.name ?? null}
+          placeholder={runnable.length ? 'Choose a script' : 'No script has a step yet'}
+          options={runnable.map((each) => ({ key: each.id, title: each.name, subtitle: Object.keys(each.shape!.steps).map(wordsOfName).join(' · '), value: each, selected: each.id === filled }))}
+          onPick={(picked) => {
+            const made = scriptRole(editor.draft, picked.id, picked.name);
+            editor.change(() => made.draft);
+            // Another script's steps and inputs are not this one's.
+            set({ role: made.role });
+          }}
+        />
+      </YStack>
+      {steps.length > 1 ? (
+        <YStack gap="$1">
+          <Label>Which of its steps</Label>
+          <Picker
+            label="Which of its steps"
+            chosen={name ? wordsOfName(name) : null}
+            placeholder="Choose a step"
+            options={steps.map(([each, shape]) => ({ key: each, title: wordsOfName(each), ...(shape.about ? { subtitle: shape.about } : {}), value: each, selected: each === name }))}
+            onPick={(picked) => {
+              const { args: _args, remember: _remember, ...rest } = step;
+              set({ ...rest, step: picked });
+            }}
+          />
+        </YStack>
+      ) : null}
+      {declared?.about ? (
+        <Text fontSize={13} color="$muted" lineHeight={19}>
+          {declared.about}
+        </Text>
+      ) : null}
+      {/* What it is given: each input its signature declares — not given, its own default. */}
+      {Object.entries(declared?.inputs.fields ?? {}).map(([input, field]) => (
+        <YStack key={input} gap="$1">
+          <Label>{field.title}</Label>
+          <ArgField label={field.title} type={valueTypeOf(field)} expr={step.args?.[input]} onChange={(next) => set({ ...step, args: { ...step.args, [input]: next } })} />
+          {step.args?.[input] === undefined ? (
+            <Text fontSize={12} color="$muted">
+              {field.default === undefined ? 'Not given yet.' : `Not given: it takes ${paramText(declared!.inputs, input, field.default as Value)}.`}
+            </Text>
+          ) : null}
+        </YStack>
+      ))}
+      {/* What it answers: remembered as one of what this automation remembers. */}
+      {declared?.answer && Object.keys(memory).length ? (
+        <YStack gap="$1">
+          <Label>Remember what it answers as</Label>
+          <Picker
+            label="Remember what it answers as"
+            chosen={step.remember ? (memory[step.remember]?.title ?? step.remember) : 'Not remembered'}
+            placeholder="Not remembered"
+            options={[
+              { key: '', title: 'Not remembered', value: null as string | null, selected: !step.remember },
+              ...Object.entries(memory).map(([key, field]) => ({ key, title: field.title, value: key as string | null, selected: step.remember === key })),
+            ]}
+            onPick={(picked) => {
+              const { remember: _remember, ...rest } = step;
+              set(picked ? { ...rest, remember: picked } : rest);
+            }}
+          />
+        </YStack>
+      ) : null}
+    </YStack>
+  );
+}
+
+/**
  * "Add a step": the kinds this list may take, each with what it does. `list`:
  * the list's name, so each of a page's several Add a step buttons says where
  * it adds.
@@ -454,7 +550,7 @@ function AddStep({ path, list, onAdded }: { path: ListPath; list: string; onAdde
       if (kind === 'command') return capabilitiesOf(bound.description, bound.part).some((capability) => Object.keys(capabilityIn(bound.description, capability)?.commands ?? {}).length > 0);
       return true;
     };
-    const role = kind === 'start' || kind === 'wait' ? null : (Object.keys(editor.draft.roles).find(able) ?? null);
+    const role = kind === 'start' || kind === 'script' || kind === 'wait' ? null : (Object.keys(editor.draft.roles).find(able) ?? null);
     editor.change((draft) => ({ ...draft, rule: insertStep(draft.rule, path, listAt(draft.rule, path).length, blankStep(kind, role)) }));
     setOpen(false);
     onAdded();
