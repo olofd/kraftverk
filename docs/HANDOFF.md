@@ -351,7 +351,7 @@ In this order, each small and each keeping the checks green:
    - J35: refuse a setup whose credential and method fields collide.
    - J31: one package manifest for the server, the broker, `gen:devices` and the ratchet.
 2. **J40.** A role binding records the capability that filled it.
-3. **An API token for the assistant.** Scoped to `agent`, revocable, and audited as its own actor, so an MCP client does not carry a person's session.
+3. **An API token for the assistant.** Scoped to `agent`, revocable, and audited as its own actor, so an MCP client does not carry a person's session. It is slice AI0 of [PLAN-AI.md](PLAN-AI.md), the plan for the assistant as a whole (any model, voice, errands, AI in the language, the builder), whose decisions wait for the owner.
 4. **Phase 6.** Reach on the add screen, with the ATORCH's text fixed. Then `refines`, with the Tuya profiles as its first use.
 5. **Phases 7–9, as the product needs them.** First the Home Assistant bridge from the projections and record-and-replay fixtures, then packages from outside the repository, then the documentation split.
 
