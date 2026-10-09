@@ -30,12 +30,17 @@ export class ScriptCatalogue {
     return this.engine ? readScript(source, this.engine) : { compiled: null, shape: null, calls: {}, problems: [NO_ENGINE] };
   }
 
-  /** What a kept script reads as now: read again only when its source has changed since. */
+  /** What a kept script reads as now: read again only when its source has changed since — or when the last read ran out of time. */
   readKept(script: ScriptRecord): ReadScript {
     const known = this.#read.get(script.id);
     if (known?.source === script.source) return known.read;
-    const read = this.read(script.source);
-    this.#read.set(script.id, { source: script.source, read });
+    return this.keep(script.id, script.source, this.read(script.source));
+  }
+
+  /** A read of a script's source, kept as what it reads as: the read it was kept with, so it is not read twice. One that ran out of time is not kept. */
+  keep(id: string, source: string, read: ReadScript): ReadScript {
+    if (read.passing) this.#read.delete(id);
+    else this.#read.set(id, { source, read });
     return read;
   }
 

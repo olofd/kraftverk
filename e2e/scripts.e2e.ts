@@ -87,7 +87,11 @@ test('a script written, read as it is typed by the server, kept, changed — and
   await writeAndKeep(page, name);
   await changeIt(page, name);
   const file = await request.post('/api/config/export', { headers: { 'x-kraftverk-client': 'app' }, data: { secrets: 'none' } });
-  expect(((await file.json()) as { text: string }).text).toContain(`name: ${name}\n    source: |\n      export function double(n: number): number {\n        return n * 3;`);
+  const { text } = (await file.json()) as { text: string };
+  // Its entry, and what it says: what a failure shows, not the whole file.
+  const at = text.indexOf(`name: ${name}`);
+  expect(at, 'the script is in the file').toBeGreaterThan(-1);
+  expect(text.slice(at, at + 160)).toContain(`name: ${name}\n    source: |\n      export function double(n: number): number {\n        return n * 3;`);
 });
 
 test.describe('with no server', () => {

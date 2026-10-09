@@ -55,8 +55,8 @@ export type ScriptCheck = { shape: ScriptShape | null; problems: ScriptProblem[]
 export const SCRIPT_LIMITS = {
   /** The longest a script's source may be, in bytes. */
   sourceBytes: 65_536,
-  /** The longest reading what a script declares may take. */
-  describeMs: 50,
+  /** The longest reading what a script declares may take: the SDK loaded and its top level run — on a busy machine, or a phone, as well. */
+  describeMs: 250,
   /** A step's heap and stack. */
   stepMemoryBytes: 32 * 1024 * 1024,
   stepStackBytes: 512 * 1024,

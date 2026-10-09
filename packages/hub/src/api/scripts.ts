@@ -1,6 +1,6 @@
 import { ApiError, type Caller, type KraftverkApi, type ScriptTried, type ScriptView } from '@kraftverk/api-contract';
 import type { ScriptProblem } from '@kraftverk/automation';
-import { typesOf } from '@kraftverk/script';
+import { typesOf, type ReadScript } from '@kraftverk/script';
 import type { ScriptRecord } from '@kraftverk/store';
 
 import type { Hub } from '../node/hub.ts';
@@ -48,11 +48,13 @@ export function scriptsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'script
     if (!(name.length >= 1 && name.length <= NAME_MOST)) throw new ApiError('invalid', `A script's name is 1 to ${NAME_MOST} characters`);
     return name;
   };
-  /** A source to keep: one this place reads without a problem, or a refusal with each problem. */
-  const readable = (source: string): void => {
+  /** A source to keep: how this place reads it, without a problem — or a refusal with each problem. */
+  const readable = (source: string): ReadScript => {
     if (!scripts.engine) throw new ApiError('unavailable', 'Scripts cannot run here: this place has no engine for them');
-    const { problems } = scripts.read(source);
+    const read = scripts.read(source);
+    const { problems } = read;
     if (problems.length) throw new ApiError('invalid', problems.length === 1 ? `The script cannot be kept: ${problemText(problems[0]!)}` : `The script cannot be kept: it has ${problems.length} problems`, { problems: problems.map(problemText) });
+    return read;
   };
 
   return {
@@ -64,8 +66,10 @@ export function scriptsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'script
       async create(input) {
         const name = nameOf(input.name);
         if (input.key !== undefined) checkKey(input.key, !scripts.store.keyFree(input.key), 'script', 'tidy-up');
-        readable(input.source);
+        const read = readable(input.source);
         const script = scripts.store.add({ ...(input.key !== undefined ? { key: input.key } : {}), name, source: input.source }, actorOf(caller), new Date().toISOString());
+        // What it was kept as: the read it was checked with, not another.
+        scripts.keep(script.id, script.source, read);
         record('script.added', 'script', script.id, `Wrote the script "${script.name}"`, { key: script.key });
         return viewOf(script);
       },
@@ -74,8 +78,9 @@ export function scriptsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'script
         const was = scriptOf(id);
         const name = changes.name === undefined ? undefined : nameOf(changes.name);
         if (changes.key !== undefined && changes.key !== was.key) checkKey(changes.key, !scripts.store.keyFree(changes.key, id), 'script', 'tidy-up');
-        if (changes.source !== undefined && changes.source !== was.source) readable(changes.source);
+        const read = changes.source !== undefined && changes.source !== was.source ? readable(changes.source) : null;
         const script = scripts.store.update(id, { ...(name !== undefined ? { name } : {}), ...(changes.key !== undefined ? { key: changes.key } : {}), ...(changes.source !== undefined ? { source: changes.source } : {}) }, actorOf(caller), new Date().toISOString())!;
+        if (read) scripts.keep(id, script.source, read);
         const said = [
           ...(script.name !== was.name ? [`renamed it "${script.name}"`] : []),
           ...(script.key !== was.key ? [`its key is "${script.key}"`] : []),

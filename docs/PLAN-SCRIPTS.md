@@ -735,7 +735,7 @@ The same function runs in the hub (save, start, import) and in the app
 | `SCRIPT_LIMITS` | Value | For |
 | --- | --- | --- |
 | `sourceBytes` | 65 536 | a script |
-| `describeMs` | 50 | reading its shape |
+| `describeMs` | 250 | reading its shape: the SDK loaded and the top level run. Out of time is the read's, not the script's: said, and read again rather than kept (it was 50, and a busy moment made a kept script look broken until its source changed) |
 | `stepMemoryBytes`, `stepStackBytes` | 32 MB, 512 KB | a step's sandbox |
 | `sliceMs` | 100 | the longest a step runs without awaiting |
 | `stepCpuMs` | 2 000 | a step's whole run |

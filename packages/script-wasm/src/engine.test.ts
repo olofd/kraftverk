@@ -97,7 +97,11 @@ describe('reading a script', () => {
 
   test('what its top level throws, at its line; a top level that will not end; and exports that are not functions', () => {
     expect(readScript("export function one(): number { return 1; }\n\nthrow new Error('Not yet');\n", engine).problems).toEqual([{ message: 'Not yet', line: 3, column: expect.any(Number) }]);
-    expect(readScript('export function one(): number { return 1; }\nfor (;;) {}\n', engine).problems[0]?.message).toStartWith('Its top level ran for more than 50 ms');
+    // Out of time: said — and marked as this read's, not the script's, so it is read again rather than kept.
+    const endless = readScript('export function one(): number { return 1; }\nfor (;;) {}\n', engine);
+    expect(endless.problems[0]?.message).toStartWith('Its top level ran for more than 250 ms');
+    expect(endless.passing).toBe(true);
+    expect(readScript('export const answer = 42;\n', engine).passing).toBeUndefined();
     expect(readScript('export const answer = 42;\n', engine).problems).toEqual([{ message: 'Export only functions, each by its name: "export async function" for a step, "export function" for a function', line: 1, column: 1 }]);
     expect(readScript('const quiet = 1;\n', engine).problems.map((each) => each.message)).toEqual(['It declares nothing: export an "async function" for a step, or a "function" for a value']);
   });

@@ -18,8 +18,13 @@ import { readSignatures, type ScriptCall } from './signature.ts';
 /** What a script imports: the SDK, and the home's API. */
 const IMPORTS: readonly string[] = ['kraftverk', 'kraftverk/api'];
 
-/** A script read: its JavaScript, its shape and how each export is called — or what is wrong with it. */
-export type ReadScript = ScriptCheck & { compiled: Compiled | null; calls: Record<string, ScriptCall> };
+/**
+ * A script read: its JavaScript, its shape and how each export is called —
+ * or what is wrong with it. `passing`: what went wrong was this read's, not
+ * the script's — its top level ran out of time, which a busy moment can make
+ * of any — so it is said, and read again next time, never kept.
+ */
+export type ReadScript = ScriptCheck & { compiled: Compiled | null; calls: Record<string, ScriptCall>; passing?: true };
 
 const problem = (message: string, at: { line?: number | null; column?: number | null } = {}): ScriptProblem => ({ message, line: at.line ?? null, column: at.column ?? null });
 
@@ -57,7 +62,7 @@ export function readScript(source: string, engine: ScriptEngine): ReadScript {
     return problems.length ? { compiled, shape: null, calls: {}, problems } : { compiled, shape, calls, problems };
   } catch (error) {
     if (!(error instanceof ScriptFault)) throw error;
-    return { compiled, shape: null, calls: {}, problems: [problem(error.kind === 'time' ? `Its top level ran for more than ${SCRIPT_LIMITS.describeMs} ms: keep the work inside its steps and functions` : error.message, error)] };
+    return { compiled, shape: null, calls: {}, ...(error.kind === 'time' ? { passing: true as const } : {}), problems: [problem(error.kind === 'time' ? `Its top level ran for more than ${SCRIPT_LIMITS.describeMs} ms: keep the work inside its steps and functions` : error.message, error)] };
   } finally {
     sandbox.dispose();
   }

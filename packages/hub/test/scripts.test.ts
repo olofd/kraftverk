@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import type { LiveUpdate } from '@kraftverk/api-contract';
 
+import type { ScriptEngine } from '@kraftverk/script';
+
+import { ScriptCatalogue } from '../src/scripts/catalogue.ts';
 import { aHome, refusal, type TestHome } from './a-home.ts';
+import { testScriptEngine } from './script-engine.ts';
 
 /*
   The family's scripts, asked of a home (docs/PLAN-SCRIPTS.md): kept when
@@ -208,5 +212,26 @@ describe('a script', () => {
     const refused = await refusal(t.home.scripts.check(FEELS));
     expect(refused).toMatchObject({ kind: 'unavailable', message: 'Scripts cannot run here: this place has no engine for them' });
     expect((await refusal(t.home.scripts.create({ name: 'Feels like', source: FEELS }))).kind).toBe('unavailable');
+  });
+});
+
+describe('what a kept script reads as', () => {
+  test('is read once, and kept — but a read that ran out of time is the moment\'s, not the script\'s: read again next time', () => {
+    let reads = 0;
+    const counting: ScriptEngine = { ...testScriptEngine, open: (...args) => (reads++, testScriptEngine.open(...args)) };
+    const catalogue = new ScriptCatalogue({} as never, counting);
+    const script = { id: 'sc-1', source: FEELS } as never;
+    const read = catalogue.read(FEELS);
+    expect(reads).toBe(1);
+    // Kept with the read it was checked with: not read again.
+    catalogue.keep('sc-1', FEELS, read);
+    expect(catalogue.readKept(script).shape).toEqual(read.shape);
+    expect(reads).toBe(1);
+    // Out of time, once: said, not kept — the next look reads it again, and keeps what it finds.
+    catalogue.keep('sc-1', FEELS, { compiled: null, shape: null, calls: {}, passing: true, problems: [{ message: 'Its top level ran for more than 250 ms', line: null, column: null }] });
+    expect(catalogue.readKept(script).shape).toEqual(read.shape);
+    expect(reads).toBe(2);
+    catalogue.readKept(script);
+    expect(reads).toBe(2);
   });
 });
