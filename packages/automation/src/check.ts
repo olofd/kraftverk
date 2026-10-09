@@ -12,7 +12,7 @@ import { fieldValue, type FieldSpec } from './kinds/spec.ts';
 import { branchesOf, STEP_KIND_ORDER, STEP_KINDS } from './kinds/steps.ts';
 import { stepListsOf, TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './kinds/triggers.ts';
 import type { AutomationFunction } from './functions.ts';
-import { eachAsGroup, ruleExpressions, ruleUses } from './reads.ts';
+import { eachAsGroup, placeKindsOf, ruleExpressions, ruleUses } from './reads.ts';
 import { convert, convertible, isUnit, product, quotient, unitIn, type Unit } from '@kraftverk/device-sdk';
 import { KEYWORDS } from './text/expr.ts';
 import {
@@ -30,6 +30,7 @@ import {
   MATH_OPS,
   OWN_HOME,
   PLACE_FACTS,
+  placeFact,
   roleKind,
   WHILE_RUNNING,
   ORDERED_OPS,
@@ -41,6 +42,8 @@ import {
   type Expr,
   type PartRole,
   type Rule,
+  type RuleTrigger,
+  type RunFact,
   type RoleSpec,
   type Step,
   type WriteTarget,
@@ -142,18 +145,26 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
   const memory = rule.memory?.fields ?? {};
   /** The ids its triggers carry: what `startedBy` may name. */
   const triggerIds = new Set((rule.when ?? []).flatMap((trigger) => (trigger.id ? [trigger.id] : [])));
-  /** The events it waits for: what `run.event` may be. */
-  const eventIds = [...new Set((rule.when ?? []).flatMap((trigger) => ('event' in trigger && trigger.event?.event ? [trigger.event.event] : [])))];
-  /** Whether someone arriving or leaving starts it: what `run.who` says. */
-  const startedBySomeone = (rule.when ?? []).some((trigger) => 'arrives' in trigger || 'leaves' in trigger);
+  /**
+   * The triggers that may start what is being checked: a trigger's own steps,
+   * that one; the automation's, those without steps of their own; elsewhere,
+   * any. What `run.event` and `run.who` may say is what these give.
+   */
+  let starting: readonly RuleTrigger[] = rule.when ?? [];
+  /** The events that may start it: what `run.event` may be. */
+  const eventIds = () => [...new Set(starting.flatMap((trigger) => ('event' in trigger && trigger.event?.event ? [trigger.event.event] : [])))];
+  /** Whether what may start it knows a fact of the run: `run.who`, who arriving or leaving started it. */
+  const gives = (fact: RunFact) => starting.some((trigger) => TRIGGER_KIND_ORDER.some((kind) => kind in trigger && TRIGGER_KINDS[kind].gives.includes(fact)));
 
   for (const [role, spec] of Object.entries(roles)) {
+    // What it asks of a place, no place is: a zone's mode, a home and a zone at once.
+    if (isPlaceRole(spec) && !placeKindsOf(rule, role).length) problems.push(`roles.${role}: no place is everything it is asked to be — a mode is a home's`);
     if (!CAMEL_NAME.test(role)) problems.push(`roles.${role}: a role is named in camelCase`);
     if (role === 'run') problems.push('roles.run: "run" is what the run knows of itself — name the role otherwise');
-    if (role === 'setting') problems.push('roles.setting: "setting" is how the rule names its settings — name the role otherwise');
-    if (role === 'memory') problems.push('roles.memory: "memory" is how the rule names what it remembers — name the role otherwise');
-    if (role === 'given') problems.push('roles.given: "given" is how the rule names what it is given — name the role otherwise');
-    if (KEYWORDS.has(role)) problems.push(`roles.${role}: "${role}" is a word of the language — name the role otherwise`);
+    else if (role === 'setting') problems.push('roles.setting: "setting" is how the rule names its settings — name the role otherwise');
+    else if (role === 'memory') problems.push('roles.memory: "memory" is how the rule names what it remembers — name the role otherwise');
+    else if (role === 'given') problems.push('roles.given: "given" is how the rule names what it is given — name the role otherwise');
+    else if (KEYWORDS.has(role)) problems.push(`roles.${role}: "${role}" is a word of the language — name the role otherwise`);
     if (!spec.label?.trim()) problems.push(`roles.${role}: it has no label`);
     if (isAutomationRole(spec) || isWorldRole(spec)) continue;
     const named = [...(spec.capabilities ?? []), ...(spec.oneOf ?? [])];
@@ -226,17 +237,17 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       if (options.trigger) problems.push(`${where}: ${said} is known once it runs — in what it does, not in what starts it`);
       if (expr.run === 'event') {
         // Only a rule that waits for an event can be started by one.
-        if (!eventIds.length) problems.push(`${where}: ${said} is what an event that started it says, but nothing it waits for is an event`);
+        if (!eventIds().length) problems.push(`${where}: ${said} is what an event that started it says, but nothing that starts this is an event`);
         if (expr.field !== undefined) {
           if (typeof expr.field !== 'string' || !CAMEL_NAME.test(expr.field)) problems.push(`${where}: "${String(expr.field)}" is not something an event carries`);
           // What it carried: its type is the device's to say, once a part fills the role.
           return { type: 'unknown' };
         }
-        return { type: 'string', options: eventIds };
+        return { type: 'string', options: eventIds() };
       }
       if (expr.field !== undefined) problems.push(`${where}: run.${expr.run} carries nothing more`);
       if (expr.run === 'who') {
-        if (!startedBySomeone) problems.push(`${where}: run.who is who arriving or leaving started it, but nothing that starts it is someone arriving or leaving`);
+        if (!gives('who')) problems.push(`${where}: run.who is who arriving or leaving started it, but nothing that starts this is someone arriving or leaving`);
         return { type: 'string', options: null };
       }
       // One of its triggers' ids: compared with any other, the comparison says so.
@@ -270,18 +281,19 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       // What is so of a place now: how many are there, whether anyone is, its modes.
       const spec = roles[expr.read.role];
       if (spec && !isPlaceRole(spec)) {
-        problems.push(`${where}: ${expr.read.role} is ${kindWords(spec)}: ask where with "at" — ${expr.read.role} at home`);
+        problems.push(`${where}: ${expr.read.role} is ${kindWords(spec)}: ask where with "at" — ${isPeopleRole(spec) ? `any(p in ${expr.read.role}: p at home)` : `${expr.read.role} at home`}`);
         return { type: 'unknown' };
       }
-      const fact = expr.read.means;
-      if (!Object.hasOwn(PLACE_FACTS, fact)) {
-        problems.push(`${where}: of a place, ask its ${Object.keys(PLACE_FACTS).join(', ')} — not "${fact}"`);
+      const fact = placeFact(expr.read.means);
+      if (!fact) {
+        problems.push(`${where}: of a place, ask its ${Object.keys(PLACE_FACTS).join(', ')} — not "${expr.read.means}"`);
         return { type: 'unknown' };
       }
-      if (fact === 'people') return { type: 'number', unit: '' };
-      if (fact === 'occupied') return { type: 'boolean' };
+      if (fact.value.type === 'number') return { type: 'number', unit: '' };
+      if (fact.value.type === 'boolean') return { type: 'boolean' };
       // A home's mode on this axis: one of its modes, not the other's — "away" is never the time of day.
-      return { type: 'string', options: vocabulary.modes ? vocabulary.modes().filter((mode) => mode.axis === fact).map((mode) => mode.key) : null };
+      const axis = fact.value.axis;
+      return { type: 'string', options: vocabulary.modes ? vocabulary.modes().filter((mode) => mode.axis === axis).map((mode) => mode.key) : null };
     }
     if ('presentAt' in expr) {
       who(expr.presentAt.who, `${where}.presentAt.who`, { many: false });
@@ -334,6 +346,12 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         return { type: 'unknown' };
       }
       bounded(expr.over, `${where}.over`, 's', HISTORY_SECONDS.min, HISTORY_SECONDS.max);
+      // What was is kept of what devices report — not of who is where, nor of a home's mode.
+      const of = roles[expr.of.role];
+      if (expr.of.role === OWN_HOME || (of && isWorldRole(of))) {
+        problems.push(`${where}: how it was is kept of what a part reports, not of a place or a person`);
+        return { type: 'unknown' };
+      }
       const read = shape({ read: expr.of }, where, options);
       if (read.type !== 'number' && read.type !== 'unknown') problems.push(`${where}: only a number is looked back at, not ${said(read)}`);
       return read.type === 'number' ? read : { type: 'number', unit: null };
@@ -542,8 +560,11 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         if (field.required) problems.push(`${at}: it needs ${field.label.toLowerCase()}`);
         continue;
       }
-      // What it does is said at the top, as the automation's own steps are.
+      // What it does is said at the top, as the automation's own steps are — started by this trigger alone.
+      const was = starting;
+      if (field.type.type === 'steps') starting = [trigger];
       checkField(field, value, at, { inTrigger: true, sure: true, depth: 0 });
+      starting = was;
     }
   });
 
@@ -679,12 +700,13 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
           problems.push(`${at}: ${parsed.error.message}`);
           return;
         }
-        // Each value in it is said as it is: of any kind but a list or an object.
-        parsed.pieces.forEach((piece, index) => {
-          if (!('expr' in piece)) return;
-          const got = shape(piece.expr, `${at}{${index}}`, { calls: true });
-          if (got.type === 'structure') problems.push(`${at}: {${piece.source}} is a list or an object: say one of its values`);
-        });
+        // Each value in it is said as it is: of any kind but a list or an object. Each by its place among the values: {1} the first.
+        parsed.pieces
+          .filter((piece): piece is Extract<typeof piece, { expr: unknown }> => 'expr' in piece)
+          .forEach((piece, index) => {
+            const got = shape(piece.expr, `${at}{${index + 1}}`, { calls: true });
+            if (got.type === 'structure') problems.push(`${at}: {${piece.source}} is a list or an object: say one of its values`);
+          });
         return;
       }
       default: {
@@ -864,7 +886,11 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
     if (!rule.when?.length) problems.push('then: it does nothing');
     for (const index of without) problems.push(`when[${index}].then: it does nothing — say what it does, or what the automation does`);
   }
+  // The automation's own steps: started by any trigger without steps of its own.
+  const ownStart = (rule.when ?? []).filter((trigger) => !trigger.then?.length);
+  starting = ownStart.length || !(rule.when ?? []).length ? ownStart : [];
   steps(rule.then ?? [], 'then', true, 1);
+  starting = rule.when ?? [];
   steps(rule.otherwise ?? [], 'otherwise', false, 1);
 
   return problems;

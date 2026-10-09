@@ -75,8 +75,14 @@ export type StepSpec<K extends StepKind = StepKind> = {
   says: string;
   /** Its fields; under one verb, the first's key is it. */
   fields: readonly FieldSpec[];
-  /** Taken at once — a command or a setting — so a rule of only these can be planned, and kept so. */
+  /** Taken at once — a command, a setting, a mode set, people told — so a rule of only these runs without being followed. */
   atOnce?: boolean;
+  /**
+   * What it does can be looked at again and put back if it is not so: a
+   * command, a setting. A rule of only these can be planned, and kept so;
+   * telling people is not — looking again would tell them again.
+   */
+  kept?: boolean;
   /** Waits for what might not come: not in a retry, nor after a failure, where it would fail again. */
   waits?: boolean;
   /** Words of its own in a file, where its fields' keys are not enough. */
@@ -111,6 +117,7 @@ const COMMAND: StepSpec<'command'> = {
   icon: 'power',
   says: 'A command to a part: on, off, or what else it takes.',
   atOnce: true,
+  kept: true,
   fields: [
     { data: ['command', 'role'], key: 'to', type: { type: 'role' }, required: true, label: 'Which part' },
     { data: ['command', 'capability'], key: 'capability', type: { type: 'name' }, required: true, label: 'What it is' },
@@ -181,6 +188,7 @@ const WRITE: StepSpec<'write'> = {
   icon: 'sliders',
   says: 'A setting the part keeps: its live readings, its light, what it does after a power cut.',
   atOnce: true,
+  kept: true,
   fields: [
     { data: ['write', 'role'], key: 'set', type: { type: 'role' }, required: true, label: 'Which part' },
     { data: ['write', 'key'], key: 'setting', type: { type: 'name' }, required: false, label: 'Which setting' },
@@ -497,7 +505,7 @@ const SET_MODE: StepSpec<'setMode'> = {
   atOnce: true,
   fields: [
     { data: ['setMode', 'mode'], key: 'set mode', type: { type: 'mode' }, required: true, label: 'To' },
-    { data: ['setMode', 'at'], key: 'at', type: { type: 'place' }, required: false, label: 'Of which home', help: 'This automation’s own, unless you choose another.' },
+    { data: ['setMode', 'at'], key: 'at', type: { type: 'place', kinds: ['home'] }, required: false, label: 'Of which home', help: 'This automation’s own, unless you choose another.' },
   ],
   blank: () => ({ setMode: { mode: 'away' } }),
   line: (step, say) => `Set ${homeWords(step.setMode.at, say)} to ${say.mode(step.setMode.mode)}`,

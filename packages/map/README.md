@@ -21,7 +21,10 @@ home may hold the map of; and the arithmetic of tiles and boxes. The plan:
   in and what a tile covers; know every country by its code, name and box
   (`countries.ts`, generated from Natural Earth by
   `scripts/gen-countries.mjs`), the country a place is in, and the box of
-  the area around a place.
+  the area around a place; and say how far a home's geometry may go
+  (`limits.ts`: metres within reach of a frame's origin, how many points,
+  a drawing's scale, a turn kept from 0 to below 360) — the one set of
+  limits the API, a configuration file's reader and an import hold to.
 - **Does not:** draw — the map component in `@kraftverk/ui` does, on each
   platform; hold or serve tiles — the server does, from its disk; know any
   device, or where anyone is: it is given what to show.

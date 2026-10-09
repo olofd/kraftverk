@@ -192,7 +192,7 @@ describe('what the event that started it carried', () => {
     expect(checkRule(rule('run.event == "mains.lost"'), { fn: () => null })).toEqual([]);
     expect(checkRule(rule('run.event == "button.pressed"'), { fn: () => null })).toEqual(['then[0].command.args.on: "button.pressed" is not one of mains.lost']);
     expect(checkRule(rule('run.event.voltage > 200 V', [{ at: { value: '07:00' } }]), { fn: () => null })).toEqual([
-      'then[0].command.args.on.left: run.event.voltage is what an event that started it says, but nothing it waits for is an event',
+      'then[0].command.args.on.left: run.event.voltage is what an event that started it says, but nothing that starts this is an event',
     ]);
   });
 

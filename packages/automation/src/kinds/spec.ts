@@ -1,5 +1,5 @@
 import type { Weekday } from '../clock.ts';
-import type { Expr } from '../rule.ts';
+import type { Expr, PlaceKind } from '../rule.ts';
 
 /*
   The language's constructs as data (docs/PLAN-AUTOMATION-LANGUAGE.md, phase
@@ -67,8 +67,8 @@ export type FieldType =
   | { type: 'who'; anyone?: 'someone' | 'everyone' }
   /** Several people: a role people fill — "the children". */
   | { type: 'crowd' }
-  /** A place: a role a home, a zone or a space fills — or `home`, the automation's own. */
-  | { type: 'place' }
+  /** A place: a role a home, a zone or a space fills — or `home`, the automation's own; `kinds`, the kinds of place it takes, any when not said. */
+  | { type: 'place'; kinds?: readonly PlaceKind[] }
   /** One of a home's modes, by its key: `away`, `night`, a family's own. */
   | { type: 'mode' }
   /** One of a few words, each with what the editor calls it. */
@@ -147,6 +147,8 @@ export type Say = {
   days(days: readonly Weekday[] | undefined): string;
   /** What fills a role: "Garage station" — a person, people, a place too; `home`, the automation's own. */
   name(role: string): string;
+  /** Whether a role is several: people, a group's parts — "one of them", not "it". */
+  many(role: string): boolean;
   /** A mode by its key, as the family calls it: "Away". */
   mode(key: string): string;
   /** An event a role's part raises, in its own words: "mains lost". */

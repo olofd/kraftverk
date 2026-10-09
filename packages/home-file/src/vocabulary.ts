@@ -43,11 +43,13 @@ export type Vocabulary = {
   /** The automations the server has now, by key. */
   automations: { key: string; name: string }[];
   /** The family's homes now, by key: what an automation may be for. */
-  homes: { key: string; name: string }[];
-  /** The family's people now, by their keys in a file; none said: not known, and not checked. */
-  people?: { key: string; name: string }[];
-  /** The family's zones now, by key; likewise. */
-  zones?: { key: string; name: string }[];
+  homes: { id: string; key: string; name: string }[];
+  /** The family's people now, by their keys in a file — one with no key of their own yet, by their id. */
+  people: { id: string; key: string; name: string }[];
+  /** The family's zones now, by key. */
+  zones: { id: string; key: string; name: string }[];
+  /** Each home's spaces now, by key, with the key of the home each is of: a key names a space within its home. */
+  spaces: { id: string; key: string; name: string; home: string }[];
 };
 
 const split = (schema: ConfigSchema | undefined, secret: boolean): ConfigSchema => ({
@@ -62,7 +64,7 @@ const split = (schema: ConfigSchema | undefined, secret: boolean): ConfigSchema 
 export function vocabularyOf(
   types: readonly TypeEntry[],
   protocol: (id: string) => Pick<ProtocolDeclaration, 'credentials'> | null,
-  have: { devices?: Vocabulary['devices']; automations?: Vocabulary['automations']; homes?: Vocabulary['homes'] } = {}
+  have: Partial<Pick<Vocabulary, 'devices' | 'automations' | 'homes' | 'people' | 'zones' | 'spaces'>> = {}
 ): Vocabulary {
   return {
     types: types.map((type) => ({
@@ -88,5 +90,8 @@ export function vocabularyOf(
     devices: have.devices ?? [],
     automations: have.automations ?? [],
     homes: have.homes ?? [],
+    people: have.people ?? [],
+    zones: have.zones ?? [],
+    spaces: have.spaces ?? [],
   };
 }

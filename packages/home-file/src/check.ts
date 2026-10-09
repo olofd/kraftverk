@@ -1,6 +1,6 @@
 import { isTimeZone, MAIN_PART, validateConfig, type ConfigSchema } from '@kraftverk/device-sdk';
 
-import type { ConfigDocument, DeviceEntry, SecretValue } from './document.ts';
+import type { ConfigDocument, DeviceEntry, SecretValue, SpaceEntry } from './document.ts';
 import type { Issue } from '@kraftverk/automation';
 import type { Vocabulary } from './vocabulary.ts';
 
@@ -136,11 +136,18 @@ export function checkDocument(document: ConfigDocument, vocabulary: Vocabulary, 
       } else if ('person' in use || 'people' in use) {
         // People by their keys: in the file, or the family's now, when the server says.
         const keys = 'person' in use ? [use.person] : use.people;
-        for (const key of keys) if (!(key in document.people) && vocabulary.people && !vocabulary.people.some((each) => each.key === key)) problem(`There is no person "${key}", in the file or in the family`, [...path, 'uses', role]);
+        for (const key of keys) if (!(key in document.people) && !vocabulary.people.some((each) => each.key === key)) problem(`There is no person "${key}", in the file or in the family`, [...path, 'uses', role]);
       } else if ('home' in use) {
         if (!homeKnown(use.home)) problem(`No home is called "${use.home}"`, [...path, 'uses', role]);
       } else if ('zone' in use) {
-        if (!(use.zone in document.zones) && vocabulary.zones && !vocabulary.zones.some((each) => each.key === use.zone)) problem(`There is no zone "${use.zone}", in the file or the family's`, [...path, 'uses', role]);
+        if (!(use.zone in document.zones) && !vocabulary.zones.some((each) => each.key === use.zone)) problem(`There is no zone "${use.zone}", in the file or the family's`, [...path, 'uses', role]);
+      } else if ('space' in use) {
+        // A space of the automation's home: the one it is for, or the family's first.
+        const home = automation.home ?? Object.keys(document.homes)[0] ?? vocabulary.homes[0]?.key ?? null;
+        const brought = home ? document.homes[home] : undefined;
+        const inFile = (spaces: readonly SpaceEntry[]): boolean => spaces.some((each) => each.key === use.space || inFile(each.spaces));
+        const known = (brought && inFile(brought.spaces)) || vocabulary.spaces.some((each) => each.home === home && each.key === use.space);
+        if (!known) problem(`There is no space "${use.space}" in ${home ? `the home "${home}"` : 'its home'}`, [...path, 'uses', role]);
       }
     }
   }

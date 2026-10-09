@@ -2,6 +2,8 @@ import type { MemberRole, PersonView, Sharing, SharingChanges, SharingLevel } fr
 import { checkChain, hashOf, keyId, type Json, type Person, type PublicJwk, type Statement } from '@kraftverk/identity';
 
 import type { SqlDatabase } from './database.ts';
+import { personKeysOf } from '@kraftverk/home-file';
+
 import { DevicePeopleStore } from './device-people.ts';
 import { PresenceStore } from './presence.ts';
 
@@ -45,6 +47,7 @@ export class PeopleStore {
     return {
       id: row.id,
       name: row.name,
+      fileKey: now ? (this.#fileKeys().get(row.id) ?? null) : null,
       shownAs: now?.nickname ?? row.short_name ?? row.name,
       shortName: row.short_name,
       pictureId: row.picture_id,
@@ -77,6 +80,18 @@ export class PeopleStore {
       )
       .run(personId, next.level, next.pausedUntil, next.keepDays, by, at);
     return this.sharing(personId, at);
+  }
+
+  /**
+   * Each member's key in the family's configuration, by id: made from their
+   * names in the order they joined, among those with a key of their own —
+   * one rule, the export's, the import's and the app's alike.
+   */
+  #fileKeys(): Map<string, string> {
+    const keyed = this.#db
+      .query<{ id: string; name: string }, []>('SELECT p.id, p.name FROM member m JOIN person p ON p.id = m.person_id WHERE m.left_at IS NULL AND p.chain IS NOT NULL ORDER BY m.joined_at, m.person_id')
+      .all();
+    return personKeysOf(keyed);
   }
 
   /** The members now, in the order they joined. */

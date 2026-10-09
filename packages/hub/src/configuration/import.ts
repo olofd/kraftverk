@@ -1,6 +1,7 @@
 import { ApiError, type DevicePeople, type ImportApplied, type ImportItem, type ImportPlan, type LabelTarget, type PlacementInput } from '@kraftverk/api-contract';
-import { checkBinding, checkRule, isAutomationRole, isPartRole, isPeopleRole, isPersonRole, isPlaceRole, isWorldRole, keepsSo, useOf, useText, type AutomationDraft, type BoundPart, type GroupRole, type PartRole, type PartUse, type Use, type WorldFill, type WorldUse } from '@kraftverk/automation';
+import { checkBinding, checkRule, isAutomationRole, isPartRole, isPeopleRole, isPersonRole, isPlaceRole, isWorldRole, keepsSo, sameFill, useOf, useText, type AutomationDraft, type RuleVocabulary, type BoundPart, type GroupRole, type PartRole, type PartUse, type Use, type WorldFill, type WorldUse } from '@kraftverk/automation';
 import type { AutomationEngine, AutomationLibrary, AutomationRecord } from '@kraftverk/automation-engine';
+import { standingProblem, turnOf } from '@kraftverk/map/limits';
 import {
   capabilitiesOf,
   isSessionKept,
@@ -25,7 +26,6 @@ import {
 } from '@kraftverk/device-sdk';
 import type { SessionManager } from '@kraftverk/holder';
 import {
-  personKeysOf,
   checkDocument,
   readConfig,
   type AutomationEntry,
@@ -38,6 +38,7 @@ import {
   type SecretValue,
   type SpaceEntry,
   isSealed,
+  SITE_KEY,
 } from '@kraftverk/home-file';
 import { checkChain, fromBase64url, type Statement } from '@kraftverk/identity';
 import { HOME_RADIUS, ZONE_RADIUS, isConstraintError, type ConnectionRecord, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
@@ -280,7 +281,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
   const automations: ImportItem[] = [];
   for (const [key, entry] of Object.entries(document.automations)) {
     const path = ['automations', key];
-    for (const said of checkRule(entry.rule, deps.library)) problem(said, path);
+    for (const said of checkRule(entry.rule, ruleVocabularyOf(deps, document))) problem(said, path);
     if (entry.recheckMinutes !== null && !keepsSo(entry.rule)) problem('Only an automation that waits for a condition, and does what it does at once, can keep things so ("recheck")', [...path, 'recheck']);
     // A role nothing fills — a rule written while it was being built — cannot run: said where it is.
     for (const [role, spec] of Object.entries(entry.rule.roles))
@@ -317,7 +318,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     const existing = deps.automations.byKey(key);
     const acts = entry.mode === 'act' && (!existing || existing.mode !== 'act' || !same(existing.rule, entry.rule) || existing.recheckMinutes !== entry.recheckMinutes);
     if (acts) needs.confirm.push(`"${entry.name}" will act on its own${existing?.mode === 'act' ? ', doing what the file says' : ''}`);
-    automations.push(existing ? { key, name: entry.name, ...automationChanges(deps, existing, entry) } : { key, name: entry.name, action: 'add', changes: [] });
+    automations.push(existing ? { key, name: entry.name, ...automationChanges(deps, document, existing, entry) } : { key, name: entry.name, action: 'add', changes: [] });
   }
 
   // The family itself: what the file says of it, where that is not so.
@@ -379,6 +380,8 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     if ((Object.keys(address) as (keyof typeof address)[]).some((part) => address[part] !== null && address[part] !== existing.address[part])) changes.push('its address');
     if (entry.country !== null && entry.country !== existing.country) changes.push(`its country: ${entry.country}`);
     if (entry.picture !== null && entry.picture !== existing.pictureId) changes.push('its picture');
+    if (entry.icon !== null && entry.icon !== existing.icon) changes.push('its icon');
+    if (entry.bearing !== existing.bearing) changes.push(`its bearing: ${entry.bearing}°`);
     changes.push(...spaceChanges(deps, existing.id, entry));
     return changes.length ? { key, name: entry.name, action: 'change', changes } : { key, name: entry.name, action: 'same', changes };
   });
@@ -516,7 +519,7 @@ function bindingProblems(deps: ImportDeps, entry: AutomationEntry, document: Con
     if (parts.length) bound.set(role, parts);
   }
   // What the filled parts must report and let be written: once the rule itself holds.
-  if (checkRule(entry.rule, deps.library).length) return found;
+  if (checkRule(entry.rule, ruleVocabularyOf(deps, document)).length) return found;
   const filled = Object.fromEntries(Object.entries(entry.rule.roles).filter(([role, spec]) => !isAutomationRole(spec) && !isWorldRole(spec) && bound.has(role)));
   for (const said of checkBinding({ ...entry.rule, roles: filled }, (role) => bound.get(role) ?? [])) found.push({ message: said, path: [] });
   return found;
@@ -581,7 +584,7 @@ function deviceChanges(deps: ImportDeps, existing: DeviceRecord, entry: DeviceEn
 }
 
 /** How an automation would change: each difference in words, or "same". */
-function automationChanges(deps: ImportDeps, existing: AutomationRecord, entry: AutomationEntry): Pick<ImportItem, 'action' | 'changes'> {
+function automationChanges(deps: ImportDeps, document: ConfigDocument, existing: AutomationRecord, entry: AutomationEntry): Pick<ImportItem, 'action' | 'changes'> {
   const changes: string[] = [];
   if (existing.name !== entry.name) changes.push(`name: ${existing.name} → ${entry.name}`);
   if (existing.mode !== entry.mode) changes.push(`${existing.mode} → ${entry.mode}`);
@@ -592,6 +595,16 @@ function automationChanges(deps: ImportDeps, existing: AutomationRecord, entry: 
     const hadAutomation = existing.starts[role];
     if ('device' in use && (!had || keyOf(had.device) !== use.device || had.part !== use.part)) changes.push(`${role}: ${had ? useText({ device: keyOf(had.device), part: had.part }) : 'nothing'} → ${useText(use)}`);
     if ('automation' in use && (!hadAutomation || deps.automations.get(hadAutomation)?.key !== use.automation)) changes.push(`${role}: starts ${use.automation}`);
+    if ('parts' in use) {
+      const had = (existing.groups[role] ?? []).map((binding) => useText({ device: keyOf(binding.device), part: binding.part }));
+      const said = use.parts.map((each) => useText(each));
+      if (had.join() !== said.join()) changes.push(`${role}: ${said.join(', ') || 'no parts'}`);
+    }
+    if (isWorldUse(use)) {
+      const now = worldFillOf(deps, document, entry, use);
+      const had = existing.world[role];
+      if (!now || !had || !sameFill(now, had)) changes.push(`${role}: who or where it is`);
+    }
   }
   if (existing.ownTimeZone !== entry.clock) changes.push(entry.clock === null ? `clock: its home's, not ${existing.ownTimeZone}` : `clock: ${existing.ownTimeZone ?? "its home's"} → ${entry.clock}`);
   const homeKey = existing.homeId ? (deps.places.home(existing.homeId)?.key ?? null) : null;
@@ -664,6 +677,7 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
       const order = { admin: 0, member: 1, child: 2 } as const;
       for (const item of [...view.people].sort((a, b) => order[document.people[a.key]!.role] - order[document.people[b.key]!.role])) {
         if (item.action === 'same') continue;
+        each(`${document.people[item.key]!.name}`, () => {
         const entry = document.people[item.key]!;
         const chain = chainOf(entry.chain)!;
         if (chain.length > deps.people.chainOf(entry.id).length) deps.people.present(chain);
@@ -675,6 +689,7 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
         const sharing = deps.people.get(entry.id)?.member?.sharing;
         if (entry.sharing && sharing && (entry.sharing.level !== sharing.level || entry.sharing.keepDays !== sharing.keepDays)) deps.people.setSharing(entry.id, { level: entry.sharing.level, keepDays: entry.sharing.keepDays }, entry.id, new Date().toISOString());
         (member ? applied.people.changed : applied.people.added).push(item.key);
+        });
       }
       // Labels: before what is labelled with them.
       for (const item of view.labels) {
@@ -682,8 +697,10 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
         const entry = document.labels[item.key]!;
         const existing = deps.labels.byKey(item.key);
         const given = { name: entry.name, ...(entry.color !== null ? { color: entry.color } : {}), ...(entry.icon !== null ? { icon: entry.icon } : {}) };
-        if (existing) (deps.labels.update(existing.id, given), applied.labels.changed.push(item.key));
-        else (deps.labels.add({ ...given, key: item.key }), applied.labels.added.push(item.key));
+        each(`The label "${entry.name}"`, () => {
+          if (existing) (deps.labels.update(existing.id, given), applied.labels.changed.push(item.key));
+          else (deps.labels.add({ ...given, key: item.key }), applied.labels.added.push(item.key));
+        });
       }
       // The family, and its homes: first, since automations are for them.
       if (view.family.length) {
@@ -699,26 +716,34 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
         // A picture is set only when it is kept here: one the file names but did not bring is said, and left.
         const picture = entry.picture !== null && deps.media.get(entry.picture) ? { pictureId: entry.picture } : {};
         if (entry.picture !== null && !('pictureId' in picture)) applied.notes.push(`${entry.name}'s picture did not come with the file: add it again on its page`);
-        const given = { name: entry.name, type: entry.type, timeZone: entry.timeZone, address: address as typeof entry.address, ...picture, ...(location ? { location } : {}), ...(entry.country !== null ? { country: entry.country } : {}) };
-        if (existing) (deps.places.updateHome(existing.id, given), applied.homes.changed.push(item.key));
-        else (deps.places.addHome({ ...given, key: item.key }), applied.homes.added.push(item.key));
-        writeSpaces(deps, deps.places.homeByKey(item.key)!.id, entry);
+        const given = { name: entry.name, type: entry.type, timeZone: entry.timeZone, bearing: entry.bearing, address: address as typeof entry.address, ...picture, ...(location ? { location } : {}), ...(entry.country !== null ? { country: entry.country } : {}), ...(entry.icon !== null ? { icon: entry.icon } : {}) };
+        each(`The home "${entry.name}"`, () => {
+          if (existing) (deps.places.updateHome(existing.id, given), applied.homes.changed.push(item.key));
+          else (deps.places.addHome({ ...given, key: item.key }), applied.homes.added.push(item.key));
+        });
+        const home = deps.places.homeByKey(item.key);
+        // Its spaces on their own: one that will not go does not take the home with it.
+        if (home) each(`${entry.name}'s spaces`, () => writeSpaces(deps, home.id, entry, applied.notes));
       }
       for (const item of view.zones) {
         if (item.action === 'same') continue;
         const entry = document.zones[item.key]!;
         const existing = deps.places.zoneByKey(item.key);
         const given = { name: entry.name, location: { latitude: entry.location.latitude, longitude: entry.location.longitude, radius: entry.location.radius ?? existing?.location.radius ?? ZONE_RADIUS }, ...(entry.icon !== null ? { icon: entry.icon } : {}) };
-        if (existing) (deps.places.updateZone(existing.id, given), applied.zones.changed.push(item.key));
-        else (deps.places.addZone({ ...given, key: item.key }), applied.zones.added.push(item.key));
+        each(`The zone "${entry.name}"`, () => {
+          if (existing) (deps.places.updateZone(existing.id, given), applied.zones.changed.push(item.key));
+          else (deps.places.addZone({ ...given, key: item.key }), applied.zones.added.push(item.key));
+        });
       }
       // The family's own modes: before the automations that set them.
       for (const item of view.modes) {
         if (item.action === 'same') continue;
         const entry = document.modes[item.key]!;
         const existing = deps.modes.byKey(item.key);
-        if (existing) (deps.modes.update(existing.id, { name: entry.name, ...(entry.icon !== null ? { icon: entry.icon } : {}) }), applied.modes.changed.push(item.key));
-        else (deps.modes.add({ key: item.key, axis: entry.axis, name: entry.name, icon: entry.icon }), applied.modes.added.push(item.key));
+        each(`The mode "${entry.name}"`, () => {
+          if (existing) (deps.modes.update(existing.id, { name: entry.name, ...(entry.icon !== null ? { icon: entry.icon } : {}) }), applied.modes.changed.push(item.key));
+          else (deps.modes.add({ key: item.key, axis: entry.axis, name: entry.name, icon: entry.icon }), applied.modes.added.push(item.key));
+        });
       }
       // Devices: added, changed, removed — a bridge before what is reached through it.
       for (const item of bridgesFirst(view.devices, document)) {
@@ -855,7 +880,14 @@ function flatSpaces(spaces: readonly SpaceEntry[], parent: string | null = null)
 
 /** How a home's spaces and openings would change, by key, in words. What the file does not have is left as it is. */
 function spaceChanges(deps: ImportDeps, homeId: string | null, entry: HomeEntry): string[] {
-  const keyOf = (id: string | null) => (id ? (deps.spaces.space(id)?.key ?? null) : null);
+  const keyOf = (id: string | null) => (id ? (deps.spaces.space(id)?.kind === 'site' ? SITE_KEY : (deps.spaces.space(id)?.key ?? null)) : null);
+  // Where each stands among its siblings here: its order, not the numbers it is kept by — gaps an archive left are no change.
+  const here = homeId ? deps.spaces.spaces(homeId) : [];
+  const orderOf = (spaceId: string, parentId: string | null) =>
+    here
+      .filter((each) => each.parentId === parentId)
+      .sort((a, b) => a.position - b.position)
+      .findIndex((each) => each.id === spaceId);
   const [added, changed, opened, reopened] = [[], [], [], []] as string[][];
   for (const { space, parent, position } of flatSpaces(entry.spaces)) {
     const had = homeId ? deps.spaces.spaceByKey(homeId, space.key) : null;
@@ -867,8 +899,9 @@ function spaceChanges(deps: ImportDeps, homeId: string | null, entry: HomeEntry)
       had.level !== space.level ||
       had.elevation !== space.elevation ||
       had.height !== space.height ||
-      had.position !== position ||
-      keyOf(had.parentId) !== (parent ?? 'site') ||
+      had.icon !== space.icon ||
+      orderOf(had.id, had.parentId) !== position ||
+      keyOf(had.parentId) !== (parent ?? SITE_KEY) ||
       JSON.stringify(had.frame) !== JSON.stringify(space.frame) ||
       JSON.stringify(had.outline) !== JSON.stringify(space.outline) ||
       JSON.stringify(had.plan ? { picture: had.plan.pictureId, scale: had.plan.scale, x: had.plan.x, y: had.plan.y, turn: had.plan.turn } : null) !== JSON.stringify(space.plan) ||
@@ -886,20 +919,23 @@ function spaceChanges(deps: ImportDeps, homeId: string | null, entry: HomeEntry)
 }
 
 /** A home's spaces and openings written as its entry has them, by key: parents before what is inside them. */
-function writeSpaces(deps: ImportDeps, homeId: string, entry: HomeEntry): void {
+function writeSpaces(deps: ImportDeps, homeId: string, entry: HomeEntry, notes: string[] = []): void {
   const site = deps.spaces.site(homeId);
+  for (const { space } of flatSpaces(entry.spaces)) if (space.plan && !deps.media.get(space.plan.picture)) notes.push(`${space.name}'s drawing did not come with the file: add it again on the home's map`);
   for (const { space, parent, position } of flatSpaces(entry.spaces)) {
     const parentId = parent === null ? site.id : deps.spaces.spaceByKey(homeId, parent)!.id;
     // A drawing is set only when its picture is kept here: one the file names but did not bring is left as it is.
     const plan = space.plan && deps.media.get(space.plan.picture) ? { plan: { pictureId: space.plan.picture, scale: space.plan.scale, x: space.plan.x, y: space.plan.y, turn: space.plan.turn } } : space.plan ? {} : { plan: null };
-    const given = { parentId, kind: space.kind, name: space.name, purpose: space.purpose, level: space.level, elevation: space.elevation, height: space.height, frame: space.frame, outline: space.outline, ...plan, position };
+    const given = { parentId, kind: space.kind, name: space.name, purpose: space.purpose, icon: space.icon, level: space.level, elevation: space.elevation, height: space.height, frame: space.frame, outline: space.outline, ...plan, position };
     const had = deps.spaces.spaceByKey(homeId, space.key);
     const written = had ? deps.spaces.updateSpace(had.id, given)! : deps.spaces.addSpace({ ...given, key: space.key });
     writeLabels(deps, { space: written.id }, space.labels);
   }
+  /** A space by its key — `site`, the home itself. */
+  const spaceOf = (key: string) => (key === SITE_KEY ? site : deps.spaces.spaceByKey(homeId, key));
   for (const [key, opening] of Object.entries(entry.openings)) {
-    const from = deps.spaces.spaceByKey(homeId, opening.from);
-    const to = opening.to === null ? null : deps.spaces.spaceByKey(homeId, opening.to);
+    const from = spaceOf(opening.from);
+    const to = opening.to === null ? null : spaceOf(opening.to);
     if (!from || (opening.to !== null && !to)) continue;
     const given = { fromId: from.id, toId: to?.id ?? null, kind: opening.kind, name: opening.name, shape: opening.shape };
     const had = deps.spaces.openingByKey(homeId, key);
@@ -932,11 +968,30 @@ function writeLabels(deps: ImportDeps, target: LabelTarget, said: readonly strin
   deps.labels.set(target, said.flatMap((key) => deps.labels.byKey(key)?.id ?? []));
 }
 
+/** What a rule in a file is checked against, as applying it will be: the installed functions, and the family's modes — here, and those the file brings. */
+const ruleVocabularyOf = (deps: ImportDeps, document: ConfigDocument): RuleVocabulary => ({
+  fn: (id) => deps.library.fn(id),
+  modes: () => [...deps.modes.list().map((mode) => ({ key: mode.key, axis: mode.axis, name: mode.name })), ...Object.entries(document.modes).map(([key, mode]) => ({ key, axis: mode.axis, name: mode.name }))],
+});
+
 /** Whether what fills a role is the family's world: a person, people, a place. */
 const isWorldUse = (use: Use): use is WorldUse => 'person' in use || 'people' in use || 'everyone' in use || 'home' in use || 'zone' in use || 'space' in use;
 
 /** Each member's key, as an export writes them: what a file without its people names them by. */
-const familyKeys = (deps: ImportDeps): Map<string, string> => new Map([...personKeysOf(deps.people.members().filter((person) => person.member && deps.people.chainOf(person.id).length))].map(([id, key]) => [key, id]));
+/**
+ * Each member by the name a file gives them: their key — or, one with no key
+ * of their own yet, their id. Read once for everything a plan or an apply
+ * asks in one turn, not once a name; a file's own people are its own.
+ */
+const keysRead = new WeakMap<object, Map<string, string>>();
+const familyKeys = (deps: ImportDeps): Map<string, string> => {
+  const had = keysRead.get(deps.people);
+  if (had) return had;
+  const keys = new Map(deps.people.members().flatMap((person) => [[person.fileKey ?? person.id, person.id] as const, [person.id, person.id] as const]));
+  keysRead.set(deps.people, keys);
+  queueMicrotask(() => keysRead.delete(deps.people));
+  return keys;
+};
 
 /** The home an automation's spaces are of: the one it is for, or the family's first — in the file, or here. */
 const homeKeyOf = (deps: ImportDeps, document: ConfigDocument, entry: AutomationEntry): string | null => entry.home ?? Object.keys(document.homes)[0] ?? deps.places.homes()[0]?.key ?? null;
@@ -1002,7 +1057,14 @@ function placeProblem(deps: ImportDeps, document: ConfigDocument, place: PlaceEn
   if (place.space !== null && !(brought && flatSpaces(brought.spaces).some((each) => each.space.key === place.space)) && !(here && deps.spaces.spaceByKey(here.id, place.space)))
     return `${brought?.name ?? here!.name} has no space "${place.space}"`;
   if (place.opening !== null && !brought?.openings[place.opening] && !(here && deps.spaces.openingByKey(here.id, place.opening))) return `${brought?.name ?? here!.name} has no opening "${place.opening}"`;
-  return null;
+  // At an opening of the space it stands in: a door is in a wall of its room.
+  if (place.opening !== null) {
+    const said = brought?.openings[place.opening];
+    const kept = here ? deps.spaces.openingByKey(here.id, place.opening) : null;
+    const ends = said ? [said.from, said.to] : kept ? [kept.fromId, kept.toId].map((id) => (id ? (deps.spaces.space(id)?.kind === 'site' ? SITE_KEY : (deps.spaces.space(id)?.key ?? null)) : null)) : [];
+    if (!ends.includes(place.space ?? SITE_KEY)) return `The opening "${place.opening}" is not one of ${place.space ?? 'the home itself'}`;
+  }
+  return standingProblem({ x: place.at?.[0] ?? null, y: place.at?.[1] ?? null, z: place.height, facing: place.facing });
 }
 
 /** Where a file says a device stands, as a placement here: null when its home, space or opening is not here. */
@@ -1012,7 +1074,7 @@ function spotOf(deps: ImportDeps, place: PlaceEntry): PlacementInput | null {
   const space = place.space === null ? deps.spaces.site(home.id) : deps.spaces.spaceByKey(home.id, place.space);
   const opening = place.opening === null ? null : deps.spaces.openingByKey(home.id, place.opening);
   if (!space || (place.opening !== null && !opening)) return null;
-  return { spaceId: space.id, openingId: opening?.id ?? null, role: place.role, x: place.at?.[0] ?? null, y: place.at?.[1] ?? null, z: place.height, facing: place.facing };
+  return { spaceId: space.id, openingId: opening?.id ?? null, role: place.role, x: place.at?.[0] ?? null, y: place.at?.[1] ?? null, z: place.height, facing: place.facing === null ? null : turnOf(place.facing) };
 }
 
 /** A device added or changed as its entry says: what it is, how it is reached, its secrets, kept or given. */

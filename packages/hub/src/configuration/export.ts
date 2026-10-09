@@ -1,8 +1,8 @@
 import {
   automationEntryFrom,
-  personKeysOf,
   deviceEntryFrom,
   emptyDocument,
+  SITE_KEY,
   vocabularyOf,
   type ConfigDocument,
   type OpeningEntry,
@@ -94,12 +94,21 @@ export type Exported = {
   notes: string[];
 };
 
-/** What a configuration may name in this home: its installed types, and the keys it has. */
-export function homeVocabulary(deps: Pick<ConfigDeps, 'catalog' | 'automations' | 'types' | 'protocols' | 'places'>): Vocabulary {
+/**
+ * What a configuration may name in this home: its installed types, and the
+ * keys it has — its devices, automations, homes, people, zones and each
+ * home's spaces, each with its id: what an app reads a file's names by.
+ */
+export function homeVocabulary(deps: Pick<ConfigDeps, 'catalog' | 'automations' | 'types' | 'protocols' | 'places' | 'people' | 'spaces'>): Vocabulary {
+  const homes = deps.places.homes();
   return vocabularyOf(deps.types.all(), (id) => deps.protocols.get(id), {
     devices: deps.catalog.list().map((device) => ({ key: device.key, type: device.typeId, name: device.name, parts: partsOf(device.description).map((part) => part.id) })),
     automations: deps.automations.list().map((automation) => ({ key: automation.key, name: automation.name })),
-    homes: deps.places.homes().map((home) => ({ key: home.key, name: home.name })),
+    homes: homes.map((home) => ({ id: home.id, key: home.key, name: home.name })),
+    // One with no key of their own yet is named by their id: a file names them so.
+    people: deps.people.members().map((person) => ({ id: person.id, key: person.fileKey ?? person.id, name: person.shownAs })),
+    zones: deps.places.zones().map((zone) => ({ id: zone.id, key: zone.key, name: zone.name })),
+    spaces: homes.flatMap((home) => deps.spaces.spaces(home.id).filter((space) => space.kind !== 'site').map((space) => ({ id: space.id, key: space.key, name: space.name, home: home.key }))),
   });
 }
 
@@ -113,6 +122,7 @@ function spaceTree(spaces: readonly SpaceView[], labelsOf: (spaceId: string) => 
         kind: space.kind as SpaceEntry['kind'],
         name: space.name,
         purpose: space.purpose,
+        icon: space.icon,
         level: space.level,
         elevation: space.elevation,
         height: space.height,
@@ -126,13 +136,13 @@ function spaceTree(spaces: readonly SpaceView[], labelsOf: (spaceId: string) => 
   return site ? under(site.id) : [];
 }
 
-/** A home's openings as a file has them: each by its key, its spaces by theirs. One from the site itself has no space to name, and is left out. */
+/** A home's openings as a file has them: each by its key, its spaces by theirs — the site, the home itself, as `site`. */
 function openingsOf(spaces: SpaceStore, homeId: string): Record<string, OpeningEntry> {
-  const keys = new Map(spaces.spaces(homeId).map((space) => [space.id, space.kind === 'site' ? null : space.key]));
+  const keys = new Map(spaces.spaces(homeId).map((space) => [space.id, space.kind === 'site' ? SITE_KEY : space.key]));
   return Object.fromEntries(
     spaces.openings(homeId).flatMap((opening) => {
-      const from = keys.get(opening.fromId) ?? null;
-      const to = opening.toId === null ? null : (keys.get(opening.toId) ?? undefined);
+      const from = keys.get(opening.fromId);
+      const to = opening.toId === null ? null : keys.get(opening.toId);
       return from && to !== undefined ? [[opening.key, { kind: opening.kind, from, to, name: opening.name, shape: opening.shape ? opening.shape.map(([x, y]) => [x, y] as [number, number]) : null }]] : [];
     })
   );
@@ -178,7 +188,7 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
   const personKeys = new Map<string, string>();
   /** Each member's key as an export of everything would write it: what a file of one automation names them by. */
   let familyKeysMade: Map<string, string> | null = null;
-  const familyKeys = () => (familyKeysMade ??= personKeysOf(deps.people.members().filter((person) => person.member && deps.people.chainOf(person.id).length)));
+  const familyKeys = () => (familyKeysMade ??= new Map(deps.people.members().flatMap((person) => (person.fileKey ? [[person.id, person.fileKey] as const] : []))));
   if (everything) {
     const family = deps.family.get();
     if (family) document.family = { name: family.name, kind: family.kind, locale: family.locale };
@@ -204,8 +214,10 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
       document.homes[home.key] = {
         name: home.name,
         type: home.type,
+        icon: home.icon,
         picture: home.pictureId,
         location: home.location,
+        bearing: home.bearing,
         timeZone: home.timeZone,
         address: home.address,
         country: home.country,
@@ -281,6 +293,8 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
     else if (from || to) notes.push(`A link to a device not in this file is left out: ${from ?? to} ${link.kind} another`);
   }
 
+  /** A place, unless it was let go. */
+  const live = <T extends { removedAt: string | null }>(place: T | null): T | null => (place && !place.removedAt ? place : null);
   // Automations: what fills each role, by key.
   // A device you removed fills nothing in a file: its role is written empty, and said.
   const keyOf = {
@@ -289,10 +303,12 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
       return device && !device.removedAt ? device.key : null;
     },
     automation: (id: string) => deps.automations.get(id)?.key ?? null,
-    home: (id: string) => deps.places.home(id)?.key ?? null,
+    // A place let go is gone: its role is written empty, and said — never a name the file cannot read back.
+    home: (id: string) => live(deps.places.home(id))?.key ?? null,
     // People by the keys this file writes them as — or, a file without its people, as the family's would be.
-    person: (id: string) => personKeys.get(id) ?? familyKeys().get(id) ?? null,
-    place: (id: string, kind: 'home' | 'zone' | 'space') => (kind === 'home' ? (deps.places.home(id)?.key ?? null) : kind === 'zone' ? (deps.places.zone(id)?.key ?? null) : (deps.spaces.space(id)?.key ?? null)),
+    // One with no key of their own yet, by their id: a restore brings them back by it.
+    person: (id: string) => personKeys.get(id) ?? familyKeys().get(id) ?? (deps.people.get(id)?.member ? id : null),
+    place: (id: string, kind: 'home' | 'zone' | 'space') => (kind === 'home' ? (live(deps.places.home(id))?.key ?? null) : kind === 'zone' ? (live(deps.places.zone(id))?.key ?? null) : (live(deps.spaces.space(id))?.key ?? null)),
   };
   const elsewhere = new Set<string>();
   for (const automation of automations) {

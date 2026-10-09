@@ -3,6 +3,7 @@ import { capabilitiesOf, capabilityIn, meetsNeed, partName, partsOf, type Automa
 import { usedRoles } from './edit.ts';
 import { NO_SETTINGS, withSettings } from './evaluate.ts';
 import { isAutomationRole, isGroupRole, isPartRole, isWorldRole, roleKind, type Rule } from './rule.ts';
+import { KEYWORDS } from './text/expr.ts';
 
 /*
   An automation as it is being built, as data (docs/AUTOMATION-EDITOR.md): a
@@ -29,7 +30,8 @@ export type RoleFills = {
 };
 
 /** What a place a role names is: a home, a zone, or a space of a home. */
-export type PlaceKind = 'home' | 'zone' | 'space';
+export type { PlaceKind } from './rule.ts';
+import type { PlaceKind } from './rule.ts';
 
 /**
  * What fills a role of the family's world: a person by their id; people —
@@ -66,8 +68,10 @@ export const roleName = (rule: Rule, label: string): string => {
     .filter(Boolean)
     .map((word) => word.toLowerCase());
   const stem = words.length && /^[a-z]/.test(words[0]!) ? words.map((word, index) => (index ? word.charAt(0).toUpperCase() + word.slice(1) : word)).join('') : 'part';
-  if (!rule.roles[stem]) return stem;
-  for (let n = 2; ; n += 1) if (!rule.roles[`${stem}${n}`]) return `${stem}${n}`;
+  // Taken: by another role — or by the language, a word of its own: a home called "Home" is not `home`, the automation's own.
+  const taken = (name: string) => Boolean(rule.roles[name]) || KEYWORDS.has(name);
+  if (!taken(stem)) return stem;
+  for (let n = 2; ; n += 1) if (!taken(`${stem}${n}`)) return `${stem}${n}`;
 };
 
 /**
@@ -146,7 +150,14 @@ export const rolesOf = (rule: Rule) => ({
 });
 
 /** Whether two fills of the world are the same person, people or place. */
-const sameFill = (a: WorldFill, b: WorldFill): boolean => JSON.stringify(a) === JSON.stringify(b);
+export function sameFill(a: WorldFill, b: WorldFill): boolean {
+  if ('place' in a && 'place' in b) return a.place === b.place && a.kind === b.kind;
+  if ('person' in a && 'person' in b) return a.person === b.person;
+  if ('everyone' in a && 'everyone' in b) return true;
+  // The same people, in whatever order they were chosen.
+  if ('people' in a && 'people' in b) return a.people.length === b.people.length && a.people.every((id) => b.people.includes(id));
+  return false;
+}
 
 /**
  * A person, people or a place picked for a block: the role the draft fills

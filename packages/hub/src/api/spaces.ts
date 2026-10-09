@@ -1,5 +1,6 @@
-import { ApiError, type Caller, type FramePoint, type KraftverkApi, type OpeningInput, type SpaceHistory, type SpaceInput } from '@kraftverk/api-contract';
+import { ApiError, type Caller, type KraftverkApi, type OpeningInput, type SpaceHistory, type SpaceInput } from '@kraftverk/api-contract';
 import { attributeMeaning, partsOf } from '@kraftverk/device-sdk';
+import { frameProblem, heightProblem, nameProblem, planProblem, pointsProblem, turnOf } from '@kraftverk/map/limits';
 
 import { resolutionOf, series } from '../history/sampler.ts';
 import type { Hub } from '../node/hub.ts';
@@ -15,27 +16,21 @@ import { spanOf } from './devices.ts';
 const SPACE_KINDS = ['building', 'floor', 'room', 'area', 'stairs', 'outdoor'];
 const OPENING_KINDS = ['door', 'opening', 'stairs', 'window', 'gate', 'garage-door', 'elevator'];
 
-/** How far from its frame's origin anything of a home is drawn: a kilometre. */
-const REACH = 1000;
-const metres = (value: number) => Number.isFinite(value) && Math.abs(value) <= REACH;
-const turn = (value: number) => Number.isFinite(value) && value > -360 && value < 720;
+/** A refusal in words, when there is one. */
+const refuse = (problem: string | null): void => {
+  if (problem) throw new ApiError('invalid', problem);
+};
 
-/** Points in a frame, checked: metres, within reach, at least `least` of them, no two the same in a row. */
-function checkedPoints(points: readonly FramePoint[], least: number, what: string): void {
-  if (points.length < least || points.length > 200) throw new ApiError('invalid', `${what} has ${least} to 200 points`);
-  if (!points.every((point) => point.length === 2 && metres(point[0]) && metres(point[1]))) throw new ApiError('invalid', `${what}'s points are metres in its frame, within ${REACH} m`);
-  if (points.some((point, at) => at > 0 && point[0] === points[at - 1]![0] && point[1] === points[at - 1]![1])) throw new ApiError('invalid', `${what} has the same point twice in a row`);
-}
-
-/** A space given, checked: a refusal in words. */
-function checkedSpace(input: Partial<SpaceInput>): void {
-  if (input.frame && !(metres(input.frame.x) && metres(input.frame.y) && turn(input.frame.turn))) throw new ApiError('invalid', `A frame is an origin in metres, within ${REACH} m, and a turn in degrees`);
-  if (input.outline) checkedPoints(input.outline, 3, 'An outline');
-  if (input.plan && !(input.plan.scale > 0 && input.plan.scale <= 1 && metres(input.plan.x) && metres(input.plan.y) && turn(input.plan.turn))) throw new ApiError('invalid', 'A drawing is placed by its corner, in metres, a turn, and the metres a pixel is: above 0, at most 1');
-  if (input.name !== undefined && !(input.name.trim().length >= 1 && input.name.trim().length <= 60)) throw new ApiError('invalid', 'A space’s name is 1 to 60 characters');
+/** A space given, checked by the limits every way in shares (`@kraftverk/map/limits`): a refusal in words. Its turns, kept from 0 to below 360. */
+function checkedSpace(input: Partial<SpaceInput>): Partial<SpaceInput> {
+  if (input.frame) refuse(frameProblem(input.frame));
+  if (input.outline) refuse(pointsProblem(input.outline, 3, 'An outline'));
+  if (input.plan) refuse(planProblem(input.plan));
+  if (input.name !== undefined) refuse(nameProblem(input.name, 'A space'));
   if (input.kind !== undefined && !SPACE_KINDS.includes(input.kind)) throw new ApiError('invalid', `A space is one of: ${SPACE_KINDS.join(', ')}`);
   if (input.level !== undefined && input.level !== null && !(Number.isInteger(input.level) && Math.abs(input.level) <= 200)) throw new ApiError('invalid', 'A floor’s level is a whole number: 0 the ground floor');
-  if (input.height !== undefined && input.height !== null && !(input.height > 0 && input.height <= 100)) throw new ApiError('invalid', 'A height is metres, above 0');
+  if (input.height !== undefined && input.height !== null) refuse(heightProblem(input.height));
+  return { ...input, ...(input.frame ? { frame: { ...input.frame, turn: turnOf(input.frame.turn) } } : {}), ...(input.plan ? { plan: { ...input.plan, turn: turnOf(input.plan.turn) } } : {}) };
 }
 
 /** The store's refusal, said as the family's. */
@@ -67,8 +62,8 @@ export function spacesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'spaces'
     spaces: {
       list: async (homeId, options = {}) => hub.spaces.spaces(homeOf(homeId).id, options),
 
-      async add(input) {
-        checkedSpace(input);
+      async add(given) {
+        const input = { ...given, ...checkedSpace(given) };
         if (input.plan) pictureOf(input.plan.pictureId);
         const parent = spaceOf(input.parentId);
         const space = refusing(() => hub.spaces.addSpace({ ...input, name: input.name.trim() }));
@@ -76,10 +71,10 @@ export function spacesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'spaces'
         return space;
       },
 
-      async update(id, changes) {
+      async update(id, given) {
         const was = spaceOf(id);
         if (was.kind === 'site') throw new ApiError('invalid', 'The site is the home itself: change the home');
-        checkedSpace(changes);
+        const changes = checkedSpace(given);
         if (changes.plan) pictureOf(changes.plan.pictureId);
         if (changes.plan && (changes.kind ?? was.kind) !== 'floor') throw new ApiError('invalid', 'Only a floor has a drawing');
         if (changes.parentId !== undefined) {
@@ -133,7 +128,8 @@ export function spacesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'spaces'
 
       async add(input) {
         if (!OPENING_KINDS.includes(input.kind)) throw new ApiError('invalid', `An opening is one of: ${OPENING_KINDS.join(', ')}`);
-        if (input.shape) checkedPoints(input.shape, 2, 'Its shape');
+        if (input.shape) refuse(pointsProblem(input.shape, 2, 'Its shape'));
+        if (input.name) refuse(nameProblem(input.name, 'An opening'));
         const from = spaceOf(input.fromId);
         if (input.toId !== null && spaceOf(input.toId).homeId !== from.homeId) throw new ApiError('invalid', 'An opening joins two spaces of one home');
         const opening = refusing(() => hub.spaces.addOpening(input as OpeningInput));
@@ -145,7 +141,8 @@ export function spacesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'spaces'
         const was = hub.spaces.opening(id);
         if (!was) throw new ApiError('not-found', 'No such opening');
         if (changes.kind !== undefined && !OPENING_KINDS.includes(changes.kind)) throw new ApiError('invalid', `An opening is one of: ${OPENING_KINDS.join(', ')}`);
-        if (changes.shape) checkedPoints(changes.shape, 2, 'Its shape');
+        if (changes.shape) refuse(pointsProblem(changes.shape, 2, 'Its shape'));
+        if (changes.name) refuse(nameProblem(changes.name, 'An opening'));
         for (const end of [changes.fromId, changes.toId]) if (end) if (spaceOf(end).homeId !== was.homeId) throw new ApiError('invalid', 'An opening joins two spaces of one home');
         const opening = refusing(() => hub.spaces.updateOpening(id, changes))!;
         record('opening.changed', was.homeId, `Changed ${opening.name ?? `a ${opening.kind}`}`);

@@ -2,7 +2,8 @@ import { stepJsonSchema, triggerJsonSchema, WHILE_RUNNING } from '@kraftverk/aut
 import type { ConfigField, ConfigSchema } from '@kraftverk/device-sdk';
 
 import { BUILT_IN_MODES, KEY, MODE_KEY, unitsOfQuantity, UNIT_LIST } from '@kraftverk/device-sdk';
-import { OPENING_KINDS, SPACE_KINDS, SPACE_PURPOSES } from './document.ts';
+import { HEIGHT_MOST, NAME_MOST, PLAN_SCALE_MOST, POINTS_MOST, REACH_METRES } from '@kraftverk/map/limits';
+import { OPENING_KINDS, SITE_KEY, SPACE_KINDS, SPACE_PURPOSES } from './document.ts';
 import { CURRENT_VERSION } from './migrate.ts';
 import type { Vocabulary, VocabularyMethod, VocabularyType } from './vocabulary.ts';
 
@@ -83,8 +84,14 @@ function methodSchema(method: VocabularyMethod): Schema {
   };
 }
 
-/** A point in a frame: metres along its x and y axes. */
-const POINT: Schema = { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2, description: 'Metres in its frame: [x, y].' };
+/** A point in a frame: metres along its x and y axes, within reach of its origin. */
+const POINT: Schema = { type: 'array', items: { type: 'number', minimum: -REACH_METRES, maximum: REACH_METRES }, minItems: 2, maxItems: 2, description: 'Metres in its frame: [x, y].' };
+/** Metres from a frame's origin, within reach. */
+const METRES: Schema = { type: 'number', minimum: -REACH_METRES, maximum: REACH_METRES };
+/** A turn, in degrees: any, kept as from 0 to below 360. */
+const TURN: Schema = { type: 'number', description: 'Degrees.' };
+/** A key of a space of a home — not "site", which is the home itself. */
+const SPACE_KEYS = { propertyNames: { pattern: KEY.source, not: { const: SITE_KEY } } };
 
 /** Where a device is, by keys. */
 const PLACE: Schema = {
@@ -96,9 +103,11 @@ const PLACE: Schema = {
     space: { type: 'string' },
     opening: { type: 'string' },
     at: { ...POINT, description: 'Where in the space: metres in its frame, [x, y].' },
-    height: { type: 'number', description: 'Metres above the floor.' },
-    facing: { type: 'number', minimum: 0, exclusiveMaximum: 360, description: 'Which way it looks: degrees in the space’s frame.' },
+    height: { type: 'number', minimum: 0, maximum: HEIGHT_MOST, description: 'Metres above the floor.' },
+    facing: { ...TURN, description: 'Which way it looks: degrees in the space’s frame.' },
   },
+  // How high it stands and which way it faces are where it stands: said with it.
+  dependencies: { height: ['at'], facing: ['at'] },
 };
 
 /** Labels, by key. */
@@ -112,34 +121,35 @@ const SPACE: Schema = {
   additionalProperties: false,
   properties: {
     kind: { enum: [...SPACE_KINDS] },
-    name: { type: 'string', minLength: 1, maxLength: 60, description: 'Its key, when it says none.' },
+    name: { type: 'string', minLength: 1, maxLength: NAME_MOST, description: 'Its key, when it says none.' },
     purpose: { enum: [...SPACE_PURPOSES], description: 'What it is for: a kitchen, a bedroom.' },
+    icon: { type: 'string', minLength: 1, description: 'Its mark, by name in the app’s icon set.' },
     level: { type: 'integer', description: 'A floor’s: 0 the ground floor, -1 the cellar.' },
     elevation: { type: 'number', description: 'A floor’s: metres above the ground.' },
-    height: { type: 'number', exclusiveMinimum: 0, description: 'Metres from floor to ceiling.' },
+    height: { type: 'number', exclusiveMinimum: 0, maximum: HEIGHT_MOST, description: 'Metres from floor to ceiling.' },
     frame: {
       type: 'object',
       required: ['x', 'y', 'turn'],
       additionalProperties: false,
-      properties: { x: { type: 'number' }, y: { type: 'number' }, turn: { type: 'number', minimum: 0, exclusiveMaximum: 360 } },
+      properties: { x: METRES, y: METRES, turn: TURN },
       description: 'Its own frame: where its origin is in its parent’s, in metres, and its turn in degrees.',
     },
-    outline: { type: 'array', items: POINT, minItems: 3, description: 'Its corners in its own frame, in order: [[0, 0], [4, 0], [4, 3], [0, 3]].' },
+    outline: { type: 'array', items: POINT, minItems: 3, maxItems: POINTS_MOST, description: 'Its corners in its own frame, in order: [[0, 0], [4, 0], [4, 3], [0, 3]].' },
     plan: {
       type: 'object',
       required: ['picture', 'scale', 'x', 'y'],
       additionalProperties: false,
       properties: {
         picture: { type: 'string', pattern: '^[0-9a-f]{64}$', description: 'The drawing: its picture’s id.' },
-        scale: { type: 'number', exclusiveMinimum: 0, description: 'The metres a pixel is.' },
-        x: { type: 'number', description: 'Where its top-left corner falls: metres in the floor’s frame.' },
-        y: { type: 'number' },
-        turn: { type: 'number', minimum: 0, exclusiveMaximum: 360, description: 'Degrees it is turned about that corner.' },
+        scale: { type: 'number', exclusiveMinimum: 0, maximum: PLAN_SCALE_MOST, description: 'The metres a pixel is.' },
+        x: { ...METRES, description: 'Where its top-left corner falls: metres in the floor’s frame.' },
+        y: METRES,
+        turn: { ...TURN, description: 'Degrees it is turned about that corner.' },
       },
       description: 'A floor’s drawing, placed in its frame: what rooms are traced over.',
     },
     labels: { ...LABELS, description: 'Its labels, by key: on what stands in it too.' },
-    spaces: { type: 'object', propertyNames: { pattern: KEY.source }, additionalProperties: { $ref: '#/$defs/space' }, description: 'The spaces inside it, by key.' },
+    spaces: { type: 'object', ...SPACE_KEYS, additionalProperties: { $ref: '#/$defs/space' }, description: 'The spaces inside it, by key.' },
   },
 };
 
@@ -478,7 +488,9 @@ export function configJsonSchema(vocabulary: Vocabulary): Schema {
           properties: {
             name: { type: 'string', minLength: 1, maxLength: 60 },
             type: { enum: ['house', 'apartment', 'cabin', 'boat', 'caravan', 'office', 'other'], default: 'house' },
+            icon: { type: 'string', minLength: 1, description: 'Its mark, by name in the app’s icon set: its type’s, when it says none.' },
             picture: { type: 'string', pattern: '^[0-9a-f]{64}$', description: 'A photo of it: its picture’s id, the SHA-256 of its bytes.' },
+            bearing: { ...TURN, default: 0, description: 'How its grounds are turned from north, in degrees: what its rooms, drawings and what stands where are drawn on the map by.' },
             location: {
               type: 'object',
               description: 'Where it is, in degrees: what sunrise and sunset are told by. And its geofence, in metres.',
@@ -498,16 +510,22 @@ export function configJsonSchema(vocabulary: Vocabulary): Schema {
               additionalProperties: false,
               properties: Object.fromEntries(Object.entries(vocabulary.policy).map(([name, spec]) => [name, { type: 'number', minimum: spec.min, maximum: spec.max, description: `${spec.label}, in ${spec.unit}.` }])),
             },
-            spaces: { type: 'object', ...keys, additionalProperties: { $ref: '#/$defs/space' }, description: 'Its buildings, floors, rooms and the outdoors, by key — unique within the home — each with the spaces inside it.' },
+            spaces: { type: 'object', ...SPACE_KEYS, additionalProperties: { $ref: '#/$defs/space' }, description: 'Its buildings, floors, rooms and the outdoors, by key — unique within the home, and never "site", the home itself — each with the spaces inside it.' },
             openings: {
               type: 'object',
               ...keys,
               description: 'Where its spaces meet, or meet the outside: doors, stairs, windows, by key.',
               additionalProperties: {
                 type: 'object',
-                required: ['kind', 'from', 'to'],
+                required: ['kind', 'from'],
                 additionalProperties: false,
-                properties: { kind: { enum: [...OPENING_KINDS] }, from: { type: 'string' }, to: { type: 'string', description: 'A space’s key, or "outside".' }, name: { type: 'string' }, shape: { type: 'array', items: POINT, minItems: 2, description: 'Where in the wall it is: a line in its from space’s frame.' } },
+                properties: {
+                  kind: { enum: [...OPENING_KINDS] },
+                  from: { type: 'string', description: 'A space’s key, or "site": the home itself, its grounds.' },
+                  to: { type: 'string', default: 'outside', description: 'A space’s key, "site", or "outside" — when it says none.' },
+                  name: { type: 'string', minLength: 1, maxLength: NAME_MOST },
+                  shape: { type: 'array', items: POINT, minItems: 2, maxItems: POINTS_MOST, description: 'Where in the wall it is: a line in its from space’s frame.' },
+                },
               },
             },
           },

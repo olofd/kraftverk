@@ -374,6 +374,7 @@ When the first of the family — or, with `of`, of a role people fill — comes 
 |---|---|---|
 | `first arrives` | a place: `home`, the automation’s own, or a role a home, a zone or a space fills — `{ zone: key }`, `{ space: key }` under `uses` | needed |
 | `of` | a role people fill: `{ people: [keys] }` under `uses` | if you like |
+| `for` | a length of time, `2 min` — 1 s to 7 d | if you like |
 
 ```yaml
 when:
@@ -394,6 +395,7 @@ When the last of the family — or, with `of`, of a role people fill — leaves 
 |---|---|---|
 | `last leaves` | a place: `home`, the automation’s own, or a role a home, a zone or a space fills — `{ zone: key }`, `{ space: key }` under `uses` | needed |
 | `of` | a role people fill: `{ people: [keys] }` under `uses` | if you like |
+| `for` | a length of time, `2 min` — 1 s to 7 d | if you like |
 
 ```yaml
 when:
@@ -404,6 +406,12 @@ when:
 when:
   - last leaves: home
     of: grownUps
+```
+
+```yaml
+when:
+  - last leaves: home
+    for: 5 min
 ```
 
 ### `empties` — When a room empties

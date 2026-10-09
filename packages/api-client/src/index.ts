@@ -30,6 +30,7 @@ export * from './screens.ts';
 export * from './asking.ts';
 export * from './run-chart.ts';
 export * from './spaces.ts';
+export * from './world-choices.ts';
 export * from './home-map.ts';
 export * from './modes.ts';
 export * from './invitations.ts';

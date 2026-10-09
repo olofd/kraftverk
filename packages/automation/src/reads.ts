@@ -1,11 +1,11 @@
 import { capabilitySpec, isCapability, type CapabilityNeed } from '@kraftverk/device-sdk';
 
 import { expressionsIn, mapChildren } from './kinds/exprs.ts';
-import { EXPRESSION_FIELDS, fieldValue, withField, type FieldSpec } from './kinds/spec.ts';
+import { fieldValue, withField, type FieldSpec } from './kinds/spec.ts';
+import { fieldExprs, mapFieldExprs } from './field-exprs.ts';
 import { branchesOf, stepSpec } from './kinds/steps.ts';
-import { edgeOf, stepListsOf, triggerFields, triggerKind, triggerSpec } from './kinds/triggers.ts';
-import { messageExprs } from './message.ts';
-import { isWorldRole, OWN_HOME, type Command, type Expr, type Rule, type RuleTrigger, type Step, type Write } from './rule.ts';
+import { edgeOf, stepListsOf, triggerFields, triggerSpec } from './kinds/triggers.ts';
+import { isWorldRole, OWN_HOME, PLACE_KINDS, placeFact, type Command, type Expr, type PlaceKind, type Rule, type RuleTrigger, type Step, type Write } from './rule.ts';
 
 /*
   What a rule reads and changes, by role: what its conditions read, what its
@@ -44,17 +44,16 @@ export function eachAsGroup(rule: Rule): Rule {
         if (value === undefined) return done;
         const type = field.type.type;
         if (type === 'role') return withField(done, field, names[value as string] ?? value);
-        if (EXPRESSION_FIELDS.has(type)) return withField(done, field, renamed(value as Expr, names));
-        if (type === 'args') return withField(done, field, Object.fromEntries(Object.entries(value as Record<string, Expr>).map(([name, arg]) => [name, renamed(arg, names)])));
         if (type === 'steps') return withField(done, field, steps(value as readonly Step[], within));
-        return done;
+        // An expression, a command's arguments, a message's values: each read as its group.
+        return fieldExprs(field.type, value).length ? withField(done, field, mapFieldExprs(field.type, value, (expr) => renamed(expr, names))) : done;
       }, step);
     });
   // A trigger's own expressions — what it waits for to hold — and its own steps.
   const trigger = (each: RuleTrigger): RuleTrigger => {
     const fields = triggerFields(each).reduce<RuleTrigger>((done, field) => {
       const value = fieldValue(each, field);
-      return value !== undefined && EXPRESSION_FIELDS.has(field.type.type) ? withField(done, field, renamed(value as Expr, {})) : done;
+      return fieldExprs(field.type, value).length ? withField(done, field, mapFieldExprs(field.type, value, (expr) => renamed(expr, {}))) : done;
     }, each);
     return fields.then ? { ...fields, then: steps(fields.then, {}) } : fields;
   };
@@ -77,22 +76,14 @@ export const roleEvents = (spec: CapabilityNeed): string[] =>
  * it reads and compares visits (`expressionsIn` for what is within each).
  */
 export function* ruleExpressions(rule: Rule): Generator<Expr> {
-  for (const trigger of rule.when) {
-    for (const field of triggerSpec(trigger).fields) {
-      const value = fieldValue(trigger, field);
-      if (value !== undefined && EXPRESSION_FIELDS.has(field.type.type)) yield value as Expr;
-    }
-  }
+  for (const trigger of rule.when) for (const field of triggerSpec(trigger).fields) yield* fieldExprs(field.type, fieldValue(trigger, field));
   if (rule.if) yield rule.if;
   function* inSteps(steps: readonly Step[]): Generator<Expr> {
     for (const step of steps) {
       for (const field of stepSpec(step).fields) {
         const value = fieldValue(step, field);
-        if (value === undefined) continue;
-        if (EXPRESSION_FIELDS.has(field.type.type)) yield value as Expr;
-        else if (field.type.type === 'args') yield* Object.values(value as Record<string, Expr>);
-        else if (field.type.type === 'message') yield* messageExprs(String(value));
-        else if (field.type.type === 'steps') yield* inSteps(value as readonly Step[]);
+        if (field.type.type === 'steps') yield* inSteps((value as readonly Step[] | undefined) ?? []);
+        else yield* fieldExprs(field.type, value);
       }
     }
   }
@@ -142,7 +133,7 @@ export function ruleUses(written: Rule): {
   const awaits: { role: string; event: string }[] = [];
   /** A place, read as a part is: the family's world, not a device's reading. */
   const ofWorld = (role: string) => role === OWN_HOME || Boolean(rule.roles[role] && isWorldRole(rule.roles[role]!));
-  let world = rule.when.some((trigger) => edgeOf(trigger) !== null && !('becomes' in trigger)) || rule.when.some((trigger) => ['arrives', 'leaves', 'modeBecomes', 'modeChanges'].includes(triggerKind(trigger)));
+  let world = rule.when.some((trigger) => triggerSpec(trigger).world);
   const places = new Set<string>();
   /** A field that names who or where: its role, when it is one. */
   const named = (construct: object, fields: readonly FieldSpec[]) => {
@@ -161,7 +152,7 @@ export function ruleUses(written: Rule): {
         for (const role of 'presentAt' in each ? [each.presentAt.who, each.presentAt.place] : 'read' in each ? [each.read.role] : []) if (rule.roles[role]) places.add(role);
       } else if ('across' in each && rule.roles[each.group] && isWorldRole(rule.roles[each.group]!)) places.add(each.group);
       else if ('read' in each) reads.push(each.read);
-      else if ('history' in each) reads.push(each.of);
+      else if ('history' in each && !ofWorld(each.of.role)) reads.push(each.of);
       else if ('distance' in each) reads.push(each.distance, ...(each.to ? [each.to] : []));
       else if ('reachable' in each) reaches.push(each.reachable);
       else if ('within' in each) windows.push(each.within);
@@ -188,6 +179,35 @@ export function ruleUses(written: Rule): {
   // Each trigger by its kind's fields (kinds/triggers.ts): the events it waits for.
   const events = rule.when.flatMap((trigger) => eventsIn(trigger, triggerSpec(trigger).fields));
   return { reads, events, awaits, calls, reaches: [...new Set(reaches)], writes, starts: [...new Set(starts)], groups: [...new Set(groups)], windows, world, places: [...places] };
+}
+
+/**
+ * The kinds of place a role may be, by what the rule does with it: the
+ * kinds every field naming it takes, and every fact read of it has — a role
+ * whose mode is read, or set, is a home. Every kind, when nothing narrows
+ * it; none, when what it asks of it no place is.
+ */
+export function placeKindsOf(rule: Rule, role: string): PlaceKind[] {
+  let kinds: PlaceKind[] = [...PLACE_KINDS];
+  const narrow = (allowed: readonly PlaceKind[]) => (kinds = kinds.filter((kind) => allowed.includes(kind)));
+  const fields = (construct: object, specs: readonly FieldSpec[]) => {
+    for (const field of specs) if (field.type.type === 'place' && field.type.kinds && fieldValue(construct, field) === role) narrow(field.type.kinds);
+  };
+  for (const trigger of rule.when) fields(trigger, triggerSpec(trigger).fields);
+  const steps = (list: readonly Step[]): void => {
+    for (const step of list) {
+      fields(step, stepSpec(step).fields);
+      for (const branch of branchesOf(step)) steps(branch.steps);
+    }
+  };
+  for (const list of stepListsOf(rule)) steps(list.steps);
+  for (const top of ruleExpressions(rule)) {
+    for (const each of expressionsIn(top)) {
+      const fact = 'read' in each && each.read.role === role ? placeFact(each.read.means) : null;
+      if (fact) narrow(fact.kinds);
+    }
+  }
+  return kinds;
 }
 
 /** The events a construct names, by its fields: each with the role whose part raises it — the field its event field names. */
@@ -239,7 +259,7 @@ export const hasConditions = (rule: Rule): boolean => rule.when.some((trigger) =
  * a condition, and does what it does at once — so looking again and putting
  * back what was switched against it is the same as running it.
  */
-export const keepsSo = (rule: Rule): boolean => hasConditions(rule) && !takesSteps(rule);
+export const keepsSo = (rule: Rule): boolean => hasConditions(rule) && !takesSteps(rule) && stepListsOf(rule).every((list) => list.steps.every((step) => stepSpec(step).kept === true));
 
 /** Whether a rule reads anything of this role: its `becomes` triggers are evaluated when that part's readings move. */
 export const readsRole = (rule: Rule, role: string): boolean => ruleUses(rule).reads.some((read) => read.role === role);

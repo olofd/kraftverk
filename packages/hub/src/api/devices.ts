@@ -1,3 +1,4 @@
+import { standingProblem, turnOf } from '@kraftverk/map/limits';
 import { DEVICE_ROLES } from '@kraftverk/store';
 import { forgetCarriedTrails, positionHidden, readerOf } from '../presence/levels.ts';
 import { ApiError, type Caller, type ChangesQuery, type DeviceTypeListing, type HistoryQuery, type KraftverkApi } from '@kraftverk/api-contract';
@@ -169,11 +170,10 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
         } else {
           const space = hub.spaces.space(placement.spaceId);
           if (!space || space.removedAt) throw new ApiError('invalid', 'No such space');
-          for (const [name, value, most] of [['x', placement.x, 10_000], ['y', placement.y, 10_000], ['z', placement.z, 1_000]] as const)
-            if (value !== undefined && value !== null && !(Number.isFinite(value) && Math.abs(value) <= most)) throw new ApiError('invalid', `${name} is metres, within ${most}`);
-          if (placement.facing !== undefined && placement.facing !== null && !(placement.facing >= 0 && placement.facing < 360)) throw new ApiError('invalid', 'Facing is degrees, from 0 to 360');
+          const standing = standingProblem({ x: placement.x ?? null, y: placement.y ?? null, z: placement.z ?? null, facing: placement.facing ?? null });
+          if (standing) throw new ApiError('invalid', standing);
           try {
-            hub.spaces.place(device.id, placement, by);
+            hub.spaces.place(device.id, { ...placement, ...(placement.facing !== undefined && placement.facing !== null ? { facing: turnOf(placement.facing) } : {}) }, by);
           } catch (error) {
             throw new ApiError('invalid', (error as Error).message);
           }

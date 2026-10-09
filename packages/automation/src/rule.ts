@@ -149,15 +149,31 @@ export const ANYONE = 'someone';
 /** Everyone in the family, as `notify` names who it tells: `notify: everyone`. */
 export const EVERYONE = 'everyone';
 
+/** The kinds of place: a home, a zone, a space of a home — a floor, a room. */
+export const PLACE_KINDS = ['home', 'zone', 'space'] as const;
+
+export type PlaceKind = (typeof PLACE_KINDS)[number];
+
+/** One fact of a place: what it is, the kinds of place that have it, and how a sentence says it of one — "how many of the family are at". */
+export type PlaceFactSpec = { label: string; value: { type: 'number' } | { type: 'boolean' } | { type: 'mode'; axis: ModeAxis }; kinds: readonly PlaceKind[] };
+
 /**
  * What is so of a place now, read as a part's reading is — `home.people`,
  * `bathroom.occupied`, `home.presence == "away"`: how many of the family
  * are there, as far as each shares; whether anyone is, whoever they are;
- * and a home's mode on each axis, by its key.
+ * and a home's mode on each axis, by its key — a home's alone.
  */
-export const PLACE_FACTS = { people: 'How many of the family are there', occupied: 'Whether anyone is there', presence: 'Its mode of presence: home, away, vacation', day: 'Its mode of the day: day, evening, night' } as const;
+export const PLACE_FACTS = {
+  people: { label: 'How many of the family are there', value: { type: 'number' }, kinds: PLACE_KINDS },
+  occupied: { label: 'Whether anyone is there', value: { type: 'boolean' }, kinds: PLACE_KINDS },
+  presence: { label: 'Its mode of presence: home, away, vacation', value: { type: 'mode', axis: 'presence' }, kinds: ['home'] },
+  day: { label: 'Its mode of the day: day, evening, night', value: { type: 'mode', axis: 'day' }, kinds: ['home'] },
+} as const satisfies Record<string, PlaceFactSpec>;
 
 export type PlaceFact = keyof typeof PLACE_FACTS;
+
+/** A place fact by its name, if it is one. */
+export const placeFact = (name: string): PlaceFactSpec | null => (Object.hasOwn(PLACE_FACTS, name) ? PLACE_FACTS[name as PlaceFact] : null);
 
 /** A home's two axes of mode: whether anyone is home, and the time of day. */
 export { MODE_AXES as AXES } from '@kraftverk/device-sdk';
@@ -239,9 +255,9 @@ export type Trigger =
   /** When someone leaves a place, as presence says: the same `who` and `at`. */
   | { leaves: { who: string; at: string } }
   /** When the first of the family — or, with `of`, of several people — comes to a place none of them was at. */
-  | { firstArrives: { at: string; of?: string } }
+  | { firstArrives: { at: string; of?: string; heldFor?: Expr } }
   /** When the last of the family — or of several people — leaves a place: nobody of them is there. */
-  | { lastLeaves: { at: string; of?: string } }
+  | { lastLeaves: { at: string; of?: string; heldFor?: Expr } }
   /** When a place has nobody in it, whoever they were — and, with `heldFor`, has had nobody that long. */
   | { empties: { place: string; heldFor?: Expr } }
   /** When a place has someone in it, whoever they are — and, with `heldFor`, has had for that long. */

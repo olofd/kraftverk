@@ -188,6 +188,7 @@ export class Configuration {
   async kept(before: string | null): Promise<string> {
     const keptBefore = before ? (readConfig(before).document?.secrets ?? {}) : {};
     const { document } = await exportConfig(this.#deps, { secrets: 'kept', keptBefore });
+    // A copy that leaves out what does not check would lose it in a restore: the copy before stays, and this says why.
     const issues = checkDocument(document, this.vocabulary(), { hasSecret: () => true });
     if (issues.length) throw new Error(`What the home holds does not check, so the copy kept before is left as it is: ${issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ')}`);
     return writeConfig(document, { heading: KEPT_HEADING });

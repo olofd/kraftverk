@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import type { AutomationSettings } from '@kraftverk/api-client/config';
-import { changeAutomation, describeError, withConfirmation, type AutomationDraftView, type AutomationView } from '@kraftverk/api-client';
-import { capitalise, fillWorld, isAutomationRole, isGroupRole, isPartRole, OTHERWISE, pruned, roleKind, rolesOf, sameParts, THEN, WHILE_RUNNING, type ProblemArea, type RoleBinding, type WhileRunning } from '@kraftverk/automation';
+import { changeAutomation, describeError, fillChoices, withConfirmation, type AutomationDraftView, type AutomationView } from '@kraftverk/api-client';
+import { capitalise, fillWorld, isAutomationRole, isGroupRole, isPartRole, OTHERWISE, placeKindsOf, pruned, roleKind, rolesOf, sameFill, sameParts, THEN, WHILE_RUNNING, type ProblemArea, type RoleBinding, type WhileRunning } from '@kraftverk/automation';
 import { capabilitiesOf, configDefaults, meetsNeed } from '@kraftverk/device-sdk';
 import { Card, Chips, haptic, Icon, SchemaForm, SegmentedControl } from '@kraftverk/ui';
 
@@ -22,7 +22,7 @@ import { BlockList } from './Blocks';
 import { EditorProvider, useEditor, useEditorKit, type Draft } from './context';
 import { GroupParts } from './GroupParts';
 import { OnlyIf, Triggers } from './Triggers';
-import { fillChoices, useWorldOptions } from './world';
+import { useWorldOptions } from './world';
 
 /*
   An automation being changed, or made (docs/AUTOMATIONS-UX.md): the same
@@ -71,6 +71,8 @@ export function AutomationForm({
   const { kit, automations, error } = useEditorKit();
   const world = useWorldOptions();
   const [draft, setDraft] = useState<Draft>(initial);
+  /** The home it is for, as its YAML may say anew: whose rooms its blocks offer. */
+  const [homeId, setHomeId] = useState<string | null>(existing?.homeId ?? null);
   const title = existing ? existing.name : 'New automation';
 
   // Its devices too, before it is drawn: what fills each role is named from them, in the form and in its YAML.
@@ -91,9 +93,10 @@ export function AutomationForm({
         functions: kit.functions,
         prefer: prefer ?? null,
         world,
+        homeId,
       }}
     >
-      <Editing existing={existing} initial={initial} madeFrom={madeFrom} back={back} title={title} view={view ?? 'form'} onSaved={onSaved} onCancel={onCancel} onView={onView} />
+      <Editing existing={existing} initial={initial} madeFrom={madeFrom} back={back} title={title} view={view ?? 'form'} onSaved={onSaved} onCancel={onCancel} onView={onView} onHome={setHomeId} />
     </EditorProvider>
   );
 }
@@ -108,6 +111,7 @@ function Editing({
   onSaved,
   onCancel,
   onView,
+  onHome,
 }: {
   existing: AutomationView | null;
   initial: Draft;
@@ -118,6 +122,8 @@ function Editing({
   onSaved: (automation: AutomationView) => void;
   onCancel: () => void;
   onView?: (view: View) => void;
+  /** Its home, as its YAML says it now. */
+  onHome: (homeId: string | null) => void;
 }) {
   const { api } = useFamily();
   const tone = useTone();
@@ -134,6 +140,8 @@ function Editing({
     [existing]
   );
   const [settings, setSettings] = useState<AutomationSettings>(before);
+  // Its home said anew in its YAML: the rooms its blocks offer are that home's.
+  useEffect(() => onHome(settings.homeId), [settings.homeId]);
   const settingsChanged = (Object.keys(before) as (keyof AutomationSettings)[]).filter((name) => settings[name] !== before[name]);
 
   // Written as YAML instead: the same draft, read back from the text as soon as it reads right.
@@ -492,7 +500,7 @@ function Uses({ problems }: { problems: readonly string[] }) {
               label={spec.label}
               chosen={fill ? editor.name(role) : null}
               placeholder={kind === 'place' ? 'Choose a place' : kind === 'person' ? 'Choose someone' : 'Choose who'}
-              options={fillChoices(editor.world, kind).map((choice) => ({ key: choice.key, title: choice.title, ...(choice.subtitle ? { subtitle: choice.subtitle } : {}), value: choice.fill, selected: JSON.stringify(fill) === JSON.stringify(choice.fill) }))}
+              options={fillChoices(editor.world, kind, { kinds: placeKindsOf(editor.draft.rule, role), homeId: editor.homeId }).map((choice) => ({ key: choice.key, title: choice.title, ...(choice.subtitle ? { subtitle: choice.subtitle } : {}), value: choice.fill, selected: fill ? sameFill(fill, choice.fill) : false }))}
               onPick={(next) => editor.change((draft) => fillWorld(draft, role, next))}
             />
           </YStack>

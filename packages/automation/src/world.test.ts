@@ -4,10 +4,11 @@ import { BUILT_IN_MODES } from '@kraftverk/device-sdk';
 
 import { checkRule } from './check.ts';
 import { describeRule, describeTriggers } from './describe.ts';
-import { evaluateNow, type RuleScope } from './evaluate.ts';
+import { roleName } from './draft.ts';
+import { evaluateNow, inlineParams, type RuleScope } from './evaluate.ts';
 import { edgeOf } from './kinds/triggers.ts';
-import { parseMessage, sayMessage } from './message.ts';
-import { ruleUses } from './reads.ts';
+import { mapMessage, parseMessage, sayMessage } from './message.ts';
+import { keepsSo, placeKindsOf, ruleUses } from './reads.ts';
 import type { Rule } from './rule.ts';
 import { parseExpr, printExpr } from './text/expr.ts';
 import { ruleFromConfig, ruleToConfig } from './text/rules.ts';
@@ -93,7 +94,7 @@ describe('what starts it, and what it does', () => {
       'When the home’s time of day changes',
     ]);
     const without = read({ when: [{ 'mode becomes': 'night' }], do: [{ notify: 'olof', title: '{run.who} is here' }] }).rule;
-    expect(checkRule(without, NO_FUNCTIONS)).toEqual(['then[0].notify.title{0}: run.who is who arriving or leaving started it, but nothing that starts it is someone arriving or leaving']);
+    expect(checkRule(without, NO_FUNCTIONS)).toEqual(['then[0].notify.title{1}: run.who is who arriving or leaving started it, but nothing that starts this is someone arriving or leaving']);
   });
 
   test('set mode and notify: checked as their fields hold, said in words', () => {
@@ -150,5 +151,68 @@ describe('who is where, evaluated', () => {
     const written = ruleToConfig(got.rule!, got.uses);
     expect(written.uses).toMatchObject({ olof: { person: 'olof' }, children: { people: ['anna', 'ben'] }, family: { people: 'everyone' }, work: { zone: 'work' }, bathroom: { space: 'bathroom' } });
     expect(parse(JSON.stringify(written.when))).toEqual(body.when);
+  });
+});
+
+describe('the review, held to', () => {
+  test('values in a message are settled with the settings, and read as each part of a group', () => {
+    const recipe: Rule = {
+      roles: { chargers: { label: 'Chargers', capabilities: ['switch', 'powerMeter'], group: true }, family: { people: true, label: 'Family' } },
+      params: { fields: { low: { type: 'number', title: 'Low', unit: 'W', min: 0, max: 100, default: 5 } } },
+      when: [{ at: { value: '07:00' } }],
+      then: [{ forEach: { as: 'charger', in: 'chargers', steps: [{ notify: { to: 'family', title: 'Below {setting.low}: {charger.power}' } }] } }],
+    };
+    const copied = inlineParams(recipe, {});
+    expect(JSON.stringify(copied.then)).toContain('Below {5 W}: {charger.power}');
+    expect(checkRule({ ...copied, params: { fields: {} } }, NO_FUNCTIONS)).toEqual([]);
+    expect(ruleUses(recipe).reads).toEqual([{ role: 'chargers', means: 'power' }]);
+  });
+
+  test('a message: a brace within quotes is the value’s, one alone is a mistake, and where it goes wrong is where it is', () => {
+    expect(parseMessage('Started by {run.trigger == "}"}')).toMatchObject({ ok: true });
+    expect(parseMessage('a } b')).toEqual({ ok: false, error: { message: 'A "}" alone: write "}}" for one in the words', offset: 2 } });
+    const wrong = parseMessage('a {  station.  } b');
+    expect(wrong.ok ? null : wrong.error.offset).toBe(13);
+    expect(mapMessage('{{x}} is {setting.low}', () => ({ value: 5, unit: 'W' }))).toBe('{{x}} is {5 W}');
+  });
+
+  test('a role is never named as a word of the language: a home called Home is not the automation’s own', () => {
+    const rule: Rule = { roles: {}, params: { fields: {} }, when: [], then: [] };
+    expect(roleName(rule, 'Home')).toBe('home2');
+    expect(roleName(rule, 'Everyone')).toBe('everyone2');
+  });
+
+  test('a mode is a home’s: a role whose mode is waited for is a home', () => {
+    const rule = read({ when: [{ 'mode becomes': 'away', at: 'work' }], do: [{ 'turn off': 'fan' }] }).rule;
+    expect(placeKindsOf(rule, 'work')).toEqual(['home']);
+    expect(placeKindsOf(rule, 'bathroom')).toEqual(['home', 'zone', 'space']);
+  });
+
+  test('how it was is kept of what parts report, not of a place', () => {
+    const rule = read({ when: [{ 'mode becomes': 'away' }], 'only if': 'average(home.people, 1 h) > 1', do: [{ 'turn off': 'fan' }] }).rule;
+    expect(checkRule(rule, NO_FUNCTIONS)).toEqual(['if.left: how it was is kept of what a part reports, not of a place or a person']);
+    expect(ruleUses(rule).reads).toEqual([]);
+  });
+
+  test('telling people is not kept so: looking again would tell them again', () => {
+    const turns = read({ when: [{ 'last leaves': 'home' }], do: [{ 'turn off': 'fan' }] }).rule;
+    const tells = read({ when: [{ 'last leaves': 'home' }], do: [{ 'turn off': 'fan' }, { notify: 'family', title: 'Off' }] }).rule;
+    expect([keepsSo(turns), keepsSo(tells)]).toEqual([true, false]);
+  });
+
+  test('run.who where someone arriving starts that very list: a trigger’s own steps, or the automation’s from those without', () => {
+    const own = read({ when: [{ arrives: 'someone', at: 'home', do: [{ notify: 'family', title: '{run.who}' }] }, { 'mode becomes': 'night', do: [{ notify: 'family', title: '{run.who}' }] }] }).rule;
+    expect(checkRule(own, NO_FUNCTIONS)).toEqual(['when[1].then[0].notify.title{1}: run.who is who arriving or leaving started it, but nothing that starts this is someone arriving or leaving']);
+  });
+
+  test('in words: one of several arriving; the home as a place; the last, and how long nobody is back', () => {
+    const rule = read({ when: [{ arrives: 'children', at: 'home' }, { arrives: 'family', at: 'home' }, { empties: 'home' }, { 'last leaves': 'home', for: '5 min' }], do: [{ 'turn off': 'fan' }] }).rule;
+    expect(describeTriggers(rule, {}, (role) => (role === 'family' ? 'everyone' : role === 'children' ? 'Anna and Ben' : role))).toEqual([
+      'When one of Anna and Ben arrives home',
+      'When anyone in the family arrives home',
+      'When nobody is in the home any more',
+      'When the last of the family leaves home and nobody is back within 5 min',
+    ]);
+    expect(edgeOf(rule.when[3]!)?.heldFor).toEqual({ value: 5, unit: 'min' });
   });
 });

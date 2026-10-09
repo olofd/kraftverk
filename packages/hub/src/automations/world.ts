@@ -1,7 +1,7 @@
 import type { AuditRecord, Actor, Clock } from '@kraftverk/device-sdk';
 import { REAL_CLOCK } from '@kraftverk/device-sdk';
 import type { EnginePlace, EngineWorld } from '@kraftverk/automation-engine';
-import type { RuleMode, WorldFill } from '@kraftverk/automation';
+import { PLACE_KINDS, type PlaceKind, type RuleMode, type WorldFill } from '@kraftverk/automation';
 import type { ModeStore, NotificationStore, OccupancyStore, PeopleStore, PlaceStore, PresenceStore, SpaceStore } from '@kraftverk/store';
 
 import type { Modes } from '../modes/modes.ts';
@@ -153,7 +153,7 @@ export function familyWorld(deps: WorldDeps): EngineWorld & WorldDirectory {
  * everyone — a place not let go; a space, of the automation's home. Null:
  * it is; else why not.
  */
-export function worldFillProblem(directory: WorldDirectory, label: string, kind: 'person' | 'people' | 'place', fill: WorldFill | undefined, homeId: string | null): string | null {
+export function worldFillProblem(directory: WorldDirectory, label: string, kind: 'person' | 'people' | 'place', fill: WorldFill | undefined, homeId: string | null, kinds: readonly PlaceKind[] = PLACE_KINDS): string | null {
   if (!fill) return `${label}: choose ${kind === 'place' ? 'a place' : kind === 'person' ? 'someone' : 'who'}`;
   if (kind === 'person') return 'person' in fill && directory.member(fill.person) ? null : `${label}: choose someone in the family`;
   if (kind === 'people') {
@@ -162,6 +162,8 @@ export function worldFillProblem(directory: WorldDirectory, label: string, kind:
     return fill.people.every((id) => directory.member(id)) ? null : `${label}: someone chosen is not in the family`;
   }
   if (!('place' in fill) || !directory.place(fill.place, fill.kind)) return `${label}: choose a home, a zone or a room that is there`;
+  // What the rule asks of it: a mode is a home's.
+  if (!kinds.includes(fill.kind)) return `${label}: choose ${kinds.length === 1 ? { home: 'a home', zone: 'a zone', space: 'a room' }[kinds[0]!] : kinds.map((each) => ({ home: 'a home', zone: 'a zone', space: 'a room' })[each]).join(' or ')}`;
   // A room is of a home: the automation's own — one for the whole family names its home first.
   if (fill.kind === 'space' && directory.homeOfSpace(fill.place) !== homeId) return homeId ? `${label}: choose a room of the automation’s own home` : `${label}: a room is of a home — say which home the automation is for`;
   return null;

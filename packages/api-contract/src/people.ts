@@ -78,6 +78,13 @@ export type SharingChanges = { level?: SharingLevel; keepDays?: number; pausedUn
 export type PersonView = {
   id: string;
   name: string;
+  /**
+   * How the family's configuration names them: a key made from their name,
+   * for a member with a key of their own — what their file entry is, and
+   * what an automation's `uses:` says. Null for one with none yet: a file
+   * names them by their id.
+   */
+  fileKey: string | null;
   /** What screens call them: this family's nickname, their own short name, or their name. */
   shownAs: string;
   shortName: string | null;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { automationYaml, draftOfEntry, readAutomationText, type AutomationSettings } from '@kraftverk/api-client/config';
+import { automationYaml, draftOfEntry, readAutomationText, worldKeysOf, type AutomationSettings } from '@kraftverk/api-client/config';
 import { type AutomationView, type DeviceView } from '@kraftverk/api-client';
 import type { RoleFills } from '@kraftverk/automation';
 import type { Rule } from '@kraftverk/automation';
@@ -9,7 +9,6 @@ import { entryJsonSchema } from '@kraftverk/home-file';
 import type { TextProblem } from '../../components/ProblemList';
 import { useAnswer } from '../../components/useAnswer';
 import { useFamily } from '../../state/FamilyProvider';
-import { useWorldKeys } from './useWorldKeys';
 
 /** What the form edits: its name, rule, and what fills each role. */
 type Draft = { name: string; rule: Rule } & RoleFills;
@@ -42,8 +41,11 @@ export function useAutomationYaml({
   const { api } = useFamily();
   // What a file may name here — the installed types, the keys of what you have — read once.
   const { value: vocabulary, error } = useAnswer(() => api.configuration.vocabulary(), [api], { failure: 'What a configuration may name could not be read' });
-  const world = useWorldKeys();
+  // Who and where a file names, by key: from the same vocabulary its checks read — one read, never out of step.
+  const world = useMemo(() => (vocabulary ? worldKeysOf(vocabulary) : null), [vocabulary]);
   const [text, setText] = useState('');
+  /** What was asked to be opened before the vocabulary came: written out once it does, never without who and where. */
+  const waiting = useRef<{ draft: Draft; settings: AutomationSettings } | null>(null);
   const [problems, setProblems] = useState<TextProblem[]>([]);
   /** Typed, and not read yet: nothing can be saved until it is. */
   const [reading, setReading] = useState(false);
@@ -53,12 +55,20 @@ export function useAutomationYaml({
   /** The draft and its settings, written out: what the editor opens with. */
   const open = useCallback(
     (draft: Draft, settings: AutomationSettings) => {
-      setText(automationYaml({ ...draft, madeFrom, ...settings }, devices, automations, [], world));
       setProblems([]);
       setReading(false);
+      if (!world) {
+        waiting.current = { draft, settings };
+        return;
+      }
+      waiting.current = null;
+      setText(automationYaml({ ...draft, madeFrom, ...settings }, devices, automations, world));
     },
     [madeFrom, devices, automations, world]
   );
+  useEffect(() => {
+    if (world && waiting.current) open(waiting.current.draft, waiting.current.settings);
+  }, [world, open]);
 
   const change = useCallback((next: string) => {
     setText(next);
@@ -67,14 +77,14 @@ export function useAutomationYaml({
 
   // Read a moment after each change: into the draft when it reads right, its problems placed where it does not.
   useEffect(() => {
-    if (!reading || !vocabulary) return;
+    if (!reading || !vocabulary || !world) return;
     const timer = setTimeout(() => {
       const result = readAutomationText(text, automationKey, vocabulary);
       const found: TextProblem[] = [...result.problems];
       if (madeFromFixed && result.entry && result.entry.madeFrom !== madeFrom) found.push({ message: madeFrom ? `"made from" says where it was copied from: ${madeFrom}. It does not change` : '"made from" says which recipe it was copied from: it was built from nothing', line: null, column: null });
       setProblems(found);
       setReading(false);
-      if (result.entry && !found.length) read.current({ ...draftOfEntry(result.entry, devices, automations, [], world), key: result.key !== automationKey ? result.key : null, madeFrom: result.entry.madeFrom });
+      if (result.entry && !found.length) read.current({ ...draftOfEntry(result.entry, devices, automations, world), key: result.key !== automationKey ? result.key : null, madeFrom: result.entry.madeFrom });
     }, 200);
     return () => clearTimeout(timer);
   }, [reading, text, vocabulary, automationKey, madeFrom, madeFromFixed, devices, automations, world]);

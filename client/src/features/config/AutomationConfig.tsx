@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button, XStack, YStack } from 'tamagui';
 
-import { automationYaml } from '@kraftverk/api-client/config';
+import { automationYaml, worldKeysOf } from '@kraftverk/api-client/config';
 import { changeAutomation, describeError, type AutomationView } from '@kraftverk/api-client';
 import { haptic, Icon, RowSeparator } from '@kraftverk/ui';
 
@@ -12,7 +12,6 @@ import { useFamily } from '../../state/FamilyProvider';
 import { Group } from '../automations/page/Group';
 import { ExportOne } from './ExportOne';
 import { KeyField } from './KeyField';
-import { useWorldKeys } from './useWorldKeys';
 
 /**
  * An automation as configuration (docs/CONFIG.md), on its page: the key a
@@ -26,7 +25,6 @@ export function AutomationConfig({ automation, onChanged, onEditYaml }: { automa
   const [shown, setShown] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const world = useWorldKeys();
 
   const show = async () => {
     haptic();
@@ -34,8 +32,8 @@ export function AutomationConfig({ automation, onChanged, onEditYaml }: { automa
     setProblem(null);
     try {
       // The devices that fill its roles and the automations it starts, by their keys: read now, so none is missed while the app's own list is still coming.
-      const [devices, others] = await Promise.all([api.devices.list(), Object.keys(automation.starts).length ? api.automations.list() : Promise.resolve([])]);
-      setShown(automationYaml({ ...automation, madeFrom: automation.madeFrom?.id ?? null }, devices, others, [], world));
+      const [devices, others, vocabulary] = await Promise.all([api.devices.list(), Object.keys(automation.starts).length ? api.automations.list() : Promise.resolve([]), api.configuration.vocabulary()]);
+      setShown(automationYaml({ ...automation, madeFrom: automation.madeFrom?.id ?? null }, devices, others, worldKeysOf(vocabulary)));
     } catch (err) {
       setProblem(describeError(err) || 'It could not be read');
     }

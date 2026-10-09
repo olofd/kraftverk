@@ -152,8 +152,8 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
         const spec = rule.roles[role];
         if (role === OWN_HOME || (spec && isPlaceRole(spec))) {
           if (means === 'people') return `how many of the family are ${atPlace(role, name)}`;
-          if (means === 'occupied') return `someone is in ${name(role)}`;
-          return whose(name(role), means === 'day' ? 'time of day' : 'mode');
+          if (means === 'occupied') return role === OWN_HOME ? 'someone is in the home' : `someone is in ${name(role)}`;
+          return whose(role === OWN_HOME ? 'the home' : name(role), means === 'day' ? 'time of day' : 'mode');
         }
         return whose(name(role), standardMeaning(means)?.label.toLowerCase() || means || 'reading');
       }
@@ -310,6 +310,10 @@ export function describeTriggers(rule: Rule, params: Readonly<Record<string, Val
     seconds: (expr) => secondsNow(expr, settledScope(rule, params)),
     days: daysText,
     name,
+    many: (role) => {
+      const spec = rule.roles[role];
+      return Boolean(spec && (isPeopleRole(spec) || isGroupRole(spec)));
+    },
     mode: (key) => modeWords(key, vocabulary),
     event: (role, event) => eventWords(rule, role, event),
   };

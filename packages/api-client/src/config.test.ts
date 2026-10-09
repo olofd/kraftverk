@@ -4,7 +4,7 @@ import type { Vocabulary } from '@kraftverk/home-file';
 import { automationId, MAIN_PART, savedDeviceId } from '@kraftverk/device-sdk';
 import type { Rule } from '@kraftverk/automation';
 
-import { automationYaml, deviceYaml, draftOfEntry, readAutomationText } from './config.ts';
+import { worldKeysOf, automationYaml, deviceYaml, draftOfEntry, readAutomationText } from './config.ts';
 import type { DeviceView } from '@kraftverk/api-contract';
 
 /*
@@ -50,6 +50,9 @@ const VOCABULARY: Vocabulary = {
   devices: [{ key: 'scooter-plug', type: 'acme.plug', name: 'Scooter plug', parts: ['main'] }],
   automations: [{ key: 'night', name: 'Night' }],
   homes: [],
+  people: [],
+  zones: [],
+  spaces: [],
 };
 
 const rule: Rule = {
@@ -74,16 +77,19 @@ const automation = {
   recheckMinutes: null,
 };
 
+/** A family nobody in this test names. */
+const NO_WORLD = { people: [], places: [] };
+
 describe('an automation as YAML, in the app', () => {
   test('is written as the server writes it, and read back to the draft it came from', () => {
-    const text = automationYaml(automation, [plug], []);
+    const text = automationYaml(automation, [plug], [], NO_WORLD);
     expect(text).toContain('mode: act');
     // It reads the plug's power as well as switching it: what it needs is said.
     expect(text).toContain('  charger:\n    part: scooter-plug\n    needs:\n      - switch\n      - powerMeter\n');
     expect(text).toContain('wait until: charger.power > 50 W');
     const read = readAutomationText(text, 'charge', VOCABULARY);
     expect(read.problems).toEqual([]);
-    const { draft, settings } = draftOfEntry(read.entry!, [plug], []);
+    const { draft, settings } = draftOfEntry(read.entry!, [plug], [], NO_WORLD);
     expect(draft).toEqual({ name: 'Charge', rule, roles: automation.roles, groups: {}, starts: {}, world: {} });
     expect(settings).toEqual({ mode: 'act', homeId: null, timeZone: 'Europe/Stockholm', recheckMinutes: null });
   });
@@ -95,8 +101,40 @@ describe('an automation as YAML, in the app', () => {
     expect(read.problems).toEqual([{ message: 'There is no device "cellar-plug", in the file or on the server', path: ['uses', 'charger'], line: 4, column: 12 }]);
     const fine = readAutomationText(text.replace('cellar-plug', 'scooter-plug'), 'charge', VOCABULARY);
     expect(fine.problems).toEqual([]);
-    const { draft } = draftOfEntry(fine.entry!, [plug], [{ id: automationId('a-night'), key: 'night' }]);
+    const { draft } = draftOfEntry(fine.entry!, [plug], [{ id: automationId('a-night'), key: 'night' }], NO_WORLD);
     expect(draft.starts).toEqual({ later: automationId('a-night') });
+  });
+
+  test('who and where by their keys, its home kept: written and read back the same — a room of the cabin, not the house', () => {
+    const world = worldKeysOf({
+      homes: [
+        { id: 'h-house', key: 'house', name: 'House' },
+        { id: 'h-cabin', key: 'cabin', name: 'Cabin' },
+      ],
+      people: [
+        { id: 'p-anna', key: 'anna', name: 'Anna' },
+        { id: 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0KK', key: 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0KK', name: 'Kim' },
+      ],
+      zones: [],
+      spaces: [
+        { id: 's-house-kitchen', key: 'kitchen', name: 'Kitchen', home: 'house' },
+        { id: 's-cabin-kitchen', key: 'kitchen', name: 'Kitchen', home: 'cabin' },
+      ],
+    });
+    const rule: Rule = {
+      roles: { kitchen: { place: true, label: 'Kitchen' }, told: { people: true, label: 'Told' } },
+      params: { fields: {} },
+      when: [{ empties: { place: 'kitchen' } }],
+      then: [{ notify: { to: 'told', title: 'Empty' } }],
+    };
+    const cabin = { ...automation, rule, roles: {}, homeId: 'h-cabin', world: { kitchen: { place: 's-cabin-kitchen', kind: 'space' as const }, told: { people: ['p-anna', 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0KK'] } } };
+    const text = automationYaml(cabin, [], [], world);
+    expect(text).toContain('home: cabin');
+    const read = readAutomationText(text, 'charge', { ...VOCABULARY, homes: [{ id: 'h-house', key: 'house', name: 'House' }, { id: 'h-cabin', key: 'cabin', name: 'Cabin' }], people: [{ id: 'p-anna', key: 'anna', name: 'Anna' }, { id: 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0KK', key: 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0KK', name: 'Kim' }], spaces: [{ id: 's-cabin-kitchen', key: 'kitchen', name: 'Kitchen', home: 'cabin' }] });
+    expect(read.problems).toEqual([]);
+    const { draft, settings } = draftOfEntry(read.entry!, [], [], world);
+    expect(settings.homeId).toBe('h-cabin');
+    expect(draft.world).toEqual(cabin.world);
   });
 });
 

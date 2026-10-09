@@ -19,6 +19,7 @@ import {
   takesSteps,
   triggerKey,
   triggerKind,
+  triggerSpec,
   type RuleTrigger,
   type Rule,
   type Trigger,
@@ -44,7 +45,10 @@ import type { TriggerState } from './storage.ts';
 const GRACE_MS = 60 * 60_000;
 
 /** The triggers of people and places that are a change seen, not a state found: none fires for how things already are. */
-const WORLD_EDGES: ReadonlySet<string> = new Set(['firstArrives', 'lastLeaves', 'empties', 'occupied']);
+const seenNotFound = (trigger: RuleTrigger): boolean => {
+  const spec = triggerSpec(trigger);
+  return spec.starts === 'edge' && spec.world;
+};
 
 export class Triggers {
   #ticking = false;
@@ -314,7 +318,7 @@ export class Triggers {
       // Nothing kept: as if it had been false, so a condition already true is its edge — but people and places:
       // "when the last one leaves" is a change seen, not a state found. Made while nobody is home, it waits for the next.
       const kept = this.deps.store.trigger(automation.id, triggerKey(trigger, index));
-      const found = kept ?? (WORLD_EDGES.has(triggerKind(trigger)) ? { last: now, heldSince: null, fired: now } : { last: false, heldSince: null, fired: false });
+      const found = kept ?? (seenNotFound(trigger) ? { last: now, heldSince: null, fired: now } : { last: false, heldSince: null, fired: false });
       entry = { state: found, hold: null };
       this.#becoming.set(key, entry);
       if (!kept && found.last) this.deps.store.keepTrigger(automation.id, triggerKey(trigger, index), found);

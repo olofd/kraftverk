@@ -338,6 +338,7 @@ export function parseExpr(text: string): Parsed {
         return { memory: name.value };
       }
     }
+    if (token.value === ANYONE || token.value === EVERYONE) throw new Failure(`"${token.value}" is said of what starts it, or who is told: how many are at a place is home.people — someone is home when home.people > 0`, token.at);
     if (KEYWORDS.has(token.value)) throw new Failure(`"${token.value}" cannot start a value`, token.at);
     // Each part of a group, taken together: "any(c in chargers: c.power > 10 W)" — a name for each part, its group, what is said of each.
     if (isSymbol('(') && isAcrossFn(token.value) && tokens[index + 1]?.kind === 'name' && isWord('in', tokens[index + 2])) {

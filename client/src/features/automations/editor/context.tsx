@@ -6,7 +6,7 @@ import { capabilitiesOf, meetsNeed, type CapabilityNeed, type DeviceDescription,
 
 import { useAnswer } from '../../../components/useAnswer';
 import { useFamily } from '../../../state/FamilyProvider';
-import type { WorldOptions } from './world';
+import type { WorldOptions } from '@kraftverk/api-client';
 
 /** An automation as it is being built (`@kraftverk/automation`'s draft), and its name. */
 export type Draft = AutomationDraft & { name: string };
@@ -34,6 +34,8 @@ export type EditorKit = {
   prefer?: string | null;
   /** The family's people, places and modes: who and where a block may name. */
   world: WorldOptions;
+  /** The home it is for, as it stands: whose rooms a block may name. None: the family's first. */
+  homeId: string | null;
 };
 
 const EditorContext = createContext<EditorKit | null>(null);

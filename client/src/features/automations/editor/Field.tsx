@@ -9,7 +9,7 @@ import { blankCondition, ConditionField } from './Condition';
 import { pickPart, useEditor } from './context';
 import { GroupParts } from './GroupParts';
 import { DaysField, DurationField, durationOf, Label, NumberField, TimeField, type Measure } from './fields';
-import { placeChoices, whoChoices, type WorldChoice } from './world';
+import { placeChoices, whoChoices, type WorldChoice } from '@kraftverk/api-client';
 
 /*
   One field of a construct — a trigger's, a step's — drawn by what it holds
@@ -188,7 +188,7 @@ function FieldEditor<T extends object>({ field, fields, construct, set, path }: 
       // Who or where: a word for the whole family, a role the draft has, or one of the family's, made a role as it is picked.
       const current = typeof value === 'string' ? value : '';
       const choices: WorldChoice[] =
-        type.type === 'place' ? placeChoices(editor.world, editor.draft, editor.name) : whoChoices(editor.world, editor.draft, editor.name, { ...(type.type === 'who' && type.anyone ? { anyone: type.anyone } : {}), crowd: type.type === 'crowd' });
+        type.type === 'place' ? placeChoices(editor.world, editor.draft, editor.name, { ...(type.kinds ? { kinds: type.kinds } : {}), homeId: editor.homeId }) : whoChoices(editor.world, editor.draft, editor.name, { ...(type.type === 'who' && type.anyone ? { anyone: type.anyone } : {}), crowd: type.type === 'crowd' });
       const chosen = choices.find((choice) => choice.key === current || choice.key === `role:${current}`);
       return (
         <YStack gap="$1">

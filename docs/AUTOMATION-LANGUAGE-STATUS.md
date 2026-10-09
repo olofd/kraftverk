@@ -61,13 +61,24 @@ file, run by the engine, and shown in the editor at least in words.
 | A place now | `home.people`, `bathroom.occupied`, `home.presence`, `home.day` |
 | Who started it | `run.who` |
 | Arriving and leaving | `arrives: someone`, `leaves: anna`, `at: home` |
-| The first and the last | `first arrives: home`, `last leaves: home`, `of: children` — edges, held and kept across a restart as `becomes` is |
+| The first and the last | `first arrives: home`, `last leaves: home`, `of: children`, `for: 5 min` — edges, held and kept across a restart as `becomes` is; made while nobody is home, waiting for the next change |
 | Rooms | `empties: bathroom`, `is occupied: hallway`, `for: 10 min` |
 | Modes | `mode becomes: away`, `mode changes: day`, `at: cabin`; a `set mode` step |
 | Telling people | `notify: everyone`, `title: "{run.who} is home"`, `text:`, `level:` |
 
+Each trigger kind says how it starts a run (by the clock, as something
+happens, or as a condition turns true), whether the family's world moves
+it, and what a run it starts knows (`run.event`, `run.who`, checked per
+list of steps). A place fact says which kinds of place have it: a mode is
+a home's, so a role whose mode is read, waited for or set must be a home
+(`placeKindsOf`). Every walk over a rule asks a field for its expressions
+by its type (`field-exprs.ts`), so a message's `{…}` values are settled
+and read like any. Telling people is never kept so. Someone who shares too
+little to say is unknown, not away.
+
 The editor picks who and where from the family's people, homes, zones and
-rooms. The engine reads the world through its `EngineWorld` port, which the
+rooms — only the kinds a role may be, and only rooms of the automation's
+home (`api-client`'s `world-choices.ts`). The engine reads the world through its `EngineWorld` port, which the
 hub fills from presence, occupancy and modes, only as far as each person
 shares.
 

@@ -19,7 +19,7 @@ and check a file with the same code.
 
 ```yaml
 # yaml-language-server: $schema=http://<your server>/api/config/schema.json
-kraftverk: 15                     # the document's version: required
+kraftverk: 16                     # the document's version: required
 
 family: { name: The Examples, kind: family, locale: en-GB }
 
@@ -162,7 +162,8 @@ file names things by key; an import matches by key.
 A home's `spaces:` are a tree under the home itself — buildings, floors,
 rooms, areas, stairs, the outdoors — each by a key no other space of that
 home has (`site` is the home itself, and taken); only a floor has a `level`
-and an `elevation`. `openings:` join two spaces, or one and `outside`. A
+and an `elevation`. `openings:` join two spaces, or one and `outside` — the
+site, `site`, is one too: a gate in the fence joins `site` and `outside`. A
 device's `place:` names a home, perhaps a space of it — none: the home
 itself — perhaps an `opening` it is at, and where in the space: `at`,
 metres in its frame, a `height` above the floor and a `facing`; one that
@@ -170,7 +171,13 @@ moves says `based:` instead. A space may be drawn: its `outline`, its
 corners in metres in its own `frame` — an origin and a turn within its
 parent's, its parent's when it says none — and a floor its `plan`, a
 drawing placed in the floor's frame. The site's frame is the home's: its
-location and `bearing`. An opening's `shape` is where in the wall it is.
+location and `bearing`, degrees from north. An opening's `shape` is where
+in the wall it is. A home and a space may say their `icon`. Metres are
+within a kilometre of their frame's origin, an outline or a shape at most
+200 points, a drawing at most a metre a pixel, a turn any number of degrees
+— kept from 0 to below 360: the same limits the app's screens keep
+(`@kraftverk/map/limits`), so a file the API would refuse is refused as it
+is read.
 A drawing is a picture kept beside the file, as a home's is. `labels:` are the family's, each by key, and a device, a space or
 an automation names the ones it has. An import writes spaces before the
 devices standing in them, and adds or changes by key, never removing: a
@@ -265,7 +272,8 @@ describes.
     first known, `outdoor.temperature ?? 10 °C`;
   - the language's functions: `min(a, b, …)`, `max(…)`, `clamp(x, low, high)`,
     `round(x)`, `round(x, digits)`, `floor(x)`, `ceil(x)`, `abs(x)`;
-  - a reading over the time just gone, from what the home kept:
+  - a reading over the time just gone, from what the home kept — of what a
+    part reports, never of a place or a person:
     `average(station.charge, 1 h)`, `lowest(…)`, `highest(…)`,
     `change(station.charge, 30 min)` (how much it changed), `ago(…, 10 min)`
     (what it was then) — a minute to two weeks, a number or a setting;
@@ -292,8 +300,11 @@ describes.
   `{ automation: key }`. Who and where, of the family's world: a person
   `{ person: anna-example }`, some of them `{ people: [anna-example, …] }`
   — or everyone, `{ people: everyone }` — a home `{ home: cabin }`, a zone
-  `{ zone: work }`, a space of the automation's home `{ space: bathroom }`;
-  by the file's keys, so a home moved to another family reads as it should.
+  `{ zone: work }`, a space of the automation's home `{ space: bathroom }`
+  — the one it is for, or the family's first; by the file's keys, so a home
+  moved to another family reads as it should. A member with no key of their
+  own yet — not in the file's `people:` — is named by their id. A role
+  whose mode is read or waited for, or that a mode is set at, is a home.
   `home`, `someone` and `everyone` need no role: the automation's own home,
   anyone of the family, all of it. A role's label and what it needs come
   from what the rule does with it — the commands it is sent, the standard
@@ -503,6 +514,7 @@ nothing wrong — and write back the same.
 | 13 | Geometry: a space's `frame`, `outline` and — a floor's — `plan`; an opening's `shape`; where in a space a device stands (`at`, `height`, `facing`). Nothing older says them, so nothing changes |
 | 14 | The family's own modes (`modes:`, each by key with its `axis` — presence or day — its name and icon). The built-in ones are every family's and never written; which mode a home is in is not the file's. Nothing older says them, so nothing changes |
 | 15 | Automations of people and places: a role under `uses` may be filled by a person, people, everyone, a home, a zone or a space — `{ person: key }`, `{ people: [keys] }`, `{ people: everyone }`, `{ home: key }`, `{ zone: key }`, `{ space: key }` — and the language has their triggers, `set mode` and `notify`. Nothing older says them, so nothing changes |
+| 16 | A home's `bearing` and `icon`, a space's `icon`, and an opening that joins a space — or the outside — to `site`, the home itself. Nothing older says them, so nothing changes |
 
 **An integration's own entries.** A change to what a type is reached by —
 a way it no longer has — is not the document's shape, but a home kept

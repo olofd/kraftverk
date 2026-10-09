@@ -9,9 +9,10 @@ import type { SunEvent } from './rule.ts';
 import type { Coordinates } from './sun.ts';
 import { childrenOf, exprKind, expressionsIn, mapChildren, type ExprOf } from './kinds/exprs.ts';
 import { EXPRESSION_FIELDS, fieldValue, withField } from './kinds/spec.ts';
+import { fieldExprs, mapFieldExprs } from './field-exprs.ts';
 import { stepSpec } from './kinds/steps.ts';
 import { triggerFields } from './kinds/triggers.ts';
-import { automationRoles, calculate, type CompareOp, type Expr, type RuleTrigger, type Rule, type RunFact, type Step } from './rule.ts';
+import { automationRoles, calculate, OWN_HOME, type CompareOp, type Expr, type RuleTrigger, type Rule, type RunFact, type Step } from './rule.ts';
 import { convert, product, quotient, wholeTime } from '@kraftverk/device-sdk';
 
 /*
@@ -375,7 +376,7 @@ export function measureNow(expr: Expr, scope: RuleScope, trace: string[] = [], a
     case 'presentAt': {
       const { who, place } = (expr as ExprOf<'presentAt'>).presentAt;
       const there = scope.presentAt?.(who, place) ?? null;
-      trace.push(`${scope.name(who)}: ${there === null ? `whether at ${place === 'home' ? 'home' : scope.name(place)} is not known` : `${there ? '' : 'not '}at ${place === 'home' ? 'home' : scope.name(place)}`}`);
+      trace.push(`${scope.name(who)}: ${there === null ? `whether at ${place === OWN_HOME ? 'home' : scope.name(place)} is not known` : `${there ? '' : 'not '}at ${place === OWN_HOME ? 'home' : scope.name(place)}`}`);
       return plain(there);
     }
     default: {
@@ -448,7 +449,6 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
     if (typeof value !== 'number' || !unit) return { value };
     return unit === 's' ? wholeTime(value) : { value, unit };
   };
-  const args = (given: Readonly<Record<string, Expr>>): Record<string, Expr> => Object.fromEntries(Object.entries(given).map(([name, arg]) => [name, expr(arg)]));
   /**
    * Every setting its value — and what the settings alone decide, decided:
    * "15 is below 50" is true, and a condition that is part of it goes, so a
@@ -533,9 +533,8 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
       const value = fieldValue(step, field);
       if (value === undefined) return settled;
       const type = field.type.type;
-      if (EXPRESSION_FIELDS.has(type)) return withField(settled, field, expr(value as Expr));
-      if (type === 'args') return withField(settled, field, args(value as Readonly<Record<string, Expr>>));
-      if (type !== 'steps') return settled;
+      // An expression, a command's arguments, a message's values: each settled.
+      if (type !== 'steps') return fieldExprs(field.type, value).length ? withField(settled, field, mapFieldExprs(field.type, value, expr)) : settled;
       // A branch it may go without, which its settings leave empty, is none.
       const inner = steps(value as readonly Step[]);
       return withField(settled, field, inner.length || field.required ? inner : undefined);
@@ -550,7 +549,7 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
         const own = steps(value as readonly Step[]);
         return withField(settled, field, own.length ? own : undefined);
       }
-      if (!EXPRESSION_FIELDS.has(field.type.type)) return settled;
+      if (!EXPRESSION_FIELDS.has(field.type.type)) return fieldExprs(field.type, value).length ? withField(settled, field, mapFieldExprs(field.type, value, expr)) : settled;
       const next = expr(value as Expr);
       // A length of time its settings make none — 0 — where none may be, is none: a hold of 0 min is no hold.
       const none = !field.required && field.type.type === 'duration' && 'value' in next && next.value === 0;

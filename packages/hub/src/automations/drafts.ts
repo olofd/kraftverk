@@ -8,6 +8,7 @@ import {
   isGroupRole,
   isPartRole,
   isWorldRole,
+  placeKindsOf,
   listed,
   roleKind,
   type GroupRole,
@@ -250,7 +251,7 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
       // A person, people, a place: one of the family's, there now.
       if (isWorldRole(spec)) {
         const fill = draft.world?.[role];
-        const problem = worldFillProblem(world, spec.label, roleKind(spec) as 'person' | 'people' | 'place', fill, world.home(draft.homeId ?? null));
+        const problem = worldFillProblem(world, spec.label, roleKind(spec) as 'person' | 'people' | 'place', fill, world.home(draft.homeId ?? null), placeKindsOf(rule, role));
         if (problem) problems.uses(problem);
         else worldFills[role] = fill!;
         continue;

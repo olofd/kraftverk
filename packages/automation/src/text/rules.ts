@@ -154,7 +154,7 @@ class Reader {
   }
 
   trigger(data: Data, path: Path): RuleTrigger {
-    if (!isRecord(data)) return this.fail('Expected a trigger: at, every, event or becomes', path);
+    if (!isRecord(data)) return this.fail(`Expected a trigger: ${TRIGGER_KIND_ORDER.map((kind) => TRIGGER_KINDS[kind].fields[0]!.key).join(', ')}`, path);
     // Its kind by its verb, and each of its fields — its kind's, and those every trigger has — by what it holds (kinds/triggers.ts).
     const kind = triggerKindOfVerbs(Object.keys(data));
     if (!kind) return this.fail(`Not a trigger: ${Object.keys(data).map((key) => `"${key}"`).join(', ')}. A trigger is ${TRIGGER_KIND_ORDER.map((each) => TRIGGER_KINDS[each].fields[0]!.key).join(', ')}`, path);
@@ -162,7 +162,7 @@ class Reader {
     const keys = fields.map((field) => field.key);
     for (const key of Object.keys(data)) if (!keys.includes(key)) this.fail(`"${key}" is not part of this trigger: it takes ${keys.map((each) => `"${each}"`).join(', ')}`, [...path, key]);
     return fields.reduce<RuleTrigger>((trigger, field) => {
-      if (!(field.key in data)) return field.required ? this.fail(`"${TRIGGER_KINDS[kind].fields[0]!.key}" needs "${field.key}": ${field.label.toLowerCase()}`, path) : trigger;
+      if (!(field.key in data)) return field.required ? this.fail(`"${TRIGGER_KINDS[kind].fields[0]!.key}" needs "${field.key}"${field.help ? `: ${field.help.charAt(0).toLowerCase()}${field.help.slice(1).replace(/\.$/, '')}` : ''}`, path) : trigger;
       return withField(trigger, field, this.field(field, data[field.key], [...path, field.key]));
     }, {} as RuleTrigger);
   }
@@ -400,6 +400,7 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
         }
         if (kind === 'people') {
           if (data.people === 'everyone') uses[role] = { everyone: true };
+          else if (Array.isArray(data.people) && !data.people.length) return reader.fail('"people" names at least one of you — or everyone', [...at, 'people']);
           else if (Array.isArray(data.people)) uses[role] = { people: data.people.map((each, index) => reader.name(each, [...at, 'people', index], 'the key of a person')) };
           else if (data.people !== null) return reader.fail('"people" is a list of people by their keys, or everyone', [...at, 'people']);
           roles[role] = { people: true, label };
