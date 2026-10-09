@@ -603,3 +603,50 @@ describe('erasing everything', () => {
     expect(accounts.readSession(token)?.user?.username).toBe('olof');
   });
 });
+
+// --- running for development -----------------------------------------------------
+
+describe('signing in for development', () => {
+  const appWith = async (dev: boolean) => {
+    const proxies = new ProxyDirectory(PROXY);
+    await proxies.refresh();
+    const auth = createAuth({ proxies, accounts, audit, forgetNodesOf: () => {}, family: TEST_FAMILY, limiter: new LoginLimiter(), dev });
+    const api = new Hono();
+    api.use('*', auth.forgery);
+    api.use('*', auth.gate);
+    api.route('/auth', auth.auth);
+    api.get('/devices', (c) => c.json({ devices: [] }));
+    const app = new Hono();
+    app.route('/api', api);
+    app.onError(answerError);
+    return app;
+  };
+  /** A call from a socket address — a POST, or with a session a GET — and what came back: its status, its session cookie. */
+  const ask = async (app: Hono, path: string, from: string, cookie?: string) => {
+    const host = from === '127.0.0.1' ? '127.0.0.1:3333' : '192.168.1.140:3333';
+    const response = await app.fetch(
+      new Request(`http://${host}/api${path}`, { method: cookie ? 'GET' : 'POST', headers: { host, [CLIENT_HEADER]: 'test', ...(cookie ? { cookie: `${SESSION_COOKIE}=${cookie}` } : {}) } }),
+      { requestIP: () => ({ address: from }) }
+    );
+    return { status: response.status, token: /kraftverk_session=([^;]*)/.exec(response.headers.get('set-cookie') ?? '')?.[1] || undefined, body: (await response.json().catch(() => null)) as Record<string, unknown> | null };
+  };
+
+  beforeEach(emptyAccounts);
+
+  test('this computer is signed in as the first account — made, when there is none — with nothing typed', async () => {
+    const app = await appWith(true);
+    const first = await ask(app, '/auth/dev', '127.0.0.1');
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ user: { username: 'developer' } });
+    expect((await ask(app, '/devices', '127.0.0.1', first.token)).status).toBe(200);
+    // Again: the same account, not another.
+    expect((await ask(app, '/auth/dev', '127.0.0.1')).body).toEqual(first.body);
+    expect(accounts.countUsers()).toBe(1);
+  });
+
+  test('never from another machine, and not at all on a server not started for development', async () => {
+    expect((await ask(await appWith(true), '/auth/dev', '192.168.1.58')).status).toBe(403);
+    expect((await ask(await appWith(false), '/auth/dev', '127.0.0.1')).status).toBe(404);
+    expect(accounts.countUsers()).toBe(0);
+  });
+});

@@ -403,6 +403,7 @@ export function serverApi(options: HttpApiOptions): ServerApi {
     auth: {
       state: () => get('/auth/state'),
       setup: async (username, password) => (await call<{ user: Account }>('POST', '/auth/setup', { username, password })).user,
+      dev: async () => (await call<{ user: Account }>('POST', '/auth/dev')).user,
       logIn: async (username, password) => (await call<{ user: Account }>('POST', '/auth/login', { username, password })).user,
       logOut: async () => void (await call('POST', '/auth/logout', {})),
       changePassword: async (current, next) => void (await call('POST', '/auth/password', { current, next })),

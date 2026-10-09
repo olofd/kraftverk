@@ -106,6 +106,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (signedInByKey) next = await server.auth.state();
         if (asked.current !== serverUrl) return null;
       }
+      // Running for development (the app's own __DEV__, a server started with --dev): signed in by this computer, and claimed by
+      // this device's account, so later it signs in by key. A server not running for development refuses it: the form is shown.
+      if (!next.user && __DEV__ && personal && personId) {
+        const signedInForDev = await server.auth.dev().then(
+          () => true,
+          () => false
+        );
+        if (signedInForDev) {
+          await server.auth.claim(await personal.chain(personId)).catch(() => undefined);
+          next = await server.auth.state();
+        }
+        if (asked.current !== serverUrl) return null;
+      }
       setState(next);
       setUnreachable(false);
       return next;

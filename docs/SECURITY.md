@@ -28,6 +28,26 @@ browser in regular use stays signed in.
 
 A fresh server with no accounts refuses everything but setup, from anywhere.
 
+### Running for development
+
+`npm run dev` starts the server with `--dev`, and the app's development
+bundle (`__DEV__`, never a build) uses it to skip what is in the way of
+working on the code:
+- the app makes and opens an account of its own on this computer, called
+  Developer, its recovery words taken as checked;
+- it signs in with `POST /api/auth/dev`, as the server's first account. When
+  there is no account, the server first makes an administrator called
+  "developer", with a password nobody knows.
+
+The server holds that route to the development case alone:
+- it is not found unless the server was started with `--dev`;
+- `--dev` is ignored where `NODE_ENV` is production;
+- it is refused to any caller but this computer itself (loopback, with no
+  forwarding headers), as `/api/health` is.
+
+Production, Docker and `npm run start:prod` never pass `--dev`, and the
+app's built bundle always asks.
+
 ### What each caller may call
 
 Behind the session, the home answers each caller through one more gate

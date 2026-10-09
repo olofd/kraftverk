@@ -55,6 +55,12 @@ export type ServerConfig = {
   allowedHosts: Set<string>;
   /** Development: the Expo dev server's origins are allowed too. */
   development: boolean;
+  /**
+   * Local development (`npm run dev`, `--dev`): this computer is signed in
+   * with nothing typed, as the first account (`POST /api/auth/dev`). Never
+   * where NODE_ENV is production; never from another machine.
+   */
+  dev: boolean;
   trustedProxies: string | undefined;
   logDir: string;
   /** The database (`KRAFTVERK_DB`); what the server keeps beside it — its node's id, the configuration kept — is kept beside it. */
@@ -78,6 +84,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     allowedOrigins: allowedOrigins(env.ALLOWED_ORIGINS),
     allowedHosts: allowedHosts(env),
     development: env.NODE_ENV !== 'production',
+    dev: argv.includes('--dev') && env.NODE_ENV !== 'production',
     trustedProxies: env.KRAFTVERK_TRUSTED_PROXIES,
     logDir: env.KRAFTVERK_LOG_DIR || join(DATA_DIR, 'logs'),
     databaseFile: env.KRAFTVERK_DB || DEFAULT_DATABASE_FILE,

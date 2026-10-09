@@ -95,6 +95,8 @@ function DeviceAccounts({ children }: { children: ReactNode }) {
   if (!device) return <NotOpen state={state} onTakeOver={() => open(true)} onRetry={() => open(false)} />;
   if (!accounts) return <Waiting what="Reading the accounts on this device" />;
   const account = accounts.find((each) => each.active) ?? null;
+  // Running for development: an account made and opened by itself, nothing to write down.
+  if (!account && __DEV__) return <DevelopmentAccount personal={device.personal} accounts={accounts} onReady={reload} />;
   // No one opened as: sign up, or choose an account this device keeps.
   if (!account) return <Welcome personal={device.personal} accounts={accounts} onChanged={reload} />;
   const value: AccountValue = {
@@ -115,6 +117,28 @@ function DeviceAccounts({ children }: { children: ReactNode }) {
       {children}
     </AccountContext.Provider>
   );
+}
+
+/**
+ * Running for development (`__DEV__`, never in a build): the first account
+ * this device keeps opened — or, with none, one made, called Developer, its
+ * recovery words taken as checked. Nothing to type or write down, so the
+ * app is in use at once; a build always asks.
+ */
+function DevelopmentAccount({ personal, accounts, onReady }: { personal: AccountValue['personal']; accounts: readonly AccountView[]; onReady: () => Promise<void> }) {
+  useEffect(() => {
+    void (async () => {
+      const first = accounts[0];
+      if (first) await personal.activate(first.personId);
+      else {
+        const { account } = await personal.create({ name: 'Developer', deviceName: 'This computer, for development' });
+        await personal.confirmRecovery(account.personId);
+        await personal.activate(account.personId);
+      }
+      await onReady();
+    })();
+  }, []);
+  return <Waiting what="Opening this computer's account, for development" />;
 }
 
 /**

@@ -3,6 +3,15 @@
 The tests, what every push checks, and where everything lives. Adding support
 for a product is its own guide: [ADDING-A-DEVICE.md](ADDING-A-DEVICE.md).
 
+## Running it
+
+`npm run dev` runs the server, read-only, and the web app at
+http://localhost:8081. The app opens straight on the home: it makes an
+account of its own on this computer and signs in to the server by itself,
+nothing to type. That is the server's `--dev` and the app's `__DEV__`
+(docs/SECURITY.md, "Running for development"). A build, and any other
+server, ask as they always do.
+
 ## Tests
 
 ```bash

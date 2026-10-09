@@ -467,6 +467,8 @@ export interface ServerApi {
     /** The first account, from the home network only. */
     setup(username: string, password: string): Promise<Account>;
     logIn(username: string, password: string): Promise<Account>;
+    /** Local development only: this computer signed in as the first account, with nothing typed — refused by a server not started for development. */
+    dev(): Promise<Account>;
     logOut(): Promise<void>;
     /** Your own password: the current one too, and every other session ends. */
     changePassword(current: string, next: string): Promise<void>;

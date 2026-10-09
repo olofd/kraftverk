@@ -41,7 +41,7 @@ export const SESSION_COOKIE = 'kraftverk_session';
  * the configuration's JSON Schema, which an editor fetches without logging in:
  * the installed types only, nothing you have (`routes/configuration.ts`).
  */
-const OPEN = new Set(['/api/auth/state', '/api/auth/setup', '/api/auth/login', '/api/auth/logout', '/api/auth/challenge', '/api/auth/key', '/api/auth/holder', '/api/join', `/api${CONFIG_SCHEMA_PATH}`]);
+const OPEN = new Set(['/api/auth/state', '/api/auth/setup', '/api/auth/dev', '/api/auth/login', '/api/auth/logout', '/api/auth/challenge', '/api/auth/key', '/api/auth/holder', '/api/join', `/api${CONFIG_SCHEMA_PATH}`]);
 
 /**
  * The health check, for the container's own healthcheck — which runs inside
@@ -94,12 +94,14 @@ type AuthDeps = {
     leave: (personId: string) => void;
   };
   limiter?: LoginLimiter;
+  /** Local development: `POST /auth/dev` signs this computer in as the first account. Never set in production (config.ts). */
+  dev?: boolean;
 };
 
 /** How long a key's challenge may be answered in. */
 const CHALLENGE_MS = 120_000;
 
-export function createAuth({ proxies, accounts, audit, forgetNodesOf, family, limiter = new LoginLimiter() }: AuthDeps) {
+export function createAuth({ proxies, accounts, audit, forgetNodesOf, family, limiter = new LoginLimiter(), dev = false }: AuthDeps) {
   /** The challenges handed out and not yet answered, by nonce: each answered once, while young. */
   const challenges = new Map<string, Challenge>();
   const sweep = (now: number) => {
@@ -278,6 +280,29 @@ export function createAuth({ proxies, accounts, audit, forgetNodesOf, family, li
     writeCookie(c, token);
     audit.record({ at: now(), kind: 'auth.setup', actor: actor('person', username, personId), resourceKind: 'person', resource: personId, summary: `${username} created the first account`, detail: { clientIp: trust.clientIp } });
     return c.json({ user: { id: personId, username: user.username } }, 201);
+  });
+
+  /**
+   * Local development only (`npm run dev`, the server's `--dev`): this
+   * computer signed in as the first account — made, an administrator called
+   * "developer" with a password nobody knows, when there is none — with
+   * nothing typed. Not found on a server started otherwise; refused to any
+   * caller but this computer itself.
+   */
+  auth.post('/dev', async (c) => {
+    if (!dev) throw new ApiError('not-found', 'Not found');
+    if (!localCaller(c)) throw new ApiError('forbidden', 'Only this computer signs in this way, while the server runs for development');
+    const { trust } = access(c);
+    let user = accounts.listUsers()[0] ?? null;
+    if (!user) {
+      const personId = family.newPerson('developer');
+      user = await accounts.createFirstUser('developer', `${crypto.randomUUID()}${crypto.randomUUID()}`, personId).catch(rethrow);
+    }
+    const { token } = accounts.createSession(user, trust.clientIp, c.req.header('user-agent') ?? null);
+    accounts.markLoggedIn(user.id);
+    writeCookie(c, token);
+    audit.record({ at: now(), kind: 'auth.dev', actor: actor('person', user.username, user.personId), resourceKind: 'person', resource: user.personId, summary: `${user.username} was signed in by this computer, for development` });
+    return c.json({ user: { id: user.personId, username: user.username } });
   });
 
   auth.post('/login', async (c) => {

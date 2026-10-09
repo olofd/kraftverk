@@ -7,8 +7,8 @@
   "scripts": {
     "//dev": "Every installed transport. Without :write every write to hardware is refused.",
     "//watch": "--watch, not --hot. --hot re-runs the code inside the same process and nothing closes the previous run's sockets, radio or timers. --watch restarts the process, so the OS releases all of it. The MQTT broker is not in this process at all: it runs detached (packages/transports/mqtt) and survives every restart, so the station stays connected.",
-    "dev": "node ../scripts/run-bun.mjs --watch src/index.ts --read-only",
-    "dev:write": "node ../scripts/run-bun.mjs --watch src/index.ts",
+    "dev": "node ../scripts/run-bun.mjs --watch src/index.ts --read-only --dev",
+    "dev:write": "node ../scripts/run-bun.mjs --watch src/index.ts --dev",
     "//start": "Not a dev server: no --watch, so the process does not restart under you. Writes to hardware are ALLOWED.",
     "start:prod": "node ../scripts/run-bun.mjs src/index.ts",
     "users": "node ../scripts/run-bun.mjs src/auth/cli.ts",
