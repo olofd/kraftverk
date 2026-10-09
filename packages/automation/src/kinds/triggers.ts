@@ -1,4 +1,4 @@
-import { EVERY_SECONDS, HOLD_SECONDS, START_SECONDS } from '../clock.ts';
+import { datesText, EVERY_SECONDS, HOLD_SECONDS, monthsText, START_SECONDS } from '../clock.ts';
 import { ANYONE, AXES, OWN_HOME, type Expr, type Rule, type RuleTrigger, type RunFact, type Step, type Trigger } from '../rule.ts';
 import type { FieldSpec, KindDocs, KindIcon, Say } from './spec.ts';
 
@@ -49,12 +49,19 @@ const AT: TriggerSpec<'at'> = {
   fields: [
     { data: ['at'], key: 'at', type: { type: 'timeOfDay' }, required: true, label: 'At' },
     { data: ['days'], key: 'days', type: { type: 'days' }, required: false, label: 'On', help: 'Every day, unless you choose days.' },
+    { data: ['months'], key: 'months', type: { type: 'months' }, required: false, label: 'In', help: 'Every month, unless you choose months.' },
+    { data: ['dates'], key: 'dates', type: { type: 'dates' }, required: false, label: 'On these dates', help: 'Every date, unless you say: 12-24, or 12-01..12-24 — month and day, every year.' },
   ],
   blank: () => ({ at: { value: '07:00' } }),
-  words: (trigger, say) => (trigger.days && say.days(trigger.days) !== 'every day' ? `At ${say.expr(trigger.at)} ${say.days(trigger.days)}` : `Every day at ${say.expr(trigger.at)}`),
+  words: (trigger, say) => {
+    // Narrowed by its months and dates: "At 07:00 on weekdays in Dec, Jan and Feb".
+    const narrowed = [trigger.months?.length ? monthsText(trigger.months) : '', trigger.dates?.length ? datesText(trigger.dates) : ''].filter(Boolean).join(' ');
+    const days = trigger.days && say.days(trigger.days) !== 'every day' ? say.days(trigger.days) : '';
+    return days || narrowed ? `At ${say.expr(trigger.at)}${days ? ` ${days}` : ''}${narrowed ? ` ${narrowed}` : ''}` : `Every day at ${say.expr(trigger.at)}`;
+  },
   docs: {
-    summary: 'At a time of day on the automation’s own clock — `07:00`, or by the sun where the home is: `sunset`, `30 min before sunset` — every day, or only on the days it names. A server that was down at that time still runs it within the hour, once.',
-    examples: ['at: "07:00"', 'at: "22:30"\ndays: weekdays', 'at: "09:00"\ndays: [mon, wed, fri]', 'at: sunset', 'at: 30 min before sunset\ndays: weekdays'],
+    summary: 'At a time of day on the automation’s own clock — `07:00`, or by the sun where the home is: `sunset`, `30 min before sunset` — every day, or only on the `days`, in the `months` and on the `dates` it names: `"12-24"`, or a span `"12-01..12-24"`, across the year’s end when it ends before it begins. A server that was down at that time still runs it within the hour, once.',
+    examples: ['at: "07:00"', 'at: "22:30"\ndays: weekdays', 'at: "09:00"\ndays: [mon, wed, fri]', 'at: sunset', 'at: 30 min before sunset\ndays: weekdays', 'at: "06:30"\nmonths: [dec, jan, feb]', 'at: sunset\ndates: ["12-01..12-24"]'],
   },
   starts: 'clock',
   world: false,

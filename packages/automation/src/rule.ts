@@ -2,7 +2,7 @@ import type { CapabilityName, CapabilityNeed, ConfigField, ConfigSchema, Unit, V
 
 import type { BuiltinName } from './kinds/builtins.ts';
 
-import type { Weekday } from './clock.ts';
+import type { Month, Weekday } from './clock.ts';
 
 /**
  * Automations as data: the rule (docs/AUTOMATIONS.md).
@@ -241,8 +241,8 @@ export const calculate = (op: MathOp, left: Value, right: Value): Value => {
  * everything that handles triggers reads. Lengths of time are in seconds.
  */
 export type Trigger =
-  /** At this time — "07:00" — on the automation's own clock: every day, or only on `days`. */
-  | { at: Expr; days?: readonly Weekday[] }
+  /** At this time — "07:00" — on the automation's own clock: every day, or only on `days`, in `months`, on `dates` ("12-01..12-24"). */
+  | { at: Expr; days?: readonly Weekday[]; months?: readonly Month[]; dates?: readonly string[] }
   /**
    * Every so many seconds — whole minutes, 1 min to 12 h — on the owner's
    * clock from midnight: every 15 min is :00, :15, :30 and :45. Once a slot;

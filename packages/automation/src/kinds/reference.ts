@@ -37,6 +37,10 @@ function holds(field: FieldSpec, fields: readonly FieldSpec[]): string {
       return `how many times, 1 to ${type.max}; a number or a setting`;
     case 'days':
       return '`weekdays`, `weekends`, or a list of `mon` … `sun`';
+    case 'months':
+      return 'a list of `jan` … `dec`';
+    case 'dates':
+      return 'a list of dates of the year, month and day: `"12-24"`, or a span `"12-01..12-24"`';
     case 'role':
       return 'a role: what fills it is under `uses`';
     case 'automation':

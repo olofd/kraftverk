@@ -1,6 +1,6 @@
 import { Input, Text, YStack } from 'tamagui';
 
-import { fieldValue, withField, type Expr, type FieldSpec, type ListPath, type Weekday } from '@kraftverk/automation';
+import { fieldValue, withField, type Expr, type FieldSpec, type ListPath, type Month, type Weekday } from '@kraftverk/automation';
 import { MAIN_PART, wholeTime } from '@kraftverk/device-sdk';
 import { Chips } from '@kraftverk/ui';
 
@@ -8,7 +8,7 @@ import { Picker } from '../../../components/Picker';
 import { blankCondition, ConditionField } from './Condition';
 import { pickPart, useEditor } from './context';
 import { GroupParts } from './GroupParts';
-import { DaysField, DurationField, durationOf, Label, NumberField, TimeField, type Measure } from './fields';
+import { DatesField, DaysField, DurationField, durationOf, Label, MonthsField, NumberField, TimeField, type Measure } from './fields';
 import { placeChoices, whoChoices, type WorldChoice } from '@kraftverk/api-client';
 
 /*
@@ -60,6 +60,22 @@ function FieldEditor<T extends object>({ field, fields, construct, set, path }: 
         <YStack gap="$1">
           <Label>{field.label}</Label>
           <DaysField value={value as readonly Weekday[] | undefined} onChange={(days) => put(days)} />
+        </YStack>
+      );
+    case 'months':
+      return (
+        <YStack gap="$1">
+          <Label>{field.label}</Label>
+          <MonthsField value={value as readonly Month[] | undefined} onChange={(months) => put(months)} />
+          {help}
+        </YStack>
+      );
+    case 'dates':
+      return (
+        <YStack gap="$1">
+          <Label>{field.label}</Label>
+          <DatesField label={field.label} value={value as readonly string[] | undefined} onChange={(dates) => put(dates)} />
+          {help}
         </YStack>
       );
     case 'duration': {

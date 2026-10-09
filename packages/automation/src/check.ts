@@ -1,6 +1,6 @@
 import { attributeMeaning, BUILT_IN_MODES, CAMEL_NAME, MODE_KEY, capabilitySpec, checkValue, isCapability, MAIN_PART, meetsNeed, partsOf, standardMeaning, valueTypeOf, type AttributeSpec, type CapabilityId, type CapabilityNeed, type DeviceDescription, type ModeAxis as Axis, type Value, type ValueType } from '@kraftverk/device-sdk';
 
-import { CLOCK_TIME, minutesOf, WEEKDAYS, type Weekday } from './clock.ts';
+import { CLOCK_TIME, dateSpanOf, minutesOf, MONTHS, WEEKDAYS, type Month, type Weekday } from './clock.ts';
 import { secondsText } from './describe.ts';
 import { evaluateNow, settledScope } from './evaluate.ts';
 import { BUILTIN_ORDER, BUILTINS, isBuiltin } from './kinds/builtins.ts';
@@ -676,6 +676,21 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
           for (const day of days) if (!WEEKDAYS.includes(day as Weekday)) problems.push(`${at}: "${String(day)}" is not a day of the week`);
           if (new Set(days).size !== days.length) problems.push(`${at}: a day is named twice`);
         }
+        return;
+      }
+      case 'months': {
+        const months = value as readonly string[];
+        if (!Array.isArray(months) || !months.length) problems.push(`${at}: in no month, it never runs`);
+        else {
+          for (const month of months) if (!MONTHS.includes(month as Month)) problems.push(`${at}: "${String(month)}" is not a month: jan … dec`);
+          if (new Set(months).size !== months.length) problems.push(`${at}: a month is named twice`);
+        }
+        return;
+      }
+      case 'dates': {
+        const dates = value as readonly string[];
+        if (!Array.isArray(dates) || !dates.length) problems.push(`${at}: on no date, it never runs`);
+        else for (const date of dates) if (!dateSpanOf(date)) problems.push(`${at}: "${String(date)}" is not a date of the year: "12-24", or "12-01..12-24"`);
         return;
       }
       case 'count':

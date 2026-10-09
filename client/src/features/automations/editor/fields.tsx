@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Platform } from 'react-native';
 import { Input, Text, XStack, YStack } from 'tamagui';
 
-import { secondsText, WEEKDAYS, type Expr, type Weekday } from '@kraftverk/automation';
+import { dateSpanOf, MONTHS, secondsText, WEEKDAYS, type Expr, type Month, type Weekday } from '@kraftverk/automation';
 import { convert, unitsOfQuantity, UNITS, unitsLike, type Unit, type Value, type ValueType } from '@kraftverk/device-sdk';
 import { Chips, haptic, useNumberText, useRadioGroup, useToggleGroup } from '@kraftverk/ui';
 
@@ -243,6 +243,91 @@ export function DaysField({ value, onChange }: { value: readonly Weekday[] | und
           );
         })}
       </XStack>
+    </YStack>
+  );
+}
+
+const MONTH_NAMES: Record<Month, string> = { jan: 'January', feb: 'February', mar: 'March', apr: 'April', may: 'May', jun: 'June', jul: 'July', aug: 'August', sep: 'September', oct: 'October', nov: 'November', dec: 'December' };
+
+/**
+ * Which months: twelve toggles, six to a line — every one on is every month.
+ * None given is every month; the last one on stays on.
+ */
+export function MonthsField({ value, onChange }: { value: readonly Month[] | undefined; onChange: (months: readonly Month[] | undefined) => void }) {
+  const chosen = new Set(value ?? MONTHS);
+  const toggle = (month: Month) => {
+    const next = MONTHS.filter((one) => (one === month ? !chosen.has(one) : chosen.has(one)));
+    if (!next.length) return;
+    onChange(next.length === 12 ? undefined : next);
+  };
+  const keys = useToggleGroup(MONTHS.length, (index) => toggle(MONTHS[index]!));
+  return (
+    <XStack flexWrap="wrap" gap={6} role="group" aria-label="Months of the year">
+      {MONTHS.map((month, index) => {
+        const on = chosen.has(month);
+        return (
+          <XStack
+            key={month}
+            role="checkbox"
+            aria-checked={on}
+            aria-label={MONTH_NAMES[month]}
+            {...keys(index)}
+            cursor="pointer"
+            width={48}
+            height={40}
+            borderRadius={20}
+            alignItems="center"
+            justifyContent="center"
+            borderWidth={1}
+            borderColor={on ? '$accent' : '$borderColor'}
+            backgroundColor={on ? '$accent' : '$background'}
+            focusVisibleStyle={{ outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid' }}
+            onPress={() => (haptic(), toggle(month))}
+          >
+            <Text fontSize={13} fontWeight="700" color={on ? '$background' : '$muted'}>
+              {MONTH_NAMES[month].slice(0, 3)}
+            </Text>
+          </XStack>
+        );
+      })}
+    </XStack>
+  );
+}
+
+/**
+ * Which dates of the year, typed: "12-24", "12-01..12-24", by commas —
+ * kept as typed until each reads as one; none, every date.
+ */
+export function DatesField({ label, value, onChange }: { label: string; value: readonly string[] | undefined; onChange: (dates: readonly string[] | undefined) => void }) {
+  const [text, setText] = useState((value ?? []).join(', '));
+  const dates = text
+    .split(',')
+    .map((each) => each.trim())
+    .filter(Boolean);
+  const wrong = dates.find((each) => !dateSpanOf(each));
+  return (
+    <YStack gap="$1">
+      <Input
+        size="$4"
+        value={text}
+        aria-label={label}
+        placeholder="Every date — or 12-24, 12-01..12-24"
+        backgroundColor="$background"
+        borderColor={wrong ? '$danger' : '$borderColor'}
+        onChangeText={(next) => {
+          setText(next);
+          const typed = next
+            .split(',')
+            .map((each) => each.trim())
+            .filter(Boolean);
+          if (typed.every((each) => dateSpanOf(each))) onChange(typed.length ? typed : undefined);
+        }}
+      />
+      {wrong ? (
+        <Text fontSize={12} color="$danger">
+          “{wrong}” is not a date of the year: month and day, 12-24 — or a span, 12-01..12-24
+        </Text>
+      ) : null}
     </YStack>
   );
 }

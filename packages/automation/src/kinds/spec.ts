@@ -38,6 +38,10 @@ export type FieldType =
   | { type: 'count'; max: number }
   /** Days of the week. */
   | { type: 'days' }
+  /** Months of the year. */
+  | { type: 'months' }
+  /** Dates of every year, and spans of them: "12-24", "12-01..12-24". */
+  | { type: 'dates' }
   /** A role a part of a device fills. */
   | { type: 'role' }
   /** A role another automation fills. */

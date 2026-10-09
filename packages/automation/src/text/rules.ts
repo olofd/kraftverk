@@ -1,6 +1,6 @@
 import { CAPABILITIES, MAIN_PART, type CapabilityName } from '@kraftverk/device-sdk';
 
-import { WEEKDAYS, type Weekday } from '../clock.ts';
+import { dateSpanOf, MONTHS, WEEKDAYS, type Month, type Weekday } from '../clock.ts';
 import { ruleCommands, ruleExpressions, ruleUses } from '../reads.ts';
 import { fieldValue, withField, type FieldSpec } from '../kinds/spec.ts';
 import { branchesOf, STEP_KIND_ORDER, STEP_KINDS, stepSpec, type StepKind, type StepReader, type StepSpec } from '../kinds/steps.ts';
@@ -187,6 +187,10 @@ class Reader {
         return this.seconds(data, path);
       case 'days':
         return this.days(data, path);
+      case 'months':
+        return this.months(data, path);
+      case 'dates':
+        return this.dates(data, path);
       case 'role':
       case 'automation':
       case 'script':
@@ -229,6 +233,17 @@ class Reader {
     if (data === 'weekends') return ['sat', 'sun'];
     if (!Array.isArray(data)) return this.fail('Expected days: weekdays, weekends, or a list of mon … sun', path);
     return data.map((day, index) => (WEEKDAYS.includes(day as Weekday) ? (day as Weekday) : this.fail(`"${String(day)}" is not a day: mon, tue, wed, thu, fri, sat, sun`, [...path, index])));
+  }
+
+  months(data: Data, path: Path): Month[] {
+    const list = Array.isArray(data) ? data : [data];
+    return list.map((month, index) => (MONTHS.includes(month as Month) ? (month as Month) : this.fail(`"${String(month)}" is not a month: jan, feb … dec`, Array.isArray(data) ? [...path, index] : path)));
+  }
+
+  /** Dates of every year: "12-24", "12-01..12-24" — one, or a list. */
+  dates(data: Data, path: Path): string[] {
+    const list = Array.isArray(data) ? data : [data];
+    return list.map((date, index) => (dateSpanOf(date) ? String(date).trim() : this.fail(`"${String(date)}" is not a date of the year: "12-24", or "12-01..12-24"`, Array.isArray(data) ? [...path, index] : path)));
   }
 }
 
@@ -563,6 +578,9 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
         return expr(value as Expr);
       case 'days':
         return daysInFile(value as readonly string[]);
+      case 'months':
+      case 'dates':
+        return [...(value as readonly string[])];
       case 'role':
       case 'automation':
       case 'script':

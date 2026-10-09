@@ -1,6 +1,6 @@
 import { CAMEL_NAME, MODE_KEY, type ConfigField } from '@kraftverk/device-sdk';
 
-import { WEEKDAYS } from '../clock.ts';
+import { MONTHS, WEEKDAYS } from '../clock.ts';
 import { TRIGGER_ID } from '../rule.ts';
 import { amountText, fieldWords, type ScriptShape } from '../script.ts';
 import { durationText } from '../text/rules.ts';
@@ -37,6 +37,10 @@ export function fieldSchema(field: FieldSpec): JsonSchema {
       return { $ref: '#/$defs/duration', ...described };
     case 'days':
       return DAYS_SCHEMA;
+    case 'months':
+      return { type: 'array', items: { enum: [...MONTHS] }, minItems: 1, uniqueItems: true, ...described };
+    case 'dates':
+      return { type: 'array', items: { type: 'string', pattern: '^\\d\\d-\\d\\d(\\.\\.\\d\\d-\\d\\d)?$' }, minItems: 1, ...described };
     case 'role':
     case 'automation':
     case 'script':

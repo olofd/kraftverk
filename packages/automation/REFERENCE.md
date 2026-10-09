@@ -227,12 +227,14 @@ does itself (below).
 
 ### `at` — At a time
 
-At a time of day on the automation’s own clock — `07:00`, or by the sun where the home is: `sunset`, `30 min before sunset` — every day, or only on the days it names. A server that was down at that time still runs it within the hour, once.
+At a time of day on the automation’s own clock — `07:00`, or by the sun where the home is: `sunset`, `30 min before sunset` — every day, or only on the `days`, in the `months` and on the `dates` it names: `"12-24"`, or a span `"12-01..12-24"`, across the year’s end when it ends before it begins. A server that was down at that time still runs it within the hour, once.
 
 | Word | Holds | |
 |---|---|---|
 | `at` | a time of day, `"HH:MM"`, on the automation’s clock | needed |
 | `days` | `weekdays`, `weekends`, or a list of `mon` … `sun` | if you like |
+| `months` | a list of `jan` … `dec` | if you like |
+| `dates` | a list of dates of the year, month and day: `"12-24"`, or a span `"12-01..12-24"` | if you like |
 
 ```yaml
 when:
@@ -260,6 +262,18 @@ when:
 when:
   - at: 30 min before sunset
     days: weekdays
+```
+
+```yaml
+when:
+  - at: "06:30"
+    months: [dec, jan, feb]
+```
+
+```yaml
+when:
+  - at: sunset
+    dates: ["12-01..12-24"]
 ```
 
 ### `every` — Every so often
