@@ -1046,6 +1046,39 @@ How every slice is done is as in
 - docs with the code;
 - only our own files staged.
 
+### Browser first (decided 2026-10-09)
+
+There is no running app environment on a phone yet, so scripts are built
+for the browser end to end first, and the phone follows. The browser covers
+both ways a home runs:
+- **with a server:** the hub on Bun, the app on the web;
+- **with none:** the hub in the browser's own worker (`e2e/local.e2e.ts`
+  already tests a home kept that way).
+
+Each step from B2 on ends with an end-to-end test in both.
+
+| Step | Slices | Ends with |
+| --- | --- | --- |
+| B1 | S3 | The sandbox on Bun, and bundled into the browser's home worker with its `.wasm` beside it; the conformance cases green in `bun test` |
+| B2 | S4 | Scripts kept, exported and restored; e2e: a script written in the app, with a server and without one; saving reads its shape in the worker's sandbox |
+| B3 | S5, S6 | Functions and the step; e2e: a script step turns a simulated plug off, and the run's log says so, with a server and without one |
+| B4 | S7, S8 | The typed SDK and the editor; e2e: a completion and a marked type error, then a run |
+| later | S1, S2, S9, S10 | The phone, and what is left |
+
+What browser first changes in the slices:
+- **The editor is a web component of its own**, `ScriptEditor.web.tsx`,
+  beside `YamlEditor.web.tsx`. It is not yet an Expo DOM component; the
+  phone gets a plain text box, as YAML has on a phone today.
+  - Turning it into a DOM component later wraps the same code: a
+    `'use dom'` file renders as web.
+- **The language service** runs in a web worker built by esbuild beside the
+  home worker (`client/scripts/build-home-worker.mjs`). The server's
+  language socket is not needed.
+- **QuickJS's `.wasm`** is copied beside the home worker, as `sqlite3.wasm`
+  is, and loaded by URL there. The server loads it from `node_modules`.
+- **A phone build** runs no scripts until S9, and says so: `HubOptions.scripts`
+  is left empty in `client/src/platform/home/open.ts`.
+
 ### S0. One gate for every call
 
 **Built, 2026-10-09.** What building it changed:
