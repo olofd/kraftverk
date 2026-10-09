@@ -78,7 +78,7 @@ export type EnginePlace = { id: string; kind: PlaceKind };
  * an automation may do there besides its devices: set a mode, tell people.
  */
 export type EngineWorld = {
-  /** The home an automation is for — or, none said, the family's first. Null: the family has no home. */
+  /** The home an automation is for — or, none said, the family's first. Null: the family has no home, or the one it is for was let go. */
   home(homeId: string | null): string | null;
   /** Everyone in the family now. */
   members(): readonly string[];
@@ -88,18 +88,28 @@ export type EngineWorld = {
   placeName(place: EnginePlace): string | null;
   /** The home a place is at: a home itself, a space's home; none for a zone. */
   homeOf(place: EnginePlace): string | null;
-  /** Who of the family is at a place now, as far as each shares; null when it cannot be told. */
-  peopleAt(place: EnginePlace): readonly string[] | null;
+  /**
+   * Who of the family is at a place now, as far as each shares — and who
+   * might be, for all that can be told: someone who shares too little to
+   * say is not away. Null: the place is not there.
+   */
+  whoAt(place: EnginePlace): { at: readonly string[]; unknown: readonly string[] } | null;
+  /** Whether a place is, or is within, another: a room within a floor. Homes and zones are only themselves. */
+  within(place: EnginePlace, outer: EnginePlace): boolean;
   /** Whether anyone is in a place now, whoever: a space by what stands there, a home or a zone by who is there. Null when it cannot be told. */
   occupied(place: EnginePlace): boolean | null;
   /** A home's mode on an axis now, by its key; null when none is set. */
   mode(homeId: string, axis: Axis): string | null;
-  /** The keys of the family's modes: the built-in ones, and its own. */
-  modes(): readonly string[];
-  /** A home set to a mode, by its key, as an automation: on its timeline, and said on the bus. */
-  setMode(homeId: string, mode: string, by: GatewayActor): void;
-  /** People told something: each one's inbox, and a push. */
-  notify(people: readonly string[], message: { title: string; text: string | null; level: NotifyLevel; homeId: string | null }, by: GatewayActor): Promise<void>;
+  /** The family's modes: the built-in ones, and its own — each by key, on its axis. */
+  modes(): readonly { key: string; axis: Axis; name: string }[];
+  /**
+   * A home set to a mode, by its key, as an automation: on its timeline, and
+   * said on the bus with the automations whose runs led to it (`cause`,
+   * outermost first, this one last).
+   */
+  setMode(homeId: string, mode: string, by: GatewayActor, cause: readonly string[]): void;
+  /** People told something: each one's inbox, and a push sent on its way. Who was told: members only. */
+  notify(people: readonly string[], message: { title: string; text: string | null; level: NotifyLevel; homeId: string | null }, by: GatewayActor): { told: readonly string[] };
 };
 
 /** What the home kept of each reading, minute by minute, by device and attribute key. */

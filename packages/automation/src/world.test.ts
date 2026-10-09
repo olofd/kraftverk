@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { parse } from 'yaml';
+import { BUILT_IN_MODES } from '@kraftverk/device-sdk';
 
 import { checkRule } from './check.ts';
 import { describeRule, describeTriggers } from './describe.ts';
@@ -57,7 +58,7 @@ describe('who is where, checked', () => {
     expect(checkRule(rule('fan at home'), NO_FUNCTIONS)).toEqual(['if.presentAt.who: fan is one part, not a person']);
     expect(checkRule(rule('olof at fan'), NO_FUNCTIONS)).toEqual(['if.presentAt.place: fan is one part, not a place']);
     expect(checkRule(rule('home.temperature > 20 °C'), NO_FUNCTIONS)).toEqual(['if.left: of a place, ask its people, occupied, presence, day — not "temperature"']);
-    expect(checkRule(rule('home.presence == "gone"'), { ...NO_FUNCTIONS, modes: () => ['home', 'away', 'vacation'] })).toEqual(['if: "gone" is not one of home, away, vacation']);
+    expect(checkRule(rule('home.presence == "gone"'), { ...NO_FUNCTIONS, modes: () => BUILT_IN_MODES.filter((mode) => mode.axis === 'presence') })).toEqual(['if: "gone" is not one of home, away, vacation']);
   });
 });
 
@@ -100,7 +101,7 @@ describe('what starts it, and what it does', () => {
     expect(checkRule(rule, NO_FUNCTIONS)).toEqual([]);
     expect(describeRule(rule, {}, (role) => role)).toBe('When the last of the family leaves home, set the home to away, then tell everyone “Nobody is home: {how many of the family are at home} there”.');
     const bad = read({ when: [{ 'last leaves': 'home' }], do: [{ 'set mode': 'Away!' }, { notify: 'fan', title: 'Hello {fan.' }] }).rule;
-    expect(checkRule(bad, { ...NO_FUNCTIONS, modes: () => ['home', 'away'] })).toEqual([
+    expect(checkRule(bad, { ...NO_FUNCTIONS, modes: () => BUILT_IN_MODES.slice(0, 2) })).toEqual([
       'then[0].setMode.mode: a mode, by its key: home, away, vacation, day, evening, night, or one of the family\'s own',
       'then[1].notify.to: fan is one part, not a person, or people',
       'then[1].notify.title: A "{" is not closed: it needs its "}"',

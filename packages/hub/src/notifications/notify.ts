@@ -20,16 +20,42 @@ export type PushSender = {
 
 export type NotifyInput = { title: string; body?: string | null; level?: NotificationView['level']; homeId?: string | null; from: Actor };
 
+/** How long one push is waited for: a push service that does not answer is a push that failed this time. */
+const PUSH_WITHIN_MS = 10_000;
+
+/** Told, and pushed — waited for: what a person asking for a test sees come back delivered or not. */
 export async function notify(store: NotificationStore, push: PushSender | null, personId: string, input: NotifyInput): Promise<NotificationView> {
-  const at = new Date().toISOString();
-  const said = store.add({ personId, homeId: input.homeId ?? null, level: input.level ?? 'info', title: input.title, body: input.body ?? null, from: input.from, at });
-  if (!push) return said;
-  let sent = false;
-  for (const endpoint of store.endpointsOf(personId)) {
-    const result = await push.send(endpoint, { id: said.id, title: said.title, body: said.body, level: said.level }).catch(() => 'failed' as const);
-    if (result === 'gone') store.forgetEndpoint(endpoint.nodeId);
-    if (result === 'sent') sent = true;
-  }
-  if (sent) store.delivered(said.id, new Date().toISOString());
+  const said = inbox(store, personId, input);
+  await pushed(store, push, personId, said);
   return store.get(said.id)!;
+}
+
+/**
+ * Told now — in their inbox at once — and pushed on its way, waited for by
+ * nobody: what an automation does, so one slow push service holds up no
+ * other automation, and no other person.
+ */
+export function tell(store: NotificationStore, push: PushSender | null, personId: string, input: NotifyInput): NotificationView {
+  const said = inbox(store, personId, input);
+  void pushed(store, push, personId, said).catch((error) => console.error('[notifications] a push could not be sent:', error));
+  return said;
+}
+
+const inbox = (store: NotificationStore, personId: string, input: NotifyInput): NotificationView =>
+  store.add({ personId, homeId: input.homeId ?? null, level: input.level ?? 'info', title: input.title, body: input.body ?? null, from: input.from, at: new Date().toISOString() });
+
+/** To every app of theirs that can be woken, all at once, each within its time: one gone for good is forgotten. */
+async function pushed(store: NotificationStore, push: PushSender | null, personId: string, said: NotificationView): Promise<void> {
+  if (!push) return;
+  const results = await Promise.all(
+    store.endpointsOf(personId).map(async (endpoint) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<'failed'>((resolve) => (timer = setTimeout(() => resolve('failed'), PUSH_WITHIN_MS)));
+      const result = await Promise.race([push.send(endpoint, { id: said.id, title: said.title, body: said.body, level: said.level }).catch(() => 'failed' as const), late]);
+      clearTimeout(timer);
+      if (result === 'gone') store.forgetEndpoint(endpoint.nodeId);
+      return result;
+    })
+  );
+  if (results.includes('sent')) store.delivered(said.id, new Date().toISOString());
 }

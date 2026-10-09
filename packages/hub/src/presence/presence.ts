@@ -4,7 +4,7 @@ import type { LiveBus } from '@kraftverk/holder';
 import type { DevicePeopleStore, PeopleStore, PlaceStore, PresenceStore, SpaceStore } from '@kraftverk/store';
 
 import type { DeviceViews } from '../devices/views.ts';
-import { decideRoom, roomOf, spotOf, type RoomFix } from './rooms.ts';
+import { decideRoom, ROOM_WARM_UP_MS, roomOf, spotOf, type RoomFix } from './rooms.ts';
 import { decide, freshest, keptKinds, type Fix, type Geofence } from './rules.ts';
 
 /*
@@ -40,6 +40,7 @@ export class Presence {
   #timer: ClockTimer | null = null;
   #pruneTimer: ClockTimer | null = null;
   #unsubscribe: (() => void) | null = null;
+  #startedAt = 0;
 
   constructor(deps: PresenceDeps) {
     this.#deps = deps;
@@ -47,6 +48,7 @@ export class Presence {
   }
 
   start(): void {
+    this.#startedAt = this.#clock.now();
     this.#timer ??= this.#clock.setInterval(() => this.look(), LOOK_EVERY_MS);
     this.#pruneTimer ??= this.#clock.setInterval(() => this.prune(), PRUNE_EVERY_MS);
     // A carried device that says where it is: its person looked at now.
@@ -87,10 +89,11 @@ export class Presence {
     const open = stays.open(personId).map((stay) => ({ id: stay.id, placeId: stay.placeId, kind: stay.kind, since: Date.parse(stay.since) }));
     const decision = decide({ open, fix: freshest(fixes, now), places, outsideSince: this.#outside.get(personId) ?? new Map(), level, now });
     const kinds = new Map(open.map((stay) => [stay.id, stay]));
-    for (const { stayId, until } of decision.end) {
+    for (const { stayId, until, because } of decision.end) {
       stays.end(stayId, new Date(until).toISOString());
       const stay = kinds.get(stayId);
-      if (stay) this.#deps.bus.publish({ kind: 'presence', personId, place: { id: stay.placeId, kind: stay.kind }, change: 'left', at: new Date(now).toISOString() });
+      // Gone because it shares less is not gone away: said as such. A place let go is said by nobody.
+      if (stay && because !== 'gone') this.#deps.bus.publish({ kind: 'presence', personId, place: { id: stay.placeId, kind: stay.kind }, change: because, at: new Date(now).toISOString() });
     }
     for (const { place, since, deviceId } of decision.begin) {
       stays.begin(personId, place, new Date(since).toISOString(), deviceId);
@@ -115,12 +118,12 @@ export class Presence {
     }
     const kept = stays.room(personId);
     const open = kept ? { id: kept.id, spaceId: kept.spaceId, since: Date.parse(kept.since) } : null;
-    const decision = decideRoom({ open, fix, keeps: keptKinds(level).includes('zone'), now });
+    const decision = decideRoom({ open, fix, keeps: keptKinds(level).includes('zone'), now, warming: now - this.#startedAt < ROOM_WARM_UP_MS });
     const homeOf = (spaceId: string) => [...homesSpaces.entries()].find(([, tree]) => tree.some((space) => space.id === spaceId))?.[0] ?? null;
     if (decision.end && kept) {
       stays.end(decision.end.stayId, new Date(decision.end.until).toISOString());
       const homeId = homeOf(kept.spaceId) ?? this.#homeOfSpace(kept.spaceId);
-      if (homeId) bus.publish({ kind: 'presence', personId, place: { id: kept.spaceId, kind: 'space', homeId }, change: 'left', at: new Date(now).toISOString() });
+      if (homeId) bus.publish({ kind: 'presence', personId, place: { id: kept.spaceId, kind: 'space', homeId }, change: decision.end.because, at: new Date(now).toISOString() });
     }
     if (decision.begin) {
       stays.enterRoom(personId, decision.begin.spaceId, new Date(decision.begin.since).toISOString(), decision.begin.deviceId);

@@ -12,7 +12,7 @@ export const actsOn = (automation: AutomationRecord, rule: Rule): string | undef
 
 export const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 /** The steps that do something to the world — what a run's summary says it did. */
-export const ACTS: ReadonlySet<string> = new Set(['command', 'write', 'start']);
+export const ACTS: ReadonlySet<string> = new Set(['command', 'write', 'start', 'setMode', 'notify']);
 /** An automation as a step names it: “Charge the scooter” — or one that is gone. */
 export const quoted = (name: string | null): string => (name === null ? 'an automation you no longer have' : `“${name}”`);
 /** A step as done: "Turned Heater plug off", "Set Scooter plug’s Live readings to on", "Started “Charge the scooter”"; anything else, "Sent …". */

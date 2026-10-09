@@ -32,6 +32,8 @@ let homeId: string;
 let ids: Record<string, string>;
 /** What each sensor says now. */
 let readings: Record<string, Reading[]>;
+/** What hears the bus: the service, once started. */
+let listener: ((message: LiveMessage) => void) | null;
 
 const attribute = (key: string, means: string): AttributeSpec => ({ key, label: key, value: { type: 'boolean' }, means });
 const view = (id: string, attributes: AttributeSpec[], placement: Partial<PlacementView>): DeviceView =>
@@ -56,19 +58,27 @@ beforeEach(() => {
   ids = { site: site.id, ground: ground.id, bath: bath.id, door: door.id };
   readings = {};
   said = [];
-  now = T;
+  listener = null;
+  // Started long enough ago that what it heard as it started is behind it.
+  now = T - 10 * 60_000;
   occupancy = new Occupancy({
     places,
     spaces,
     store,
-    views: { all: () => [view(PIR, [attribute('occupancy', 'motion')], { spaceId: ids.bath! }), view(CONTACT, [attribute('contact', 'open')], { spaceId: ids.bath!, openingId: ids.door! })], find: () => null },
+    views: { all: () => [view(PIR, [attribute('occupancy', 'motion')], { spaceId: ids.bath! }), view(CONTACT, [attribute('contact', 'open')], { spaceId: ids.bath!, openingId: ids.door! })] },
     history: new HistoryStore(db),
-    bus: { subscribe: () => () => {}, publish: (message) => void said.push(message) },
+    bus: { subscribe: (heard) => ((listener = heard), () => {}), publish: (message) => void said.push(message) },
     clock: { now: () => now, setTimeout: () => ({ clock: 'timer' }), setInterval: () => ({ clock: 'timer' }), clear: () => {}, rate: 1 },
   });
+  occupancy.start();
+  now = T;
 });
 
-const says = (id: string, key: string, value: boolean, at = now) => (readings[id] = [{ key, value, at: new Date(at).toISOString() }]);
+/** A sensor says something, as its device does: its view, and the bus. */
+const says = (id: string, key: string, value: boolean, at = now) => {
+  readings[id] = [{ key, value, at: new Date(at).toISOString() }];
+  listener?.({ kind: 'readings', deviceId: id as never, readings: readings[id]! });
+};
 const occupiedNow = () => store.open(homeId).map((record) => record.spaceId).sort();
 
 describe('occupancy kept', () => {
@@ -89,6 +99,10 @@ describe('occupancy kept', () => {
     occupancy.look();
     expect(occupiedNow()).toEqual([]);
     expect(said.filter((message) => message.kind === 'occupancy' && !message.occupied)).toHaveLength(3);
+    // Its battery said, still nobody moving: nothing starts again.
+    says(PIR, 'occupancy', false);
+    occupancy.look();
+    expect(occupiedNow()).toEqual([]);
     expect(store.since(ids.bath!, new Date(0).toISOString())[0]).toMatchObject({ since: new Date(T).toISOString(), until: new Date(now).toISOString() });
 
     // Thirty days on, forgotten.
@@ -113,6 +127,29 @@ describe('occupancy kept', () => {
     says(CONTACT, 'contact', true);
     occupancy.look();
     expect(occupiedNow()).toEqual([]);
+  });
+
+  test('just started, what it hears is what was kept: nothing ends until every sensor has had its say', () => {
+    says(PIR, 'occupancy', true);
+    occupancy.look();
+    expect(occupiedNow()).toHaveLength(3);
+    // Restarted: the sensor's last word kept, not current — nothing ends for the length of a hold.
+    const again = new Occupancy({ places: new PlaceStore(db), spaces, store, views: { all: () => [view(PIR, [attribute('occupancy', 'motion')], { spaceId: ids.bath! })] }, history: new HistoryStore(db), bus: { subscribe: () => () => {}, publish: () => {} }, clock: { now: () => now, setTimeout: () => ({ clock: 'timer' }), setInterval: () => ({ clock: 'timer' }), clear: () => {}, rate: 1 } });
+    readings[PIR] = [{ key: 'occupancy', value: false, at: new Date(T - 3_600_000).toISOString() }];
+    again.start();
+    expect(occupiedNow()).toHaveLength(3);
+    now = T + MOTION_HOLD_MS + 1000;
+    again.look();
+    expect(occupiedNow()).toEqual([]);
+    again.stop();
+  });
+
+  test('a home archived: what was open in it ends', () => {
+    says(PIR, 'occupancy', true);
+    occupancy.look();
+    new PlaceStore(db).archiveHome(homeId);
+    occupancy.look();
+    expect(store.allOpen()).toEqual([]);
   });
 
   test('a device deleted takes its evidence with it', () => {

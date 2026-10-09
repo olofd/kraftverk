@@ -21,19 +21,31 @@ export class OccupancyStore {
     this.#db = db;
   }
 
-  #of(row: Row): OccupancyRecord {
-    const devices = this.#db.query<{ device_id: string }, [string]>('SELECT device_id FROM occupancy_evidence WHERE occupancy_id = ? ORDER BY device_id').all(row.id);
-    return { id: row.id, spaceId: row.space_id, homeId: row.home_id, since: row.since, until: row.until, peak: row.peak, devices: devices.map((each) => each.device_id) };
+  /** Rows, each with what said so: the evidence of all of them in one question. */
+  #of(rows: readonly Row[]): OccupancyRecord[] {
+    if (!rows.length) return [];
+    const evidence = new Map<string, string[]>();
+    const ids = rows.map((row) => row.id);
+    for (const { occupancy_id, device_id } of this.#db
+      .query<{ occupancy_id: string; device_id: string }, string[]>(`SELECT occupancy_id, device_id FROM occupancy_evidence WHERE occupancy_id IN (${ids.map(() => '?').join(', ')}) ORDER BY device_id`)
+      .all(...ids))
+      evidence.set(occupancy_id, [...(evidence.get(occupancy_id) ?? []), device_id]);
+    return rows.map((row) => ({ id: row.id, spaceId: row.space_id, homeId: row.home_id, since: row.since, until: row.until, peak: row.peak, devices: evidence.get(row.id) ?? [] }));
   }
 
   /** A home's spaces with someone in them now. */
   open(homeId: string): OccupancyRecord[] {
-    return this.#db.query<Row, [string]>(`${SELECT} WHERE s.home_id = ? AND o.until IS NULL ORDER BY o.since`).all(homeId).map((row) => this.#of(row));
+    return this.#of(this.#db.query<Row, [string]>(`${SELECT} WHERE s.home_id = ? AND o.until IS NULL ORDER BY o.since`).all(homeId));
+  }
+
+  /** Every home's spaces with someone in them now: archived homes' too. */
+  allOpen(): OccupancyRecord[] {
+    return this.#of(this.#db.query<Row, []>(`${SELECT} WHERE o.until IS NULL ORDER BY o.since`).all());
   }
 
   /** A space's occupancy since a time, newest first: the open one too. */
   since(spaceId: string, since: string): OccupancyRecord[] {
-    return this.#db.query<Row, [string, string]>(`${SELECT} WHERE o.space_id = ? AND (o.until IS NULL OR o.until > ?) ORDER BY o.since DESC`).all(spaceId, since).map((row) => this.#of(row));
+    return this.#of(this.#db.query<Row, [string, string]>(`${SELECT} WHERE o.space_id = ? AND (o.until IS NULL OR o.until > ?) ORDER BY o.since DESC`).all(spaceId, since));
   }
 
   /** Someone is there from `since`: what said so, and how many when counted. */

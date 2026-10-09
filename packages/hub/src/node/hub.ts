@@ -54,6 +54,7 @@ import { HeldReadings } from '../nodes/held-readings.ts';
 import { ChangeLog } from '../history/changes.ts';
 import { Sampler } from '../history/sampler.ts';
 import { Presence } from '../presence/presence.ts';
+import { whereabouts } from '../presence/whereabouts.ts';
 import { Occupancy } from '../occupancy/occupancy.ts';
 import { Modes } from '../modes/modes.ts';
 import { familyWorld, type WorldDirectory } from '../automations/world.ts';
@@ -305,7 +306,7 @@ export class Hub {
     this.occupancies = new OccupancyStore(db);
     this.modeStore = new ModeStore(db);
     this.modes = new Modes({ store: this.modeStore, places: this.places, bus: this.bus, clock: options.clock });
-    this.world = familyWorld({ people: this.people, places: this.places, spaces: this.spaces, stays: this.stays, occupancies: this.occupancies, modes: this.modes, modeStore: this.modeStore, notifications: this.notifications, push: this.push, record });
+    this.world = familyWorld({ people: this.people, places: this.places, spaces: this.spaces, stays: this.stays, occupancies: this.occupancies, modes: this.modes, modeStore: this.modeStore, notifications: this.notifications, push: this.push, record, clock: this.clock });
 
     /** What the installed packages bring to automations: their recipes and functions. None of the core's own. */
     this.library = new AutomationLibrary(types.contributions(), (message) => this.#log('warn', message));
@@ -320,7 +321,7 @@ export class Hub {
     this.nearby = new Nearby({ types, protocols, transports, connections, catalog, sessions, ignored: this.ignored });
     this.sampler = new Sampler({ history: this.history, audit: this.audit, events, tracks: this.tracks, notifications: this.notifications }, this.views, (deviceId) => positionHidden(this, deviceId, null));
     this.presence = new Presence({ people: this.people, devicePeople: this.devicePeople, places: this.places, stays: this.stays, spaces: this.spaces, views: this.views, bus: this.bus, clock: options.clock });
-    this.occupancy = new Occupancy({ places: this.places, spaces: this.spaces, store: this.occupancies, views: this.views, history: this.history, bus: this.bus, roomStays: (homeId) => this.stays.rooms(homeId), clock: options.clock });
+    this.occupancy = new Occupancy({ places: this.places, spaces: this.spaces, store: this.occupancies, views: this.views, history: this.history, bus: this.bus, roomStays: (homeId) => whereabouts(this).flatMap((each) => (each.room?.homeId === homeId ? [{ spaceId: each.room.spaceId }] : [])), clock: options.clock });
     this.changeLog = new ChangeLog(this.history, this.bus, (id) => {
       const device = catalog.active(id);
       return device ? sessions.description(device) : null;
@@ -374,11 +375,12 @@ export class Hub {
     this.nearby.start();
     await this.sessions.sync(this.catalog.list());
     this.sampler.start();
+    // The engine listens first: what presence, occupancy and modes say as they start is heard.
+    this.engine.start();
     this.presence.start();
     this.occupancy.start();
     this.modes.start();
     this.changeLog.start();
-    this.engine.start();
     this.#stopFreshness = keepWatchedFresh(this.attention, (device, until, close) => this.sessions.get(device)?.wantFresh?.(until, close));
   }
 

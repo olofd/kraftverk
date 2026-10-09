@@ -1,4 +1,4 @@
-import { CAMEL_NAME } from '@kraftverk/device-sdk';
+import { CAMEL_NAME, MODE_KEY } from '@kraftverk/device-sdk';
 
 import { WEEKDAYS } from '../clock.ts';
 import { TRIGGER_ID } from '../rule.ts';
@@ -59,7 +59,7 @@ export function fieldSchema(field: FieldSpec): JsonSchema {
     case 'place':
       return { type: 'string', minLength: 1, ...described };
     case 'mode':
-      return { type: 'string', pattern: '^[a-z][a-z0-9-]{0,29}$', ...described };
+      return { type: 'string', pattern: MODE_KEY.source, ...described };
     case 'choice':
       return { enum: field.type.options.map((option) => option.value), ...described };
     case 'message':

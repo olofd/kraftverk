@@ -67,6 +67,21 @@ export class PresenceStore {
       .map((row) => ({ personId: row.person_id, spaceId: row.space_id, since: row.since, deviceId: row.device_id }));
   }
 
+  /** Who is in which room now, in every home: each room stay, its home beside it. */
+  allRooms(): { personId: string; spaceId: string; homeId: string; since: string; deviceId: string | null }[] {
+    return this.#db
+      .query<{ person_id: string; space_id: string; home_id: string; since: string; device_id: string | null }, []>(
+        'SELECT p.person_id, p.space_id, s.home_id, p.since, p.device_id FROM presence_stay p JOIN space s ON s.id = p.space_id WHERE p.until IS NULL ORDER BY p.since'
+      )
+      .all()
+      .map((row) => ({ personId: row.person_id, spaceId: row.space_id, homeId: row.home_id, since: row.since, deviceId: row.device_id }));
+  }
+
+  /** Everything open of a person's ended at a time: they left the family. */
+  endAll(personId: string, at: string): void {
+    for (const row of this.#db.query<{ id: string }, [string]>('SELECT id FROM presence_stay WHERE person_id = ? AND until IS NULL').all(personId)) this.end(row.id, at);
+  }
+
   /** A person is in a room from `since`, by what they carry. */
   enterRoom(personId: string, spaceId: string, since: string, deviceId: string | null): string {
     const id = `st-${Date.now().toString(36)}-${(this.#next++).toString(36)}`;

@@ -23,7 +23,7 @@ export function occupancyApi(hub: Hub): Pick<KraftverkApi, 'occupancy'> {
       async history(spaceId, options = {}) {
         if (!hub.spaces.space(spaceId)) throw new ApiError('not-found', 'No such space');
         const hours = Math.min(Math.max(options.hours ?? 24, 0.25), OCCUPANCY_DAYS * 24);
-        return hub.occupancies.since(spaceId, new Date(Date.now() - hours * 3_600_000).toISOString()).map(viewOf);
+        return hub.occupancies.since(spaceId, new Date(hub.clock.now() - hours * 3_600_000).toISOString()).map(viewOf);
       },
     },
   };

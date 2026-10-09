@@ -6,6 +6,7 @@ import {
   edgeOf,
   isGroupRole,
   isPeopleRole,
+  isPersonRole,
   isPlaceRole,
   memberRole,
   OWN_HOME,
@@ -68,7 +69,12 @@ export type ContextDeps = Pick<AutomationEngineDeps, 'store' | 'library' | 'devi
  * What happened that started a run: the event a device raised — its id, and
  * what it carried — or someone arriving or leaving, by their id (`who`).
  */
-export type StartingEvent = { id: string; data: Readonly<Record<string, Value>> | null; who?: string };
+/**
+ * What started a run, beyond its trigger: an event a device raised and what
+ * it carried; who arrived or left; and, a mode set by automations, which —
+ * what keeps two from setting it back and forth for ever.
+ */
+export type StartingEvent = { id: string; data: Readonly<Record<string, Value>> | null; who?: string; cause?: readonly string[] };
 
 export class RuleContext {
   constructor(private deps: ContextDeps) {}
@@ -122,8 +128,9 @@ export class RuleContext {
       const place = placeOf(name);
       if (!place || !world) return null;
       if (fact === 'people') {
-        const there = world.peopleAt(place);
-        return there ? { value: there.length, label: 'People there', unit: null } : null;
+        // Someone who shares too little to say might be there: how many cannot be told.
+        const there = world.whoAt(place);
+        return there && !there.unknown.length ? { value: there.at.length, label: 'People there', unit: null } : null;
       }
       if (fact === 'occupied') {
         const occupied = world.occupied(place);
@@ -201,8 +208,9 @@ export class RuleContext {
       presentAt: (who, place) => {
         const fill = automation.world[who];
         const at = placeOf(place);
-        const there = at && world ? world.peopleAt(at) : null;
-        return fill && 'person' in fill && there ? there.includes(fill.person) : null;
+        const there = at && world ? world.whoAt(at) : null;
+        if (!fill || !('person' in fill) || !there) return null;
+        return there.at.includes(fill.person) ? true : there.unknown.includes(fill.person) ? null : false;
       },
       // Each part of a group — or each of several people: what an expression is evaluated against for it, it called as its name says.
       members: (group, as) => {
@@ -339,8 +347,21 @@ export class RuleContext {
    * part that no longer fits, a meaning it does not report, a setting it
    * cannot change — or an automation to start that is gone.
    */
-  roleProblems(automation: Pick<AutomationRecord, 'rule' | 'roles' | 'groups' | 'starts'>): string[] {
+  roleProblems(automation: Pick<AutomationRecord, 'rule' | 'roles' | 'groups' | 'starts' | 'world' | 'homeId'>): string[] {
     const rule = automation.rule;
+    const world = this.deps.world;
+    // The home it is for, let go: it has nowhere to act.
+    if (world && automation.homeId && !world.home(automation.homeId)) return ['The home it is for has been let go'];
+    // Who and where: a member, members, a place still there.
+    const gone = Object.entries(rule.roles).flatMap(([role, spec]) => {
+      const fill = automation.world[role];
+      if (!world || !fill || !(isPersonRole(spec) || isPeopleRole(spec) || isPlaceRole(spec))) return [];
+      if ('place' in fill) return world.placeName({ id: fill.place, kind: fill.kind }) ? [] : [`${spec.label}: that place has been let go`];
+      const people = 'person' in fill ? [fill.person] : 'people' in fill ? fill.people : [];
+      const members = new Set(world.members());
+      return people.every((person) => members.has(person)) ? [] : [`${spec.label}: someone chosen is no longer in the family`];
+    });
+    if (gone.length) return gone;
     // Each part filling a role, a group's each.
     const removed = [...partRoles(rule), ...groupRoles(rule)].flatMap(([role, spec]) =>
       bindingsOf(automation, role).flatMap((binding) => {

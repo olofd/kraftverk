@@ -69,6 +69,13 @@ export function homesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'homes'> 
         if (hub.places.homes().length <= 1) throw new ApiError('conflict', 'A family always has a home: add the new one before leaving this one');
         const left = hub.places.archiveHome(home.id)!;
         record('home.removed', left, `Left the home "${home.name}": what was recorded there is kept`);
+        // What acted for it has nowhere to act: turned off, each said — never moved onto another home.
+        for (const automation of hub.automations.list()) {
+          if (automation.homeId !== home.id || automation.mode === 'off') continue;
+          hub.engine.reset(automation.id);
+          hub.automations.update(automation.id, { mode: 'off' });
+          hub.audit.record({ at: new Date().toISOString(), kind: 'automation.changed', actor, resourceKind: 'automation', resource: automation.id, summary: `Turned off "${automation.name}": its home, ${home.name}, was left` });
+        }
         return homeView(left);
       },
     },

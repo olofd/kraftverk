@@ -36,7 +36,7 @@ describe('presence', () => {
     // Out all the minutes: left, when it first went out.
     const later = T + LEAVE_AFTER_MS;
     const gone = decide({ open: [open(HOME)], fix: fix(51.49, later), places: [HOME], outsideSince: first.outsideSince, level: 'places', now: later });
-    expect(gone.end).toEqual([{ stayId: 'st-h-home', until: T }]);
+    expect(gone.end).toEqual([{ stayId: 'st-h-home', until: T, because: 'left' }]);
   });
 
   test('a position whose uncertainty reaches inside is not out', () => {
@@ -67,6 +67,6 @@ describe('presence', () => {
 
   test('a place let go ends its stay now', () => {
     const left = decide({ open: [open(WORK)], fix: fix(51.5, T), places: [HOME], outsideSince: new Map(), level: 'places', now: T });
-    expect(left.end).toEqual([{ stayId: 'st-z-work', until: T }]);
+    expect(left.end).toEqual([{ stayId: 'st-z-work', until: T, because: 'gone' }]);
   });
 });

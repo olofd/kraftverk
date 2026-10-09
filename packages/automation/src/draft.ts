@@ -47,8 +47,8 @@ export const bindingsOf = (fills: Pick<RoleFills, 'roles' | 'groups'>, role: str
   return one ? [one] : (fills.groups[role] ?? []);
 };
 
-/** A rule as it is being built, with what fills its roles. */
-export type AutomationDraft = RoleFills & { rule: Rule };
+/** A rule as it is being built, with what fills its roles — and the home it is for, when it says: what a room it names is of. Not said, the family's first. */
+export type AutomationDraft = RoleFills & { rule: Rule; homeId?: string | null };
 
 // --- roles ------------------------------------------------------------------------------
 

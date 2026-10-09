@@ -36,10 +36,11 @@ export type LiveMessage =
   | { kind: 'automation'; automationId: AutomationId }
   /**
    * Someone came to, or left, a place the family knows — a home, a zone, a
-   * room of a home — as far as they share. Who it was is for automations;
-   * a stream says only that presence moved.
+   * room of a home — as far as they share; or where they are is no longer
+   * told there (`unshared`): they share less now, which is not leaving. Who
+   * it was is for automations; a stream says only that presence moved.
    */
-  | { kind: 'presence'; personId: string; place: WorldPlace; change: 'arrived' | 'left'; at: string }
+  | { kind: 'presence'; personId: string; place: WorldPlace; change: 'arrived' | 'left' | 'unshared'; at: string }
   /** A space of a home has someone in it now, or nobody any more. */
   | { kind: 'occupancy'; homeId: string; spaceId: string; occupied: boolean; at: string }
   /**

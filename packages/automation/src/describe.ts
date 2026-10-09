@@ -1,4 +1,4 @@
-import { capabilitySpec, enumLabel, isCapability, standardMeaning, type ConfigSchema, type Value } from '@kraftverk/device-sdk';
+import { BUILT_IN_MODES, capabilitySpec, enumLabel, isCapability, standardMeaning, type ConfigSchema, type Value } from '@kraftverk/device-sdk';
 
 import type { RuleVocabulary } from './check.ts';
 import { WEEKDAYS, type Weekday } from './clock.ts';
@@ -66,11 +66,13 @@ export function paramText(schema: ConfigSchema, name: string, value: Value): str
 /** A fact of the run, as a sentence names it. */
 const RUN_FACT_WORDS: Record<RunFact, string> = { trigger: 'what started it', event: 'what the device reported', who: 'who came or went' };
 
-/** The modes every family has, as a sentence names them. */
-const MODE_WORDS: Readonly<Record<string, string>> = { home: 'home', away: 'away', vacation: 'on vacation', day: 'day', evening: 'evening', night: 'night' };
-
-/** A mode by its key, mid-sentence: "away", "on vacation", "guests over". */
-export const modeWords = (key: string): string => MODE_WORDS[key] ?? key.replace(/-/g, ' ');
+/** A mode by its key, mid-sentence: "away", "vacation" — a family's own by its name, "guests over". */
+export const modeWords = (key: string, vocabulary?: RuleVocabulary): string => {
+  const built = BUILT_IN_MODES.find((mode) => mode.key === key);
+  if (built) return built.name.toLowerCase();
+  const own = vocabulary?.modes?.().find((mode) => mode.key === key);
+  return own ? own.name.charAt(0).toLowerCase() + own.name.slice(1) : key.replace(/-/g, ' ');
+};
 
 /** A place's name, the automation's own home being "home". */
 const withHome = (name: (role: string) => string) => (role: string) => (role === OWN_HOME ? 'home' : name(role));
@@ -308,7 +310,7 @@ export function describeTriggers(rule: Rule, params: Readonly<Record<string, Val
     seconds: (expr) => secondsNow(expr, settledScope(rule, params)),
     days: daysText,
     name,
-    mode: modeWords,
+    mode: (key) => modeWords(key, vocabulary),
     event: (role, event) => eventWords(rule, role, event),
   };
   return rule.when.map((trigger) => {
@@ -405,7 +407,7 @@ function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (rol
     briefs: (list) => briefs(list),
     memory: (key) => memoryWords(rule, key),
     event: (role, event) => eventWords(rule, role, event),
-    mode: modeWords,
+    mode: (key) => modeWords(key, vocabulary),
     // Each value in braces said in words: "{Garage station’s charge}".
     message: (words) => sayMessage(words, (expr) => `{${text(expr)}}`),
   };

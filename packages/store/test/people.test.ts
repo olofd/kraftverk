@@ -70,6 +70,25 @@ for (const driver of DRIVERS) {
       expect(people.get(personId('A'))?.member).toBeNull();
     });
 
+    test('claimed: everything that named the keyless person names who they are now — what told them, where they are; and leaving ends where they are', async () => {
+      const keyless = 'p-01JA8ZK3Q4R7T9V2W5X6Y8Z0KK';
+      people.ensureKeyless(keyless, 'Kim', at());
+      people.addMember(keyless, { role: 'member', invitedBy: personId('A'), at: at() });
+      const home = database.query<{ id: string }, []>("SELECT id FROM place WHERE kind = 'home' LIMIT 1").get()?.id ?? null;
+      database.query("INSERT INTO notification (id, person_id, home_id, level, title, body, actor_kind, actor_id, actor_name, at) VALUES ('nt-1', ?, NULL, 'info', 'Hello', NULL, 'system', NULL, 'kraftverk', ?)").run(keyless, at());
+      if (home) database.query("INSERT INTO presence_stay (id, person_id, place_id, place_kind, space_id, since, until, device_id) VALUES ('st-1', ?, ?, 'home', NULL, ?, NULL, NULL)").run(keyless, home, at());
+      const kim = await someone('J', 'Kim');
+      const claimed = people.claim(keyless, kim.chain);
+      expect(claimed.id).toBe(personId('J'));
+      expect(database.query<{ person_id: string }, []>("SELECT person_id FROM notification WHERE id = 'nt-1'").get()?.person_id).toBe(personId('J'));
+      if (home) {
+        expect(database.query<{ person_id: string }, []>("SELECT person_id FROM presence_stay WHERE id = 'st-1'").get()?.person_id).toBe(personId('J'));
+        people.leave(personId('J'), at());
+        expect(database.query<{ until: string | null }, []>("SELECT until FROM presence_stay WHERE id = 'st-1'").get()?.until).not.toBeNull();
+      }
+      expect(people.get(keyless)).toBeNull();
+    });
+
     test('a key a family vouched for: the person signs in by it here', () => {
       const laptop = softwareKey(newSecret());
       people.vouch(personId('B'), laptop.publicJwk, 'Borrowed laptop', 'provider:example-id', at());

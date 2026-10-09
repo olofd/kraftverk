@@ -1,4 +1,4 @@
-import { attributeMeaning, CAMEL_NAME, capabilitySpec, checkValue, isCapability, MAIN_PART, meetsNeed, partsOf, standardMeaning, valueTypeOf, type AttributeSpec, type CapabilityId, type CapabilityNeed, type DeviceDescription, type Value, type ValueType } from '@kraftverk/device-sdk';
+import { attributeMeaning, BUILT_IN_MODES, CAMEL_NAME, MODE_KEY, capabilitySpec, checkValue, isCapability, MAIN_PART, meetsNeed, partsOf, standardMeaning, valueTypeOf, type AttributeSpec, type CapabilityId, type CapabilityNeed, type DeviceDescription, type ModeAxis as Axis, type Value, type ValueType } from '@kraftverk/device-sdk';
 
 import { CLOCK_TIME, minutesOf, WEEKDAYS, type Weekday } from './clock.ts';
 import { secondsText } from './describe.ts';
@@ -113,12 +113,12 @@ export type RuleVocabulary = {
    * Absent, or not known, and the setting is named by its key.
    */
   attribute?(role: string, target: WriteTarget): AttributeSpec | null;
-  /** The keys of the family's modes, its own beside the built-in ones. Absent: any key may be one, and its home says. */
-  modes?(): readonly string[];
+  /** The family's modes, its own beside the built-in ones: each by key, on its axis, by its name. Absent: any key may be one, and its home says. */
+  modes?(): readonly RuleMode[];
 };
 
-/** The modes every family has, by key. */
-const BUILT_IN_MODES = ['home', 'away', 'vacation', 'day', 'evening', 'night'];
+/** A mode as the language knows one: its key, its axis, its name — "Guests over". */
+export type RuleMode = { key: string; axis: Axis; name: string };
 
 /** What a role that is not a part is, in words: "an automation", "a person". */
 const kindWords = (spec: RoleSpec): string =>
@@ -280,7 +280,8 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       }
       if (fact === 'people') return { type: 'number', unit: '' };
       if (fact === 'occupied') return { type: 'boolean' };
-      return { type: 'string', options: vocabulary.modes ? [...vocabulary.modes()] : null };
+      // A home's mode on this axis: one of its modes, not the other's — "away" is never the time of day.
+      return { type: 'string', options: vocabulary.modes ? vocabulary.modes().filter((mode) => mode.axis === fact).map((mode) => mode.key) : null };
     }
     if ('presentAt' in expr) {
       who(expr.presentAt.who, `${where}.presentAt.who`, { many: false });
@@ -660,8 +661,8 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         return;
       case 'mode': {
         const key = String(value);
-        if (!/^[a-z][a-z0-9-]{0,29}$/.test(key)) problems.push(`${at}: a mode, by its key: ${BUILT_IN_MODES.join(', ')}, or one of the family's own`);
-        else if (vocabulary.modes && !vocabulary.modes().includes(key)) problems.push(`${at}: there is no mode "${key}" — ${vocabulary.modes().join(', ')}`);
+        if (!MODE_KEY.test(key)) problems.push(`${at}: a mode, by its key: ${BUILT_IN_MODES.map((mode) => mode.key).join(', ')}, or one of the family's own`);
+        else if (vocabulary.modes && !vocabulary.modes().some((mode) => mode.key === key)) problems.push(`${at}: there is no mode "${key}" — ${vocabulary.modes().map((mode) => mode.key).join(', ')}`);
         return;
       }
       case 'choice':

@@ -1,5 +1,5 @@
 import { isSpot, type DeviceDescription, type Reading } from '@kraftverk/device-sdk';
-import { anchoredSpot, spaceAt, toSite, type FramedSpace, type Point } from '@kraftverk/map/frames';
+import { anchoredSpot, between, spaceAt, type FramedSpace, type Point } from '@kraftverk/map/frames';
 
 /*
   A person's room (docs/PLAN-WORLD-MODEL.md §8.9), when a signal tells people
@@ -23,17 +23,24 @@ export type RoomFix = { deviceId: string; roomId: string | null; at: number };
 /** The room stay they have, if one. */
 export type OpenRoom = { id: string; spaceId: string; since: number };
 
-export type RoomDecision = { end: { stayId: string; until: number } | null; begin: { spaceId: string; since: number; deviceId: string } | null };
+export type RoomDecision = { end: { stayId: string; until: number; because: 'left' | 'unshared' } | null; begin: { spaceId: string; since: number; deviceId: string } | null };
 
-/** What changes in which room someone is, from their freshest fix. */
-export function decideRoom(input: { open: OpenRoom | null; fix: RoomFix | null; keeps: boolean; now: number }): RoomDecision {
+/**
+ * What changes in which room someone is, from their freshest fix. Warming —
+ * just started, what it hears what was kept — a fix gone stale ends nothing.
+ */
+export function decideRoom(input: { open: OpenRoom | null; fix: RoomFix | null; keeps: boolean; now: number; warming?: boolean }): RoomDecision {
   const { open, keeps, now } = input;
   const fix = input.fix && now - input.fix.at <= ROOM_STALE_MS ? input.fix : null;
-  if (!keeps) return { end: open ? { stayId: open.id, until: now } : null, begin: null };
-  if (!fix || !fix.roomId) return { end: open ? { stayId: open.id, until: input.fix?.at ?? now } : null, begin: null };
+  if (!keeps) return { end: open ? { stayId: open.id, until: now, because: 'unshared' } : null, begin: null };
+  if (!fix && input.warming) return { end: null, begin: null };
+  if (!fix || !fix.roomId) return { end: open ? { stayId: open.id, until: input.fix?.at ?? now, because: 'left' } : null, begin: null };
   if (open?.spaceId === fix.roomId) return { end: null, begin: null };
-  return { end: open ? { stayId: open.id, until: fix.at } : null, begin: { spaceId: fix.roomId, since: fix.at, deviceId: fix.deviceId } };
+  return { end: open ? { stayId: open.id, until: fix.at, because: 'left' } : null, begin: { spaceId: fix.roomId, since: fix.at, deviceId: fix.deviceId } };
 }
+
+/** How long after starting a stale fix ends no room stay: until what is carried has had its say. */
+export const ROOM_WARM_UP_MS = ROOM_STALE_MS;
 
 /** What only holds rooms: never a room itself. */
 const CONTAINERS = new Set(['site', 'building', 'floor']);
@@ -43,13 +50,17 @@ export type RoomSpace = FramedSpace & { kind: string; outline: readonly Point[] 
 
 /**
  * The room a device's spot puts it in: the spot anchored where the device is
- * placed, turned into its site's frame, and the innermost drawn room there.
+ * placed, and the innermost drawn room there — on the floor its map is
+ * placed on, never a room above or below it; without floors, anywhere on
+ * the site.
  */
 export function roomOf(spaces: readonly RoomSpace[], placement: { spaceId: string; x: number | null; y: number | null; facing: number | null }, spot: Point): string | null {
-  const site = spaces.find((space) => space.parentId === null);
-  if (!site) return null;
-  const onSite = toSite(spaces, placement.spaceId, anchoredSpot(placement, spot));
-  const found = spaceAt(spaces, site.id, onSite);
+  const byId = new Map(spaces.map((space) => [space.id, space]));
+  let level = byId.get(placement.spaceId);
+  for (let depth = 0; level && level.kind !== 'floor' && level.parentId && depth < 64; depth++) level = byId.get(level.parentId);
+  const within = level?.kind === 'floor' ? level : spaces.find((space) => space.parentId === null);
+  if (!within) return null;
+  const found = spaceAt(spaces, within.id, between(spaces, placement.spaceId, within.id, anchoredSpot(placement, spot)));
   return found && !CONTAINERS.has(found.kind) ? found.id : null;
 }
 

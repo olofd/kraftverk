@@ -1,7 +1,7 @@
 import type { Caller, KraftverkApi, PresenceView } from '@kraftverk/api-contract';
 
 import type { Hub } from '../node/hub.ts';
-import { keptKinds } from '../presence/rules.ts';
+import { whereabouts } from '../presence/whereabouts.ts';
 
 /*
   Where each member is (docs/PLAN-WORLD-MODEL.md §8.9, §11), as the family
@@ -15,23 +15,16 @@ export function presenceApi(hub: Hub, _caller: Caller): Pick<KraftverkApi, 'pres
     presence: {
       async list() {
         const names = new Map<string, string>([...hub.places.homes().map((home) => [home.id, home.name] as const), ...hub.places.zones().map((zone) => [zone.id, zone.name] as const)]);
-        const roomOf = (personId: string): PresenceView['room'] => {
-          const stay = hub.stays.room(personId);
-          const space = stay ? hub.spaces.space(stay.spaceId) : null;
-          return stay && space && !space.removedAt ? { id: space.id, homeId: space.homeId, name: space.name, since: stay.since } : null;
-        };
-        return hub.people.members().map((person): PresenceView => {
-          const sharing = person.member!.sharing.now;
-          if (sharing === 'off') return { personId: person.id, sharing, home: null, places: [], room: null };
-          const kinds = keptKinds(sharing);
-          // What is kept is no more than they share; what they share now may be less than when it was kept.
-          const open = hub.stays.open(person.id).filter((stay) => kinds.includes(stay.kind) && names.has(stay.placeId));
+        return whereabouts(hub).map((each): PresenceView => {
+          if (each.sharing === 'off') return { personId: each.personId, sharing: each.sharing, home: null, places: [], room: null };
+          const places = [...(each.home ? [{ ...each.home, kind: 'home' as const }] : []), ...each.zones.map((zone) => ({ ...zone, kind: 'zone' as const }))];
+          const space = each.room ? hub.spaces.space(each.room.spaceId) : null;
           return {
-            personId: person.id,
-            sharing,
-            home: open.some((stay) => stay.kind === 'home'),
-            places: sharing === 'home-away' ? [] : open.map((stay) => ({ id: stay.placeId, kind: stay.kind, name: names.get(stay.placeId)!, since: stay.since })),
-            room: sharing === 'home-away' ? null : roomOf(person.id),
+            personId: each.personId,
+            sharing: each.sharing,
+            home: each.home !== null,
+            places: each.tells.zone ? places.map((place) => ({ id: place.id, kind: place.kind, name: names.get(place.id)!, since: place.since })) : [],
+            room: each.room && space ? { id: space.id, homeId: each.room.homeId, name: space.name, since: each.room.since } : null,
           };
         });
       },

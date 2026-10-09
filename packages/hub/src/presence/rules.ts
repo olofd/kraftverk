@@ -49,9 +49,12 @@ const out = (fix: Fix, place: Geofence) => distanceTo(fix, place) - (fix.accurac
 /** The kinds of place kept at a level: what they share, no more. */
 export const keptKinds = (level: SharingLevel): readonly ('home' | 'zone')[] => (level === 'off' ? [] : level === 'home-away' ? ['home'] : ['home', 'zone']);
 
+/** Why a stay ended: they went; what they share no longer says it; the place was let go. */
+type EndedBecause = 'left' | 'unshared' | 'gone';
+
 export type Decision = {
   begin: { place: Geofence; since: number; deviceId: string }[];
-  end: { stayId: string; until: number }[];
+  end: { stayId: string; until: number; because: EndedBecause }[];
   /** When positions first said they were out of each place still open: what the next look goes on from. */
   outsideSince: Map<string, number>;
 };
@@ -63,16 +66,16 @@ export function decide(input: { open: readonly OpenStay[]; fix: Fix | null; plac
   const end: Decision['end'] = [];
   const outsideSince = new Map<string, number>();
   const ended = new Set<string>();
-  const close = (stay: OpenStay, until: number) => {
-    end.push({ stayId: stay.id, until: Math.max(until, stay.since + 1) });
+  const close = (stay: OpenStay, until: number, because: EndedBecause) => {
+    end.push({ stayId: stay.id, until: Math.max(until, stay.since + 1), because });
     ended.add(stay.id);
   };
 
   for (const stay of open) {
     const place = byId.get(stay.placeId);
-    // A place let go, or one no longer shared: the stay ends now.
+    // A place let go, or one no longer shared: the stay ends now — not because they went.
     if (!place || !kinds.includes(stay.kind)) {
-      close(stay, now);
+      close(stay, now, place ? 'unshared' : 'gone');
       continue;
     }
     if (!fix) {
@@ -82,7 +85,7 @@ export function decide(input: { open: readonly OpenStay[]; fix: Fix | null; plac
     }
     if (!out(fix, place)) continue;
     const since = input.outsideSince.get(stay.placeId) ?? fix.at;
-    if (now - since >= LEAVE_AFTER_MS) close(stay, since);
+    if (now - since >= LEAVE_AFTER_MS) close(stay, since, 'left');
     else outsideSince.set(stay.placeId, since);
   }
 

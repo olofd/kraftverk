@@ -149,4 +149,47 @@ describe('the family’s world, automated', () => {
     expect(made.world).toEqual({ olof: { person: ANNA } });
     expect(made.sentence).toBe('When Anna arrives home, set the home to home.');
   });
+
+  test('sharing less is not leaving: nobody told someone left, and the last one home stays home', async () => {
+    const told: Rule = { roles: { family: { people: true, label: 'Family' } }, params: { fields: {} }, when: [{ leaves: { who: 'someone', at: 'home' } }], then: [{ notify: { to: 'family', title: '{run.who} left' } }] };
+    await acting(told, { family: { everyone: true } });
+    await acting(withSettings(STANDARD_RECIPES.find((each) => each.id === 'standard.away-when-everyone-leaves')! as unknown as Rule, {}));
+    await arrives(ANNA);
+    // Ben shares nothing now: where he is cannot be told — not away.
+    t.hub.people.setSharing(BEN, { level: 'off' }, BEN, new Date().toISOString());
+    const stay = t.hub.stays.open(ANNA).find((each) => each.placeId === home)!;
+    t.hub.stays.end(stay.id, new Date(Date.now() + 1).toISOString());
+    await t.hub.engine.hear({ kind: 'presence', personId: ANNA, place: { id: home, kind: 'home' }, change: 'unshared', at: new Date().toISOString() });
+    await settle();
+    expect(t.hub.notifications.inbox(ANNA)).toEqual([]);
+    expect(t.hub.modes.now(home, 'presence')).toBe('home');
+  });
+
+  test('two arriving together: each told, neither let go while the other’s run goes on', async () => {
+    const rule: Rule = { roles: { family: { people: true, label: 'Family' } }, params: { fields: {} }, when: [{ arrives: { who: 'someone', at: 'home' } }], then: [{ wait: { for: { value: 1, unit: 's' } } }, { notify: { to: 'family', title: '{run.who} is home' } }] };
+    await acting(rule, { family: { everyone: true } });
+    await Promise.all([arrives(ANNA), arrives(BEN)]);
+    await settle(2600);
+    expect(t.hub.notifications.inbox(ANNA).map((each) => each.title).sort()).toEqual(['Anna is home', 'Ben is home']);
+  });
+
+  test('two automations setting the mode back and forth: each change it caused itself is not heard by it again', async () => {
+    const back = (from: string, to: string): Rule => ({ roles: {}, params: { fields: {} }, when: [{ modeBecomes: { mode: from } }], then: [{ wait: { for: { value: 1, unit: 's' } } }, { setMode: { mode: to } }] });
+    await acting(back('away', 'home'));
+    await acting(back('home', 'away'));
+    t.hub.modes.set(home, 'away', { kind: 'person', id: null, name: 'olof' });
+    await t.hub.engine.hear({ kind: 'mode', homeId: home, axis: 'presence', mode: 'away', previous: 'home', by: { kind: 'person', id: null, name: 'olof' }, cause: [], at: new Date().toISOString() });
+    await settle(3500);
+    const changes = (await t.home.timeline()).filter((entry) => entry.kind === 'home.mode' && entry.actor.kind === 'automation');
+    expect(changes.length).toBeLessThanOrEqual(2);
+  });
+
+  test('a home left: what acted for it is turned off, never moved onto another', async () => {
+    const cabin = t.hub.places.addHome({ key: 'cabin', name: 'Cabin', type: 'cabin', timeZone: 'Europe/Stockholm' });
+    const made = await t.home.automations.create({ name: 'Cabin away', rule: { roles: {}, params: { fields: {} }, when: [{ modeBecomes: { mode: 'night' } }], then: [{ setMode: { mode: 'away' } }] }, roles: {}, groups: {}, starts: {}, homeId: cabin.id, timeZone: 'Europe/Stockholm' });
+    t.hub.automations.update(made.id, { mode: 'act' });
+    await t.home.homes.remove(cabin.id);
+    expect(t.hub.automations.get(made.id)!.mode).toBe('off');
+    expect(t.hub.engine.roleProblems(t.hub.automations.get(made.id)!)).toEqual(['The home it is for has been let go']);
+  });
 });

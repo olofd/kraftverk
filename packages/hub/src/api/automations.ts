@@ -151,11 +151,27 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
         // A new rule comes with what fills its roles: all of them together, or none.
         const rebuilt = input.rule !== undefined || input.roles !== undefined || input.groups !== undefined || input.starts !== undefined;
         if (rebuilt && (!input.rule || !input.roles || !input.groups || !input.starts)) throw new ApiError('invalid', 'A new rule comes with what fills its roles: rule, roles, groups and starts together');
-        const result = rebuilt ? checked({ rule: input.rule!, roles: input.roles!, groups: input.groups!, starts: input.starts!, world: input.world ?? {} } satisfies AutomationDraft, current.id) : null;
+        // Who and where filled anew, or another home — whose rooms are what it may name: checked again, as a new rule is.
+        const homeChanged = input.homeId !== undefined && input.homeId !== current.homeId;
+        const recheck = rebuilt || input.world !== undefined || homeChanged;
+        const result = recheck
+          ? checked(
+              {
+                rule: input.rule ?? current.rule,
+                roles: input.roles ?? current.roles,
+                groups: input.groups ?? current.groups,
+                starts: input.starts ?? current.starts,
+                world: input.world ?? current.world,
+                homeId: input.homeId !== undefined ? input.homeId : current.homeId,
+              } satisfies AutomationDraft,
+              current.id
+            )
+          : null;
         if (result) refuseProblems(result.problems);
-        const nextRule = result ? input.rule! : current.rule;
+        const nextRule = input.rule ?? current.rule;
         const nextRecheck = input.recheckMinutes !== undefined ? input.recheckMinutes : current.recheckMinutes;
         if (nextRecheck && !keepsSo(nextRule)) throw new ApiError('invalid', KEEPS_SO_ONLY);
+        // Another home is another place to act: what it does changes as a new rule does.
         const changedRule = result ? { rule: nextRule, roles: result.roles, groups: result.groups, starts: result.starts, world: result.world } : null;
 
         // Letting it act — and changing what one that acts does — is a deliberate act.

@@ -13,6 +13,7 @@ import {
   ruleUses,
   runsOn,
   secondsText,
+  SEQUENCE_LIMITS,
   slotOf,
   stepsOf,
   takesSteps,
@@ -26,7 +27,7 @@ import { dayAfter, localTime, MAIN_PART, zonedInstant, type ClockTimer } from '@
 import type { LiveMessage } from '@kraftverk/holder';
 
 import type { RuleContext } from './context.ts';
-import { type AutomationEngineDeps, type AutomationRecord } from './model.ts';
+import { type AutomationEngineDeps, type AutomationRecord, type EnginePlace } from './model.ts';
 import type { Runs } from './runs.ts';
 import type { TriggerState } from './storage.ts';
 
@@ -41,6 +42,9 @@ import type { TriggerState } from './storage.ts';
 
 /** Late, but not too late: a server that was down at 07:00 still acts at 07:20, not at 15:00. */
 const GRACE_MS = 60 * 60_000;
+
+/** The triggers of people and places that are a change seen, not a state found: none fires for how things already are. */
+const WORLD_EDGES: ReadonlySet<string> = new Set(['firstArrives', 'lastLeaves', 'empties', 'occupied']);
 
 export class Triggers {
   #ticking = false;
@@ -238,11 +242,16 @@ export class Triggers {
       if (automation.mode === 'off') continue;
       const rule = automation.rule;
       const home = world?.home(automation.homeId) ?? null;
-      /** The place a trigger names, by id: the automation's own home, or what fills its role. */
-      const placeId = (name: string | undefined): string | null => {
-        if (!name || name === OWN_HOME) return home;
+      /** The place a trigger names: the automation's own home, or what fills its role. */
+      const placeOf = (name: string | undefined): EnginePlace | null => {
+        if (!name || name === OWN_HOME) return home ? { id: home, kind: 'home' } : null;
         const fill = automation.world[name];
-        return fill && 'place' in fill ? fill.place : null;
+        return fill && 'place' in fill ? { id: fill.place, kind: fill.kind } : null;
+      };
+      /** The home a trigger's place is at: its own, a space's home. */
+      const homeAt = (name: string | undefined): string | null => {
+        const place = placeOf(name);
+        return place && world ? world.homeOf(place) : null;
       };
       /** Whether a person is who a trigger names: anyone of the family, a person, one of several. */
       const isWho = (who: string, person: string): boolean => {
@@ -256,20 +265,26 @@ export class Triggers {
       for (const [index, trigger] of rule.when.entries()) {
         let why: string | null = null;
         if (message.kind === 'presence') {
+          // Sharing less is not leaving: only arriving and leaving start a run.
           const step = 'arrives' in trigger ? { ...trigger.arrives, change: 'arrived' } : 'leaves' in trigger ? { ...trigger.leaves, change: 'left' } : null;
-          if (step && step.change === message.change && message.place.id === placeId(step.at) && isWho(step.who, message.personId)) {
+          const target = step ? placeOf(step.at) : null;
+          if (step && target && world && step.change === message.change && world.within({ id: message.place.id, kind: message.place.kind }, target) && isWho(step.who, message.personId)) {
             const person = world?.personName(message.personId) ?? 'Someone';
             const place = step.at === OWN_HOME ? 'home' : (world?.placeName({ id: message.place.id, kind: message.place.kind }) ?? 'a place');
             why = message.change === 'arrived' ? `${person} arrived ${step.at === OWN_HOME ? 'home' : `at ${place}`}` : `${person} left ${place}`;
           }
         }
         if (message.kind === 'mode') {
+          // Set by a run it led to itself — or a chain of them too long: not again, or two would set it back and forth for ever.
+          if (message.cause.includes(automation.id) || message.cause.length >= SEQUENCE_LIMITS.chain) continue;
           const name = world?.placeName({ id: message.homeId, kind: 'home' }) ?? 'The home';
-          if ('modeBecomes' in trigger && message.homeId === placeId(trigger.modeBecomes.at) && message.mode === trigger.modeBecomes.mode) why = `${name} became ${message.mode}`;
-          if ('modeChanges' in trigger && message.homeId === placeId(trigger.modeChanges.at) && message.axis === trigger.modeChanges.axis) why = `${name}’s ${message.axis === 'day' ? 'time of day' : 'mode'} became ${message.mode}`;
+          if ('modeBecomes' in trigger && message.homeId === homeAt(trigger.modeBecomes.at) && message.mode === trigger.modeBecomes.mode) why = `${name} became ${message.mode}`;
+          if ('modeChanges' in trigger && message.homeId === homeAt(trigger.modeChanges.at) && message.axis === trigger.modeChanges.axis) why = `${name}’s ${message.axis === 'day' ? 'time of day' : 'mode'} became ${message.mode}`;
         }
         if (why) {
-          const going = this.#runs.runAndKeep(automation, why, triggerKey(trigger, index), message.kind === 'presence' ? { id: '', data: null, who: message.personId } : null);
+          const event = message.kind === 'presence' ? { id: '', data: null, who: message.personId } : message.kind === 'mode' ? { id: '', data: null, cause: message.cause } : null;
+          // Each arriving and leaving happens once: one heard while a run goes on waits for it, never let go.
+          const going = this.#runs.runAndKeep(automation, why, triggerKey(trigger, index), event, { happening: message.kind === 'presence' });
           if (!takesSteps(rule)) await going;
           continue;
         }
@@ -296,9 +311,13 @@ export class Triggers {
 
     let entry = this.#becoming.get(key);
     if (!entry) {
-      // Nothing kept: as if it had been false, so a condition already true is its edge.
-      entry = { state: this.deps.store.trigger(automation.id, triggerKey(trigger, index)) ?? { last: false, heldSince: null, fired: false }, hold: null };
+      // Nothing kept: as if it had been false, so a condition already true is its edge — but people and places:
+      // "when the last one leaves" is a change seen, not a state found. Made while nobody is home, it waits for the next.
+      const kept = this.deps.store.trigger(automation.id, triggerKey(trigger, index));
+      const found = kept ?? (WORLD_EDGES.has(triggerKind(trigger)) ? { last: now, heldSince: null, fired: now } : { last: false, heldSince: null, fired: false });
+      entry = { state: found, hold: null };
       this.#becoming.set(key, entry);
+      if (!kept && found.last) this.deps.store.keepTrigger(automation.id, triggerKey(trigger, index), found);
     }
     const { state } = entry;
     const keep = () => this.deps.store.keepTrigger(automation.id, triggerKey(trigger, index), state);

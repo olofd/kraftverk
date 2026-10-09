@@ -171,11 +171,13 @@ export class Runs {
    * its fallback taken — and started afresh; or started once the run ends.
    * Null when it did not run now.
    */
-  async runAndKeep(automation: AutomationRecord, why: string, trigger: string | null = null, event: StartingEvent | null = null): Promise<AutomationRun | null> {
+  async runAndKeep(automation: AutomationRecord, why: string, trigger: string | null = null, event: StartingEvent | null = null, how: { happening?: boolean } = {}): Promise<AutomationRun | null> {
     // Started again by a trigger sooner than it may be: let go.
     if (trigger !== null && this.#tooSoon(automation, trigger)) return null;
     if (this.#running.has(automation.id)) {
-      const way = automation.rule.whileRunning ?? 'skip';
+      // A happening — someone arriving — comes once: let go, it is lost for good, so it waits its turn instead.
+      const asked = automation.rule.whileRunning ?? 'skip';
+      const way = how.happening && asked === 'skip' ? 'queue' : asked;
       if (way === 'skip') return null;
       if (way === 'queue') {
         const waiting = this.#queued.get(automation.id) ?? [];
@@ -869,7 +871,7 @@ export class Runs {
       return 'ok';
     }
     try {
-      world.setMode(home, set.mode, actorOf(here.automation));
+      world.setMode(home, set.mode, actorOf(here.automation), [...(live.event?.cause ?? []), here.automation.id]);
     } catch (error) {
       this.#add(live, { kind: 'setMode', depth, within, what, outcome: 'failed', detail: (error as Error).message, until: null });
       return 'failed';
@@ -907,13 +909,19 @@ export class Runs {
     };
     const title = (await said(notify.title)).slice(0, 120);
     const text = notify.text ? (await said(notify.text)).slice(0, 1000) : null;
+    let told: readonly string[];
     try {
-      await world.notify(people, { title, text, level: notify.level ?? 'info', homeId: world.home(here.automation.homeId) }, actorOf(here.automation));
+      told = world.notify(people, { title, text, level: notify.level ?? 'info', homeId: world.home(here.automation.homeId) }, actorOf(here.automation)).told;
     } catch (error) {
       this.#add(live, { kind: 'notify', depth, within, what, outcome: 'failed', detail: (error as Error).message, until: null });
       return 'failed';
     }
-    const names = notify.to === EVERYONE ? 'everyone' : listed(people.map((id) => world.personName(id) ?? 'someone'));
+    // Told nobody — everyone chosen has left the family — is not done.
+    if (!told.length) {
+      this.#add(live, { kind: 'notify', depth, within, what, outcome: 'failed', detail: 'Nobody chosen is in the family now', until: null });
+      return 'failed';
+    }
+    const names = notify.to === EVERYONE ? 'everyone' : listed(told.map((id) => world.personName(id) ?? 'someone'));
     this.#add(live, { kind: 'notify', depth, within, what, outcome: 'done', detail: `Told ${names}: “${title}”`, until: null });
     return 'ok';
   }

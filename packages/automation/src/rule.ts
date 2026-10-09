@@ -159,10 +159,10 @@ export const PLACE_FACTS = { people: 'How many of the family are there', occupie
 
 export type PlaceFact = keyof typeof PLACE_FACTS;
 
-/** A home's two axes of mode. */
-export const AXES = ['presence', 'day'] as const;
-
-export type Axis = (typeof AXES)[number];
+/** A home's two axes of mode: whether anyone is home, and the time of day. */
+export { MODE_AXES as AXES } from '@kraftverk/device-sdk';
+import type { ModeAxis } from '@kraftverk/device-sdk';
+export type Axis = ModeAxis;
 
 /** How loudly people are told: as news, as a warning, or as an alarm that wakes them. */
 export const NOTIFY_LEVELS = ['info', 'warning', 'alarm'] as const;

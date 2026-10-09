@@ -722,6 +722,7 @@ export const SCHEMA = `
   CREATE UNIQUE INDEX presence_stay_home ON presence_stay (person_id) WHERE until IS NULL AND place_kind = 'home';
   CREATE UNIQUE INDEX presence_stay_room ON presence_stay (person_id) WHERE until IS NULL AND space_id IS NOT NULL;
   CREATE INDEX presence_stay_place ON presence_stay (place_id, since);
+  CREATE INDEX presence_stay_rooms ON presence_stay (space_id) WHERE until IS NULL AND space_id IS NOT NULL;
 
   /*
     Whether a space has someone in it, whoever they are (docs/PLAN-WORLD-MODEL.md

@@ -3,6 +3,7 @@ import { checkChain, hashOf, keyId, type Json, type Person, type PublicJwk, type
 
 import type { SqlDatabase } from './database.ts';
 import { DevicePeopleStore } from './device-people.ts';
+import { PresenceStore } from './presence.ts';
 
 /**
  * A family's people (docs/PLAN-WORLD-MODEL.md §8.2, §8.3, §10): each as their
@@ -153,9 +154,16 @@ export class PeopleStore {
       const member = this.#db.query<MemberRow & { invited_by: string | null }, [string]>('SELECT * FROM member WHERE person_id = ?').get(oldId);
       this.#db.query('DELETE FROM member WHERE person_id = ?').run(oldId);
       if (member) this.#db.query('INSERT INTO member (person_id, role, nickname, color, joined_at, invited_by, left_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, member.role, member.nickname, member.color, member.joined_at, member.invited_by, member.left_at);
-      this.#db.query('UPDATE member SET invited_by = ? WHERE invited_by = ?').run(id, oldId);
-      this.#db.query('UPDATE person SET managed_by = ? WHERE managed_by = ?').run(id, oldId);
-      this.#db.query('UPDATE family SET created_by = ? WHERE created_by = ?').run(id, oldId);
+      // Everything that names them names who they are now: every column the schema says refers to a person,
+      // read from the schema itself — an automation telling them, where they were, what they carry — none left behind.
+      // What cannot move, because who they are now has one already, is theirs as they are now.
+      const references = this.#db
+        .query<{ tbl: string; col: string }, []>(`SELECT m.name AS tbl, p."from" AS col FROM sqlite_master m JOIN pragma_foreign_key_list(m.name) p WHERE m.type = 'table' AND p."table" = 'person'`)
+        .all();
+      for (const { tbl, col } of references) {
+        this.#db.query(`UPDATE OR IGNORE "${tbl}" SET "${col}" = ? WHERE "${col}" = ?`).run(id, oldId);
+        this.#db.query(`DELETE FROM "${tbl}" WHERE "${col}" = ?`).run(oldId);
+      }
       this.#db.query('DELETE FROM person WHERE id = ?').run(oldId);
     })();
     return this.get(id)!;
@@ -256,8 +264,9 @@ export class PeopleStore {
   leave(personId: string, at: string): void {
     if (this.roleOf(personId) === 'admin' && this.#admins() === 1) throw new Error('A family keeps at least one admin: make another one first');
     this.#db.query('UPDATE member SET left_at = ? WHERE person_id = ? AND left_at IS NULL').run(at, personId);
-    // Gone from the family, they carry, drive, own and use none of its devices.
+    // Gone from the family, they carry, drive, own and use none of its devices — and are at none of its places.
     new DevicePeopleStore(this.#db).endFor(personId, at);
+    new PresenceStore(this.#db).endAll(personId, at);
   }
 
   #admins(): number {

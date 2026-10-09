@@ -73,7 +73,7 @@ export function useEditor() {
     };
     const vocabulary: RuleVocabulary = {
       fn: (id) => (functions.find((fn) => fn.id === id) as unknown as AutomationFunction | undefined) ?? null,
-      ...(world.modes.length ? { modes: () => world.modes.map((mode) => mode.key) } : {}),
+      ...(world.modes.length ? { modes: () => world.modes } : {}),
       attribute: (role, target) => {
         const bound = partOf(role);
         return bound ? writtenAttribute(bound.description, bound.part, target) : null;
