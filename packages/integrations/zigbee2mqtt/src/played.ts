@@ -113,7 +113,7 @@ export const RADAR_EXPOSES: readonly Expose[] = [
 ];
 
 /** A door's contact sensor: its `contact` is closed (§5.6). */
-export const CONTACT_EXPOSES: readonly Expose[] = [
+const CONTACT_EXPOSES: readonly Expose[] = [
   { type: 'binary', name: 'contact', property: 'contact', label: 'Contact', access: 1, value_on: false, value_off: true, description: 'Indicates if the contact is closed (= true) or open (= false)' },
   { type: 'numeric', name: 'battery', property: 'battery', label: 'Battery', access: 1, unit: '%', value_min: 0, value_max: 100, category: 'diagnostic' },
   { type: 'numeric', name: 'linkquality', property: 'linkquality', label: 'Linkquality', access: 1, unit: 'lqi', category: 'diagnostic' },

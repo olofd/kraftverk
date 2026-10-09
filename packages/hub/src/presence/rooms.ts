@@ -15,7 +15,7 @@ import { anchoredSpot, spaceAt, toSite, type FramedSpace, type Point } from '@kr
 */
 
 /** A spot older than this says nothing of where someone is now. */
-export const ROOM_STALE_MS = 2 * 60_000;
+const ROOM_STALE_MS = 2 * 60_000;
 
 /** Where what they carry put them: the room, if one, and when. */
 export type RoomFix = { deviceId: string; roomId: string | null; at: number };

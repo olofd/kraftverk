@@ -22,7 +22,7 @@ export type WorldOptions = {
   names: WorldNames;
 };
 
-export const NO_WORLD: WorldOptions = { people: [], places: [], modes: [], names: { person: () => null, place: () => null } };
+const NO_WORLD: WorldOptions = { people: [], places: [], modes: [], names: { person: () => null, place: () => null } };
 
 const KINDS: Record<PlaceKind, string> = { home: 'A home', zone: 'A zone', space: 'A room' };
 

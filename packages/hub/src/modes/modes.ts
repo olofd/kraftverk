@@ -14,7 +14,7 @@ import { MODE_AXES, type ModeStore, type PlaceStore } from '@kraftverk/store';
 const LOOK_EVERY_MS = 30_000;
 const PRUNE_EVERY_MS = 6 * 60 * 60_000;
 /** How long a home's modes are kept. */
-export const MODES_KEPT_DAYS = 2 * 365;
+const MODES_KEPT_DAYS = 2 * 365;
 
 export type ModesDeps = {
   store: ModeStore;
