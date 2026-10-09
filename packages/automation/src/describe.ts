@@ -223,6 +223,11 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
         const in_ = unit || (args.map(unitOf).find(Boolean) ?? '');
         return BUILTINS[fn].words(args.map((arg, index) => text(arg, index === 0 || BUILTINS[fn].units === 'one' ? in_ : '')));
       }
+      case 'script': {
+        const { script: role, fn, args } = expr as ExprOf<'script'>;
+        const words = fn.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
+        return `${words} by ${name(role)}${args.length ? ` (${args.map((arg) => text(arg)).join(', ')})` : ''}`;
+      }
       case 'negate':
         return `minus ${text((expr as ExprOf<'negate'>).negate, unit)}`;
       case 'if': {

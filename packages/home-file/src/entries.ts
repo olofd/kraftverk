@@ -32,8 +32,12 @@ export type AutomationSource = {
   groups: Readonly<Record<string, readonly { device: string; part: string }[]>>;
   /** What fills each automation role: an automation by its id. */
   starts: Readonly<Record<string, string>>;
+  /** What fills each script role: one of the family's scripts by its id. */
+  scripts?: Readonly<Record<string, string>>;
   /** Who and where fills each role of the family's world, by id. */
   world?: Readonly<Record<string, WorldFill>>;
+  /** The person whose yes it acts on, by id; null when nobody's. */
+  actingFor?: string | null;
 };
 
 /**
@@ -62,6 +66,8 @@ export function automationEntryFrom(
   keyOf: {
     device: (id: string) => string | null;
     automation: (id: string) => string | null;
+    /** A script's key, by its id. */
+    script?: (id: string) => string | null;
     home?: (id: string) => string | null;
     /** A person's key; none known: the role is left unfilled. */
     person?: (id: string) => string | null;
@@ -90,6 +96,11 @@ export function automationEntryFrom(
     if (key) uses[role] = { automation: key };
     else gone.push(role);
   }
+  for (const [role, id] of Object.entries(source.scripts ?? {})) {
+    const key = keyOf.script?.(id) ?? null;
+    if (key) uses[role] = { script: key };
+    else gone.push(role);
+  }
   // A person, people, a place: by their keys — one no longer here said, by its role.
   for (const [role, fill] of Object.entries(source.world ?? {})) {
     if ('everyone' in fill) {
@@ -113,6 +124,8 @@ export function automationEntryFrom(
     entry: {
       name: source.name,
       mode: source.mode,
+      // Who it acts for, by their key: only while it acts — and only a person this file can name.
+      actsFor: source.mode === 'act' && source.actingFor ? (keyOf.person?.(source.actingFor) ?? null) : null,
       home: source.homeId ? (keyOf.home?.(source.homeId) ?? null) : null,
       clock: source.ownTimeZone,
       recheckMinutes: source.recheckMinutes,
@@ -135,6 +148,8 @@ export function fillsFrom(
   idOf: {
     device: (key: string) => string | null;
     automation: (key: string) => string | null;
+    /** A script's id, by its key. */
+    script?: (key: string) => string | null;
     /** A person's id, by their key. */
     person?: (key: string) => string | null;
     /** A home's, a zone's or — of the automation's home — a space's id, by its key. */
@@ -144,12 +159,14 @@ export function fillsFrom(
   roles: Record<string, { device: string; part: string }>;
   groups: Record<string, { device: string; part: string }[]>;
   starts: Record<string, string>;
+  scripts: Record<string, string>;
   world: Record<string, WorldFill>;
   missing: { role: string; key: string }[];
 } {
   const roles: Record<string, { device: string; part: string }> = {};
   const groups: Record<string, { device: string; part: string }[]> = {};
   const starts: Record<string, string> = {};
+  const scripts: Record<string, string> = {};
   const world: Record<string, WorldFill> = {};
   const missing: { role: string; key: string }[] = [];
   for (const [role, use] of Object.entries(uses)) {
@@ -178,6 +195,12 @@ export function fillsFrom(
       else missing.push({ role, key });
       continue;
     }
+    if ('script' in use) {
+      const id = idOf.script?.(use.script) ?? null;
+      if (id) scripts[role] = id;
+      else missing.push({ role, key: use.script });
+      continue;
+    }
     if ('automation' in use) {
       const id = idOf.automation(use.automation);
       if (id) starts[role] = id;
@@ -197,7 +220,7 @@ export function fillsFrom(
     if (id) roles[role] = { device: id, part: use.part };
     else missing.push({ role, key: use.device });
   }
-  return { roles, groups, starts, world, missing };
+  return { roles, groups, starts, scripts, world, missing };
 }
 
 /** A device as it lives: what the server keeps, and the app is shown. */

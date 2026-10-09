@@ -108,6 +108,8 @@ export function ruleUses(written: Rule): {
   writes: Write[];
   /** The roles of the automations it starts. */
   starts: string[];
+  /** The roles of the scripts it runs, or calls a function of. */
+  scripts: string[];
   /** The groups a "for each" goes through. */
   groups: string[];
   /** The windows of the day it looks at: when each opens and closes, something may turn true. */
@@ -129,6 +131,7 @@ export function ruleUses(written: Rule): {
   const writes: Write[] = [];
   const windows: { from: Expr; to: Expr }[] = [];
   const starts: string[] = [];
+  const scripts: string[] = [];
   const groups: string[] = [];
   const awaits: { role: string; event: string }[] = [];
   /** A place, read as a part is: the family's world, not a device's reading. */
@@ -157,6 +160,7 @@ export function ruleUses(written: Rule): {
       else if ('reachable' in each) reaches.push(each.reachable);
       else if ('within' in each) windows.push(each.within);
       else if ('call' in each) calls.push({ fn: each.call, role: each.role });
+      else if ('script' in each) scripts.push(each.script);
     }
   }
   // Each step by its kind's fields (kinds/steps.ts): the settings it writes, the automations it starts, and the steps within.
@@ -169,6 +173,7 @@ export function ruleUses(written: Rule): {
         const value = fieldValue(step, field);
         if (value === undefined) continue;
         if (field.type.type === 'automation') starts.push(String(value));
+        else if (field.type.type === 'script') scripts.push(String(value));
         else if (field.type.type === 'group') groups.push(String(value));
         else if (field.type.type === 'steps') walkSteps(value as readonly Step[]);
       }
@@ -178,7 +183,7 @@ export function ruleUses(written: Rule): {
   for (const list of stepListsOf(rule)) walkSteps(list.steps);
   // Each trigger by its kind's fields (kinds/triggers.ts): the events it waits for.
   const events = rule.when.flatMap((trigger) => eventsIn(trigger, triggerSpec(trigger).fields));
-  return { reads, events, awaits, calls, reaches: [...new Set(reaches)], writes, starts: [...new Set(starts)], groups: [...new Set(groups)], windows, world, places: [...places] };
+  return { reads, events, awaits, calls, reaches: [...new Set(reaches)], writes, starts: [...new Set(starts)], scripts: [...new Set(scripts)], groups: [...new Set(groups)], windows, world, places: [...places] };
 }
 
 /**

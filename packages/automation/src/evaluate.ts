@@ -100,6 +100,13 @@ export type RuleScope = {
   read(role: string, means: string): { value: ScalarValue; label: string; unit: Unit | null } | null;
   /** A function's answer; not given where calls are not allowed. */
   call?(fn: string, role: string, args: Readonly<Record<string, Value>>): Promise<Evaluation>;
+  /**
+   * What a function of the script filling a role answers, its arguments
+   * known, at once (docs/PLAN-SCRIPTS.md §9.3): pure, so it may be asked
+   * wherever a condition is looked at. Absent where no engine runs scripts,
+   * and a fault: unknown, with why.
+   */
+  script?(role: string, fn: string, args: readonly Value[]): { value: Value | null; detail: string | null };
   /** Whether the part filling a role can be reached now — and, when not, why. */
   reachable(role: string): { reachable: boolean | null; detail: string };
   /**
@@ -339,6 +346,19 @@ export function measureNow(expr: Expr, scope: RuleScope, trace: string[] = [], a
       const value = spec.apply(values as number[]);
       return value === null ? plain(null) : { value: tidy(value), unit };
     }
+    case 'script': {
+      const { script: role, fn, args } = expr as ExprOf<'script'>;
+      const measured = args.map(now);
+      // An argument not known: the function is not asked, and its answer is not known either.
+      if (measured.some((each) => each.value === null)) return plain(null);
+      if (!scope.script) {
+        trace.push(`${scope.name(role)}: ${fn} is not known here — no engine runs scripts`);
+        return plain(null);
+      }
+      const answered = scope.script(role, fn, measured.map((each) => each.value as Value));
+      if (answered.detail) trace.push(`${scope.name(role)}: ${fn}: ${answered.detail}`);
+      return plain(answered.value as ScalarValue | null);
+    }
     case 'negate': {
       const inner = now((expr as ExprOf<'negate'>).negate);
       return typeof inner.value === 'number' ? { value: -inner.value, unit: inner.unit } : plain(null);
@@ -507,6 +527,7 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
       case 'history':
       case 'distance':
       case 'call':
+      case 'script':
       case 'reachable':
       case 'within':
       case 'run':

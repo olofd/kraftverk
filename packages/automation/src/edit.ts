@@ -138,6 +138,7 @@ export function usedRoles(rule: Rule): Set<string> {
     ...uses.reaches,
     ...uses.writes.map((write) => write.role),
     ...uses.starts,
+    ...uses.scripts,
     ...uses.places,
     ...ruleCommands(rule).map((command) => command.role),
   ]);

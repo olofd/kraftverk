@@ -2,7 +2,7 @@ import { capabilitiesOf, capabilityIn, meetsNeed, partName, partsOf, type Automa
 
 import { usedRoles } from './edit.ts';
 import { NO_SETTINGS, withSettings } from './evaluate.ts';
-import { isAutomationRole, isGroupRole, isPartRole, isWorldRole, roleKind, type Rule } from './rule.ts';
+import { isAutomationRole, isGroupRole, isPartRole, isScriptRole, isWorldRole, roleKind, type Rule } from './rule.ts';
 import { KEYWORDS } from './text/expr.ts';
 
 /*
@@ -18,13 +18,16 @@ export type RoleBinding = { device: SavedDeviceId; part: string };
 /**
  * What fills an automation's roles: a part of a device for each role one
  * fills (`roles`), the parts of each group a `for each` goes through
- * (`groups`), and another automation for each role a `start` step starts
- * (`starts`).
+ * (`groups`), another automation for each role a `start` step starts
+ * (`starts`), and one of the family's scripts for each role a script fills
+ * (`scripts`).
  */
 export type RoleFills = {
   roles: Record<string, RoleBinding>;
   groups: Record<string, readonly RoleBinding[]>;
   starts: Record<string, AutomationId>;
+  /** Which of the family's scripts fills each role a script fills, by its id. None: it has no such role. */
+  scripts?: Record<string, string>;
   /** Who and where fills each role of the family's world: a person, people, a place. None: it has no such role. */
   world?: Record<string, WorldFill>;
 };
@@ -137,7 +140,7 @@ export function automationRole<D extends AutomationDraft>(draft: D, automation: 
 export function pruned<D extends AutomationDraft>(draft: D): D {
   const used = usedRoles(draft.rule);
   const keep = <T>(record: Readonly<Record<string, T>>) => Object.fromEntries(Object.entries(record).filter(([role]) => used.has(role)));
-  return { ...draft, rule: { ...draft.rule, roles: keep(draft.rule.roles) }, roles: keep(draft.roles), groups: keep(draft.groups), starts: keep(draft.starts), world: keep(draft.world ?? {}) };
+  return { ...draft, rule: { ...draft.rule, roles: keep(draft.rule.roles) }, roles: keep(draft.roles), groups: keep(draft.groups), starts: keep(draft.starts), scripts: keep(draft.scripts ?? {}), world: keep(draft.world ?? {}) };
 }
 
 /** The roles of a rule, by kind — one part, several, another automation — each as an editor lists them. */
@@ -236,6 +239,8 @@ export function roleSaid(draft: AutomationDraft, role: string, devices: readonly
     }
     return world?.place(fill.place) ?? spec.label;
   }
+  // A script: as the role is labelled — which one fills it, its page says.
+  if (isScriptRole(spec)) return draft.scripts?.[role] ? spec.label : unfilled;
   if (isAutomationRole(spec)) {
     const started = automations.find((automation) => automation.id === draft.starts[role]);
     return started ? `“${started.name}”` : unfilled;

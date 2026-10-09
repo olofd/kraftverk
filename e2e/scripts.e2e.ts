@@ -1,13 +1,15 @@
 import { ALONE, expect, test, type Page } from './fixtures';
 
-import { unique } from './helpers';
+import { answer, press, unique } from './helpers';
 
 /*
   Scripts in the app (docs/PLAN-SCRIPTS.md): one written, read as it is
   typed by the home's own engine — the server's, or this browser's when it
   keeps a home of its own — which says what it declares, or what is wrong
   with it, at its line; kept, found among the family's scripts, changed;
-  and, with a server, in the configuration file.
+  and, with a server, in the configuration file. And run: a script an
+  automation runs turns a simulated plug off, through the gateway, as the
+  automation — what it did said beneath its step.
 */
 
 const LABEL = 'The script';
@@ -83,5 +85,76 @@ test.describe('with no server', () => {
     const name = unique('Warm up');
     await writeAndKeep(page, name);
     await changeIt(page, name);
+  });
+});
+
+/** A simulated plug added in the app, by name: on, drawing 240 W. */
+async function addPlug(page: Page, name: string) {
+  await page.goto('/devices/add');
+  await press(page, 'Smart plugs');
+  await press(page, 'Tuya smart plug');
+  await press(page, 'Simulated');
+  await expect(page.getByText('It answered')).toBeVisible();
+  await press(page, 'Continue');
+  await page.getByRole('textbox').first().fill(name);
+  await press(page, 'Save');
+  await expect(page.getByText('240 W', { exact: true }).filter({ visible: true }).first()).toBeVisible();
+}
+
+/** A script kept, and an automation that runs it, started: the plug it names turned off, and the run saying so. */
+async function runIt(page: Page) {
+  const plug = unique('Desk plug');
+  await addPlug(page, plug);
+
+  const name = unique('Plug off');
+  await page.goto('/scripts/new');
+  await page.getByLabel('Its name').fill(name);
+  await write(page, [
+    "import { step, home, log } from 'kraftverk';",
+    '',
+    'export const off = step({}, async () => {',
+    `  const plug = Object.values(home.devices).find((device) => device.name === '${plug}');`,
+    "  if (!plug) throw new Error('No such plug');",
+    '  await plug.switch.set({ on: false });',
+    "  log('Turned the plug off');",
+    '});',
+    '',
+  ].join('\n'));
+  await expect(page.getByText('Ready', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Keep it' }).click();
+  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
+  const key = (await page.getByText(/ · written in TypeScript$/).innerText()).split(' · ')[0]!;
+
+  // An automation that runs it, written as YAML, and started.
+  const automation = unique('Evening tidy');
+  await page.goto('/automations/new');
+  await page.getByText('As YAML', { exact: true }).click();
+  const yaml = page.getByRole('textbox', { name: 'New automation, as configuration' });
+  await yaml.click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.insertText([`name: ${automation}`, 'mode: watch', 'clock: Europe/Stockholm', 'uses:', `  tidy: { script: ${key} }`, 'do:', '  - run script: tidy', ''].join('\n'));
+  await expect(page.getByText('Ready', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Create' }).click();
+  const main = page.getByRole('main');
+  await expect(page.getByRole('heading', { level: 1, name: automation })).toBeVisible();
+  await main.getByRole('button', { name: `Start ${automation}` }).click();
+  expect(await answer(page, true)).toContain('started by you it acts');
+  // Its run: the script's step, and beneath it what the script did.
+  const activity = page.getByRole('region', { name: 'Activity' });
+  await expect(activity.getByText(`Run “${name}”`).first()).toBeVisible();
+  await activity.getByText(`Run “${name}”`).first().click();
+  await expect(page.getByText(`${plug}: switch.set on false`).first()).toBeVisible();
+  await expect(page.getByText('Turned the plug off').first()).toBeVisible();
+}
+
+test('a script run by an automation turns a plug off, through the gateway, as the automation', async ({ page }) => {
+  await runIt(page);
+});
+
+test.describe('run with no server', () => {
+  test.use({ as: ALONE });
+
+  test('a script run by an automation, in this browser’s own home, turns a plug off', async ({ page }) => {
+    await runIt(page);
   });
 });

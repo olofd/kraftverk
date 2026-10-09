@@ -1,6 +1,6 @@
 import type { AutomationRun } from '@kraftverk/api-contract';
-import type { AutomationMode, Axis, Coordinates, NotifyLevel, PlaceKind, RoleBinding, Rule, RulePart, WorldFill } from '@kraftverk/automation';
-import type { AuditRecord, AutomationId, CapabilityId, Clock, DeviceDescription } from '@kraftverk/device-sdk';
+import type { AutomationMode, Axis, Coordinates, NotifyLevel, PlaceKind, RoleBinding, Rule, RulePart, ScriptShape, WorldFill } from '@kraftverk/automation';
+import type { AuditRecord, AutomationId, CapabilityId, Clock, DeviceDescription, Value } from '@kraftverk/device-sdk';
 import type { ActionGateway, GatewayActor } from '@kraftverk/gateway';
 import type { LiveBus } from '@kraftverk/holder';
 
@@ -32,6 +32,10 @@ export type AutomationRecord = {
   starts: Record<string, AutomationId>;
   /** Who and where fills each role of the family's world: a person, people, a place. */
   world: Record<string, WorldFill>;
+  /** Which of the family's scripts fills each role a script fills, by its id. */
+  scripts: Record<string, string>;
+  /** The person whose yes it acts on (docs/PLAN-SCRIPTS.md §4.1): the one who last let it act. Null while it does not act. What its scripts do, they do for them. */
+  actingFor: string | null;
   /** The home it is for: its clock, and what "home" is in its rule. Null: the family's, on its first home's clock. */
   homeId: string | null;
   /** Its clock: its own, or else its home's — "Europe/Stockholm". */
@@ -145,6 +149,42 @@ export type AutomationEngineDeps = {
   clock?: Clock;
   /** How often it looks at what is due by the clock, in the clock's time. */
   everyMs?: number;
+  /** What runs its scripts' steps and functions (docs/PLAN-SCRIPTS.md §10): the hub's. None: a script step fails, and a function is not known. */
+  scripts?: ScriptRunner;
+};
+
+/** One step of a script, as a run takes it: what the hub's runner is asked (docs/PLAN-SCRIPTS.md §10). */
+export type ScriptStepRequest = {
+  automation: AutomationRecord;
+  /** The run: its id, who asked for it, and the automations whose doing led to it — what a mode it sets carries, so none loops. */
+  run: { id: string; askedBy: Asker | null; cause: readonly string[] };
+  scriptId: string;
+  /** Which of its steps, when the automation says; else its only one. */
+  step: string | undefined;
+  /** What it is given, by its inputs' names, in their units. */
+  inputs: Readonly<Record<string, Value>>;
+  /** What it remembered for this automation, by its names. */
+  memory: Readonly<Record<string, Value>>;
+  /** When it must have ended, on the home's clock: a wait never outlives it. */
+  deadline: number;
+  /** Aborted when its run is stopped. */
+  signal: AbortSignal;
+  /** A line in the run's log, under the step: what it did and what came of it, or what it said. */
+  say(line: { what: string; outcome: 'done' | 'refused' | 'failed' | 'unverified' | 'would'; detail: string | null }): void;
+};
+
+/** How a script's step came out: its answer and what it remembers now, or why it did not end well. */
+export type ScriptStepDone = { answer: Value | null; memory: Record<string, Value> } | { fault: string };
+
+/** The scripts of the family, as the engine runs them — the hub's to give. */
+export type ScriptRunner = {
+  step(request: ScriptStepRequest): Promise<ScriptStepDone>;
+  /** One of a script's functions, its arguments known: at once, pure; a fault is unknown, with why. */
+  fn(scriptId: string, fn: string, args: readonly Value[]): { value: Value | null; detail: string | null };
+  /** What a script declares, where it reads: what a step or a call of it is checked against. */
+  shape(scriptId: string): ScriptShape | null;
+  /** Its name, as the run's words say it; null when it is gone. */
+  name(scriptId: string): string | null;
 };
 
 /** An automation as the actor of what it does: known by its id, which a rename does not change, and said by its name. */

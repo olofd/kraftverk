@@ -41,6 +41,8 @@ function holds(field: FieldSpec, fields: readonly FieldSpec[]): string {
       return 'a role: what fills it is under `uses`';
     case 'automation':
       return 'a role another automation fills: `{ automation: key }` under `uses`';
+    case 'script':
+      return 'a role one of the family’s scripts fills: `{ script: key }` under `uses`';
     case 'group':
       return 'a role several parts fill: a list of them under `uses`';
     case 'each':

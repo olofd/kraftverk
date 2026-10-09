@@ -135,8 +135,12 @@ function tokenize(text: string): Token[] {
   return tokens;
 }
 
-/** Reads an expression's text; every problem with where it is. */
-export function parseExpr(text: string): Parsed {
+/**
+ * Reads an expression's text; every problem with where it is. `scripts`:
+ * the rule's roles a script fills, so `feel.feelsLike(t, h)` is one of its
+ * functions and not a package's.
+ */
+export function parseExpr(text: string, options: { scripts?: ReadonlySet<string> } = {}): Parsed {
   let tokens: Token[];
   try {
     tokens = tokenize(text);
@@ -411,11 +415,23 @@ export function parseExpr(text: string): Parsed {
       if (segment.kind !== 'name') throw new Failure('Expected the next part of a name after "."', segment.at);
       segments.push(segment);
     }
+    if (isSymbol('(') && segments.length === 1 && options.scripts?.has(token.value)) return scriptCall(token.value, segments[0]!.value);
     if (isSymbol('(')) return call([token.value, ...segments.map((each) => each.value)].join('.'), token.at);
     if (!NAME.test(token.value)) throw new Failure(`"${token.value}" is not a role's name: letters, digits and _ only`, token.at);
     const bad = segments.find((each) => !NAME.test(each.value));
     if (bad) throw new Failure(`"${bad.value}" is not part of a meaning: letters, digits and _ only`, bad.at);
     return { read: { role: token.value, means: segments.map((each) => each.value).join('.') } };
+  };
+  /** One of the functions of the script filling a role: its arguments in order, each an expression. */
+  const scriptCall = (role: string, fn: string): Expr => {
+    expect('(', `"(" and what ${fn} is given`);
+    const args: Expr[] = [];
+    if (!isSymbol(')')) {
+      args.push(ternary());
+      while (isSymbol(',')) (next(), args.push(ternary()));
+    }
+    expect(')', `a ")" to close ${role}.${fn}(`);
+    return { script: role, fn, args };
   };
   const call = (id: string, at: number): Expr => {
     if (!FUNCTION_ID.test(id)) throw new Failure(`"${id}" is not a function's id: "package.name"`, at);
@@ -556,6 +572,7 @@ function print(expr: Expr, need: number): string {
     if (!isHistoryFn(expr.history) || !NAME.test(expr.of.role) || !MEANING.test(expr.of.means)) throw new Unprintable();
     return `${expr.history}(${expr.of.role}.${expr.of.means}, ${print(expr.over, LEVEL.ternary)})`;
   }
+  if ('script' in expr) return `${expr.script}.${expr.fn}(${expr.args.map((arg) => print(arg, LEVEL.ternary)).join(', ')})`;
   if ('apply' in expr) {
     if (!isBuiltin(expr.apply)) throw new Unprintable();
     return `${expr.apply}(${expr.args.map((arg) => print(arg, LEVEL.ternary)).join(', ')})`;

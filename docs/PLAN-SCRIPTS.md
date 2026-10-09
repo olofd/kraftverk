@@ -1122,6 +1122,40 @@ Each step from B2 on ends with an end-to-end test in both.
   the family's scripts beneath the automations, each with its steps and
   functions counted.
 
+**B3 built, 2026-10-09.** Scripts run, end to end in the browser: an
+automation's `run script` step turns a simulated plug off through the
+gateway, as the automation, with a server and in a browser's own home
+(`e2e/scripts.e2e.ts`); a script's function decides a `becomes`. What
+building it changed:
+- **Watch mode does not run a script.** It says the step it would take, as
+  for every step. A script run against a recorder that only pretends to act
+  (§7.5) is left for later.
+- **The guest SDK, as it is now:**
+  - `home.devices`, by key, each with `reading(key)` and `readings()`,
+    its main part's capabilities as objects (`plug.switch.set({ on: false })`),
+    and `part(id)` for another part;
+  - `kraftverk/api`, the whole API;
+  - `sleep(seconds)`, `notify(title, { text, to })`, `setMode(mode, home)`
+    and `KraftverkError`.
+
+  A command refused or failed is thrown. Rooms, modes and people as objects,
+  and types for all of it, are B4's.
+- **What a script may not call** (§7.3) is the gate's: `noScript` entries,
+  and `live`. `automations.start` and `stop` are among them for now: the
+  engine's asker is a person or an assistant.
+- **`acting_for` is nullable, with no check against `mode`.** An account
+  that names no person may still let an automation act; its scripts then act
+  for nobody, and are refused what needs a role. The person who gives the yes
+  becomes `acting_for`. An import keeps the person `acts for:` names, when
+  they are here, or else takes the importer.
+- **A role is named `tidy`, not `off`:** a role may not be a word of the
+  language.
+- **A script's function gets a sandbox of its own for each call**, not one
+  for each look (§10.2). That is simpler, and pure by construction; its cost
+  is to be measured.
+- **The file's version 18:** `{ script: key }` under `uses`, `run script:`,
+  script calls, and `acts for:`.
+
 What browser first changes in the slices:
 - **The editor is a web component of its own**, `ScriptEditor.web.tsx`,
   beside `YamlEditor.web.tsx`. It is not yet an Expo DOM component; the

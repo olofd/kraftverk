@@ -131,7 +131,9 @@ export function checkDocument(document: ConfigDocument, vocabulary: Vocabulary, 
       } else if ('parts' in use) {
         if (options.uses !== 'leave') use.parts.forEach((each, index) => part(each, [...path, 'uses', role, index]));
       }
-      else if ('automation' in use) {
+      else if ('script' in use) {
+        if (!(use.script in document.scripts) && !vocabulary.scripts.some((each) => each.key === use.script)) problem(`There is no script "${use.script}", in the file or the family's`, [...path, 'uses', role]);
+      } else if ('automation' in use) {
         if (!(use.automation in document.automations) && !vocabulary.automations.some((each) => each.key === use.automation)) problem(`There is no automation "${use.automation}", in the file or on the server`, [...path, 'uses', role]);
       } else if ('person' in use || 'people' in use) {
         // People by their keys: in the file, or the family's now, when the server says.

@@ -88,7 +88,7 @@ const STEPS = Object.keys(STEP_KINDS) as StepKind[];
 
 /** An automation's entry around one step, its roles filled by made-up parts and an automation. */
 const doing = (step: unknown) => ({
-  uses: { charger: 'charger-plug', station: 'garage-station', plug: 'smart-plug', supply: 'garage-station.outlet.ac', outlets: ['smart-plug', 'garage-station.outlet.ac'], chargeTheScooter: { automation: 'charge-the-scooter' }, ...WORLD },
+  uses: { charger: 'charger-plug', station: 'garage-station', plug: 'smart-plug', supply: 'garage-station.outlet.ac', outlets: ['smart-plug', 'garage-station.outlet.ac'], chargeTheScooter: { automation: 'charge-the-scooter' }, tidy: { script: 'tidy-up' }, ...WORLD },
   // What the examples remember: a count, and a reading.
   memory: { timesCharged: 0, lastPower: '0 W' },
   // What the examples answer: a power.
@@ -140,7 +140,7 @@ describe('the steps, as data', () => {
       expect(spec.label.trim()).not.toBe('');
       expect(spec.docs.summary.trim()).not.toBe('');
       for (const example of spec.docs.examples) {
-        const parsed = parseExpr(example);
+        const parsed = parseExpr(example, { scripts: new Set(['feel']) });
         if (!parsed.ok) throw new Error(`${kind}: ${example}: ${parsed.error.message}`);
         expect({ example, kinds: [...expressionsIn(parsed.expr)].map(exprKind) }).toEqual({ example, kinds: expect.arrayContaining([kind]) });
         // Taken apart by its children and put back, it is what it was.

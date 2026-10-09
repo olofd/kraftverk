@@ -674,6 +674,8 @@ export const SCHEMA = `
     time_zone       TEXT,
     mode            TEXT NOT NULL CHECK (mode IN ('off', 'watch', 'act')),
     recheck_minutes INTEGER CHECK (recheck_minutes IS NULL OR recheck_minutes BETWEEN 1 AND 1440),
+    /* The person whose yes it acts on: the one who last let it act. What its scripts do, they do for them, with their role (docs/PLAN-SCRIPTS.md §4.1). NULL: nobody — it watches, or was let act by an account that names no person. */
+    acting_for      TEXT REFERENCES person (id),
     looked_at       TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
@@ -883,12 +885,16 @@ export const SCHEMA = `
     device_id     TEXT REFERENCES device (id) ON DELETE CASCADE,
     part          TEXT,
     starts        TEXT REFERENCES automation (id) ON DELETE CASCADE,
+    /* The script a role names: what a run-script step runs, whose functions it calls. Deleted, the role is not filled. */
+    script_id     TEXT REFERENCES script (id) ON DELETE CASCADE,
     PRIMARY KEY (automation_id, role),
-    CHECK ((device_id IS NOT NULL AND part IS NOT NULL AND starts IS NULL)
-        OR (device_id IS NULL AND part IS NULL AND starts IS NOT NULL))
+    CHECK ((device_id IS NOT NULL AND part IS NOT NULL AND starts IS NULL AND script_id IS NULL)
+        OR (device_id IS NULL AND part IS NULL AND starts IS NOT NULL AND script_id IS NULL)
+        OR (device_id IS NULL AND part IS NULL AND starts IS NULL AND script_id IS NOT NULL))
   );
   CREATE INDEX automation_role_device ON automation_role (device_id);
   CREATE INDEX automation_role_starts ON automation_role (starts);
+  CREATE INDEX automation_role_script ON automation_role (script_id);
 
   /*
     The parts filling each of an automation's groups — the roles a "for

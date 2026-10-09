@@ -247,6 +247,7 @@ function FieldEditor<T extends object>({ field, fields, construct, set, path }: 
     // Drawn by the kind that has them — a command's, a setting's, an automation started — or as its branches.
     case 'value':
     case 'automation':
+    case 'script':
     case 'name':
     case 'memory':
     case 'args':

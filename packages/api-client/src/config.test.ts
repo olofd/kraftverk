@@ -49,6 +49,7 @@ const VOCABULARY: Vocabulary = {
   policy: {},
   devices: [{ key: 'scooter-plug', type: 'acme.plug', name: 'Scooter plug', parts: ['main'] }],
   automations: [{ key: 'night', name: 'Night' }],
+  scripts: [],
   homes: [],
   people: [],
   zones: [],
@@ -78,7 +79,7 @@ const automation = {
 };
 
 /** A family nobody in this test names. */
-const NO_WORLD = { people: [], places: [] };
+const NO_WORLD = { people: [], places: [], scripts: [] };
 
 describe('an automation as YAML, in the app', () => {
   test('is written as the server writes it, and read back to the draft it came from', () => {
@@ -90,7 +91,7 @@ describe('an automation as YAML, in the app', () => {
     const read = readAutomationText(text, 'charge', VOCABULARY);
     expect(read.problems).toEqual([]);
     const { draft, settings } = draftOfEntry(read.entry!, [plug], [], NO_WORLD);
-    expect(draft).toEqual({ name: 'Charge', rule, roles: automation.roles, groups: {}, starts: {}, world: {} });
+    expect(draft).toEqual({ name: 'Charge', rule, roles: automation.roles, groups: {}, starts: {}, scripts: {}, world: {} });
     expect(settings).toEqual({ mode: 'act', homeId: null, timeZone: 'Europe/Stockholm', recheckMinutes: null });
   });
 
@@ -107,6 +108,7 @@ describe('an automation as YAML, in the app', () => {
 
   test('who and where by their keys, its home kept: written and read back the same — a room of the cabin, not the house', () => {
     const world = worldKeysOf({
+      scripts: [],
       homes: [
         { id: 'h-house', key: 'house', name: 'House' },
         { id: 'h-cabin', key: 'cabin', name: 'Cabin' },

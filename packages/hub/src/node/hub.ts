@@ -60,6 +60,7 @@ import { whereabouts } from '../presence/whereabouts.ts';
 import { Occupancy } from '../occupancy/occupancy.ts';
 import { Modes } from '../modes/modes.ts';
 import { ScriptCatalogue } from '../scripts/catalogue.ts';
+import { scriptRunner } from '../scripts/runner.ts';
 import { familyWorld, type WorldDirectory } from '../automations/world.ts';
 import type { PushSender } from '../notifications/notify.ts';
 import { positionHidden } from '../presence/levels.ts';
@@ -325,8 +326,8 @@ export class Hub {
     this.library = new AutomationLibrary(types.contributions(), (message) => this.#log('warn', message));
     // What a package brings to automations comes with its code: when its integration loads.
     this.#stopContributions = types.onContribution((contributed) => this.library.add([contributed]));
-    this.engine = new AutomationEngine({ store: automations, library: this.library, device: homeDevices(catalog, sessions, (deviceId) => positionHidden(this, deviceId, null)), gateway: this.gateway, record, bus: this.bus, history: this.history, location: locationOf(this.places), world: this.world, clock: options.clock });
-    this.drafts = drafts({ history: this.history, events, catalog, sessions, library: this.library, engine: this.engine, automations, world: this.world });
+    this.engine = new AutomationEngine({ store: automations, library: this.library, device: homeDevices(catalog, sessions, (deviceId) => positionHidden(this, deviceId, null)), gateway: this.gateway, record, bus: this.bus, history: this.history, location: locationOf(this.places), world: this.world, clock: options.clock, scripts: scriptRunner(this) });
+    this.drafts = drafts({ history: this.history, events, catalog, sessions, library: this.library, engine: this.engine, automations, world: this.world, scripts: this.scripts });
 
     this.heldReadings = new HeldReadings(this.history);
     this.views = new DeviceViews({ catalog, types, sessions, connections, links, nodes, transports, heldReadings: this.heldReadings, self: self.id, master: () => this.family.get()!.masterId, readOnly: options.readOnly, placement: (id) => this.spaces.placement(id), labels: (id) => this.labels.on({ device: id }).map((label) => label.id), people: (id) => this.devicePeople.of(id) });

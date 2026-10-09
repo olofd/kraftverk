@@ -27,7 +27,7 @@ export type Issue = { message: string; path: readonly (string | number)[]; offse
  * group, several; another automation; a person, people — some, or everyone —
  * or a place: a home, a zone, a space of the automation's home, by key.
  */
-export type Use = PartUse | { parts: readonly PartUse[] } | { automation: string } | WorldUse;
+export type Use = PartUse | { parts: readonly PartUse[] } | { automation: string } | { script: string } | WorldUse;
 
 /** A person, people or a place, by their keys in the file. */
 export type WorldUse = { person: string } | { people: readonly string[] } | { everyone: true } | { home: string } | { zone: string } | { space: string };
@@ -70,6 +70,12 @@ const STEP_VERBS = STEP_KIND_ORDER.flatMap(verbsOf);
 
 class Reader {
   issues: Issue[] = [];
+  /** The rule's roles a script fills: what its expressions call a script's function on. */
+  readonly scripts: ReadonlySet<string>;
+
+  constructor(scripts: ReadonlySet<string> = new Set()) {
+    this.scripts = scripts;
+  }
 
   fail(message: string, path: Path, offset?: number): never {
     this.issues.push(offset === undefined ? { message, path } : { message, path, offset });
@@ -83,7 +89,7 @@ class Reader {
    */
   expr(data: Data, path: Path): Expr {
     if (typeof data === 'string') {
-      const parsed = parseExpr(data);
+      const parsed = parseExpr(data, { scripts: this.scripts });
       if (!parsed.ok) return this.fail(parsed.error.message, path, parsed.error.offset);
       return parsed.expr;
     }
@@ -181,6 +187,7 @@ class Reader {
         return this.days(data, path);
       case 'role':
       case 'automation':
+      case 'script':
       case 'group':
       case 'each':
       case 'event':
@@ -294,6 +301,7 @@ function usedCapabilities(rule: RuleBody, role: string): string[] {
 export function inferredRole(rule: RuleBody, role: string, kind: RoleKind): RoleSpec {
   const label = labelOf(role);
   if (kind === 'automation') return { automation: true, label };
+  if (kind === 'script') return { script: true, label };
   if (kind === 'person') return { person: true, label };
   if (kind === 'people') return { people: true, label };
   if (kind === 'place') return { place: true, label };
@@ -333,7 +341,8 @@ export type RuleEntry = {
  * path. `path`: where the entry is in the file.
  */
 export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { rule: Rule | null; uses: Record<string, Use>; issues: Issue[] } {
-  const reader = new Reader();
+  // The roles a script fills, looked for first: what its expressions call a script's function on.
+  const reader = new Reader(new Set(Object.entries(isRecord(entry.uses) ? entry.uses : {}).flatMap(([role, data]) => (isRecord(data) && 'script' in data ? [role] : []))));
   const when = tryRead(reader, () => reader.triggers(entry.when, [...path, 'when'])) ?? [];
   const condition = 'only if' in entry ? tryRead(reader, () => reader.expr(entry['only if'], [...path, 'only if'])) : undefined;
   const then = tryRead(reader, () => reader.steps(entry.do, [...path, 'do'])) ?? [];
@@ -380,9 +389,9 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
           roles[role] = inferredRole(steps, role, 'group');
           return;
         }
-        if (!isRecord(data)) return reader.fail('Expected what fills the role: "device-key.part", a list of them, { automation: key }, { person: key }, { people: [keys] }, or { home | zone | space: key }', at);
+        if (!isRecord(data)) return reader.fail('Expected what fills the role: "device-key.part", a list of them, { automation: key }, { script: key }, { person: key }, { people: [keys] }, or { home | zone | space: key }', at);
         const kind: RoleKind =
-          'automation' in data ? 'automation' : 'parts' in data ? 'group' : 'person' in data ? 'person' : 'people' in data ? 'people' : 'home' in data || 'zone' in data || 'space' in data ? 'place' : 'part';
+          'automation' in data ? 'automation' : 'script' in data ? 'script' : 'parts' in data ? 'group' : 'person' in data ? 'person' : 'people' in data ? 'people' : 'home' in data || 'zone' in data || 'space' in data ? 'place' : 'part';
         const inferred = inferredRole(steps, role, kind);
         const label = typeof data.label === 'string' ? data.label : inferred.label;
         const keys = ROLE_KEYS[kind];
@@ -390,6 +399,11 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
         if (kind === 'automation') {
           if (data.automation !== null) uses[role] = { automation: reader.name(data.automation, [...at, 'automation'], 'the key of the automation it starts') };
           roles[role] = { automation: true, label };
+          return;
+        }
+        if (kind === 'script') {
+          if (data.script !== null) uses[role] = { script: reader.name(data.script, [...at, 'script'], 'the key of the script it runs') };
+          roles[role] = { script: true, label };
           return;
         }
         // A person, people, a place: by their keys in the file — none yet, a role still to fill.
@@ -450,6 +464,7 @@ const ROLE_KEYS = {
   part: ['part', 'label', 'needs', 'one of'],
   group: ['parts', 'label', 'needs', 'one of'],
   automation: ['automation', 'label'],
+  script: ['script', 'label'],
   person: ['person', 'label'],
   people: ['people', 'label'],
   place: ['home', 'zone', 'space', 'label'],
@@ -501,6 +516,7 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
         return daysInFile(value as readonly string[]);
       case 'role':
       case 'automation':
+      case 'script':
       case 'group':
       case 'each':
       case 'event':
@@ -540,6 +556,7 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
       const said = filled ? ('everyone' in filled ? { people: 'everyone' } : 'people' in filled ? { people: [...filled.people] } : filled) : kind === 'place' ? { space: null } : { [kind]: null };
       usesOut[role] = { ...said, ...extra };
     } else if (kind === 'automation') usesOut[role] = { automation: use && 'automation' in use ? use.automation : null, ...extra };
+    else if (kind === 'script') usesOut[role] = { script: use && 'script' in use ? use.script : null, ...extra };
     else if (kind === 'group') {
       // A group: its parts, as a list — with more to say, under "parts".
       const parts = use && 'parts' in use ? use.parts.map(useText) : [];

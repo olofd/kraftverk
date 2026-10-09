@@ -42,6 +42,8 @@ export type Vocabulary = {
   devices: { key: string; type: string; name: string; parts: string[] }[];
   /** The automations the server has now, by key. */
   automations: { key: string; name: string }[];
+  /** The family's scripts now, by key, with their ids: what an automation's role may name. */
+  scripts: { id: string; key: string; name: string }[];
   /** The family's homes now, by key: what an automation may be for. */
   homes: { id: string; key: string; name: string }[];
   /** The family's people now, by their keys in a file — one with no key of their own yet, by their id. */
@@ -64,7 +66,7 @@ const split = (schema: ConfigSchema | undefined, secret: boolean): ConfigSchema 
 export function vocabularyOf(
   types: readonly TypeEntry[],
   protocol: (id: string) => Pick<ProtocolDeclaration, 'credentials'> | null,
-  have: Partial<Pick<Vocabulary, 'devices' | 'automations' | 'homes' | 'people' | 'zones' | 'spaces'>> = {}
+  have: Partial<Pick<Vocabulary, 'devices' | 'automations' | 'scripts' | 'homes' | 'people' | 'zones' | 'spaces'>> = {}
 ): Vocabulary {
   return {
     types: types.map((type) => ({
@@ -89,6 +91,7 @@ export function vocabularyOf(
     policy: Object.fromEntries(Object.entries(POLICY_VALUES).map(([name, spec]) => [name, { label: spec.label, min: spec.min, max: spec.max, unit: spec.unit }])),
     devices: have.devices ?? [],
     automations: have.automations ?? [],
+    scripts: have.scripts ?? [],
     homes: have.homes ?? [],
     people: have.people ?? [],
     zones: have.zones ?? [],

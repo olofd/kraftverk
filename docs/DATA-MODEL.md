@@ -670,6 +670,7 @@ erDiagram
     text made_from "standard.start-charging · the recipe it was copied from · null: built from nothing"
     text time_zone "Europe/Stockholm · the owner's clock"
     text mode "off · watch · act"
+    text acting_for FK "p-01JA8… · the person whose yes it acts on: what its scripts do, they do for them · null: nobody's"
     int recheck_minutes "10 · null: never; how often a condition that still holds keeps things so"
     text looked_at "when it last looked again · null: not yet"
     text created_at "2026-10-15T08:00:00Z"
@@ -680,6 +681,7 @@ erDiagram
     text device_id FK "d-3f9a2c61b0e43f9a · null: another automation fills it"
     text part "main · outlet.ac"
     text starts FK "a-0c9d1e2f3a4b0c9d · the automation a step starts · null: a part fills it"
+    text script_id FK "sc-01JA9… · the script a role names · exactly one of part, starts and script"
   }
   automation_group_part {
     text automation_id PK "a-71c2d0e5f9a371c2"

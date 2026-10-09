@@ -31,12 +31,13 @@ export type AutomationSettings = { mode: AutomationMode; homeId: string | null; 
  * key the family's configuration gives them — their id, with none yet —
  * each home, zone and space by its own, a space with the home it is in.
  */
-export type WorldKeys = { people: readonly { id: string; key: string }[]; places: readonly { id: string; key: string; kind: PlaceKind; homeId?: string }[] };
+export type WorldKeys = { people: readonly { id: string; key: string }[]; places: readonly { id: string; key: string; kind: PlaceKind; homeId?: string }[]; scripts: readonly { id: string; key: string }[] };
 
 /** The family's people and places by their keys, as its configuration's vocabulary says them: what the app reads and writes a file's names by. */
-export function worldKeysOf(vocabulary: Pick<Vocabulary, 'people' | 'homes' | 'zones' | 'spaces'>): WorldKeys {
+export function worldKeysOf(vocabulary: Pick<Vocabulary, 'people' | 'homes' | 'zones' | 'spaces' | 'scripts'>): WorldKeys {
   return {
     people: vocabulary.people.map(({ id, key }) => ({ id, key })),
+    scripts: vocabulary.scripts.map(({ id, key }) => ({ id, key })),
     places: [
       ...vocabulary.homes.map(({ id, key }) => ({ id, key, kind: 'home' as const })),
       ...vocabulary.zones.map(({ id, key }) => ({ id, key, kind: 'zone' as const })),
@@ -56,7 +57,9 @@ export function automationYaml(
     roles: Readonly<Record<string, RoleBinding>>;
     groups: Readonly<Record<string, readonly RoleBinding[]>>;
     starts: Readonly<Record<string, string>>;
+    scripts?: Readonly<Record<string, string>>;
     world?: Readonly<Record<string, WorldFill>>;
+    actingFor?: string | null;
     madeFrom: string | null;
   } & AutomationSettings,
   devices: readonly DeviceView[],
@@ -68,6 +71,7 @@ export function automationYaml(
     {
       device: (id) => devices.find((device) => device.id === id)?.key ?? null,
       automation: (id) => automations.find((each) => each.id === id)?.key ?? null,
+      script: (id) => world.scripts.find((each) => each.id === id)?.key ?? null,
       home: (id) => world.places.find((place) => place.kind === 'home' && place.id === id)?.key ?? null,
       person: (id) => world.people.find((person) => person.id === id)?.key ?? null,
       place: (id, kind) => world.places.find((place) => place.kind === kind && place.id === id)?.key ?? null,
@@ -104,6 +108,7 @@ export function draftOfEntry(
   const fills = fillsFrom(entry.uses, {
     device: (key) => devices.find((device) => device.key === key && !device.removedAt)?.id ?? null,
     automation: (key) => automations.find((each) => each.key === key)?.id ?? null,
+    script: (key) => world.scripts.find((each) => each.key === key)?.id ?? null,
     person: (key) => world.people.find((person) => person.key === key)?.id ?? null,
     place: (kind, key) => world.places.find((place) => place.kind === kind && place.key === key && (kind !== 'space' || place.homeId === homeId))?.id ?? null,
   });
@@ -114,6 +119,7 @@ export function draftOfEntry(
       roles: Object.fromEntries(Object.entries(fills.roles).map(([role, binding]) => [role, { device: savedDeviceId(binding.device), part: binding.part }])),
       groups: Object.fromEntries(Object.entries(fills.groups).map(([role, parts]) => [role, parts.map((binding) => ({ device: savedDeviceId(binding.device), part: binding.part }))])),
       starts: fills.starts as Record<string, AutomationId>,
+      scripts: fills.scripts,
       world: fills.world,
     },
     settings: { mode: entry.mode, homeId: own, timeZone: entry.clock, recheckMinutes: entry.recheckMinutes },

@@ -42,6 +42,8 @@ export type FieldType =
   | { type: 'role' }
   /** A role another automation fills. */
   | { type: 'automation' }
+  /** A role one of the family's scripts fills (docs/PLAN-SCRIPTS.md). */
+  | { type: 'script' }
   /** A role several parts fill: what a `for each` goes through. */
   | { type: 'group' }
   /** What each part of a group is called within a `for each`'s steps — a name of its own, as a role's: `charger`. */
@@ -130,7 +132,8 @@ export type KindIcon =
   | 'users'
   | 'moon'
   | 'home'
-  | 'send';
+  | 'send'
+  | 'code';
 
 /**
  * How a sentence says the parts of a construct — what the describer hands a

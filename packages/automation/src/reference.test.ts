@@ -43,6 +43,7 @@ const STEPS: Record<Keys<Step>, string> = {
   choose: 'if:',
   watch: 'watch:',
   start: 'start:',
+  script: 'run script:',
   remember: 'remember:',
   waitFor: 'wait for:',
   repeat: 'repeat:',
@@ -53,7 +54,7 @@ const STEPS: Record<Keys<Step>, string> = {
   setMode: 'set mode:',
   notify: 'notify:',
 };
-const EXPRESSIONS: Record<Exclude<Keys<Expr>, 'role' | 'args' | 'left' | 'right' | 'unit' | 'then' | 'else' | 'item' | 'field' | 'of' | 'over' | 'offset' | 'as' | 'group' | 'to'>, string> = {
+const EXPRESSIONS: Record<Exclude<Keys<Expr>, 'role' | 'args' | 'left' | 'right' | 'unit' | 'then' | 'else' | 'item' | 'field' | 'of' | 'over' | 'offset' | 'as' | 'group' | 'to' | 'fn'>, string> = {
   value: '50 W',
   param: 'setting.',
   memory: 'memory.',
@@ -65,6 +66,7 @@ const EXPRESSIONS: Record<Exclude<Keys<Expr>, 'role' | 'args' | 'left' | 'right'
   across: 'any(c in',
   call: 'acme.weather.sunny(',
   apply: 'min(',
+  script: 'feel.feelsLike(',
   compare: ' > ',
   math: ' * ',
   negate: '-meter',

@@ -13,8 +13,8 @@ import { GUEST_SDK } from './generated/guest.ts';
   reads a script wherever it runs; the editor checks its types besides.
 */
 
-/** What a script imports: the SDK alone, until the script step brings the API. */
-const IMPORTS: readonly string[] = ['kraftverk'];
+/** What a script imports: the SDK, and the home's API. */
+const IMPORTS: readonly string[] = ['kraftverk', 'kraftverk/api'];
 
 /** What a script's exports are named: as recipes and the language's own names are. */
 const NAME = /^[a-z][A-Za-z0-9]*$/;
@@ -135,7 +135,7 @@ export function readScript(source: string, engine: ScriptEngine): ReadScript {
   const compiledOr = compileScript(source);
   if ('problem' in compiledOr) return { compiled: null, shape: null, problems: [compiledOr.problem] };
   const { compiled } = compiledOr;
-  const problems: ScriptProblem[] = compiled.imports.filter((name) => !IMPORTS.includes(name)).map((name) => problem(`A script imports only "kraftverk", not "${name}"`));
+  const problems: ScriptProblem[] = compiled.imports.filter((name) => !IMPORTS.includes(name)).map((name) => problem(`A script imports only "kraftverk" and "kraftverk/api", not "${name}"`));
   if (problems.length) return { compiled, shape: null, problems };
 
   const sandbox = engine.open({ memoryBytes: SCRIPT_LIMITS.functionMemoryBytes, stackBytes: 256 * 1024, sliceMs: SCRIPT_LIMITS.describeMs }, { sync: {}, async: {} });

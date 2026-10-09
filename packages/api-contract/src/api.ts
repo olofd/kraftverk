@@ -50,7 +50,14 @@ export type Caller =
    */
   | { kind: 'person'; id?: string; name: string; account?: string }
   /** An assistant acting for a person: it does what needs no one's yes, and is refused the rest. */
-  | { kind: 'agent'; for: string };
+  | { kind: 'agent'; for: string }
+  /**
+   * An automation's script, as one of its runs takes a step of it
+   * (docs/PLAN-SCRIPTS.md §7.1): for the person whose yes it acts on, with
+   * their role — none when nobody's — and its run, whose switches the
+   * gateway counts as a step's. Refused what a person must say yes to.
+   */
+  | { kind: 'automation'; id: string; name: string; for: string | null; run: { id: string; askedBy: 'person' | 'agent' | null } };
 
 /** What kind of caller asks: a person, or an assistant acting for one. */
 export type CallerKind = Caller['kind'];

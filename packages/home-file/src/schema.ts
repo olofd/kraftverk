@@ -302,6 +302,7 @@ function automationSchema(vocabulary: Vocabulary): Schema {
     properties: {
       name: { type: 'string', minLength: 1 },
       mode: { enum: ['off', 'watch', 'act'], enumDescriptions: ['Off: it does nothing on its own', 'Watch only: it says what it would have done', 'Act: it acts on its own'], default: 'watch' },
+      'acts for': { type: 'string', description: 'While it acts: the person whose yes it acts on, by their key — what its scripts do, they do for them, with their role.' },
       home: { type: 'string', description: 'The key of the home it is for: its clock, and its "home". The family’s, when it says none.' },
       clock: { type: 'string', description: 'A clock of its own: the time zone its times of day are in, "Europe/Stockholm". Its home’s, when it says none.' },
       recheck: { $ref: '#/$defs/duration' },
@@ -325,7 +326,7 @@ function automationSchema(vocabulary: Vocabulary): Schema {
       result: { ...FORM_FIELD, description: 'What it answers: an answer step gives it, and a start step that waits remembers it ("remember as").' },
       uses: {
         type: 'object',
-        description: 'Each role, and what fills it: "device-key" or "device-key.part"; a list of them for a group a "for each" goes through; { automation: key } for one a step starts; { person: key }, { people: [keys] } or { people: everyone }; { home: key }, { zone: key } or { space: key }. Empty (~) while nothing fills it yet.',
+        description: 'Each role, and what fills it: "device-key" or "device-key.part"; a list of them for a group a "for each" goes through; { automation: key } for one a step starts; { script: key } for a script it runs; { person: key }, { people: [keys] } or { people: everyone }; { home: key }, { zone: key } or { space: key }. Empty (~) while nothing fills it yet.',
         additionalProperties: {
           anyOf: [
             partRef,
@@ -352,6 +353,7 @@ function automationSchema(vocabulary: Vocabulary): Schema {
                 label: { type: 'string' },
               },
             },
+            { type: 'object', required: ['script'], additionalProperties: false, properties: { script: { type: ['string', 'null'], description: 'One of the family\'s scripts, by its key: what a run script step runs, and whose functions it calls.' }, label: { type: 'string' } } },
             { type: 'object', required: ['person'], additionalProperties: false, properties: { person: { type: ['string', 'null'], description: 'A person, by their key in the file.' }, label: { type: 'string' } } },
             {
               type: 'object',

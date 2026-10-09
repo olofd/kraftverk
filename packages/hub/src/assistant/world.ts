@@ -11,7 +11,7 @@ import {
   type CapabilitySpec,
   type PolicyValues,
 } from '@kraftverk/device-sdk';
-import { isAutomationRole, isGroupRole, isPeopleRole, isPersonRole, isPlaceRole } from '@kraftverk/automation';
+import { isAutomationRole, isGroupRole, isPeopleRole, isPersonRole, isPlaceRole, isScriptRole } from '@kraftverk/automation';
 
 import type { AutomationLibrary } from '@kraftverk/automation-engine';
 
@@ -117,6 +117,8 @@ export function vocabularyOf(library: AutomationLibrary, policy: PolicyValues, o
           role,
           isAutomationRole(spec)
             ? { label: spec.label, automation: true as const }
+            : isScriptRole(spec)
+            ? { label: spec.label, script: true as const }
             : isPersonRole(spec)
               ? { label: spec.label, person: true as const }
               : isPeopleRole(spec)

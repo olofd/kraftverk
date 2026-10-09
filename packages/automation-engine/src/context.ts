@@ -63,7 +63,7 @@ export type PlannedWrite = { binding: RoleBinding; key: string; value: Value };
 export type Planned = { command: PlannedAction } | { write: PlannedWrite };
 
 /** What the context reads: the automations, the installed functions, the parts, and the clock. */
-export type ContextDeps = Pick<AutomationEngineDeps, 'store' | 'library' | 'device' | 'clock' | 'history' | 'location' | 'world'>;
+export type ContextDeps = Pick<AutomationEngineDeps, 'store' | 'library' | 'device' | 'clock' | 'history' | 'location' | 'world' | 'scripts'>;
 
 /**
  * What happened that started a run: the event a device raised — its id, and
@@ -237,6 +237,12 @@ export class RuleContext {
         const device = part(role);
         return device ? device.reachable() : { reachable: false, detail: `${rule.roles[role]?.label ?? role}: no device` };
       },
+      script: (role, fn, args) => {
+        const id = automation.scripts[role];
+        if (!this.deps.scripts) return { value: null, detail: 'no engine runs scripts here' };
+        if (!id) return { value: null, detail: 'no script fills it' };
+        return this.deps.scripts.fn(id, fn, args);
+      },
       call: async (id, role, args) => {
         const fn = this.deps.library.fn(id);
         const device = part(role);
@@ -258,6 +264,9 @@ export class RuleContext {
         }
         const started = automation.starts[role];
         if (started) return quoted(this.deps.store.get(started)?.name ?? null);
+        // A script: by its name, in quotes, as an automation it starts is.
+        const script = automation.scripts[role];
+        if (script) return quoted(this.deps.scripts?.name(script) ?? null);
         // A group: its parts, each by name.
         const members = automation.groups[role];
         if (members) return listed(members.map((member) => this.deps.device(member)?.name ?? 'a device you no longer have')) || 'no parts';
@@ -274,6 +283,10 @@ export class RuleContext {
     return {
       fn: (id) => this.deps.library.fn(id),
       ...(this.deps.world ? { modes: () => this.deps.world!.modes() } : {}),
+      script: (role) => {
+        const id = automation.scripts[role];
+        return id && this.deps.scripts ? this.deps.scripts.shape(id) : null;
+      },
       attribute: (role, target) => {
         const binding = automation.roles[role];
         const device = binding ? this.deps.device(binding) : null;

@@ -183,7 +183,7 @@ function Editing({
     const turn = ++asked.current;
     const timer = setTimeout(() => {
       api.automations
-        .draft({ rule: kept.rule, roles: kept.roles, groups: kept.groups, starts: kept.starts, world: kept.world ?? {} }, existing?.id ?? null)
+        .draft({ rule: kept.rule, roles: kept.roles, groups: kept.groups, starts: kept.starts, scripts: kept.scripts ?? {}, world: kept.world ?? {} }, existing?.id ?? null)
         .then((answer) => turn === asked.current && setCheck(answer))
         .catch(() => undefined);
     }, 300);
@@ -200,7 +200,7 @@ function Editing({
     setBusy(true);
     setProblem(null);
     try {
-      const body = { name: draft.name.trim(), rule: kept.rule, roles: kept.roles, groups: kept.groups, starts: kept.starts, world: kept.world ?? {} };
+      const body = { name: draft.name.trim(), rule: kept.rule, roles: kept.roles, groups: kept.groups, starts: kept.starts, scripts: kept.scripts ?? {}, world: kept.world ?? {} };
       // What its YAML changed beyond what the form edits.
       const changes = { ...Object.fromEntries(settingsChanged.map((name) => [name, settings[name]])), ...(key && key !== existing?.key ? { key } : {}) };
       const letAct = settings.mode === 'act' && before.mode !== 'act';

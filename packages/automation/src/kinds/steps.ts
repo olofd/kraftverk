@@ -10,7 +10,7 @@ import type { FieldSpec, KindDocs, KindIcon } from './spec.ts';
   seconds.
 */
 
-export type StepKind = 'command' | 'write' | 'wait' | 'waitUntil' | 'waitFor' | 'ensure' | 'choose' | 'watch' | 'repeat' | 'forEach' | 'try' | 'stop' | 'answer' | 'start' | 'remember' | 'setMode' | 'notify';
+export type StepKind = 'command' | 'write' | 'wait' | 'waitUntil' | 'waitFor' | 'ensure' | 'choose' | 'watch' | 'repeat' | 'forEach' | 'try' | 'stop' | 'answer' | 'start' | 'script' | 'remember' | 'setMode' | 'notify';
 
 /** A step of one kind. */
 export type StepOf<K extends StepKind> = K extends StepKind ? Extract<Step, Record<K, unknown>> : never;
@@ -449,6 +449,38 @@ const START: StepSpec<'start'> = {
   },
 };
 
+// --- a script ------------------------------------------------------------------------------------
+
+const SCRIPT: StepSpec<'script'> = {
+  kind: 'script',
+  label: 'Run a script',
+  icon: 'code',
+  says: 'Run one of your scripts in TypeScript: it may do anything you could, as this automation.',
+  fields: [
+    { data: ['script', 'role'], key: 'run script', type: { type: 'script' }, required: true, label: 'Which script' },
+    { data: ['script', 'step'], key: 'step', type: { type: 'name' }, required: false, label: 'Which of its steps', help: 'Needed only when it has several: by its name in the script, as tidyUp.' },
+    { data: ['script', 'args'], key: 'with', type: { type: 'args' }, required: false, label: 'Given', help: 'Its inputs, by name.' },
+    { data: ['script', 'remember'], key: 'remember as', type: { type: 'memory' }, required: false, label: 'Remember what it answers as', help: 'One of what this automation remembers.' },
+  ],
+  blank: (role) => ({ script: { role: role ?? '' } }),
+  line: (step, say) => `Run ${say.name(step.script.role)}${step.script.step ? ` (${wordsOfName(step.script.step)})` : ''}${givenTo(step.script.args, say)}${step.script.remember ? `, remembering what it answers as ${say.memory(step.script.remember)}` : ''}`,
+  brief: (step, say) => `run ${say.name(step.script.role)}${givenTo(step.script.args, say)}`,
+  docs: {
+    summary:
+      'Run one of the steps of the script filling a role (docs/PLAN-SCRIPTS.md): given its inputs under `with`, the rest their defaults. It may read the home, act — through the gateway, as this automation, for the person who let it act — and wait, within its run; in watch mode it says what it would do. What it answers is remembered, with `remember as`, as one of what this automation remembers. `step` says which of its steps, when it has several.',
+    examples: ['run script: tidy', 'run script: tidy\nstep: tidyUp\nwith:\n  after: 10 min\nremember as: lastPower'],
+  },
+};
+
+/** A name in a script, as words: "tidyUp" is "tidy up". */
+const wordsOfName = (name: string): string => name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
+
+/** What a step is given, said: " with level 90 %". */
+const givenTo = (args: Readonly<Record<string, Expr>> | undefined, say: StepSay): string => {
+  const given = Object.entries(args ?? {});
+  return given.length ? ` with ${given.map(([name, value]) => `${wordsOfName(name)} ${say.expr(value)}`).join(', ')}` : '';
+};
+
 /** What a start step gives, said: " with level 90 %". */
 const given = (step: StepOf<'start'>, say: StepSay): string => {
   const args = Object.entries(step.start.args ?? {});
@@ -554,13 +586,14 @@ export const STEP_KINDS: { readonly [K in StepKind]: StepSpec<K> } = {
   stop: STOP,
   answer: ANSWER,
   start: START,
+  script: SCRIPT,
   remember: REMEMBER,
   setMode: SET_MODE,
   notify: NOTIFY,
 };
 
 /** The order the editor offers them in. */
-export const STEP_KIND_ORDER: readonly StepKind[] = ['command', 'write', 'setMode', 'notify', 'wait', 'waitUntil', 'waitFor', 'ensure', 'choose', 'watch', 'repeat', 'forEach', 'try', 'stop', 'answer', 'start', 'remember'];
+export const STEP_KIND_ORDER: readonly StepKind[] = ['command', 'write', 'setMode', 'notify', 'wait', 'waitUntil', 'waitFor', 'ensure', 'choose', 'watch', 'repeat', 'forEach', 'try', 'stop', 'answer', 'start', 'script', 'remember'];
 
 /** Which kind a step is — by its key; one of no kind is an error, never taken for another. */
 export function stepKind(step: Step): StepKind {

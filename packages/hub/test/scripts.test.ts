@@ -83,6 +83,71 @@ describe('a script', () => {
     expect(plan.problems.map((each) => each.message)).toContain('The script "broken": "x" is neither a step nor a function: export only step(...) and fn(...)');
   });
 
+  test('runs as a step of an automation: through the gateway as the automation, what it did said beneath it, what it answers remembered', async () => {
+    const plug = await t.added('Heater plug', { typeId: 'test.plug' });
+    const script = await t.home.scripts.create({
+      name: 'Tidy up',
+      source: [
+        "import { step, t, home, log } from 'kraftverk';",
+        'export const off = step({ answer: t.text(), memory: { times: t.count() } }, async (_inputs: unknown, { memory }: { memory: { times: number } }) => {',
+        "  const plug = home.devices['heater-plug'];",
+        '  await plug.switch.set({ on: false });',
+        '  memory.times += 1;',
+        "  log('Turned it off');",
+        '  return plug.name;',
+        '});',
+        '',
+      ].join('\n'),
+    });
+    const made = await t.home.automations.create({
+      name: 'Evening tidy',
+      rule: { roles: { tidy: { script: true, label: 'Tidy' } }, params: { fields: {} }, memory: { fields: { lastTidy: { type: 'string', title: 'Last tidy', default: '' } } }, when: [], then: [{ script: { role: 'tidy', remember: 'lastTidy' } }] },
+      roles: {},
+      groups: {},
+      starts: {},
+      scripts: { tidy: script.id },
+      timeZone: 'Europe/Stockholm',
+    });
+    expect(made.problems).toEqual([]);
+    await t.home.automations.start(made.id);
+    let run = (await t.home.automations.get(made.id)).lastRun;
+    for (let waited = 0; !run && waited < 5_000; waited += 50) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      run = (await t.home.automations.get(made.id)).lastRun;
+    }
+    expect(run?.outcome).toBe('acted');
+    const steps = run!.steps.map((step) => [step.depth, step.what, step.outcome, step.detail]);
+    expect(steps[0]).toEqual([0, 'Run “Tidy up”, remembering what it answers as last tidy', 'done', 'Answered Heater plug']);
+    expect(steps.slice(1).map(([depth, what]) => [depth, what])).toEqual([
+      [1, 'Heater plug: switch.set on false'],
+      [1, 'Turned it off'],
+    ]);
+    expect((await t.home.devices.get(plug.id)).readings.find((reading) => reading.key === 'on')?.value).toBe(false);
+  });
+
+  test('decides a condition with one of its functions: pure, its arguments in order, checked against what it declares', async () => {
+    const plug = await t.added('Heater plug', { typeId: 'test.plug' });
+    const script = await t.home.scripts.create({ name: 'Maths', source: "import { fn, t } from 'kraftverk';\nexport const double = fn({ args: [t.number()], returns: t.number() }, (n: number) => n * 2);\n" });
+    const rule = (n: number) => ({
+      roles: { maths: { script: true as const, label: 'Maths' }, plug: { label: 'Plug', capabilities: ['switch' as const] } },
+      params: { fields: {} },
+      // Looked at on every reading: a function is pure, so it may be.
+      when: [{ becomes: { compare: 'gt' as const, left: { script: 'maths', fn: 'double', args: [{ value: n }] }, right: { value: 3 } } }],
+      then: [{ command: { role: 'plug', capability: 'switch' as const, command: 'set', args: { on: { value: false } } } }],
+    });
+    const fills = { roles: { plug: { device: plug.id, part: 'main' } }, groups: {}, starts: {}, scripts: { maths: script.id }, timeZone: 'Europe/Stockholm' };
+    // Held to what it declares: one argument, a number.
+    const wrong = await t.home.automations.draft({ ...fills, rule: { ...rule(2), when: [{ becomes: { compare: 'gt', left: { script: 'maths', fn: 'double', args: [] }, right: { value: 3 } } }] } } as never);
+    expect(wrong.problems.join()).toContain('double takes 1 argument, not 0');
+    const view = (await t.home.automations.draft({ ...fills, rule: rule(2) } as never)) as { problems: string[] };
+    expect(view.problems).toEqual([]);
+    const made = await t.home.automations.create({ name: 'Doubled', ...fills, rule: rule(2) } as never);
+    // How what it waits for stands now: decided by the script's function — and, given less, not so.
+    expect((await t.home.automations.get(made.id)).now.conditions).toEqual([{ text: 'Double by “Maths” (2) is above 3', holds: true }]);
+    const less = await t.home.automations.create({ name: 'Doubled less', ...fills, rule: rule(1) } as never);
+    expect((await t.home.automations.get(less.id)).now.conditions[0]?.holds).toBe(false);
+  });
+
   test('is not read where no engine runs scripts, and the home says so', async () => {
     await t.stop();
     t = await aHome({ noScripts: true });

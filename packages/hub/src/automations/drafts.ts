@@ -19,6 +19,7 @@ import {
   describeSteps,
   describeTriggers,
   isAutomationRole,
+  isScriptRole,
   problemArea,
   problemPlace,
   SEQUENCE_LIMITS,
@@ -39,6 +40,7 @@ import type { SessionManager } from '@kraftverk/holder';
 import { quoted, rehearse, type AutomationEngine, type AutomationLibrary, type AutomationRecord } from '@kraftverk/automation-engine';
 
 import { worldFillProblem, type WorldDirectory } from './world.ts';
+import type { ScriptCatalogue } from '../scripts/catalogue.ts';
 
 /**
  * What an automation is made of, checked the one way whoever makes it — a
@@ -61,6 +63,8 @@ export type DraftDeps = {
   automations: AutomationStore;
   /** Who and where there is, for a role of the family's world; its modes. */
   world: WorldDirectory;
+  /** The family's scripts, and what each declares: what a role a script fills is filled by, and checked against. */
+  scripts: ScriptCatalogue;
 };
 
 /** A draft checked: what is wrong with it, and what fills its roles as far as it could be read. */
@@ -71,6 +75,7 @@ export type Checked = {
   roles: Record<string, RoleBinding>;
   groups: Record<string, RoleBinding[]>;
   starts: Record<string, AutomationId>;
+  scripts: Record<string, string>;
   world: Record<string, WorldFill>;
 };
 
@@ -100,7 +105,7 @@ const looksLikeRule = (rule: unknown): rule is Rule => {
 
 const NOT_A_RULE = 'That is not a rule: it needs roles, settings, triggers and steps';
 
-export function drafts({ history, events, catalog, sessions, library, engine, automations, world }: DraftDeps) {
+export function drafts({ history, events, catalog, sessions, library, engine, automations, world, scripts }: DraftDeps) {
   /** "Garage station", or "Garage station — AC outlets": how a role's part is named, as everywhere else. */
   const roleName = (binding: RoleBinding | undefined): string => {
     const record = binding ? catalog.get(binding.device) : null;
@@ -114,6 +119,10 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
       Object.entries(rule.roles).map(([role, spec]) => {
         const unfilled = spec.label.charAt(0).toLowerCase() + spec.label.slice(1);
         if (isAutomationRole(spec)) return [role, fills.starts[role] ? quoted(automations.get(fills.starts[role])?.name ?? null) : unfilled];
+        if (isScriptRole(spec)) {
+          const id = fills.scripts?.[role];
+          return [role, id ? quoted(scripts.store.get(id)?.name ?? null) : unfilled];
+        }
         // A person, people, a place: as the family calls them.
         if (isWorldRole(spec)) {
           const fill = fills.world?.[role];
@@ -215,14 +224,21 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
     const roles: Record<string, RoleBinding> = {};
     const groups: Record<string, RoleBinding[]> = {};
     const starts: Record<string, AutomationId> = {};
+    const scriptFills: Record<string, string> = {};
     const worldFills: Record<string, WorldFill> = {};
     const rule: unknown = draft.rule;
-    const notARule = (): Checked => ({ problems: [NOT_A_RULE], areas: byArea([{ text: NOT_A_RULE, area: 'other' }]), roles, groups, starts, world: worldFills });
+    const notARule = (): Checked => ({ problems: [NOT_A_RULE], areas: byArea([{ text: NOT_A_RULE, area: 'other' }]), roles, groups, starts, scripts: scriptFills, world: worldFills });
     if (!looksLikeRule(rule)) return notARule();
     let language: { text: string; area: ProblemArea }[];
     try {
       // Each said where its owner finds it: "Step 5: which setting?", not the language's own path — and kept where it is.
-      language = checkRule(rule, { fn: (id) => library.fn(id), modes: () => world.modes() }).map((problem) => ({ text: problemPlace(problem, rule), area: problemArea(problem) }));
+      // A script a role names: checked against what it declares, once it is filled and reads.
+      const declared = (role: string) => {
+        const id = draft.scripts?.[role];
+        const script = id ? scripts.store.get(id) : null;
+        return script ? scripts.readKept(script).shape : null;
+      };
+      language = checkRule(rule, { fn: (id) => library.fn(id), modes: () => world.modes(), script: declared }).map((problem) => ({ text: problemPlace(problem, rule), area: problemArea(problem) }));
     } catch {
       return notARule();
     }
@@ -254,6 +270,13 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
         const problem = worldFillProblem(world, spec.label, roleKind(spec) as 'person' | 'people' | 'place', fill, world.home(draft.homeId ?? null), placeKindsOf(rule, role));
         if (problem) problems.uses(problem);
         else worldFills[role] = fill!;
+        continue;
+      }
+      if (isScriptRole(spec)) {
+        const id = draft.scripts?.[role];
+        const script = id ? scripts.store.get(id) : null;
+        if (!script) problems.uses(`${spec.label}: choose one of your scripts`);
+        else scriptFills[role] = script.id;
         continue;
       }
       if (isAutomationRole(spec)) {
@@ -294,7 +317,7 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
         bound.set(role, [found]);
       }
     }
-    for (const role of [...Object.keys(draft.roles ?? {}), ...Object.keys(draft.groups ?? {}), ...Object.keys(draft.starts ?? {}), ...Object.keys(draft.world ?? {})]) {
+    for (const role of [...Object.keys(draft.roles ?? {}), ...Object.keys(draft.groups ?? {}), ...Object.keys(draft.starts ?? {}), ...Object.keys(draft.scripts ?? {}), ...Object.keys(draft.world ?? {})]) {
       if (!rule.roles[role]) problems.push(`There is no role called ${role}`);
     }
     // What the filled parts must report, raise and let be written: said once the rule itself holds.
@@ -304,7 +327,7 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
       for (const text of checkBinding({ ...rule, roles: filled }, (role) => bound.get(role) ?? [])) problems.uses(text);
     }
     problems.push(...chainProblems(self, Object.values(starts)));
-    return { problems: [...new Set(placed.map((each) => each.text))], areas: byArea(placed), roles, groups, starts, world: worldFills };
+    return { problems: [...new Set(placed.map((each) => each.text))], areas: byArea(placed), roles, groups, starts, scripts: scriptFills, world: worldFills };
   };
 
   /** A draft, checked and said — nothing kept: what the editor shows as its owner builds. */

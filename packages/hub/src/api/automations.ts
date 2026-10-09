@@ -108,6 +108,7 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
           roles: result.roles,
           groups: result.groups,
           starts: result.starts,
+          scripts: result.scripts,
           world: result.world,
           homeId: input.homeId ?? null,
           timeZone: input.timeZone ?? null,
@@ -153,7 +154,7 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
         if (rebuilt && (!input.rule || !input.roles || !input.groups || !input.starts)) throw new ApiError('invalid', 'A new rule comes with what fills its roles: rule, roles, groups and starts together');
         // Who and where filled anew, or another home — whose rooms are what it may name: checked again, as a new rule is.
         const homeChanged = input.homeId !== undefined && input.homeId !== current.homeId;
-        const recheck = rebuilt || input.world !== undefined || homeChanged;
+        const recheck = rebuilt || input.world !== undefined || input.scripts !== undefined || homeChanged;
         const result = recheck
           ? checked(
               {
@@ -161,6 +162,8 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
                 roles: input.roles ?? current.roles,
                 groups: input.groups ?? current.groups,
                 starts: input.starts ?? current.starts,
+                // Scripts are filled with the rule: a new rule that says none has none.
+                scripts: input.scripts ?? (rebuilt ? {} : current.scripts),
                 world: input.world ?? current.world,
                 homeId: input.homeId !== undefined ? input.homeId : current.homeId,
               } satisfies AutomationDraft,
@@ -172,7 +175,7 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
         const nextRecheck = input.recheckMinutes !== undefined ? input.recheckMinutes : current.recheckMinutes;
         if (nextRecheck && !keepsSo(nextRule)) throw new ApiError('invalid', KEEPS_SO_ONLY);
         // Another home is another place to act: what it does changes as a new rule does.
-        const changedRule = result ? { rule: nextRule, roles: result.roles, groups: result.groups, starts: result.starts, world: result.world } : null;
+        const changedRule = result ? { rule: nextRule, roles: result.roles, groups: result.groups, starts: result.starts, scripts: result.scripts, world: result.world } : null;
 
         // Letting it act — and changing what one that acts does — is a deliberate act.
         const armedAfter = input.mode === 'act' || (input.mode === undefined && current.mode === 'act');
@@ -209,6 +212,8 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
           ...(input.timeZone !== undefined ? { timeZone: input.timeZone } : {}),
           ...(input.homeId !== undefined ? { homeId: input.homeId } : {}),
           ...(input.mode ? { mode: input.mode } : {}),
+          // The yes it acts on is the person's who gave it: what its scripts do, they do for them.
+          ...(needsConfirming ? { actingFor: caller.kind === 'person' ? (caller.id ?? null) : null } : {}),
           ...(input.recheckMinutes !== undefined ? { recheckMinutes: input.recheckMinutes } : {}),
         })!;
         const said =
@@ -246,7 +251,9 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
        */
       async start(id) {
         const current = automationOf(id);
-        const run = await engine.startAsked(current.id, intent.by).catch((error: unknown) => {
+        const asker = intent.by;
+        if (asker.kind === 'automation') throw new ApiError('forbidden', 'A script cannot start an automation');
+        const run = await engine.startAsked(current.id, { ...asker, kind: asker.kind }).catch((error: unknown) => {
           throw error instanceof RunRefusal ? new ApiError('conflict', error.message) : error;
         });
         record('automation.started', current.id, `Started "${current.name}"`, { run: run.id });

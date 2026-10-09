@@ -37,6 +37,7 @@ export function fieldSchema(field: FieldSpec): JsonSchema {
       return DAYS_SCHEMA;
     case 'role':
     case 'automation':
+    case 'script':
     case 'group':
     case 'event':
     case 'name':

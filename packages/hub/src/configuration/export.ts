@@ -102,11 +102,12 @@ export type Exported = {
  * keys it has — its devices, automations, homes, people, zones and each
  * home's spaces, each with its id: what an app reads a file's names by.
  */
-export function homeVocabulary(deps: Pick<ConfigDeps, 'catalog' | 'automations' | 'types' | 'protocols' | 'places' | 'people' | 'spaces'>): Vocabulary {
+export function homeVocabulary(deps: Pick<ConfigDeps, 'catalog' | 'automations' | 'scripts' | 'types' | 'protocols' | 'places' | 'people' | 'spaces'>): Vocabulary {
   const homes = deps.places.homes();
   return vocabularyOf(deps.types.all(), (id) => deps.protocols.get(id), {
     devices: deps.catalog.list().map((device) => ({ key: device.key, type: device.typeId, name: device.name, parts: partsOf(device.description).map((part) => part.id) })),
     automations: deps.automations.list().map((automation) => ({ key: automation.key, name: automation.name })),
+    scripts: deps.scripts.store.list().map((script) => ({ id: script.id, key: script.key, name: script.name })),
     homes: homes.map((home) => ({ id: home.id, key: home.key, name: home.name })),
     // One with no key of their own yet is named by their id: a file names them so.
     people: deps.people.members().map((person) => ({ id: person.id, key: person.fileKey ?? person.id, name: person.shownAs })),
@@ -306,6 +307,7 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
       return device && !device.removedAt ? device.key : null;
     },
     automation: (id: string) => deps.automations.get(id)?.key ?? null,
+    script: (id: string) => deps.scripts.store.get(id)?.key ?? null,
     // A place let go is gone: its role is written empty, and said — never a name the file cannot read back.
     home: (id: string) => live(deps.places.home(id))?.key ?? null,
     // People by the keys this file writes them as — or, a file without its people, as the family's would be.

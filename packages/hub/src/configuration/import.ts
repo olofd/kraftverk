@@ -1,5 +1,5 @@
 import { ApiError, type DevicePeople, type ImportApplied, type ImportItem, type ImportPlan, type LabelTarget, type PlacementInput } from '@kraftverk/api-contract';
-import { checkBinding, checkRule, isAutomationRole, isPartRole, isPeopleRole, isPersonRole, isPlaceRole, isWorldRole, keepsSo, sameFill, useOf, useText, type AutomationDraft, type RuleVocabulary, type BoundPart, type GroupRole, type PartRole, type PartUse, type Use, type WorldFill, type WorldUse } from '@kraftverk/automation';
+import { checkBinding, checkRule, isAutomationRole, isPartRole, isPeopleRole, isPersonRole, isPlaceRole, isScriptRole, isWorldRole, keepsSo, sameFill, useOf, useText, type AutomationDraft, type RuleVocabulary, type BoundPart, type GroupRole, type PartRole, type PartUse, type Use, type WorldFill, type WorldUse } from '@kraftverk/automation';
 import type { AutomationEngine, AutomationLibrary, AutomationRecord } from '@kraftverk/automation-engine';
 import { standingProblem, turnOf } from '@kraftverk/map/limits';
 import {
@@ -294,6 +294,10 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
         if (!document.automations[use.automation] && !deps.automations.byKey(use.automation)) problem(`There is no automation "${use.automation}", in the file or here`, [...path, 'uses', role]);
         continue;
       }
+      if ('script' in use) {
+        if (!document.scripts[use.script] && !deps.scripts.store.byKey(use.script)) problem(`There is no script "${use.script}", in the file or here`, [...path, 'uses', role]);
+        continue;
+      }
       // A person, people, a place: in the file, or here.
       if (isWorldUse(use)) {
         for (const missing of worldMissing(deps, document, entry, use)) problem(`${spec?.label ?? role}: ${missing}`, [...path, 'uses', role]);
@@ -532,7 +536,7 @@ function bindingProblems(deps: ImportDeps, entry: AutomationEntry, document: Con
   };
   for (const [role, spec] of Object.entries(entry.rule.roles)) {
     const use = entry.uses[role];
-    if (isAutomationRole(spec) || isWorldRole(spec) || !use || 'automation' in use || isWorldUse(use)) continue;
+    if (isAutomationRole(spec) || isScriptRole(spec) || isWorldRole(spec) || !use || 'automation' in use || 'script' in use || isWorldUse(use)) continue;
     const uses = 'parts' in use ? use.parts : [use];
     const parts = uses.flatMap((each, index) => {
       const part = partOf(spec, each, 'parts' in use ? ['uses', role, index] : ['uses', role]);
@@ -832,11 +836,18 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
         const roles: Record<string, { device: SavedDeviceId; part: string }> = {};
         const groups: Record<string, { device: SavedDeviceId; part: string }[]> = {};
         const starts: Record<string, AutomationId> = {};
+        const scripts: Record<string, string> = {};
         const world: Record<string, WorldFill> = {};
         for (const [role, use] of Object.entries(entry.uses)) {
           if ('automation' in use) {
             const other = deps.automations.byKey(use.automation);
             if (other) starts[role] = other.id;
+            continue;
+          }
+          // A script: the family's, written before the automations that run it.
+          if ('script' in use) {
+            const script = deps.scripts.store.byKey(use.script);
+            if (script) scripts[role] = script.id;
             continue;
           }
           // A person, people, a place: by their ids here, now that the file's are written.
@@ -857,13 +868,16 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
           const device = named ? deps.catalog.byKey(named.device) : null;
           if (device && named) roles[role] = { device: device.id, part: named.part };
         }
-        const result = deps.checked({ rule: entry.rule, roles, groups, starts, world }, id);
+        const result = deps.checked({ rule: entry.rule, roles, groups, starts, scripts, world }, id);
         // Restoring, one that cannot be kept as it was is kept turned off — its rule, what still fills it — and said: its owner's work is not lost.
         const why = [...new Set([...(kept.turnedOff.get(key) ?? []), ...result.problems])];
         if (why.length && !options.lenient) throw new ApiError('invalid', `"${entry.name}" cannot be kept as it is`, { problems: why.map((said) => `"${entry.name}": ${said}`) });
         each(`"${entry.name}"`, () => {
           const homeId = entry.home ? (deps.places.homeByKey(entry.home)?.id ?? null) : null;
-          deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, groups: result.groups, starts: result.starts, world: result.world, homeId, timeZone: entry.clock, mode: why.length ? 'off' : entry.mode, recheckMinutes: entry.recheckMinutes });
+          // Who it acts for: the person the file names, when they are here — else whoever imports it, saying yes by doing so.
+          const named = entry.actsFor ? (personIdOf(deps, document, entry.actsFor) ?? null) : null;
+          const actingFor = named ?? (by.kind === 'person' ? by.id : null);
+          deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, groups: result.groups, starts: result.starts, scripts: result.scripts, world: result.world, homeId, timeZone: entry.clock, mode: why.length ? 'off' : entry.mode, actingFor, recheckMinutes: entry.recheckMinutes });
           writeLabels(deps, { automation: id }, entry.labels);
           (existing ? applied.automations.changed : applied.automations.added).push(key);
           if (why.length) applied.notes.push(`"${entry.name}" is restored turned off: ${why.join('; ')}`);
@@ -990,6 +1004,13 @@ function chainOf(text: string): Statement[] | null {
   } catch {
     return null;
   }
+}
+
+/** A person's id by their key: in the file, or here by the key the family's file would give them. */
+function personIdOf(deps: ImportDeps, document: ConfigDocument, key: string): string | null {
+  const inFile = document.people[key]?.id;
+  if (inFile && deps.people.get(inFile)?.member) return inFile;
+  return deps.people.members().find((person) => person.fileKey === key || person.id === key)?.id ?? null;
 }
 
 /** Whether a file says other labels than a thing has: by key. None said leaves them as they are. */

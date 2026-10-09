@@ -613,6 +613,7 @@ export class Runs {
       else if ('command' in step) walked = await this.#command(live, here, step.command, depth, within, mode === 'otherwise');
       else if ('write' in step) walked = await this.#write(live, here, step.write, depth, within, what());
       else if ('start' in step) walked = await this.#startStep(live, here, step.start, depth, within, what(), mode);
+      else if ('script' in step) walked = await this.#script(live, here, step.script, depth, within, what());
       else if ('remember' in step) walked = await this.#remember(live, here, step.remember, depth, within, what());
       else if ('setMode' in step) walked = this.#setMode(live, here, step.setMode, depth, within, what());
       else if ('notify' in step) walked = await this.#notify(live, here, step.notify, depth, within, what());
@@ -846,6 +847,81 @@ export class Runs {
     }
     this.deps.store.remember(here.automation.id, remember.name, kept.value);
     this.#add(live, { kind: 'remember', depth, within, what, outcome: 'done', detail: `Remembered ${paramText(schema, remember.name, kept.value)}`, until: null });
+    return 'ok';
+  }
+
+  /**
+   * One of the steps of the script filling a role (docs/PLAN-SCRIPTS.md §10):
+   * given its inputs in their units and what it remembered, run by the hub's
+   * runner until it answers, faults, or its run is stopped — what it does
+   * said beneath it as it does it — and what it answers remembered.
+   */
+  async #script(live: LiveRun, here: Here, script: StepOf<'script'>['script'], depth: number, within: string | null, what: string): Promise<Walked> {
+    const runner = this.deps.scripts;
+    const id = here.automation.scripts[script.role];
+    if (!runner || !id) {
+      this.#add(live, { kind: 'script', depth, within, what, outcome: 'failed', detail: runner ? 'No script fills it' : 'This place runs no scripts', until: null });
+      return 'failed';
+    }
+    const shape = runner.shape(id);
+    const names = Object.keys(shape?.steps ?? {});
+    const name = script.step ?? (names.length === 1 ? names[0] : undefined);
+    const declared = name !== undefined ? shape?.steps[name] : undefined;
+    const scope = this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event, live.inputs);
+    // What it is given, each in its input's unit — as it declares them, where it reads.
+    const inputs: Record<string, Value> = {};
+    for (const [input, expr] of Object.entries(script.args ?? {})) {
+      const measured = await measure(expr, scope).catch(() => ({ value: null, unit: null }));
+      const kept = declared ? toRemember(declared.inputs, input, measured) : { value: measured.value };
+      if ('problem' in kept) {
+        this.#add(live, { kind: 'script', depth, within, what, outcome: 'failed', detail: `Not given ${input}: ${kept.problem}`, until: null });
+        return 'failed';
+      }
+      inputs[input] = kept.value;
+    }
+    // What it remembers is its own, beside the automation's: under the role's name.
+    const prefix = `${script.role}.`;
+    const memory = Object.fromEntries(Object.entries(this.deps.store.memory(here.automation.id)).flatMap(([key, value]) => (key.startsWith(prefix) ? [[key.slice(prefix.length), value]] : [])));
+    const seconds = SEQUENCE_LIMITS.waitSeconds;
+    const entry = this.#add(live, { kind: 'script', depth, within, what, outcome: 'waiting', detail: 'Running', until: this.#after(seconds) });
+    const stop = new AbortController();
+    const wake = () => stop.abort();
+    live.wake.add(wake);
+    let done: Awaited<ReturnType<typeof runner.step>>;
+    try {
+      done = await runner.step({
+        automation: here.automation,
+        run: { id: live.id, askedBy: live.asker, cause: [...(live.event?.cause ?? []), here.automation.id] },
+        scriptId: id,
+        step: script.step,
+        inputs,
+        memory,
+        deadline: this.#context.now().getTime() + seconds * 1000,
+        signal: stop.signal,
+        say: (line) => void this.#add(live, { kind: 'script', depth: depth + 1, within: what, what: line.what, outcome: line.outcome, detail: line.detail ?? '', until: null }),
+      });
+    } finally {
+      live.wake.delete(wake);
+    }
+    if (stop.signal.aborted && live.stoppedBy !== null) {
+      this.#end(live, entry, 'stopped', `Stopped by ${live.stoppedBy}`);
+      return 'stopped';
+    }
+    if ('fault' in done) {
+      this.#end(live, entry, 'failed', done.fault);
+      return 'failed';
+    }
+    for (const [key, value] of Object.entries(done.memory)) if (memory[key] !== value) this.deps.store.remember(here.automation.id, `${prefix}${key}`, value);
+    if (script.remember !== undefined) {
+      const answer = { value: done.answer, unit: declared?.answer?.type === 'number' ? (declared.answer.unit ?? null) : null };
+      const kept = toRemember(here.rule.memory ?? { fields: {} }, script.remember, answer);
+      if ('problem' in kept) {
+        this.#end(live, entry, 'failed', `Its answer was not remembered: ${kept.problem}`);
+        return 'failed';
+      }
+      this.deps.store.remember(here.automation.id, script.remember, kept.value);
+    }
+    this.#end(live, entry, 'done', done.answer === null ? 'Done' : `Answered ${typeof done.answer === 'string' ? done.answer : JSON.stringify(done.answer)}`);
     return 'ok';
   }
 

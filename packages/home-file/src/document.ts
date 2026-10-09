@@ -79,6 +79,8 @@ export type LinkEntry = { kind: string; from: { device: string; part: string }; 
 export type AutomationEntry = {
   name: string;
   mode: AutomationMode;
+  /** The person whose yes it acts on, by their key (docs/PLAN-SCRIPTS.md §4.4): what its scripts do, they do for them. Null: nobody's, or it does not act. */
+  actsFor: string | null;
   /** The home it is for, by its key: its clock and its "home". Null: the family's. */
   home: string | null;
   /** A clock of its own: the time zone its times of day are in. Null: its home's. */
@@ -692,7 +694,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         problem('Expected an automation: its name, what it uses and what it does', path);
         continue;
       }
-      const own = ['name', 'mode', 'home', 'clock', 'recheck', 'made from', 'labels'];
+      const own = ['name', 'mode', 'acts for', 'home', 'clock', 'recheck', 'made from', 'labels'];
       const rules = ['uses', 'settings', 'memory', 'inputs', 'result', 'when', 'while running', 'only if', 'do', 'if a step fails'];
       for (const field of Object.keys(entry)) if (![...own, ...rules].includes(field)) problem(`"${field}" is not part of an automation: it has ${[...own, ...rules].join(', ')}`, [...path, field]);
       const name = text(entry.name, [...path, 'name'], 'its name');
@@ -705,7 +707,8 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
       const madeFrom = typeof entry['made from'] === 'string' ? entry['made from'] : null;
       const read = ruleFromConfig(entry, path);
       issues.push(...read.issues);
-      if (name && read.rule) automations[key] = { name, mode, home, clock, recheckMinutes: recheck === null ? null : recheck / 60, madeFrom, labels: labelKeys(entry.labels, [...path, 'labels']), uses: read.uses, rule: read.rule };
+      const actsFor = entry['acts for'] === undefined || entry['acts for'] === null ? null : typeof entry['acts for'] === 'string' && KEY.test(entry['acts for']) ? entry['acts for'] : (problem('"acts for" is a person, by their key', [...path, 'acts for']), null);
+      if (name && read.rule) automations[key] = { name, mode, actsFor, home, clock, recheckMinutes: recheck === null ? null : recheck / 60, madeFrom, labels: labelKeys(entry.labels, [...path, 'labels']), uses: read.uses, rule: read.rule };
     }
 
   // A shortcut is to an automation in the file.
@@ -816,6 +819,7 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
       {
         name: automation.name,
         mode: automation.mode,
+        ...(automation.actsFor !== null ? { 'acts for': automation.actsFor } : {}),
         ...(automation.home !== null ? { home: automation.home } : {}),
         ...(automation.clock !== null ? { clock: automation.clock } : {}),
         ...(automation.recheckMinutes !== null ? { recheck: durationText(automation.recheckMinutes * 60) } : {}),

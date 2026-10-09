@@ -71,7 +71,7 @@ describe('reading a script', () => {
 
   test('an import of anything but the SDK, before anything runs — one only typed is no import at all', () => {
     expect(readScript("import type { Stats } from 'node:fs';\nimport { step } from 'kraftverk';\nexport const go = step({}, async (): Promise<Stats | null> => null);\n", engine).problems).toEqual([]);
-    expect(readScript("import fs from 'node:fs';\nexport const x = fs;\n", engine).problems.map((each) => each.message)).toEqual(['A script imports only "kraftverk", not "node:fs"']);
+    expect(readScript("import fs from 'node:fs';\nexport const x = fs;\n", engine).problems.map((each) => each.message)).toEqual(['A script imports only "kraftverk" and "kraftverk/api", not "node:fs"']);
   });
 
   test('what its top level throws, at its line; a top level that will not end; and exports that are neither', () => {

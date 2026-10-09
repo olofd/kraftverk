@@ -90,6 +90,12 @@ export type Expr =
   | { call: string; role: string; args?: Readonly<Record<string, Expr>> }
   /** One of the language's own functions (`BUILTINS`, kinds/builtins.ts): `round(x)`, `clamp(x, 0 W, 2 kW)`, `max(a, b, c)`. */
   | { apply: BuiltinName; args: readonly Expr[] }
+  /**
+   * One of the functions of the script filling a role (docs/PLAN-SCRIPTS.md
+   * §9.3): pure, its arguments in order — `feel.feelsLike(kitchen.temperature,
+   * kitchen.humidity)`. Unknown when an argument is, or where no engine runs it.
+   */
+  | { script: string; fn: string; args: readonly Expr[] }
   | { compare: CompareOp; left: Expr; right: Expr }
   /**
    * A number from two: their sum, difference, product or quotient. A sum is
@@ -343,6 +349,21 @@ export type Step =
         remember?: string;
       };
     }
+  /**
+   * Run one of the steps of the script filling a role (docs/PLAN-SCRIPTS.md
+   * §9.2): what it is given by its inputs' names, and what it answers kept
+   * as one of what this automation remembers. It may act — through the
+   * gateway, as this automation — and wait, within its run.
+   */
+  | {
+      script: {
+        role: string;
+        /** Which of its steps: needed only when it has several. */
+        step?: string;
+        args?: Readonly<Record<string, Expr>>;
+        remember?: string;
+      };
+    }
   /** The run ends here, answering with a value: of the kind its `result` says, what the run that started it and waited remembers. */
   | { answer: Expr }
   /** Remember a value — kept until a run remembers another, across runs and restarts: `remember: timesCharged`, `as: memory.timesCharged + 1`. */
@@ -398,7 +419,7 @@ export const WHILE_RUNNING: { readonly [W in WhileRunning]: { label: string; say
 export const isWhileRunning = (value: unknown): value is WhileRunning => typeof value === 'string' && Object.hasOwn(WHILE_RUNNING, value);
 
 /** None of the other kinds of role: what each kind says it is not, so they are told apart. */
-type NotOther<K extends string> = { [Kind in Exclude<'group' | 'automation' | 'person' | 'people' | 'place', K>]?: never };
+type NotOther<K extends string> = { [Kind in Exclude<'group' | 'automation' | 'script' | 'person' | 'people' | 'place', K>]?: never };
 
 /** A role a part of a device fills: what it is called, and what it must offer. */
 export type PartRole = CapabilityNeed & { label: string } & NotOther<never>;
@@ -412,6 +433,9 @@ export type GroupRole = CapabilityNeed & { label: string; group: true } & NotOth
 /** A role another automation fills: one a `start` step starts. */
 export type AutomationRole = { automation: true; label: string } & NotOther<'automation'>;
 
+/** A role one of the family's scripts fills (docs/PLAN-SCRIPTS.md): what a `run script` step runs, and whose functions an expression calls. */
+export type ScriptRole = { script: true; label: string } & NotOther<'script'>;
+
 /** A role a person of the family fills: who `at`, `arrives` and `notify` name. */
 export type PersonRole = { person: true; label: string } & NotOther<'person'>;
 
@@ -422,7 +446,7 @@ export type PeopleRole = { people: true; label: string } & NotOther<'people'>;
 export type PlaceRole = { place: true; label: string } & NotOther<'place'>;
 
 /** What fills a role — a part, several, another automation, a person, people, a place — and what it is called. */
-export type RoleSpec = PartRole | GroupRole | AutomationRole | PersonRole | PeopleRole | PlaceRole;
+export type RoleSpec = PartRole | GroupRole | AutomationRole | ScriptRole | PersonRole | PeopleRole | PlaceRole;
 
 /**
  * A recipe's role: what it is, said for whoever fills it — "Anything that
@@ -437,6 +461,7 @@ export const ROLE_FIELDS = {
   part: ['label', 'capabilities', 'oneOf'],
   group: ['group', 'label', 'capabilities', 'oneOf'],
   automation: ['automation', 'label'],
+  script: ['script', 'label'],
   person: ['person', 'label'],
   people: ['people', 'label'],
   place: ['place', 'label'],
@@ -444,6 +469,7 @@ export const ROLE_FIELDS = {
   part: readonly (keyof PartRole)[];
   group: readonly (keyof GroupRole)[];
   automation: readonly (keyof AutomationRole)[];
+  script: readonly (keyof ScriptRole)[];
   person: readonly (keyof PersonRole)[];
   people: readonly (keyof PeopleRole)[];
   place: readonly (keyof PlaceRole)[];
@@ -454,7 +480,7 @@ export type RoleKind = keyof typeof ROLE_FIELDS;
 
 /** Which kind of role it is. */
 export const roleKind = (spec: RoleSpec): RoleKind =>
-  isAutomationRole(spec) ? 'automation' : isGroupRole(spec) ? 'group' : isPersonRole(spec) ? 'person' : isPeopleRole(spec) ? 'people' : isPlaceRole(spec) ? 'place' : 'part';
+  isAutomationRole(spec) ? 'automation' : isScriptRole(spec) ? 'script' : isGroupRole(spec) ? 'group' : isPersonRole(spec) ? 'person' : isPeopleRole(spec) ? 'people' : isPlaceRole(spec) ? 'place' : 'part';
 
 /** A rule's roles as an automation keeps them: its fields alone — what a recipe said for whoever fills them stays with the recipe. */
 export const automationRoles = (roles: Readonly<Record<string, RoleSpec>>): Record<string, RoleSpec> =>
@@ -466,6 +492,8 @@ export const automationRoles = (roles: Readonly<Record<string, RoleSpec>>): Reco
   );
 
 export const isAutomationRole = (spec: RoleSpec): spec is AutomationRole => 'automation' in spec && spec.automation === true;
+
+export const isScriptRole = (spec: RoleSpec): spec is ScriptRole => 'script' in spec && spec.script === true;
 
 export const isGroupRole = (spec: RoleSpec): spec is GroupRole => 'group' in spec && spec.group === true;
 

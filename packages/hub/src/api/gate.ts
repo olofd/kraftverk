@@ -26,16 +26,19 @@ export type Gate = {
   readonly what?: string;
 };
 
-const ANYONE: readonly CallerKind[] = ['person', 'agent'];
+const ANYONE: readonly CallerKind[] = ['person', 'agent', 'automation'];
 const PEOPLE: readonly CallerKind[] = ['person'];
+/** A person's or an assistant's, never a script's (docs/PLAN-SCRIPTS.md §7.3). */
+const NOT_SCRIPTS: readonly CallerKind[] = ['person', 'agent'];
 
 const read: Gate = { kind: 'read', least: null, callers: ANYONE };
 const act: Gate = { kind: 'act', least: null, callers: ANYONE };
-const stream: Gate = { kind: 'stream', least: null, callers: ANYONE };
 /** A person's to do, never an assistant's. */
 const people = (kind: GateKind, what: string): Gate => ({ kind, least: null, callers: PEOPLE, what });
 /** An admin's to do. */
 const admins = (kind: GateKind, what: string): Gate => ({ kind, least: 'admin', callers: PEOPLE, what });
+/** Never a script's to do: credentials, secrets, a whole file, what cannot be undone, writing scripts. */
+const noScript = (kind: GateKind, what: string): Gate => ({ kind, least: null, callers: NOT_SCRIPTS, what });
 
 const WHO_FAMILY = 'change who is in the family';
 
@@ -53,8 +56,8 @@ export const GATES = {
   'devices.place': act,
   'devices.placements': read,
   'devices.track': read,
-  'devices.remove': act,
-  'devices.deleteHistory': act,
+  'devices.remove': noScript('act', 'remove a device'),
+  'devices.deleteHistory': noScript('act', 'delete what a device recorded'),
   'devices.history': read,
   'devices.changes': read,
   'devices.events': read,
@@ -65,29 +68,29 @@ export const GATES = {
   'devices.join': act,
   problems: read,
   needsYou: read,
-  'setup.start': act,
-  'setup.startHeld': act,
-  'setup.again': act,
-  'setup.get': read,
-  'setup.discard': act,
-  'setup.sightings': read,
-  'setup.choose': act,
-  'setup.update': act,
-  'setup.action': act,
-  'setup.discover': act,
-  'setup.check': act,
-  'setup.save': act,
+  'setup.start': noScript('act', 'add a device'),
+  'setup.startHeld': noScript('act', 'add a device'),
+  'setup.again': noScript('act', 'add a device'),
+  'setup.get': noScript('read', 'add a device'),
+  'setup.discard': noScript('act', 'add a device'),
+  'setup.sightings': noScript('read', 'add a device'),
+  'setup.choose': noScript('act', 'add a device'),
+  'setup.update': noScript('act', 'add a device'),
+  'setup.action': noScript('act', 'add a device'),
+  'setup.discover': noScript('act', 'add a device'),
+  'setup.check': noScript('act', 'add a device'),
+  'setup.save': noScript('act', 'add a device'),
   nearby: read,
   ignoreFound: act,
   unignoreFound: act,
-  'integrations.kept': read,
-  'integrations.forget': act,
+  'integrations.kept': noScript('read', 'read what an integration keeps'),
+  'integrations.forget': noScript('act', 'forget what an integration keeps'),
   'transports.list': read,
   'transports.diagnostic': read,
   'connections.prefer': act,
   'connections.remove': act,
-  'connections.setSecrets': act,
-  'connections.setExportable': act,
+  'connections.setSecrets': noScript('act', 'change a secret'),
+  'connections.setExportable': noScript('act', 'let secrets leave'),
   'links.add': act,
   'links.remove': act,
   'automations.kit': read,
@@ -97,8 +100,8 @@ export const GATES = {
   'automations.create': act,
   'automations.update': act,
   'automations.delete': act,
-  'automations.start': act,
-  'automations.stop': act,
+  'automations.start': noScript('act', 'start an automation, but with its own steps'),
+  'automations.stop': noScript('act', 'stop an automation'),
   'automations.check': read,
   'automations.runs': read,
   'automations.runLog': read,
@@ -106,16 +109,16 @@ export const GATES = {
   'automations.fromRecipe': read,
   'scripts.list': read,
   'scripts.get': read,
-  'scripts.create': act,
-  'scripts.update': act,
-  'scripts.remove': act,
+  'scripts.create': noScript('act', 'write a script'),
+  'scripts.update': noScript('act', 'write a script'),
+  'scripts.remove': noScript('act', 'remove a script'),
   'scripts.check': read,
   'configuration.vocabulary': read,
   'configuration.schema': read,
-  'configuration.export': read,
-  'configuration.plan': read,
-  'configuration.apply': act,
-  'configuration.elsewhere': read,
+  'configuration.export': noScript('read', 'export the family'),
+  'configuration.plan': noScript('read', 'import a file'),
+  'configuration.apply': noScript('act', 'import a file'),
+  'configuration.elsewhere': noScript('read', 'import a file'),
   'policy.list': read,
   'policy.set': act,
   timeline: read,
@@ -128,9 +131,9 @@ export const GATES = {
   'homes.remove': act,
   'notifications.list': read,
   'notifications.read': act,
-  'notifications.pushKey': read,
-  'notifications.keepPushEndpoint': act,
-  'notifications.forgetPushEndpoint': act,
+  'notifications.pushKey': noScript('read', 'wake a person’s apps'),
+  'notifications.keepPushEndpoint': noScript('act', 'wake a person’s apps'),
+  'notifications.forgetPushEndpoint': noScript('act', 'wake a person’s apps'),
   'notifications.test': act,
   'presence.list': read,
   'modes.list': read,
@@ -157,7 +160,7 @@ export const GATES = {
   'openings.remove': act,
   'people.list': read,
   'people.me': read,
-  'people.myChain': read,
+  'people.myChain': noScript('read', 'read a person’s keys'),
   'people.found': people('act', 'found a family'),
   'people.present': people('act', WHO_FAMILY),
   'people.update': admins('act', WHO_FAMILY),
@@ -176,18 +179,18 @@ export const GATES = {
   'media.add': act,
   'media.get': read,
   'nodes.list': read,
-  'nodes.join': act,
-  'nodes.forget': act,
-  'held.readings': act,
-  'held.store': read,
-  'held.keep': act,
-  'held.audit': act,
-  live: stream,
+  'nodes.join': noScript('act', 'join a node'),
+  'nodes.forget': noScript('act', 'forget a node'),
+  'held.readings': noScript('act', 'speak for a node'),
+  'held.store': noScript('read', 'speak for a node'),
+  'held.keep': noScript('act', 'speak for a node'),
+  'held.audit': noScript('act', 'speak for a node'),
+  live: { kind: 'stream', least: null, callers: NOT_SCRIPTS, what: 'follow the home as it changes' },
 } as const satisfies { readonly [P in ApiPath<KraftverkApi>]: Gate };
 
 const RANK: Readonly<Record<MemberRole, number>> = { child: 0, member: 1, admin: 2 };
 const AN: Readonly<Record<MemberRole, string>> = { child: 'a member', member: 'a member', admin: 'an admin' };
-const WHO: Readonly<Record<CallerKind, string>> = { person: 'A person', agent: 'An assistant' };
+const WHO: Readonly<Record<CallerKind, string>> = { person: 'A person', agent: 'An assistant', automation: 'A script' };
 
 /** Whether a call's argument carries a yes: a token sent back as `confirmation`. */
 const saysYes = (arg: unknown): boolean => typeof arg === 'object' && arg !== null && (arg as { confirmation?: unknown }).confirmation !== undefined;
@@ -200,9 +203,11 @@ const saysYes = (arg: unknown): boolean => typeof arg === 'object' && arg !== nu
 export function gated(api: KraftverkApi, caller: Caller, roleOf: (personId: string) => MemberRole | null): KraftverkApi {
   /** Whether who asks is at least `least` in the family. A role is a person's; a server's account that names no person yet is its administrator, as it always was. */
   const atLeast = (least: MemberRole): boolean => {
-    if (caller.kind !== 'person') return false;
-    if (!caller.id) return true;
-    const role = roleOf(caller.id);
+    // A script is held to the role of the person it acts for: nobody's, and it has none.
+    const person = caller.kind === 'person' ? caller.id : caller.kind === 'automation' ? caller.for : null;
+    if (caller.kind === 'agent' || (caller.kind === 'automation' && !person)) return false;
+    if (!person) return true;
+    const role = roleOf(person);
     return role !== null && RANK[role] >= RANK[least];
   };
 

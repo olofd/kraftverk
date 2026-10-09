@@ -15,7 +15,7 @@ import type { DevicePeopleStore, PeopleStore, TrackStore } from '@kraftverk/stor
 type Stores = { people: Pick<PeopleStore, 'sharing'>; devicePeople: Pick<DevicePeopleStore, 'of' | 'carriedBy'> };
 
 /** Who asks, by their person id: none for an assistant, or a server's account not yet anyone's. */
-export const readerOf = (caller: Caller): string | null => (caller.kind === 'person' ? (caller.id ?? null) : null);
+export const readerOf = (caller: Caller): string | null => (caller.kind === 'person' ? (caller.id ?? null) : caller.kind === 'automation' ? caller.for : null);
 
 /**
  * Whether a device's position is left out for a reader — null: kept for no

@@ -19,7 +19,7 @@ and check a file with the same code.
 
 ```yaml
 # yaml-language-server: $schema=http://<your server>/api/config/schema.json
-kraftverk: 17                     # the document's version: required
+kraftverk: 18                     # the document's version: required
 
 family: { name: The Examples, kind: family, locale: en-GB }
 
@@ -523,6 +523,7 @@ nothing wrong — and write back the same.
 | 15 | Automations of people and places: a role under `uses` may be filled by a person, people, everyone, a home, a zone or a space — `{ person: key }`, `{ people: [keys] }`, `{ people: everyone }`, `{ home: key }`, `{ zone: key }`, `{ space: key }` — and the language has their triggers, `set mode` and `notify`. Nothing older says them, so nothing changes |
 | 16 | A home's `bearing` and `icon`, a space's `icon`, and an opening that joins a space — or the outside — to `site`, the home itself. Nothing older says them, so nothing changes |
 | 17 | The family's scripts in TypeScript (`scripts:`, each by key with its `name` and its `source` as written, docs/PLAN-SCRIPTS.md). An import reads each with the engine where it is imported: one that does not read is a problem at its key — a restore keeps it as it is, and says so. Nothing older says them, so nothing changes |
+| 18 | Automations run scripts: a role under `uses` may be filled by one of the family's scripts (`{ script: key }`), run by a `run script:` step and its functions called in an expression (`feel.feelsLike(…)`); and an automation that acts says who it acts for (`acts for:`, a person by key) — what its scripts do, they do for them. Nothing older says them, so nothing changes |
 
 **An integration's own entries.** A change to what a type is reached by —
 a way it no longer has — is not the document's shape, but a home kept

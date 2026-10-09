@@ -908,6 +908,31 @@ do:
     remember as: lastPower
 ```
 
+### `run script` — Run a script
+
+Run one of the steps of the script filling a role (docs/PLAN-SCRIPTS.md): given its inputs under `with`, the rest their defaults. It may read the home, act — through the gateway, as this automation, for the person who let it act — and wait, within its run; in watch mode it says what it would do. What it answers is remembered, with `remember as`, as one of what this automation remembers. `step` says which of its steps, when it has several.
+
+| Word | Holds | |
+|---|---|---|
+| `run script` | a role one of the family’s scripts fills: `{ script: key }` under `uses` | needed |
+| `step` | a name its part declares | if you like |
+| `with` | each argument by its name: a value, or an expression | if you like |
+| `remember as` | one of what it remembers, by its name: under `memory` | if you like |
+
+```yaml
+do:
+  - run script: tidy
+```
+
+```yaml
+do:
+  - run script: tidy
+    step: tidyUp
+    with:
+      after: 10 min
+    remember as: lastPower
+```
+
 ### `remember` — Remember
 
 Remember a value — kept until a run remembers another, across runs and restarts — read as `memory.<name>`: one of what the automation declares under `memory`, in its kind and unit.
@@ -952,6 +977,7 @@ reached — is never taken for true.
 | Across a group | `any(c in chargers: c.power > 10 W)` · `count(c in chargers: c reachable) < 2` · `sum(c in chargers: c.power ?? 0 W) > 2 kW` | Something of each part of a group, taken together — `all`, `any`, `count`, `sum`, `average`, `lowest`, `highest` — each part called by a name of its own within it, as a role is. Unknown while it is for a part, unless one part settles it; `??` gives a part that may not say a value of its own. |
 | Ask a package | `acme.weather.sunny(forecast, day = "tomorrow")` | A function a package contributes, over the part filling a role: what the forecast says of tomorrow, the price’s rank. Only where a run may wait for its answer. |
 | A function of the language | `min(station.charge, 80 %)` · `clamp(charger.power, 0 W, 2 kW)` | One of the language’s own functions — min, max, clamp, round, floor, ceil, abs — on numbers, each with its unit; the answer in the first one’s unit. |
+| A function of a script | `feel.feelsLike(kitchen.temperature, kitchen.humidity) > 25 °C` | One of the functions of the script filling a role (docs/PLAN-SCRIPTS.md), its arguments in order: pure, so it may be called anywhere a condition is looked at. Unknown when an argument is, or where no engine runs scripts. |
 | A comparison | `station.charge < 15 %` | Two values compared: `<`, `<=`, `>`, `>=`, `==`, `!=`. Unknown when either is. |
 | One of | `station.mode in ["eco", "boost"]` | Whether a value is one of a list: numbers in one unit, or texts. |
 | Arithmetic | `station.charge + 10 %` · `station.capacity * 50 %` · `charger.power * 2 h` | A number from two: `+ - * /`. A sum is in one unit; a product or quotient in the unit the two make — a power for a time an energy, a percentage a share of what it multiplies. Unknown when either is. |

@@ -12,6 +12,7 @@ import { fieldValue, type FieldSpec } from './kinds/spec.ts';
 import { branchesOf, STEP_KIND_ORDER, STEP_KINDS } from './kinds/steps.ts';
 import { stepListsOf, TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './kinds/triggers.ts';
 import type { AutomationFunction } from './functions.ts';
+import type { ScriptShape } from './script.ts';
 import { eachAsGroup, placeKindsOf, ruleExpressions, ruleUses } from './reads.ts';
 import { convert, convertible, isUnit, product, quotient, unitIn, type Unit } from '@kraftverk/device-sdk';
 import { KEYWORDS } from './text/expr.ts';
@@ -24,6 +25,7 @@ import {
   isPeopleRole,
   isPersonRole,
   isPlaceRole,
+  isScriptRole,
   isWhileRunning,
   isWorldRole,
   memberRole,
@@ -118,6 +120,13 @@ export type RuleVocabulary = {
   attribute?(role: string, target: WriteTarget): AttributeSpec | null;
   /** The family's modes, its own beside the built-in ones: each by key, on its axis, by its name. Absent: any key may be one, and its home says. */
   modes?(): readonly RuleMode[];
+  /**
+   * What the script filling a role declares, once the role is filled and the
+   * script reads (docs/PLAN-SCRIPTS.md): its steps and its functions. Absent,
+   * or null, and what a step gives it or a function is called with is not
+   * checked against it — a role not filled is a role's problem.
+   */
+  script?(role: string): ScriptShape | null;
 };
 
 /** A mode as the language knows one: its key, its axis, its name — "Guests over". */
@@ -125,7 +134,7 @@ export type RuleMode = { key: string; axis: Axis; name: string };
 
 /** What a role that is not a part is, in words: "an automation", "a person". */
 const kindWords = (spec: RoleSpec): string =>
-  ({ part: 'one part', group: 'several parts', automation: 'an automation', person: 'a person', people: 'people', place: 'a place' })[roleKind(spec)];
+  ({ part: 'one part', group: 'several parts', automation: 'an automation', script: 'a script', person: 'a person', people: 'people', place: 'a place' })[roleKind(spec)];
 
 /** The standard meanings a part offering these capabilities reports. */
 const meaningsOfNeed = (need: CapabilityNeed): Set<string> =>
@@ -166,7 +175,7 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
     else if (role === 'given') problems.push('roles.given: "given" is how the rule names what it is given — name the role otherwise');
     else if (KEYWORDS.has(role)) problems.push(`roles.${role}: "${role}" is a word of the language — name the role otherwise`);
     if (!spec.label?.trim()) problems.push(`roles.${role}: it has no label`);
-    if (isAutomationRole(spec) || isWorldRole(spec)) continue;
+    if (isAutomationRole(spec) || isScriptRole(spec) || isWorldRole(spec)) continue;
     const named = [...(spec.capabilities ?? []), ...(spec.oneOf ?? [])];
     if (!named.length) problems.push(`roles.${role}: it asks for no capability, so any device would do`);
     for (const capability of named) if (!isCapability(capability)) problems.push(`roles.${role}: there is no capability "${capability}"`);
@@ -393,6 +402,35 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       const units = [left, right].flatMap((side) => (side.type === 'number' && side.unit !== null ? [side.unit] : []));
       if (units.length === 2 && !fits({ type: 'number', unit: units[0]! }, { type: 'number', unit: units[1]! })) problems.push(`${where}: ${units[0]} and ${units[1]} are not of one quantity`);
       return { type: 'number', unit: units[0] ?? null };
+    }
+    if ('script' in expr) {
+      // A function of the script filling a role: pure, so anywhere — even where a condition is looked at on every reading.
+      const spec = roles[expr.script];
+      const got = expr.args.map((arg, index) => shape(arg, `${where}.args[${index}]`, options));
+      if (!spec) {
+        problems.push(`${where}: there is no role "${expr.script}"`);
+        return { type: 'unknown' };
+      }
+      if (!isScriptRole(spec)) {
+        problems.push(`${where}: ${expr.script} is ${kindWords(spec)}, not a script`);
+        return { type: 'unknown' };
+      }
+      const declared = vocabulary.script?.(expr.script);
+      if (!declared) return { type: 'unknown' };
+      const fn = declared.functions[expr.fn];
+      if (!fn) {
+        const known = Object.keys(declared.functions);
+        problems.push(`${where}: ${spec.label} has no function "${expr.fn}"${known.length ? ` — it has ${known.join(', ')}` : ''}`);
+        return { type: 'unknown' };
+      }
+      if (got.length !== fn.args.length) problems.push(`${where}: ${expr.fn} takes ${fn.args.length} ${fn.args.length === 1 ? 'argument' : 'arguments'}, not ${got.length}`);
+      fn.args.forEach((field, index) => {
+        const given = got[index];
+        if (!given) return;
+        const wanted = shapeOf(valueTypeOf(field));
+        if (!fits(wanted, given)) problems.push(`${where}.args[${index}]: ${field.title} is ${said(wanted)}, not ${said(given)}`);
+      });
+      return shapeOf(valueTypeOf(fn.returns));
     }
     if ('apply' in expr) {
       const spec = isBuiltin(expr.apply) ? BUILTINS[expr.apply] : null;
@@ -628,6 +666,14 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         else if (!isAutomationRole(spec)) problems.push(`${at}: ${name} is ${kindWords(spec)}, not an automation`);
         return;
       }
+      case 'script': {
+        const name = String(value);
+        const spec = roles[name];
+        if (!name) problems.push(`${at}: choose a script`);
+        else if (!spec) problems.push(`${at}: there is no role "${name}"`);
+        else if (!isScriptRole(spec)) problems.push(`${at}: ${name} is ${kindWords(spec)}, not a script`);
+        return;
+      }
       case 'group': {
         const name = String(value);
         const spec = roles[name];
@@ -830,6 +876,31 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
           if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name)) problems.push(`${at}.start.args.${name}: "${name}" is not an input's name`);
           const got = shape(given, `${at}.start.args.${name}`, { calls: true });
           if (got.type === 'structure') problems.push(`${at}.start.args.${name}: an input is given a value, not a list or an object`);
+        }
+      } else if ('script' in step) {
+        const given = Object.entries(step.script.args ?? {}).map(([name, value]) => [name, shape(value, `${at}.script.args.${name}`, { calls: true })] as const);
+        if (step.script.remember !== undefined && !memory[step.script.remember]) problems.push(`${at}.script.remember: it remembers nothing called "${step.script.remember}" — say it under memory`);
+        // Against what the script filling the role declares, once it is filled and reads.
+        const declared = roles[step.script.role] && isScriptRole(roles[step.script.role]!) ? vocabulary.script?.(step.script.role) : null;
+        if (declared) {
+          const names = Object.keys(declared.steps);
+          const name = step.script.step ?? (names.length === 1 ? names[0] : undefined);
+          const ran = name === undefined ? undefined : declared.steps[name];
+          if (!names.length) problems.push(`${at}.script: ${roles[step.script.role]!.label} has no steps — only functions`);
+          else if (step.script.step === undefined && names.length > 1) problems.push(`${at}.script.step: which of its steps — ${names.join(', ')}?`);
+          else if (!ran) problems.push(`${at}.script.step: it has no step "${name}" — it has ${names.join(', ')}`);
+          if (ran) {
+            for (const [input, got] of given) {
+              const field = ran.inputs.fields[input];
+              if (!field) problems.push(`${at}.script.args.${input}: ${name} takes no "${input}"`);
+              else if (!fits(shapeOf(valueTypeOf(field)), got)) problems.push(`${at}.script.args.${input}: ${field.title} is ${said(shapeOf(valueTypeOf(field)))}, not ${said(got)}`);
+            }
+            for (const [input, field] of Object.entries(ran.inputs.fields))
+              if (field.required && field.default === undefined && !given.some(([name]) => name === input)) problems.push(`${at}.script.args.${input}: ${name} needs it`);
+            const kept = step.script.remember !== undefined ? memory[step.script.remember] : undefined;
+            if (kept && !ran.answer) problems.push(`${at}.script.remember: ${name} answers nothing`);
+            else if (kept && ran.answer && !fits(shapeOf(valueTypeOf(kept)), shapeOf(valueTypeOf(ran.answer)))) problems.push(`${at}.script.remember: ${kept.title} is ${said(shapeOf(valueTypeOf(kept)))}, not ${said(shapeOf(valueTypeOf(ran.answer)))}`);
+          }
         }
       } else if ('answer' in step) {
         // Of the kind it says it answers, in a unit of it.

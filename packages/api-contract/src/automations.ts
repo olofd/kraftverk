@@ -173,6 +173,8 @@ export type RunStep = {
 
 export type AutomationView = RoleFills & {
   id: AutomationId;
+  /** The person whose yes it acts on, by id (docs/PLAN-SCRIPTS.md §4.1): what its scripts do, they do for them. Null while it does not act, or when nobody's. */
+  actingFor: string | null;
   /** Its name in configuration: what a file and an import know it by (docs/CONFIG.md). */
   key: string;
   name: string;
