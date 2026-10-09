@@ -51,8 +51,9 @@ async function writeAndKeep(page: Page, name: string) {
   await expect(declared.getByLabel('Step Tidy up')).toBeVisible();
 
   await write(page, SCRIPT);
-  await expect(declared.getByLabel('Step Warm up').getByText('Answer — yes or no')).toBeVisible();
-  await expect(declared.getByLabel('Step Warm up').getByText('Target — °C, from 5 °C, to 30 °C')).toBeVisible();
+  // What it answers, as what it is; what it takes, by its title and then what it holds.
+  await expect(declared.getByLabel('Step Warm up').getByText('Yes or no', { exact: true })).toBeVisible();
+  await expect(declared.getByLabel('Step Warm up').getByText('Target — a number in °C, from 5 °C, to 30 °C')).toBeVisible();
   await expect(declared.getByLabel('Step Warm up').getByText('Warms a room up to a temperature.')).toBeVisible();
   await expect(declared.getByLabel('Function Double')).toBeVisible();
 

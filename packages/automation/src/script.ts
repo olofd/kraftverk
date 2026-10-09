@@ -82,7 +82,7 @@ export function fieldWords(field: ConfigField): string {
     case 'timestamp':
       return 'a date and time';
     default:
-      return field.default ? `words, by default “${field.default}”` : 'words';
+      return field.default ? `text, by default “${field.default}”` : 'text';
   }
 }
 
