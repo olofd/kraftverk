@@ -67,6 +67,31 @@ describe('a rule rehearsed on history', () => {
   });
 });
 
+describe('a change, rehearsed', () => {
+  test('at each sample that moved it far enough, by the engine’s own rule — the run knowing which way', async () => {
+    const moved: Recipe = {
+      id: 'test.moved',
+      label: 'Moved',
+      description: 'When the charge moves, switch',
+      roles: { battery: { label: 'Battery', description: 'A battery', capabilities: ['battery'] }, charger: { label: 'Charger plug', description: 'A plug', capabilities: ['switch'] } },
+      params: { fields: {} },
+      when: [{ changes: { read: { role: 'battery', means: 'charge' } }, byAtLeast: { value: 5, unit: '%' } }],
+      then: [{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { compare: 'gt', left: { run: 'to' }, right: { run: 'from' } } } } }],
+    };
+    const rehearsal = await rehearse(moved, automation, source(), window);
+    // 20 seen first; 14 is 6 down; 20 at minute 10 is 6 up; then 30, 40, 49 — 51 is 2 from 49 — and 55, 6 from 49.
+    expect(rehearsal.runs.map((run) => [run.at, run.summary.split('.')[0]])).toEqual([
+      [minute(3), 'Would turn Charger plug off'],
+      [minute(10), 'Would turn Charger plug on'],
+      [minute(11), 'Would turn Charger plug on'],
+      [minute(12), 'Would turn Charger plug on'],
+      [minute(13), 'Would turn Charger plug on'],
+      [minute(15), 'Would turn Charger plug on'],
+    ]);
+    expect(rehearsal.runs[0]!.summary).toContain('It changed from 20 % to 14 %');
+  });
+});
+
 describe('a window of the day, rehearsed', () => {
   test('runs as it opens each evening, with no sample to say so', async () => {
     const nightly = inlineParams(

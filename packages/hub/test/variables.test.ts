@@ -136,6 +136,31 @@ describe('a home’s variables', () => {
     expect((await t.home.automations.runs(waking.id))).toHaveLength(1);
   });
 
+  test('changes: a variable moving to what it waits for starts it, and the run knows what it was and became', async () => {
+    await t.home.variables.add(home, { key: 'laundry', kind: 'choice', field: { type: 'enum', title: 'Laundry', options: [{ value: 'washing', label: 'Washing' }, { value: 'drying', label: 'Drying' }, { value: 'done', label: 'Done' }] } });
+    await t.home.variables.add(home, { key: 'note', kind: 'text', field: { type: 'string', title: 'Note' } });
+    const done = await acting({
+      roles: {},
+      params: { fields: {} },
+      when: [{ changes: { variable: { key: 'laundry', at: 'home' } }, to: { value: 'done' } }],
+      then: [{ setVariable: { key: 'note', to: { run: 'from' } } }],
+    });
+    expect((await t.home.automations.list()).find((each) => each.id === done.id)?.sentence).toContain('When “Laundry” changes to “Done”');
+    t.hub.engine.start();
+    // Its first look sees what it is, and starts nothing.
+    t.hub.engine.poke(done.id);
+    await t.hub.engine.tick();
+    await t.home.variables.set(home, 'laundry', 'drying');
+    await settle(200);
+    expect(await t.home.automations.runs(done.id)).toHaveLength(0);
+    await t.home.variables.set(home, 'laundry', 'done');
+    await settle(300);
+    const runs = await t.home.automations.runs(done.id);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.why).toBe('“Laundry” changed from “Drying” to “Done”');
+    expect(t.hub.variables.now(home, 'note')).toBe('drying');
+  });
+
   test('a script sets and counts them — but does not declare them', async () => {
     await t.home.variables.add(home, RUNS);
     const script = t.as({ kind: 'automation', id: 'a-1', name: 'A tidy', for: null, run: { id: 'r-1', askedBy: null } });

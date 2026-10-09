@@ -74,7 +74,15 @@ export type ContextDeps = Pick<AutomationEngineDeps, 'store' | 'library' | 'devi
  * it carried; who arrived or left; and, a mode set by automations, which —
  * what keeps two from setting it back and forth for ever.
  */
-export type StartingEvent = { id: string; data: Readonly<Record<string, Value>> | null; who?: string; cause?: readonly string[] };
+export type StartingEvent = {
+  id: string;
+  data: Readonly<Record<string, Value>> | null;
+  who?: string;
+  cause?: readonly string[];
+  /** What a change started it from, and to, in its unit (`changes`). */
+  from?: { value: Value; unit: string | null };
+  to?: { value: Value; unit: string | null };
+};
 
 export class RuleContext {
   constructor(private deps: ContextDeps) {}
@@ -158,6 +166,11 @@ export class RuleContext {
       // No trigger with an id started it: that is known, and said as no id at all.
       run: (fact, field) => {
         if (fact === 'trigger') return { value: triggerOf(rule, trigger)?.id ?? '', unit: null };
+        // What a change was from, and became, in its unit: unknown when no change started it.
+        if (fact === 'from' || fact === 'to') {
+          const end = event?.[fact];
+          return end ? { value: end.value as string | number | boolean | null, unit: end.unit && isUnit(end.unit) ? end.unit : null } : { value: null, unit: null };
+        }
         // Who arriving or leaving started it, by name; "" when nobody did.
         if (fact === 'who') return { value: event?.who ? (world?.personName(event.who) ?? 'someone') : '', unit: null };
         // The event that started it, and what it carried; unknown when none did.

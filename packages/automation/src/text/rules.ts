@@ -217,6 +217,8 @@ class Reader {
       case 'flag':
         if (typeof data !== 'boolean') return this.fail('Expected true or false', path);
         return data;
+      case 'literal':
+        return this.literal(data, path);
       case 'id':
         if (typeof data !== 'string' || !TRIGGER_ID.test(data)) return this.fail('A name of its own is letters and digits, starting with a lowercase letter: "low"', path);
         return data;
@@ -233,6 +235,17 @@ class Reader {
     if (data === 'weekends') return ['sat', 'sun'];
     if (!Array.isArray(data)) return this.fail('Expected days: weekdays, weekends, or a list of mon … sun', path);
     return data.map((day, index) => (WEEKDAYS.includes(day as Weekday) ? (day as Weekday) : this.fail(`"${String(day)}" is not a day: mon, tue, wed, thu, fri, sat, sun`, [...path, index])));
+  }
+
+  /**
+   * A value written plainly: a number with its unit, true or false, a time
+   * — and words as words: `drying` is the text "drying", not a role.
+   */
+  literal(data: Data, path: Path): Expr {
+    if (typeof data === 'number' || typeof data === 'boolean') return { value: data };
+    if (typeof data !== 'string') return this.fail('Expected a value: a number with its unit, true or false, a time, or words', path);
+    const parsed = parseExpr(data);
+    return parsed.ok && 'value' in parsed.expr ? parsed.expr : { value: data };
   }
 
   months(data: Data, path: Path): Month[] {
@@ -529,6 +542,12 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
     return printExpr(value) ?? value;
   };
   const time = (value: Expr): unknown => ('value' in value && typeof value.value === 'string' && /^\d{2}:\d{2}$/.test(value.value) ? value.value : expr(value));
+  /** Words written plainly, where they read back as words — "drying", not "true", which would read as yes. */
+  const literal = (value: Expr): unknown => {
+    if (!('value' in value) || typeof value.value !== 'string') return expr(value);
+    const parsed = parseExpr(value.value);
+    return parsed.ok && 'value' in parsed.expr && parsed.expr.value !== value.value ? expr(value) : value.value;
+  };
 
   // The scripts written by key where a step runs them, with no role in `uses`: a role no expression calls a function of, named and labelled as its key makes it (scriptRoleOf).
   const called = new Set([...ruleExpressions(rule)].flatMap((top) => [...expressionsIn(top)].flatMap((each) => ('script' in each ? [each.script] : []))));
@@ -581,6 +600,8 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
       case 'months':
       case 'dates':
         return [...(value as readonly string[])];
+      case 'literal':
+        return literal(value as Expr);
       case 'role':
       case 'automation':
       case 'script':

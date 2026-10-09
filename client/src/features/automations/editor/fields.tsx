@@ -250,7 +250,8 @@ export function DaysField({ value, onChange }: { value: readonly Weekday[] | und
 const MONTH_NAMES: Record<Month, string> = { jan: 'January', feb: 'February', mar: 'March', apr: 'April', may: 'May', jun: 'June', jul: 'July', aug: 'August', sep: 'September', oct: 'October', nov: 'November', dec: 'December' };
 
 /**
- * Which months: twelve toggles, six to a line — every one on is every month.
+ * Which months: twelve toggles, four to a line — three even rows, the
+ * seasons down its columns. Every one on is every month.
  * None given is every month; the last one on stays on.
  */
 export function MonthsField({ value, onChange }: { value: readonly Month[] | undefined; onChange: (months: readonly Month[] | undefined) => void }) {
@@ -262,7 +263,7 @@ export function MonthsField({ value, onChange }: { value: readonly Month[] | und
   };
   const keys = useToggleGroup(MONTHS.length, (index) => toggle(MONTHS[index]!));
   return (
-    <XStack flexWrap="wrap" gap={6} role="group" aria-label="Months of the year">
+    <XStack flexWrap="wrap" gap={6} maxWidth={4 * 64 + 3 * 6} role="group" aria-label="Months of the year">
       {MONTHS.map((month, index) => {
         const on = chosen.has(month);
         return (
@@ -273,7 +274,7 @@ export function MonthsField({ value, onChange }: { value: readonly Month[] | und
             aria-label={MONTH_NAMES[month]}
             {...keys(index)}
             cursor="pointer"
-            width={48}
+            width={64}
             height={40}
             borderRadius={20}
             alignItems="center"
@@ -311,7 +312,7 @@ export function DatesField({ label, value, onChange }: { label: string; value: r
         size="$4"
         value={text}
         aria-label={label}
-        placeholder="Every date — or 12-24, 12-01..12-24"
+        placeholder="Every date"
         backgroundColor="$background"
         borderColor={wrong ? '$danger' : '$borderColor'}
         onChangeText={(next) => {

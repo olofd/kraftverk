@@ -324,5 +324,25 @@ Each slice green and pushed; e2e for each in the browser first.
   and kind kept — the editor's steps and "A variable" as a condition;
 - the file: version 19, `homes.<key>.variables`.
 
-Not yet: a page of its own for each variable, and its history (V2); T1
-onwards.
+Not yet: a page of its own for each variable, and its history (V2).
+
+**T1, 2026-10-09.** The triggers of §3.1 to §3.5:
+
+- `every` from a minute, on the minute: the engine looks at :00 and :30
+  of each minute on the home's clock, not every 30 s from when it started;
+- `on start: 1 min` — a kind of its own (§3.2), once per start of the
+  process, not for an automation made or changed;
+- `months` and `dates` on `at`, through `runsOn`, so the engine and
+  rehearsal follow; drawn as twelve toggles and dates typed;
+- `at:` a home's time variable — refused for one of words — and the form
+  draws a time, the sun (at it, or so long before or after) or a time
+  variable, saying in words what it cannot draw;
+- `changes:` a reading or a variable, with `from`, `to` (written plainly:
+  `drying` is words) and `by at least`; `run.from` and `run.to` typed as
+  what it watches; what it last saw kept (`automation_trigger_seen`), so a
+  restart sees and does not start; one rule for the engine and rehearsal
+  (`changeSeen`); a change its own run made is seen, not a start;
+- the file: version 20.
+
+Not yet: rehearsing a variable's change — variables keep no history until
+V2, and rehearsal says so.

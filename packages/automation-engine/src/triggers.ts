@@ -4,6 +4,7 @@ import {
   capitalise,
   describeTriggers,
   edgeOf,
+  changeSeen,
   evaluateNow,
   secondsNow,
   EVERY_SECONDS,
@@ -21,17 +22,18 @@ import {
   triggerKey,
   triggerKind,
   triggerSpec,
+  type Expr,
   type RuleTrigger,
   type Rule,
   type Trigger,
 } from '@kraftverk/automation';
-import { dayAfter, localTime, MAIN_PART, SYSTEM, zonedInstant, type ClockTimer } from '@kraftverk/device-sdk';
+import { dayAfter, localTime, MAIN_PART, SYSTEM, zonedInstant, type ClockTimer, type Unit, type Value } from '@kraftverk/device-sdk';
 import type { LiveMessage } from '@kraftverk/holder';
 
 import type { RuleContext } from './context.ts';
 import { type AutomationEngineDeps, type AutomationRecord, type EnginePlace } from './model.ts';
 import type { Runs } from './runs.ts';
-import type { TriggerState } from './storage.ts';
+import type { Seen, TriggerState } from './storage.ts';
 
 /*
   When an automation starts on its own (docs/AUTOMATIONS.md): by the clock
@@ -55,6 +57,8 @@ export class Triggers {
   #ticking = false;
   /** Each `becomes` trigger's state, read once from the store, and its hold when one is waiting it out. */
   #becoming = new Map<string, { state: TriggerState; hold: ClockTimer | null }>();
+  /** What each `changes` trigger last saw, read once from the store: a reading every few seconds is no query each. */
+  #seen = new Map<string, Seen | null>();
   /** What waits to run as kraftverk started (`on start`): let go when it stops. */
   #starting = new Set<ClockTimer>();
   /** Which automations each device's messages concern, by store revision: not every automation for every reading. */
@@ -100,6 +104,7 @@ export class Triggers {
 
   /** Lets go of an automation's conditions, and the holds waiting them out: it is gone. */
   forget(automationId: string): void {
+    this.#forgetSeen(automationId);
     for (const [key, entry] of this.#becoming) {
       if (!key.startsWith(`${automationId}:`)) continue;
       this.#context.clock.clear(entry.hold);
@@ -108,7 +113,13 @@ export class Triggers {
   }
 
   /** Lets go of every condition and hold, and reads again what concerns each device: the automations were emptied beneath it. */
+  /** What its `changes` triggers saw, let go of: read again from the store — or, started afresh, none. */
+  #forgetSeen(automationId: string): void {
+    for (const key of this.#seen.keys()) if (key.startsWith(`${automationId}:`)) this.#seen.delete(key);
+  }
+
   clear(): void {
+    this.#seen.clear();
     for (const timer of this.#starting) this.#context.clock.clear(timer);
     this.#starting.clear();
     for (const entry of this.#becoming.values()) this.#context.clock.clear(entry.hold);
@@ -124,6 +135,7 @@ export class Triggers {
    * its first look a whole interval from now.
    */
   reset(automationId: string): void {
+    this.#forgetSeen(automationId);
     for (const [key, entry] of this.#becoming) {
       if (!key.startsWith(`${automationId}:`)) continue;
       this.#context.clock.clear(entry.hold);
@@ -158,7 +170,7 @@ export class Triggers {
     if (this.#index?.revision !== revision) {
       const byDevice = new Map<string, AutomationRecord[]>();
       for (const automation of this.deps.store.list()) {
-        if (!automation.rule.when.some((trigger) => 'event' in trigger || 'becomes' in trigger)) continue;
+        if (!automation.rule.when.some((trigger) => 'event' in trigger || 'becomes' in trigger || 'changes' in trigger)) continue;
         // Every part it uses — each of a group's too: what it reads across a group moves it.
         for (const device of new Set(Object.keys(automation.rule.roles).flatMap((role) => bindingsOf(automation, role).map((binding) => binding.device)))) {
           byDevice.set(device, [...(byDevice.get(device) ?? []), automation]);
@@ -192,6 +204,8 @@ export class Triggers {
         rule.when.forEach((trigger, index) => {
           if (edgeOf(trigger)) this.#becomes(automation, rule, trigger, index);
         });
+        // And what a change watches: what moved without a word on the bus is a change all the same.
+        for (const [index, trigger] of rule.when.entries()) if ('changes' in trigger) await this.#changed(automation, rule, trigger, index);
         // Keeping things so is for what a rule does at once: a sequence is started, not kept.
         if (automation.recheckMinutes && !takesSteps(rule)) await this.#recheck(automation, rule, now);
       }
@@ -257,6 +271,7 @@ export class Triggers {
           const going = this.#runs.runAndKeep(automation, `${device?.name ?? 'A device'} said: ${label}`, triggerKey(trigger, index), { id: message.event.id, data: message.event.data });
           if (!takesSteps(rule)) await going;
         }
+        if (message.kind === 'readings' && 'changes' in trigger) await this.#changed(automation, rule, trigger, index);
         if (message.kind === 'readings' && edgeOf(trigger)) {
           const watched = Object.keys(rule.roles).some((role) => readsRole(rule, role) && bindingsOf(automation, role).some((binding) => binding.device === message.deviceId));
           if (watched) this.#becomes(automation, rule, trigger, index);
@@ -327,6 +342,8 @@ export class Triggers {
           if (!takesSteps(rule)) await going;
           continue;
         }
+        // What a change watches, looked at again: a variable, a fact of a place.
+        if ('changes' in trigger) await this.#changed(automation, rule, trigger, index, message.kind === 'variable' ? message.cause : undefined, quiet);
         // A condition of people and places — or a `becomes` that reads them — looked at again: one a variable's change starts carries the runs that led to it.
         if (edgeOf(trigger)) this.#becomes(automation, rule, trigger, index, message.kind === 'variable' ? message.cause : undefined, quiet);
       }
@@ -420,6 +437,36 @@ export class Triggers {
     }, remaining);
   }
 
+  /**
+   * A `changes` trigger, looked at: what it watches now, against what it
+   * last saw. Unknown — a device gone quiet — is no change, nor a value sent
+   * again; a number moved by less than `by at least` is none either, and
+   * what it saw stays. Nothing seen yet — just made, or changed — it sees,
+   * and does not start. A change from and to what it asks starts it, the run
+   * knowing both; one its own run made — or a chain too long — is seen, and
+   * not a start.
+   */
+  async #changed(automation: AutomationRecord, rule: Rule, trigger: Extract<RuleTrigger, { changes: unknown }>, index: number, cause?: readonly string[], quiet = false): Promise<void> {
+    const key = triggerKey(trigger, index);
+    const cacheKey = `${automation.id}:${key}`;
+    const before = this.#seen.has(cacheKey) ? this.#seen.get(cacheKey)! : this.deps.store.seen(automation.id, key);
+    const seen = changeSeen(trigger, before, this.#context.scope(automation, rule));
+    if (seen.kind === 'unknown' || seen.kind === 'same') return;
+    const now = seen.kind === 'first' ? seen.seen : seen.to;
+    this.#seen.set(cacheKey, now);
+    this.deps.store.keepSeen(automation.id, key, now);
+    if (seen.kind === 'first' || !seen.starts || quiet) return;
+    const current = this.deps.store.get(automation.id);
+    if (!current || current.mode === 'off') return;
+    // Said as the trigger says it, from and to what it saw: "“Laundry” changed from “Washing” to “Drying”".
+    const literal = (end: { value: Value; unit: string | null }): Expr => (typeof end.value === 'number' && end.unit ? { value: end.value, unit: end.unit as Unit } : { value: end.value });
+    const said: RuleTrigger = { changes: trigger.changes, from: literal(seen.from), to: literal(seen.to) };
+    const why = capitalise(this.#context.edgeSaid(automation, rule, said).replace(/ changes from /, ' changed from '));
+    const event = { id: '', data: null, from: seen.from, to: seen.to, ...(cause?.length ? { cause } : {}) };
+    const going = this.#runs.runAndKeep(current, why, key, event);
+    if (!takesSteps(rule)) await going;
+  }
+
   /** Whether a trigger of the clock's is due now; one the clock does not start is never. */
   #due(automation: AutomationRecord, rule: Rule, trigger: RuleTrigger, now: Date): boolean {
     const kind = triggerKind(trigger);
@@ -440,6 +487,8 @@ export class Triggers {
       case 'modeChanges':
       // Once as kraftverk starts (`started`), never by the clock.
       case 'onStart':
+      // As what it watches moves (`#changed`).
+      case 'changes':
         return false;
     }
   }

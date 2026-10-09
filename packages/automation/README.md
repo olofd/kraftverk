@@ -140,6 +140,7 @@ time are kept in seconds (`heldFor`, `every`), whatever a file writes.
 | `occupied` | `is occupied: hallway` — with `for: 5 min` | when a place has someone in it, whoever they are — and, with `for`, has had that long |
 | `modeBecomes` | `mode becomes: away` — with `at: cabin` | when a home goes into a mode, by its key, whoever set it — the automation's own, unless `at` names another |
 | `modeChanges` | `mode changes: day` — with `at: cabin` | when a home's mode on an axis — `presence` or `day` — changes, to whichever |
+| `changes` | `changes: home.var.laundry` — with `from: washing`, `to: done`, `by at least: 50 W` | when a reading or a variable changes — to anything, or from one value, to another; a number only once it has moved that far. Its run knows `run.from` and `run.to`; what it last saw is kept across a restart |
 | `onStart` | `on start: 1 min` | once each time kraftverk starts — after an update, a power cut — so long after (up to an hour) as its devices take to reconnect; not for an automation made or changed, and not rehearsed |
 
 Any trigger may say what it does itself, under `do` (`then` in the data,

@@ -265,6 +265,8 @@ function FieldEditor<T extends object>({ field, fields, construct, set, path }: 
     case 'name':
     case 'memory':
     case 'variable':
+    // What a change is from and to: drawn by its kind, typed as what it watches.
+    case 'literal':
     case 'args':
     case 'steps':
     // A trigger's id: given when a condition asks which trigger started it (`triggerIdOf`), not typed.

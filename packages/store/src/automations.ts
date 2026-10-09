@@ -6,7 +6,7 @@ import type { PlaceKind, RoleBinding, Rule, WorldFill } from '@kraftverk/automat
 
 import type { SqlDatabase } from './database.ts';
 import { newId } from '@kraftverk/device-sdk';
-import type { AutomationMode, AutomationRecord, AutomationStorage, TriggerState } from '@kraftverk/automation-engine';
+import type { AutomationMode, AutomationRecord, AutomationStorage, Seen, TriggerState } from '@kraftverk/automation-engine';
 
 /**
  * The automations you made — each with its own rule — what fills their
@@ -360,10 +360,22 @@ export class AutomationStore implements AutomationStorage {
     this.#db.query('INSERT INTO automation_trigger_start (automation_id, trigger, started_at) VALUES (?, ?, ?) ON CONFLICT (automation_id, trigger) DO UPDATE SET started_at = excluded.started_at').run(id, trigger, at);
   }
 
+  seen(id: string, trigger: string): Seen | null {
+    const row = this.#db.query<{ value: string; unit: string | null }, [string, string]>('SELECT value, unit FROM automation_trigger_seen WHERE automation_id = ? AND trigger = ?').get(id, trigger);
+    return row ? { value: JSON.parse(row.value) as Value, unit: row.unit } : null;
+  }
+
+  keepSeen(id: string, trigger: string, seen: Seen): void {
+    this.#db
+      .query('INSERT INTO automation_trigger_seen (automation_id, trigger, value, unit) VALUES (?, ?, ?, ?) ON CONFLICT (automation_id, trigger) DO UPDATE SET value = excluded.value, unit = excluded.unit')
+      .run(id, trigger, JSON.stringify(seen.value), seen.unit);
+  }
+
   /** It starts afresh: what its triggers saw, and when each last started it, is forgotten, and it last looked now. */
   startAfresh(id: string, at: string): void {
     this.#db.transaction(() => {
       this.#db.query('DELETE FROM automation_trigger WHERE automation_id = ?').run(id);
+      this.#db.query('DELETE FROM automation_trigger_seen WHERE automation_id = ?').run(id);
       this.#db.query('DELETE FROM automation_trigger_start WHERE automation_id = ?').run(id);
       this.#db.query('UPDATE automation SET looked_at = ? WHERE id = ?').run(at, id);
     })();

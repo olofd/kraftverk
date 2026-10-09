@@ -58,6 +58,8 @@ export function fieldSchema(field: FieldSpec): JsonSchema {
       return { type: 'string', minLength: 1, ...described };
     case 'flag':
       return { type: 'boolean', ...described };
+    case 'literal':
+      return { type: ['string', 'number', 'boolean'], ...described };
     case 'steps':
       return { type: 'array', items: { $ref: '#/$defs/step' }, ...described };
     case 'args':

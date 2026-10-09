@@ -40,6 +40,8 @@ export type FieldType =
   | { type: 'days' }
   /** Months of the year. */
   | { type: 'months' }
+  /** A value, written plainly — a number with its unit, yes or no, a time, words as words: what a change is from or to. */
+  | { type: 'literal' }
   /** Dates of every year, and spans of them: "12-24", "12-01..12-24". */
   | { type: 'dates' }
   /** A role a part of a device fills. */
@@ -93,7 +95,7 @@ export type FieldType =
 export type FieldTypeName = FieldType['type'];
 
 /** The kinds of field that hold one expression: what is settled, walked and read as one. */
-export const EXPRESSION_FIELDS: ReadonlySet<FieldTypeName> = new Set(['condition', 'value', 'timeOfDay', 'duration', 'count']);
+export const EXPRESSION_FIELDS: ReadonlySet<FieldTypeName> = new Set(['condition', 'value', 'timeOfDay', 'duration', 'count', 'literal']);
 
 /** One field of a construct: where it is kept, how a file writes it, and what it holds. */
 export type FieldSpec = {
@@ -115,6 +117,7 @@ export type KindDocs = { summary: string; examples: readonly string[] };
 /** The marks the editor draws a kind with: names in the app's icon set. */
 export type KindIcon =
   | 'clock'
+  | 'shuffle'
   | 'repeat'
   | 'activity'
   | 'bell'
@@ -163,6 +166,8 @@ export type Say = {
   mode(key: string): string;
   /** A home's variable, by its key and title: “Guests staying” — `at` its own, unless a role names another. */
   variable(key: string, at?: string): string;
+  /** A value, in the words of what it is a value of: a variable's option by its label, a number in its unit. */
+  like(of: Expr, value: Expr): string;
   /** An event a role's part raises, in its own words: "mains lost". */
   event(role: string, event: string): string;
 };

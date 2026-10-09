@@ -168,6 +168,8 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
   let starting: readonly RuleTrigger[] = rule.when ?? [];
   /** The events that may start it: what `run.event` may be. */
   const eventIds = () => [...new Set(starting.flatMap((trigger) => ('event' in trigger && trigger.event?.event ? [trigger.event.event] : [])))];
+  /** What each `changes` trigger watches, as found: what `run.from` and `run.to` are. */
+  const changeShapes = new Map<RuleTrigger, Shape>();
   /** Whether what may start it knows a fact of the run: `run.who`, who arriving or leaving started it. */
   const gives = (fact: RunFact) => starting.some((trigger) => TRIGGER_KIND_ORDER.some((kind) => kind in trigger && TRIGGER_KINDS[kind].gives.includes(fact)));
 
@@ -264,6 +266,12 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       if (expr.run === 'who') {
         if (!gives('who')) problems.push(`${where}: run.who is who arriving or leaving started it, but nothing that starts this is someone arriving or leaving`);
         return { type: 'string', options: null };
+      }
+      if (expr.run === 'from' || expr.run === 'to') {
+        if (!gives(expr.run)) problems.push(`${where}: run.${expr.run} is what a change ${expr.run === 'from' ? 'was from' : 'became'}, but nothing that starts this is a change`);
+        // Of what it watches — one trigger's, or several of one kind.
+        const shapes = starting.flatMap((trigger) => ('changes' in trigger ? [changeShapes.get(trigger) ?? { type: 'unknown' as const }] : []));
+        return shapes.length === 1 || shapes.every((each) => JSON.stringify(each) === JSON.stringify(shapes[0])) ? (shapes[0] ?? { type: 'unknown' }) : { type: 'unknown' };
       }
       // One of its triggers' ids: compared with any other, the comparison says so.
       return { type: 'string', options: [...triggerIds, ''] };
@@ -617,6 +625,7 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       problems.push(`${where}: not a trigger`);
       return;
     }
+    const shapes: Record<string, Shape | undefined> = {};
     for (const field of [...TRIGGER_KINDS[kind].fields, ...TRIGGER_FIELDS]) {
       const value = fieldValue(trigger, field);
       const at = `${where}.${field.data.join('.')}`;
@@ -627,8 +636,26 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       // What it does is said at the top, as the automation's own steps are — started by this trigger alone.
       const was = starting;
       if (field.type.type === 'steps') starting = [trigger];
-      checkField(field, value, at, { inTrigger: true, sure: true, depth: 0 });
+      // What a change is of, before its own steps read run.from and run.to.
+      if ('changes' in trigger && field.type.type === 'steps') changeShapes.set(trigger, shapes.changes ?? { type: 'unknown' });
+      shapes[field.key] = checkField(field, value, at, { inTrigger: true, sure: true, depth: 0 });
       starting = was;
+    }
+    if ('changes' in trigger) {
+      // What it watches is one value: what it was and became are of its kind — a number moving by at least so far, in its unit's.
+      const of = shapes.changes ?? { type: 'unknown' };
+      changeShapes.set(trigger, of);
+      if (of.type === 'structure') problems.push(`${where}.changes: a list or an object is not watched — say one of its values`);
+      for (const end of ['from', 'to'] as const) {
+        const got = shapes[end];
+        if (got && !fits(of, got)) problems.push(`${where}.${end}: it changes as ${said(of)}, not ${said(got)}`);
+      }
+      if (shapes['by at least']) {
+        if (of.type !== 'number' && of.type !== 'unknown') problems.push(`${where}.byAtLeast: only a number moves by so much — this is ${said(of)}`);
+        else if (!fits(of.type === 'number' ? { type: 'number', unit: of.unit } : of, shapes['by at least']!)) problems.push(`${where}.byAtLeast: it changes as ${said(of)}, not ${said(shapes['by at least']!)}`);
+        const by = trigger.byAtLeast;
+        if (by && 'value' in by && typeof by.value === 'number' && !(by.value > 0)) problems.push(`${where}.byAtLeast: more than nought`);
+      }
     }
   });
 
@@ -801,6 +828,14 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
             if (got.type === 'structure') problems.push(`${at}: {${piece.source}} is a list or an object: say one of its values`);
           });
         return;
+      }
+      case 'literal': {
+        const expr = value as Expr;
+        if (!('value' in expr)) {
+          problems.push(`${at}: a value, written plainly — not an expression`);
+          return { type: 'unknown' };
+        }
+        return shape(expr, at, { calls: false, trigger: where.inTrigger });
       }
       default: {
         const unknown: never = type;

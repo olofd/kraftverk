@@ -65,7 +65,7 @@ describe('a time of day by the sun', () => {
     expect(checkRule(rule('13 h before sunset'), { fn: () => null })).toEqual(['when[0].at.offset.by: from 1 min to 12 h']);
     const read = ruleFromConfig({ uses: { lamp: 'hall-lamp' }, when: [{ at: '30 min before sunset' }], do: [{ 'turn on': 'lamp' }] }, []);
     expect(read.issues).toEqual([]);
-    expect(describeTriggers(read.rule!, {}, () => 'Hall lamp')).toEqual(['Every day at 30 min before sunset']);
+    expect(describeTriggers(read.rule!, {}, () => 'Hall lamp')).toEqual(['Every day 30 min before sunset']);
   });
 
   test('as it runs: today’s, moved as it says, on the automation’s clock — unknown without a place', () => {

@@ -519,6 +519,36 @@ when:
     at: cabin
 ```
 
+### `changes` — When something changes
+
+When what it watches changes — a reading, `station.power`, or one of a home’s variables, `home.var.laundry` — to any other value; with `from` and `to`, only a change from one, to the other, or both; with `by at least`, a number only when it has moved that far from the last change, so noise is none. A reading sent again unchanged is no change, and what it last saw is kept across a restart: the first look sees, and does not start it. The run knows what it was and what it became: `run.from`, `run.to`.
+
+| Word | Holds | |
+|---|---|---|
+| `changes` | a value, or an expression for one | needed |
+| `from` | a value, written plainly: `50 W`, `true`, `"07:00"`, or words — `drying` | if you like |
+| `to` | a value, written plainly: `50 W`, `true`, `"07:00"`, or words — `drying` | if you like |
+| `by at least` | a value, written plainly: `50 W`, `true`, `"07:00"`, or words — `drying` | if you like |
+
+```yaml
+when:
+  - changes: home.var.laundry
+    to: done
+```
+
+```yaml
+when:
+  - changes: station.power
+    by at least: 50 W
+```
+
+```yaml
+when:
+  - changes: home.var.laundry
+    from: washing
+    to: drying
+```
+
 ### `onStart` — When kraftverk starts
 
 Once each time kraftverk starts — the server after an update or a power cut — `on start` so long after: a minute lets devices reconnect first. Not when an automation is made or changed, and not rehearsed on history; with `at most every`, a server that keeps restarting does not run it each time.

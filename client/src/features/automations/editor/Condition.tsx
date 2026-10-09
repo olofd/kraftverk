@@ -181,7 +181,7 @@ function Group({ expr, onChange, depth, label }: { expr: Extract<Expr, { all: un
 }
 
 /** A part picker for a condition: a part of your devices that fits, which fills its role. */
-function PartChoice({ label, role, fits, onRole }: { label: string; role: string; fits: (option: PartOption) => boolean; onRole: (role: string) => void }) {
+export function PartChoice({ label, role, fits, onRole }: { label: string; role: string; fits: (option: PartOption) => boolean; onRole: (role: string) => void }) {
   const editor = useEditor();
   const options = editor.parts(() => true).filter(fits);
   return (

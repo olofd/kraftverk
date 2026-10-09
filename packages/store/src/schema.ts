@@ -993,6 +993,19 @@ export const SCHEMA = `
   );
 
   /*
+    What each changes trigger last saw of what it watches, in its unit: what
+    a change is from, kept across a restart, so the first look after one
+    sees and does not start it again.
+  */
+  CREATE TABLE automation_trigger_seen (
+    automation_id TEXT NOT NULL REFERENCES automation (id) ON DELETE CASCADE,
+    trigger       TEXT NOT NULL CHECK (trigger <> ''),
+    value         TEXT NOT NULL CHECK (json_valid(value)),
+    unit          TEXT,
+    PRIMARY KEY (automation_id, trigger)
+  );
+
+  /*
     What each automation remembers (its memory), by name: the value a run
     last left it, as JSON, in its field's unit. Kept across runs, restarts
     and changes to the automation — a count goes on counting; a value its

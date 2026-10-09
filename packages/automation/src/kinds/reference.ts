@@ -67,6 +67,8 @@ function holds(field: FieldSpec, fields: readonly FieldSpec[]): string {
       return 'words of your own, said as written';
     case 'flag':
       return '`true` or `false`; `false` when it is not written';
+    case 'literal':
+      return 'a value, written plainly: `50 W`, `true`, `"07:00"`, or words — `drying`';
     case 'args':
       return 'each argument by its name: a value, or an expression';
     case 'steps':

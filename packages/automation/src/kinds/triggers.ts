@@ -9,7 +9,7 @@ import type { FieldSpec, KindDocs, KindIcon, Say } from './spec.ts';
   that handles triggers reads it from here.
 */
 
-export type TriggerKind = 'at' | 'every' | 'onStart' | 'event' | 'becomes' | 'arrives' | 'leaves' | 'firstArrives' | 'lastLeaves' | 'empties' | 'occupied' | 'modeBecomes' | 'modeChanges';
+export type TriggerKind = 'at' | 'every' | 'onStart' | 'changes' | 'event' | 'becomes' | 'arrives' | 'leaves' | 'firstArrives' | 'lastLeaves' | 'empties' | 'occupied' | 'modeBecomes' | 'modeChanges';
 
 /** A trigger of one kind. */
 export type TriggerOf<K extends TriggerKind> = K extends TriggerKind ? Extract<Trigger, Record<K, unknown>> : never;
@@ -32,9 +32,10 @@ export type TriggerSpec<K extends TriggerKind = TriggerKind> = {
    * How it starts a run: by the clock; as something happens — a device's
    * event, someone arriving, a mode, kraftverk starting — once each time; or as a condition
    * turns true and, held, stays so: its edge (`edgeOf`), whose state a
-   * restart keeps.
+   * restart keeps; or as what it watches changes, from the value it last
+   * saw — kept across a restart too.
    */
-  starts: 'clock' | 'happening' | 'edge';
+  starts: 'clock' | 'happening' | 'edge' | 'change';
   /** Whether what moves it is the family's world — who is where, a room, a mode — not a device. */
   world: boolean;
   /** What a run it starts knows of what started it, beyond its id: the event and what it carried, who came or went. */
@@ -57,7 +58,12 @@ const AT: TriggerSpec<'at'> = {
     // Narrowed by its months and dates: "At 07:00 on weekdays in Dec, Jan and Feb".
     const narrowed = [trigger.months?.length ? monthsText(trigger.months) : '', trigger.dates?.length ? datesText(trigger.dates) : ''].filter(Boolean).join(' ');
     const days = trigger.days && say.days(trigger.days) !== 'every day' ? say.days(trigger.days) : '';
-    return days || narrowed ? `At ${say.expr(trigger.at)}${days ? ` ${days}` : ''}${narrowed ? ` ${narrowed}` : ''}` : `Every day at ${say.expr(trigger.at)}`;
+    // "30 min before sunset" is a time already: not "at 30 min before sunset".
+    const when = 'sun' in trigger.at && trigger.at.offset ? say.expr(trigger.at) : `at ${say.expr(trigger.at)}`;
+    const which = [days, narrowed].filter(Boolean).join(' ');
+    if (!which) return `Every day ${when}`;
+    // Which days first where the time is a number: "On weekdays, 30 min before sunset".
+    return when.startsWith('at ') ? `At ${when.slice(3)} ${which}` : `${which.charAt(0).toUpperCase()}${which.slice(1)}, ${when}`;
   },
   docs: {
     summary: 'At a time of day on the automation’s own clock — `07:00`, or by the sun where the home is: `sunset`, `30 min before sunset` — or one of the home’s time variables, `home.var.wakeUp`, when it comes to it: every day, or only on the `days`, in the `months` and on the `dates` it names: `"12-24"`, or a span `"12-01..12-24"`, across the year’s end when it ends before it begins. A server that was down at that time still runs it within the hour, once.',
@@ -119,6 +125,34 @@ const ON_START: TriggerSpec<'onStart'> = {
   starts: 'happening',
   world: false,
   gives: [],
+};
+
+const CHANGES: TriggerSpec<'changes'> = {
+  kind: 'changes',
+  label: 'When something changes',
+  icon: 'shuffle',
+  says: 'When a reading or one of the home’s variables changes — to anything, or from one value to another.',
+  fields: [
+    { data: ['changes'], key: 'changes', type: { type: 'value' }, required: true, label: 'What' },
+    { data: ['from'], key: 'from', type: { type: 'literal' }, required: false, label: 'From', help: 'Only a change from this — any, unless you say.' },
+    { data: ['to'], key: 'to', type: { type: 'literal' }, required: false, label: 'To', help: 'Only a change to this — any, unless you say.' },
+    { data: ['byAtLeast'], key: 'by at least', type: { type: 'literal' }, required: false, label: 'By at least', help: 'A number that moves by less is no change: noise.' },
+  ],
+  blank: () => ({ changes: { variable: { key: '', at: OWN_HOME } } }),
+  words: (trigger, say) => {
+    const from = trigger.from ? ` from ${say.like(trigger.changes, trigger.from)}` : '';
+    const to = trigger.to ? ` to ${say.like(trigger.changes, trigger.to)}` : '';
+    const by = trigger.byAtLeast ? ` by at least ${say.like(trigger.changes, trigger.byAtLeast)}` : '';
+    return `When ${say.expr(trigger.changes)} changes${from}${to}${by}`;
+  },
+  docs: {
+    summary:
+      'When what it watches changes — a reading, `station.power`, or one of a home’s variables, `home.var.laundry` — to any other value; with `from` and `to`, only a change from one, to the other, or both; with `by at least`, a number only when it has moved that far from the last change, so noise is none. A reading sent again unchanged is no change, and what it last saw is kept across a restart: the first look sees, and does not start it. The run knows what it was and what it became: `run.from`, `run.to`.',
+    examples: ['changes: home.var.laundry\nto: done', 'changes: station.power\nby at least: 50 W', 'changes: home.var.laundry\nfrom: washing\nto: drying'],
+  },
+  starts: 'change',
+  world: false,
+  gives: ['from', 'to'],
 };
 
 const EVENT: TriggerSpec<'event'> = {
@@ -355,6 +389,7 @@ export const TRIGGER_KINDS: { readonly [K in TriggerKind]: TriggerSpec<K> } = {
   at: AT,
   every: EVERY,
   onStart: ON_START,
+  changes: CHANGES,
   event: EVENT,
   becomes: BECOMES,
   arrives: ARRIVES,
@@ -429,7 +464,7 @@ export const TRIGGER_FIELDS_DOCS: KindDocs = {
 };
 
 /** The order the editor offers them in. */
-export const TRIGGER_KIND_ORDER: readonly TriggerKind[] = ['at', 'every', 'becomes', 'event', 'arrives', 'leaves', 'firstArrives', 'lastLeaves', 'empties', 'occupied', 'modeBecomes', 'modeChanges', 'onStart'];
+export const TRIGGER_KIND_ORDER: readonly TriggerKind[] = ['at', 'every', 'becomes', 'event', 'arrives', 'leaves', 'firstArrives', 'lastLeaves', 'empties', 'occupied', 'modeBecomes', 'modeChanges', 'changes', 'onStart'];
 
 /**
  * The kind a file's trigger is, by its verb — its first field's key. Several

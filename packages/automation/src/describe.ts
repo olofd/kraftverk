@@ -64,7 +64,7 @@ export function paramText(schema: ConfigSchema, name: string, value: Value): str
 }
 
 /** A fact of the run, as a sentence names it. */
-const RUN_FACT_WORDS: Record<RunFact, string> = { trigger: 'what started it', event: 'what the device reported', who: 'who came or went' };
+const RUN_FACT_WORDS: Record<RunFact, string> = { trigger: 'what started it', event: 'what the device reported', who: 'who came or went', from: 'what it was', to: 'what it became' };
 
 /** A mode by its key, mid-sentence: "away", "vacation" — a family's own by its name, "guests over". */
 export const modeWords = (key: string, vocabulary?: RuleVocabulary): string => {
@@ -353,6 +353,7 @@ export function describeTriggers(rule: Rule, params: Readonly<Record<string, Val
     },
     mode: (key) => modeWords(key, vocabulary),
     variable: (key, at) => text({ variable: { key, at: at ?? OWN_HOME } }),
+    like: (of, value) => ('variable' in of ? variableValueWords(of.variable.key, of.variable.at, value, text, vocabulary) : text(value)),
     event: (role, event) => eventWords(rule, role, event),
   };
   return rule.when.map((trigger) => {

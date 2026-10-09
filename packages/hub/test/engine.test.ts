@@ -519,6 +519,53 @@ describe('when a condition becomes true', () => {
     expect(second.sent).toHaveLength(1);
   });
 
+  test('changes: a reading moving by at least so much starts it — noise does not, and a restart sees, not starts', async () => {
+    const watch = (context: ReturnType<typeof setup>) =>
+      context.store.update(
+        context.store.create({
+          name: 'Charge moved',
+          rule: {
+            roles: { battery: { label: 'Battery', capabilities: ['battery'] }, switch: { label: 'Plug', capabilities: ['switch'] } },
+            params: { fields: {} },
+            when: [{ changes: { read: { role: 'battery', means: 'charge' } }, byAtLeast: { value: 5, unit: '%' } }],
+            then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { compare: 'gt', left: { run: 'to' }, right: { run: 'from' } } } } }],
+          },
+          madeFrom: null,
+          roles: { battery: { device: STATION, part: 'main' }, switch: { device: PLUG, part: 'main' } },
+          groups: {}, starts: {},
+          timeZone: ZONE,
+          recheckMinutes: null,
+        }).id,
+        { mode: 'act' }
+      )!;
+    const first = setup();
+    const automation = watch(first);
+    first.station.soc = 50;
+    // Its first look: it sees 50 %, and starts nothing.
+    await first.engine.hear({ kind: 'readings', deviceId: STATION, readings: [] });
+    first.station.soc = 53;
+    await first.engine.hear({ kind: 'readings', deviceId: STATION, readings: [] });
+    await settle();
+    expect(first.sent).toEqual([]);
+    first.station.soc = 56;
+    await first.engine.hear({ kind: 'readings', deviceId: STATION, readings: [] });
+    await settle();
+    // Up 6 % from the 50 it last counted from: on — run.to above run.from.
+    expect(first.sent.map((intent) => [intent.args.on, intent.reason.split('\n')[0]])).toEqual([[true, expect.stringContaining('changed from 50 % to 56 %')]]);
+    first.engine.stop();
+
+    // A new process: 56 % is what it saw, kept; 40 % is a change, down.
+    const second = setup();
+    second.station.soc = 56;
+    await second.engine.hear({ kind: 'readings', deviceId: STATION, readings: [] });
+    expect(second.sent).toEqual([]);
+    second.station.soc = 40;
+    await second.engine.hear({ kind: 'readings', deviceId: STATION, readings: [] });
+    await settle();
+    expect(second.sent.map((intent) => intent.args.on)).toEqual([false]);
+    expect(second.store.seen(automation.id, '#0')).toEqual({ value: 40, unit: '%' });
+  });
+
   test('a hold that was running when the server stopped resumes with the time it had left', async () => {
     const first = setup();
     first.station.soc = 10;
@@ -1427,7 +1474,7 @@ describe('by the sun', () => {
     await due.engine.tick();
     await due.engine.tick();
     expect(due.sent.map((intent) => intent.args.on)).toEqual([true]);
-    expect(due.store.list()[0]!.lastRun?.why).toBe('Every day at 30 min before sunset');
+    expect(due.store.list()[0]!.lastRun?.why).toBe('Every day 30 min before sunset');
   });
 
   test('where the home is not said, the sun cannot be told: nothing runs', async () => {

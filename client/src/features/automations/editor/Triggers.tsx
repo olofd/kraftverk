@@ -1,13 +1,17 @@
 import { useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerSpec, triggerSteps, type Expr, type RuleTrigger, type TriggerSpec } from '@kraftverk/automation';
+import { OWN_HOME, TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerSpec, triggerSteps, type Expr, type RuleTrigger, type TriggerSpec } from '@kraftverk/automation';
+import { MAIN_PART, valueTypeOf, type ValueType } from '@kraftverk/device-sdk';
+import { Chips } from '@kraftverk/ui';
 import { capitalise, haptic, Icon, IconLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
 import { useTone } from '../../../components/tone';
 import { BlockList } from './Blocks';
-import { blankCondition, ConditionField } from './Condition';
+import { Picker } from '../../../components/Picker';
+import { blankCondition, ConditionField, PartChoice } from './Condition';
+import { Label, ValueField, type Literal } from './fields';
 import { useEditor } from './context';
 import { Fields } from './Field';
 
@@ -120,7 +124,101 @@ export function Triggers() {
 
 /** A trigger's fields, each drawn by what it holds — its kind's own list (kinds/triggers.ts), not one form a kind. */
 function TriggerFields({ trigger, set }: { trigger: RuleTrigger; set: (trigger: RuleTrigger) => void }) {
+  if ('changes' in trigger) return <ChangesFields trigger={trigger} set={set} />;
   return <Fields fields={triggerSpec(trigger).fields} construct={trigger} set={set} />;
+}
+
+/**
+ * What a change watches — a reading of a part, or one of the home's
+ * variables — and, if it asks, what it is from, to, and by how much at
+ * least: each typed as what it watches, any unless chosen.
+ */
+function ChangesFields({ trigger, set }: { trigger: Extract<RuleTrigger, { changes: unknown }>; set: (trigger: RuleTrigger) => void }) {
+  const editor = useEditor();
+  const watched = trigger.changes;
+  const variables = editor.variablesAt(OWN_HOME);
+  const read = 'read' in watched ? watched.read : null;
+  const bound = read ? editor.partOf(read.role) : null;
+  const readings = bound ? bound.description.attributes.filter((attribute) => attribute.means && (attribute.part ?? MAIN_PART) === bound.part) : [];
+  const reading = read ? (readings.find((attribute) => attribute.means === read.means) ?? null) : null;
+  const variable = 'variable' in watched ? (variables.find((each) => each.key === watched.variable.key) ?? null) : null;
+  const type: ValueType | null = reading ? reading.value : variable ? valueTypeOf(variable.field) : null;
+  const source = read ? 'reading' : 'variable';
+  /** Only what it watches, anew: a from or a to of what it watched before is not one of this. */
+  const watch = (changes: Expr) => set({ ...(trigger.id ? { id: trigger.id } : {}), ...(trigger.then ? { then: trigger.then } : {}), ...(trigger.atMostEvery ? { atMostEvery: trigger.atMostEvery } : {}), changes });
+  const end = (key: 'from' | 'to' | 'byAtLeast', label: string, any: string) => {
+    const given = trigger[key];
+    const literal = given && 'value' in given ? (given as Literal) : null;
+    const start = (): Expr => (type?.type === 'number' ? { value: key === 'byAtLeast' ? 1 : (type.min ?? 0), ...(type.unit ? { unit: type.unit } : {}) } : type?.type === 'enum' ? { value: type.options[0]?.value ?? '' } : type?.type === 'boolean' ? { value: true } : { value: '' });
+    return (
+      <YStack gap="$1.5">
+        <Label>{label}</Label>
+        <Chips
+          label={`${label}: any or a value`}
+          options={[
+            { value: false, label: any },
+            { value: true, label: 'Choose' },
+          ]}
+          value={given !== undefined}
+          onChange={(chosen) => {
+            const { [key]: _was, ...rest } = trigger;
+            set(chosen ? { ...rest, [key]: start() } : rest);
+          }}
+        />
+        {given && literal ? <ValueField label={label} type={type} literal={literal} onChange={(next) => set({ ...trigger, [key]: next })} /> : null}
+        {given && !literal ? (
+          <Text fontSize={14} color="$color">
+            {editor.saidExpr(given)}
+          </Text>
+        ) : null}
+      </YStack>
+    );
+  };
+  return (
+    <YStack gap="$2.5">
+      <YStack gap="$1.5">
+        <Label>What</Label>
+        <Chips
+          label="What changes"
+          options={[
+            { value: 'reading', label: 'A reading' },
+            { value: 'variable', label: 'A variable' },
+          ]}
+          value={source}
+          onChange={(next) => (next === source ? undefined : watch(next === 'reading' ? { read: { role: '', means: '' } } : { variable: { key: '', at: OWN_HOME } }))}
+        />
+        {read ? (
+          <>
+            <PartChoice label="Which part" role={read.role} fits={(option) => option.description.attributes.some((attribute) => attribute.means && (attribute.part ?? MAIN_PART) === option.binding.part)} onRole={(role) => watch({ read: { role, means: '' } })} />
+            {bound ? (
+              <Picker
+                label="Which reading"
+                chosen={reading?.label ?? null}
+                placeholder="Choose what it reports"
+                options={readings.map((attribute) => ({ key: attribute.key, title: attribute.label, subtitle: attribute.value.type === 'number' && attribute.value.unit ? attribute.value.unit : undefined, value: attribute, selected: attribute === reading }))}
+                onPick={(attribute) => watch({ read: { role: read.role, means: attribute.means! } })}
+              />
+            ) : null}
+          </>
+        ) : variables.length ? (
+          <Picker
+            label="Which variable"
+            chosen={variable?.field.title ?? null}
+            placeholder="Choose a variable"
+            options={variables.map((each) => ({ key: each.key, title: each.field.title, value: each.key, selected: each === variable }))}
+            onPick={(key) => watch({ variable: { key, at: OWN_HOME } })}
+          />
+        ) : (
+          <Text fontSize={13} color="$muted" lineHeight={19}>
+            The home has no variables yet: add one in App settings › Variables.
+          </Text>
+        )}
+      </YStack>
+      {type ? end('from', 'From', 'Anything') : null}
+      {type ? end('to', 'To', 'Anything') : null}
+      {type?.type === 'number' ? end('byAtLeast', 'By at least', 'Any change') : null}
+    </YStack>
+  );
 }
 
 /**

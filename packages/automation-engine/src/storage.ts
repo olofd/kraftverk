@@ -8,6 +8,9 @@ import type { AutomationRecord } from './model.ts';
 /** A `becomes` trigger's state, as kept: whether its condition held, since when, and whether this hold has run it. */
 export type TriggerState = { last: boolean; heldSince: string | null; fired: boolean };
 
+/** What a `changes` trigger last saw of what it watches, in its unit: what a change is from. */
+export type Seen = { value: Value; unit: string | null };
+
 /**
  * Where the engine's automations are kept, with what their triggers last saw
  * and every run: what it asks of the place it runs. The engine names no
@@ -23,6 +26,9 @@ export interface AutomationStorage {
   /** What a trigger last saw, by its key (`triggerKey`): its id, or its place in the rule when it has none. */
   trigger(id: string, trigger: string): TriggerState | null;
   keepTrigger(id: string, trigger: string, state: TriggerState): void;
+  /** What a `changes` trigger last saw; null when it has seen nothing since it started afresh. */
+  seen(id: string, trigger: string): Seen | null;
+  keepSeen(id: string, trigger: string, seen: Seen): void;
   /** It starts afresh: what its triggers saw, and when each last started it, is forgotten, and it last looked now. */
   startAfresh(id: string, at: string): void;
   /** When a trigger, by its key, last started a run of it: what `at most every` is counted from. Null: not since it started afresh. */

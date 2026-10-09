@@ -211,8 +211,10 @@ export type NotifyLevel = (typeof NOTIFY_LEVELS)[number];
  *   declares it: `run.event.voltage`. Unknown when no event started it.
  * - `who`: the name of the person whose arriving or leaving started it —
  *   "Anna" — as the family calls them. The empty text when none did.
+ * - `from`, `to`: what a `changes` trigger saw change, as it was and as it
+ *   became, in its unit. Unknown when none started it.
  */
-export const RUN_FACTS = ['trigger', 'event', 'who'] as const;
+export const RUN_FACTS = ['trigger', 'event', 'who', 'from', 'to'] as const;
 
 export type RunFact = (typeof RUN_FACTS)[number];
 
@@ -278,7 +280,14 @@ export type Trigger =
   /** When a home's mode on an axis changes, to whichever: the time of day turning to evening, or to night. */
   | { modeChanges: { axis: Axis; at?: string } }
   /** When kraftverk starts — the server, the app — once, so long after (seconds) as devices reconnect first. */
-  | { onStart: Expr };
+  | { onStart: Expr }
+  /**
+   * When what it watches — a reading, one of a home's variables — changes:
+   * from `from`, to `to`, each only if given; a number by at least
+   * `byAtLeast`, so noise is no change. The run knows what it was and what
+   * it became: `run.from`, `run.to`.
+   */
+  | { changes: Expr; from?: Expr; to?: Expr; byAtLeast?: Expr };
 
 /**
  * A trigger as a rule holds it: its kind, and what every kind may have

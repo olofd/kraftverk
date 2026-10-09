@@ -2,6 +2,7 @@ import type { Rehearsal } from '@kraftverk/api-contract';
 import {
   attributeMeaning,
   clockTime,
+  isUnit,
   currentForOf,
   dayAfter,
   localTime,
@@ -14,7 +15,7 @@ import {
   type ScalarValue,
   type Value,
 } from '@kraftverk/device-sdk';
-import { evaluate, evaluateNow, settingOf, EVERY_SECONDS, minutesOf, ruleUses, runsOn, secondsNow, secondsText, stepsOf, triggerKey, triggerOf, type RoleBinding, type Rule, type RuleScope } from '@kraftverk/automation';
+import { changeSeen, evaluate, evaluateNow, settingOf, type SeenValue, EVERY_SECONDS, minutesOf, ruleUses, runsOn, secondsNow, secondsText, stepsOf, triggerKey, triggerOf, type RoleBinding, type Rule, type RuleScope } from '@kraftverk/automation';
 
 /**
  * A rule, rehearsed on what happened (PROPOSITION.md §5.3): walked through a
@@ -104,9 +105,13 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
     if (!points.length) caveats.push(`${name(role)} kept no ${attribute.label.toLowerCase()} in that time`);
     series.set(key, { attribute, points });
   }
+  for (const variable of uses.variables) caveats.push(`A home’s variables keep no history yet: ${variable.key} is taken as unknown`);
   for (const call of uses.calls) caveats.push(`It asks ${call.fn} of ${name(call.role)}, which history does not keep: taken as unknown`);
 
-  const scopeAt = (t: number, trigger: string | null = null): RuleScope => ({
+  /** A run it would have started: when, why, by which trigger — and, a change, what it was from and became. */
+  type Fired = { at: number; because: string; trigger: string; ends?: { from: SeenValue; to: SeenValue } };
+  const fired: Fired[] = [];
+  const scopeAt = (t: number, trigger: string | null = null, ends: Fired['ends'] = undefined): RuleScope => ({
     clock: () => clockTime(new Date(t), automation.timeZone),
     reachable: () => ({ reachable: null, detail: 'history does not keep whether it could be reached' }),
     // Its settings, as it runs with them: each its value, in its unit.
@@ -120,8 +125,14 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
       return { value: latest.value, label: standardMeaning(means)?.label ?? found.attribute.label, unit: unitIn(found.attribute) };
     },
     name,
-    // The trigger that started the run it rehearses, by its key: its id, or "" for none with one.
-    run: (fact) => ({ value: fact === 'trigger' ? (triggerOf(recipe, trigger)?.id ?? '') : null, unit: null }),
+    // The trigger that started the run it rehearses, by its key: its id, or "" for none with one — and what a change was from and became.
+    run: (fact) => {
+      if (fact === 'from' || fact === 'to') {
+        const end = ends?.[fact];
+        return end ? { value: end.value as string | number | boolean | null, unit: end.unit && isUnit(end.unit) ? end.unit : null } : { value: null, unit: null };
+      }
+      return { value: fact === 'trigger' ? (triggerOf(recipe, trigger)?.id ?? '') : null, unit: null };
+    },
   });
 
   // The moments anything could have changed: every sample, every time of day, every event.
@@ -149,8 +160,6 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
     }
   }
 
-  type Fired = { at: number; because: string; trigger: string };
-  const fired: Fired[] = [];
   for (const [index, trigger] of recipe.when.entries()) {
     const key = triggerKey(trigger, index);
     if ('at' in trigger) {
@@ -184,6 +193,9 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
   }
   // A condition turning true, and held: the engine's own rules, with nothing kept at the start.
   const becomes = recipe.when.flatMap((trigger, index) => ('becomes' in trigger ? [{ trigger, key: triggerKey(trigger, index), last: false, heldSince: null as number | null, fired: false }] : []));
+  // What a change watches: its first sample seen, each one after it a change or not, by the engine's own rule.
+  const changing = recipe.when.flatMap((trigger, index) => ('changes' in trigger ? [{ trigger, key: triggerKey(trigger, index), seen: null as SeenValue | null }] : []));
+  const shown = (end: SeenValue) => (typeof end.value === 'number' && end.unit ? `${end.value} ${end.unit}` : typeof end.value === 'boolean' ? (end.value ? 'yes' : 'no') : String(end.value));
   // A hold is looked at again when it has run its time, as the engine's timer does, sample or not.
   const queue = [...moments].sort((a, b) => a - b);
   const lookAgainAt = (t: number) => {
@@ -213,11 +225,18 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
       evaluateNow(state.trigger.becomes, scope, trace);
       fired.push({ at: t, because: `${trace.join('; ')}${seconds > 0 ? `, for ${secondsText(seconds)}` : ''}`, trigger: state.key });
     }
+    for (const state of changing) {
+      const seen = changeSeen(state.trigger, state.seen, scope);
+      if (seen.kind === 'first') state.seen = seen.seen;
+      if (seen.kind !== 'change') continue;
+      state.seen = seen.to;
+      if (seen.starts) fired.push({ at: t, because: `It changed from ${shown(seen.from)} to ${shown(seen.to)}`, trigger: state.key, ends: { from: seen.from, to: seen.to } });
+    }
   }
 
   const runs: Rehearsal['runs'] = [];
   for (const run of fired.sort((a, b) => a.at - b.at).slice(0, MAX_RUNS)) {
-    const scope = scopeAt(run.at, run.trigger);
+    const scope = scopeAt(run.at, run.trigger, run.ends);
     const trace = [run.because];
     const at = new Date(run.at).toISOString();
     if (recipe.if) {
