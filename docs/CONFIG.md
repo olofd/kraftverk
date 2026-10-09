@@ -167,10 +167,10 @@ secrets:
 and dashes — made from its name when it is added and changeable afterwards. A
 file names things by key; an import matches by key.
 
-**A script, where a step runs it.** `- run script: feels-like.feelsLike`
+**A script, where a step runs it.** `- run script: tidy-up.tidyUp`
 names the script by its key and the step after a dot — its key alone when
 it has one step — with no role to write under `uses`: the role is made as
-`feelsLike: { script: feels-like }` would make it, and an export writes it
+`tidyUp: { script: tidy-up }` would make it, and an export writes it
 back so. A role of its own is still written in full — a label of its own,
 or a script whose functions a condition calls (`feel.feelsLike(…)`) needs
 one: `uses: { feel: { script: feels-like } }`. Editors complete each

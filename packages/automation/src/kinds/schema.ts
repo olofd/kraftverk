@@ -2,7 +2,7 @@ import { CAMEL_NAME, MODE_KEY, type ConfigField } from '@kraftverk/device-sdk';
 
 import { WEEKDAYS } from '../clock.ts';
 import { TRIGGER_ID } from '../rule.ts';
-import type { ScriptShape } from '../script.ts';
+import { amountText, fieldWords, type ScriptShape } from '../script.ts';
 import { durationText } from '../text/rules.ts';
 import type { FieldSpec } from './spec.ts';
 import { STEP_KIND_ORDER, STEP_KINDS, type StepSpec } from './steps.ts';
@@ -75,21 +75,10 @@ type ScriptOffered = { key: string; name: string; shape: ScriptShape | null };
 
 /** A value a script's step is given, as a file writes it: an expression, offered at its default, said with its title, unit and limits. */
 function inputSchema(field: ConfigField): JsonSchema {
-  const amount = (value: number) => (field.type === 'number' && field.unit === 's' ? durationText(value) : `${value}${field.type === 'number' && field.unit ? ` ${field.unit}` : ''}`);
-  const said =
-    field.type === 'number'
-      ? [field.unit === 's' ? 'a length of time' : field.unit ? `in ${field.unit}` : 'a number', field.min !== undefined ? `from ${amount(field.min)}` : null, field.max !== undefined ? `to ${amount(field.max)}` : null].filter(Boolean).join(', ')
-      : field.type === 'boolean'
-        ? 'true or false'
-        : field.type === 'enum'
-          ? field.options.map((option) => option.value).join(', ')
-          : field.type === 'timestamp'
-            ? 'a date and time'
-            : 'words';
-  const fallback = field.default === undefined ? undefined : typeof field.default === 'number' ? amount(field.default) : field.default;
+  const fallback = field.default === undefined ? undefined : field.type === 'number' && field.unit === 's' ? durationText(field.default) : field.type === 'number' ? amountText(field.default, field.unit) : field.default;
   return {
     title: field.title,
-    description: `${field.title}: ${said}${fallback !== undefined ? `. Not given: ${String(fallback)}` : ''}`,
+    description: `${field.title}: ${fieldWords(field)}`,
     ...(field.type === 'enum' ? { enum: field.options.map((option) => option.value) } : { $ref: '#/$defs/expression' }),
     ...(fallback !== undefined ? { default: fallback } : {}),
   };

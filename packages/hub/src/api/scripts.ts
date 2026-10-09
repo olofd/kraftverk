@@ -35,10 +35,7 @@ export function scriptsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'script
 
   const viewOf = (script: ScriptRecord): ScriptView => {
     const read = scripts.readKept(script);
-    const usedBy = hub.automations
-      .list()
-      .filter((automation) => Object.values(automation.scripts ?? {}).includes(script.id))
-      .map((automation) => ({ id: automation.id, name: automation.name }));
+    const usedBy = hub.automations.usingScript(script.id);
     return { id: script.id, key: script.key, name: script.name, source: script.source, shape: read.shape, problems: read.problems, updatedAt: script.updatedAt, updatedBy: script.updatedBy.name, usedBy };
   };
   const scriptOf = (id: string): ScriptRecord => {

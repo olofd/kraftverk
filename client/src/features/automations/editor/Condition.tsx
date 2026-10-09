@@ -1,8 +1,8 @@
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { scriptRole, triggerIdOf, type CompareOp, type Expr } from '@kraftverk/automation';
+import { fieldStart, fitsField, scriptRole, triggerIdOf, wordsOfName, type CompareOp, type Expr } from '@kraftverk/automation';
 import type { PartOption } from '@kraftverk/automation';
-import { capabilitiesOf, convertible, isUnit, MAIN_PART, meetsNeed, valueTypeOf, type ConfigField, type Value, type ValueType } from '@kraftverk/device-sdk';
+import { capabilitiesOf, MAIN_PART, meetsNeed, valueTypeOf, type ConfigField, type ValueType } from '@kraftverk/device-sdk';
 import { Chips, Icon, IconLabel } from '@kraftverk/ui';
 
 import { Picker } from '../../../components/Picker';
@@ -310,16 +310,6 @@ function Reading({ expr, onChange, label }: { expr: Extract<Expr, { compare: unk
   );
 }
 
-/** A name in a script, as a person says it: "feelsLike" is "Feels like". */
-const wordsOfName = (name: string): string => {
-  const words = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
-  return words.charAt(0).toUpperCase() + words.slice(1);
-};
-
-/** A value to start from, of a field: nought in its unit, yes, its first option, nothing. */
-const startOf = (field: ConfigField): Expr =>
-  field.type === 'number' ? { value: field.default ?? 0, ...(field.unit && isUnit(field.unit) ? { unit: field.unit } : {}) } : { value: (field.type === 'boolean' ? (field.default ?? true) : field.type === 'enum' ? (field.default ?? field.options[0]?.value ?? '') : (field.default ?? '')) as Value };
-
 /**
  * An argument of a script's function: a value, or what a part reports now —
  * a reading of the same kind: in a unit that converts to the argument's, or
@@ -330,7 +320,7 @@ function ArgSource({ label, field, expr, onChange }: { label: string; field: Con
   const read = expr && 'read' in expr ? expr.read : null;
   const type = valueTypeOf(field);
   /** Whether what a part reports may be given here. */
-  const fitting = (value: ValueType) => (type.type === 'number' ? value.type === 'number' && (!type.unit || (value.unit !== undefined && isUnit(type.unit) && isUnit(value.unit) && convertible(value.unit, type.unit))) : value.type === type.type);
+  const fitting = (value: ValueType) => fitsField(field, value);
   const bound = read ? editor.partOf(read.role) : null;
   const readings = bound ? bound.description.attributes.filter((attribute) => attribute.means && (attribute.part ?? MAIN_PART) === bound.part && fitting(attribute.value)) : [];
   return (
@@ -344,7 +334,7 @@ function ArgSource({ label, field, expr, onChange }: { label: string; field: Con
             { value: 'reading', label: 'A reading' },
           ]}
           value={read ? 'reading' : 'value'}
-          onChange={(source) => onChange(source === 'reading' ? { read: { role: '', means: '' } } : startOf(field))}
+          onChange={(source) => onChange(source === 'reading' ? { read: { role: '', means: '' } } : fieldStart(field))}
         />
       </XStack>
       {read ? (
@@ -396,8 +386,8 @@ function ScriptFunction({ expr, onChange, label }: { expr: Extract<Expr, { compa
           editor.change(() => made.draft);
           onChange({
             compare: picked.shape.returns.type === 'number' ? 'gt' : 'eq',
-            left: { script: made.role, fn: picked.fn, args: picked.shape.args.map(startOf) },
-            right: startOf(picked.shape.returns),
+            left: { script: made.role, fn: picked.fn, args: picked.shape.args.map(fieldStart) },
+            right: fieldStart(picked.shape.returns),
           });
         }}
       />
@@ -409,7 +399,7 @@ function ScriptFunction({ expr, onChange, label }: { expr: Extract<Expr, { compa
       {declared ? (
         <>
           {declared.args.map((field, at) => (
-            <ArgSource key={at} label={`${label}: ${field.title}`} field={field} expr={call.args[at]} onChange={(next) => onChange({ ...expr, left: { ...call, args: declared.args.map((_, index) => (index === at ? next : (call.args[index] ?? startOf(declared.args[index]!)))) } })} />
+            <ArgSource key={at} label={`${label}: ${field.title}`} field={field} expr={call.args[at]} onChange={(next) => onChange({ ...expr, left: { ...call, args: declared.args.map((_, index) => (index === at ? next : (call.args[index] ?? fieldStart(declared.args[index]!)))) } })} />
           ))}
           <Label>Its answer</Label>
           {ordered ? (

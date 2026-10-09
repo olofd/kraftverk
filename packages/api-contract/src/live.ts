@@ -70,7 +70,8 @@ export type LiveUpdate =
   /**
    * One line of a run, as it happens: a step begun or ended, a line its
    * script said with `log`, or the run ended with its summary. What the
-   * app writes to the browser's console, under the automation's name.
+   * app writes to the browser's console, under the automation's name — sent
+   * only to an app whose view says it follows runs (`ViewReport.runs`).
    */
   | { type: 'run'; automation: { id: AutomationId; name: string }; runId: string; line: { kind: 'step' | 'log' | 'ended'; depth: number; what: string; outcome: string; detail: string | null } }
   /** Where the family is, who is in which room, or a home's mode, moved: read it again — as far as each shares. Never who. */
@@ -93,7 +94,13 @@ export type ShownThing = { kind: 'device'; id: SavedDeviceId; close?: boolean } 
  * uses the app; an app that says nothing for ten minutes is taken for
  * unattended. `screen` names the screen (`device`, `home`), not the address.
  */
-export type ViewReport = { type: 'view'; screen: string; showing: ShownThing[] };
+export type ViewReport = {
+  type: 'view';
+  screen: string;
+  showing: ShownThing[];
+  /** This app writes each run's lines to its console as they happen (`run` updates): only an app that says so is sent them. */
+  runs?: true;
+};
 
 /** Whether a live stream is up: opening, open (it said hello), or down — and opened again by whoever carries it. */
 export type LiveState = 'connecting' | 'live' | 'down';

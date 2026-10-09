@@ -121,6 +121,10 @@ describe('a script', () => {
     // The live stream, as an app listens: each line of the run as it happens.
     const heard: LiveUpdate[] = [];
     const stream = t.home.live((update) => void heard.push(update));
+    // An app that writes runs to its console says so; one that does not is sent none of their lines.
+    stream.say({ type: 'view', screen: 'automations', showing: [], runs: true });
+    const unheard: LiveUpdate[] = [];
+    const other = t.home.live((update) => void unheard.push(update));
     await t.home.automations.start(made.id);
     let run = (await t.home.automations.get(made.id)).lastRun;
     for (let waited = 0; !run && waited < 5_000; waited += 50) {
@@ -139,6 +143,8 @@ describe('a script', () => {
     // Said live, line by line, under the automation's name: the script's step, what it did, its own words, the run's end.
     for (let waited = 0; !heard.some((update) => update.type === 'run' && update.line.kind === 'ended') && waited < 2_000; waited += 20) await new Promise((resolve) => setTimeout(resolve, 20));
     stream.close();
+    other.close();
+    expect(unheard.filter((update) => update.type === 'run')).toEqual([]);
     const lines = heard.flatMap((update) => (update.type === 'run' ? [[update.automation.name, update.line.kind, update.line.what, update.line.outcome]] : []));
     expect(lines).toEqual(
       expect.arrayContaining([

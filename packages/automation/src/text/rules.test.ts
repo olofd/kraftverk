@@ -294,7 +294,7 @@ describe('a script, by its key where a step runs it', () => {
   test('a key that begins with a digit makes a role that begins with a letter — one the checker takes — and reads back so', () => {
     const read = ruleFromConfig({ do: [{ 'run script': '1-minute-tidy' }] }, ['a']);
     expect(read.rule!.roles).toEqual({ script1MinuteTidy: { script: true, label: '1 minute tidy' } });
-    expect(checkRule(read.rule!, {})).toEqual([]);
+    expect(checkRule(read.rule!, { fn: () => null })).toEqual([]);
     const written = ruleToConfig(read.rule!, read.uses);
     expect(written.do).toEqual([{ 'run script': '1-minute-tidy' }]);
     expect(ruleFromConfig(written as Record<string, unknown>, ['a']).rule).toEqual(read.rule);

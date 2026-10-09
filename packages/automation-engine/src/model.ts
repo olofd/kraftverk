@@ -169,8 +169,7 @@ export type ScriptStepRequest = {
   deadline: number;
   /** Aborted when its run is stopped. */
   signal: AbortSignal;
-  /** A line in the run's log, under the step: what it did and what came of it, or what it said. */
-  /** A line beneath its step: what it did — or, `said`, what it said with `log`. */
+  /** A line in the run's log, beneath its step: what it did and what came of it — or, `said`, what it said with `log`. */
   say(line: { what: string; outcome: 'done' | 'refused' | 'failed' | 'unverified' | 'would'; detail: string | null; said?: true }): void;
 };
 

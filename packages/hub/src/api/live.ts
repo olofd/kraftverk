@@ -19,9 +19,12 @@ export function liveApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'live'> {
       const viewer = hub.attention.open(actorOf(caller).name);
       // What a carried device says of where it is, only as far as its carrier shares.
       const reader = readerOf(caller);
+      // Each run's lines, only to an app that writes them to its console: it says so with what its screen shows.
+      let followsRuns = false;
       const stop = coalesced(
         hub.bus,
         (update) => {
+          if (update.type === 'run' && !followsRuns) return;
           if (update.type !== 'readings' || !positionHidden(hub, update.deviceId, reader)) return listener(update);
           const readings = withoutPosition(update.readings);
           if (readings.length) listener({ ...update, readings });
@@ -32,7 +35,10 @@ export function liveApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'live'> {
       options.onState?.('live');
       listener({ type: 'hello', at: new Date().toISOString() });
       return {
-        say: (view) => viewer.report(view),
+        say: (view) => {
+          followsRuns = view.runs === true;
+          viewer.report(view);
+        },
         close: () => {
           viewer.close();
           stop();

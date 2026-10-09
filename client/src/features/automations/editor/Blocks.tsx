@@ -4,6 +4,7 @@ import { Button, Text, XStack, YStack } from 'tamagui';
 import {
   automationRole,
   scriptRole,
+  wordsOfName,
   paramText,
   blankStep,
   branchesOf,
@@ -442,12 +443,6 @@ function StartFields({ start, waits, set }: { start: Extract<Step, { start: unkn
  * as its signature declares it, a length of time as one, and what it answers
  * remembered. A script with no step is not offered: there is nothing to run.
  */
-/** A script's step by name, as a person says it: "tidyUp" is "Tidy up". */
-const wordsOfName = (name: string): string => {
-  const words = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
-  return words.charAt(0).toUpperCase() + words.slice(1);
-};
-
 function ScriptFields({ script: step, set }: { script: Extract<Step, { script: unknown }>['script']; set: (script: Extract<Step, { script: unknown }>['script']) => void }) {
   const editor = useEditor();
   const filled = editor.draft.scripts?.[step.role];

@@ -3,7 +3,7 @@ import { SCRIPT_LIMITS, type ScriptShape } from '@kraftverk/automation';
 import type { ScriptRunner, ScriptStepDone, ScriptStepRequest } from '@kraftverk/automation-engine';
 import { isPosition, type Value } from '@kraftverk/device-sdk';
 import type { GatewayActor } from '@kraftverk/gateway';
-import { loadScript, ScriptFault, type Compiled, type HostFunctions, type ReadScript, type Sandbox } from '@kraftverk/script';
+import { loadScript, ScriptFault, type Compiled, type HostFunctions, type ReadScript, type Sandbox, type ScriptAnswer, type ScriptRead } from '@kraftverk/script';
 
 import { GATES } from '../api/gate.ts';
 import type { Hub } from '../node/hub.ts';
@@ -58,18 +58,19 @@ export type Said = {
 const readingsOf = (hub: Hub, id: string): Record<string, Value> =>
   Object.fromEntries((hub.sessions.get(id as never)?.readings() ?? []).filter((reading) => !isPosition(reading.value)).map((reading) => [reading.key, reading.value as Value]));
 
-/** The world as it is now, as a step asks it: at once, between its waits — for a run at a home. */
+/** The world as it is now, as a step asks it (`ScriptRead`, @kraftverk/script): at once, between its waits — for a run at a home. */
 const answerRead = (hub: Hub, text: string, homeId: string | null): string => {
-  const query = JSON.parse(text) as { devices?: true; reading?: [string, string]; readings?: string; people?: true; homes?: true; home?: true; at?: [string, string]; occupied?: [string, string]; mode?: [string, string] };
-  if (query.devices) return JSON.stringify(hub.catalog.list().flatMap((record) => scriptDevice(hub, record.id) ?? []));
-  if (query.people) return JSON.stringify(scriptPeople(hub));
-  if (query.homes) return JSON.stringify(scriptHomes(hub));
-  if (query.home) return JSON.stringify(hub.world.home(homeId));
-  if (query.at) return JSON.stringify(hub.world.whoAt({ kind: query.at[0] as never, id: query.at[1] }));
-  if (query.occupied) return JSON.stringify(hub.world.occupied({ kind: query.occupied[0] as never, id: query.occupied[1] }));
-  if (query.mode) return JSON.stringify(hub.world.mode(query.mode[0], query.mode[1] as never));
-  if (query.readings) return JSON.stringify(readingsOf(hub, query.readings));
-  if (query.reading) return JSON.stringify(readingsOf(hub, query.reading[0])[query.reading[1]] ?? null);
+  const query = JSON.parse(text) as ScriptRead;
+  const answer = <Q extends ScriptRead>(_: Q, value: ScriptAnswer<Q>) => JSON.stringify(value);
+  if ('devices' in query) return answer(query, hub.catalog.list().flatMap((record) => scriptDevice(hub, record.id) ?? []));
+  if ('people' in query) return answer(query, scriptPeople(hub));
+  if ('homes' in query) return answer(query, scriptHomes(hub));
+  if ('home' in query) return answer(query, hub.world.home(homeId));
+  if ('at' in query) return answer(query, hub.world.whoAt({ kind: query.at[0], id: query.at[1] }) as ScriptAnswer<typeof query>);
+  if ('occupied' in query) return answer(query, hub.world.occupied({ kind: query.occupied[0], id: query.occupied[1] }));
+  if ('mode' in query) return answer(query, hub.world.mode(query.mode[0], query.mode[1]));
+  if ('readings' in query) return answer(query, readingsOf(hub, query.readings));
+  if ('reading' in query) return answer(query, readingsOf(hub, query.reading[0])[query.reading[1]] ?? null);
   throw new Error('Not something a script can read');
 };
 

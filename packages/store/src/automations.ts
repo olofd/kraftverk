@@ -240,6 +240,13 @@ export class AutomationStore implements AutomationStorage {
     );
   }
 
+  /** The automations a script fills a role of: those that run it, or call one of its functions. Their ids and names, in the order they were made. */
+  usingScript(scriptId: string): { id: string; name: string }[] {
+    return this.#db
+      .query<{ id: string; name: string }, [string]>('SELECT a.id, a.name FROM automation a WHERE a.id IN (SELECT automation_id FROM automation_role WHERE script_id = ?) ORDER BY a.created_at')
+      .all(scriptId);
+  }
+
   /**
    * A device's parts called otherwise — its type changed — in every role
    * filled by one of them. A part that maps to nothing is left as it was: its

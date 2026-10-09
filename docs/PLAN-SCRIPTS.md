@@ -448,12 +448,11 @@ first in every sandbox. It defines:
 - **`kraftverk/api`** — `KraftverkApi` as a proxy: each property one more
   step of a path, calling it `call(path, args)`. This is the same shape as
   `apiOver` in `@kraftverk/message-port`.
-  - The resolving side is factored out of `serveApi` into
-    `@kraftverk/api-contract` as `callByPath(api, path, args)`, with its
-    rules: own properties only, never `__proto__`, `constructor` or
-    `prototype`, and `live` not a call.
-  - `message-port` and the script runner then share it: one way to call
-    the API by path.
+  - The hub's runner resolves a path itself (`callAt` in
+    `hub/src/scripts/runner.ts`): own properties only, never `__proto__`,
+    `constructor` or `prototype`, and only a path `GATES` decides.
+    (Planned as a `callByPath` shared with `message-port`; not factored
+    out yet — the two keep the same rules.)
 - **`kraftverk`** — the family's world as objects, each by the name a
   script writes it with (`packages/script/src/names.ts`, the same in the
   types), built on the first layer and the synchronous reads below:
@@ -473,10 +472,10 @@ so no module loader is needed, on either engine.
 
 | Function | Sync | In a step | In a function | Does |
 | --- | --- | --- | --- | --- |
-| `__read(query)` | yes | yes | **no** | Answers from the hub's own state, at once. `query`: `{ devices }`, `{ reading: [id, part, key] }`, `{ reachable: id }`, `{ mode: [homeId, axis] }`, `{ occupied: placeId }`, `{ whoAt: placeId }`, `{ now }`. People's whereabouts are filtered as the acting person sees them (`whereabouts.ts`) |
+| `__read(query)` | yes | yes | **no** | Answers from the hub's own state, at once: one typed vocabulary, `ScriptReads` in `packages/script/src/protocol.ts` — `devices`, `reading: [id, key]`, `readings: id`, `people`, `homes`, `home`, `at: [kind, id]`, `occupied: [kind, id]`, `mode: [homeId, axis]`. Who is where is as far as each person shares |
 | `__call(path, args)` | no: a promise | yes | **no** | One `KraftverkApi` call through the gate, as the automation's caller |
 | `__wait(ms)` | no: a promise | yes | **no** | A pause on the hub's `Clock` (so the fast-clock server and the virtual clock keep it), cut short when the run is stopped, never past the deadline |
-| `__log(text)` | yes | yes | yes | A line in the run's log, or the trace of the expression |
+| `__log(text)` | yes | yes | yes | A line in the run's log, beneath its step (and, from an app that follows runs, in its console). A function's log goes nowhere |
 
 **Values crossing.**
 - Everything crosses as JSON text, never a handle, so nothing of the host
@@ -562,6 +561,17 @@ export const GATES = {
 
 ### 7.3 What a script may call
 
+**As built (2026-10-09), an allowlist, not this list:** a script reads what
+the family reads, and of what changes things may only tell devices
+(`devices.command`, `write`, `tool`) and set or cancel a home's mode
+(`modes.set`, `modes.cancel`) — `scripted` in `hub/src/api/gate.ts`.
+Everything else that changes something — the policy, links and
+connections the gateway's own checks rest on, automations, places,
+labels — is a person's or an assistant's, and so is what the API gains
+until it is decided. `scripts.check` and `scripts.types` are not a
+script's either. The table below was the plan's first answer, kept as
+written:
+
 Every method of `KraftverkApi` is open to `'automation'` callers, except:
 
 | Never a script's | Why |
@@ -592,10 +602,11 @@ There is no API method to tell another person: `notify` exists only inside
 the hub, for automations. So the SDK's `notify(people, message)` goes
 through the engine's own port (`EngineWorld.notify`). It is reached by
 `__call` on a path the runner answers itself rather than the API:
-`['run', 'notify']`. The same goes for `['run', 'setMode']` and
-`['run', 'start']`, so a script's mode changes and starts carry the run's
-`cause` (the loop guard), as a step's do. `run` is not a namespace of
-`KraftverkApi`, so the two never meet.
+`['run', 'notify']`. The same goes for `['run', 'setMode']`, so a script's
+mode changes carry the run's `cause` (the loop guard), as a step's do; a
+home it names must be one of the family's, and each counts against what a
+step may change. (`['run', 'start']` is not built.) `run` is not a
+namespace of `KraftverkApi`, so the two never meet.
 
 ### 7.5 Watch mode
 
@@ -730,7 +741,7 @@ export type ScriptFault = { kind: 'threw' | 'time' | 'memory' | 'stack' | 'stopp
 The same function runs in the hub (save, start, import) and in the app
 (to show the shape beside the editor), on whichever engine the place has.
 
-### 8.5 The limits (`packages/automation/src/rule.ts`, beside `SEQUENCE_LIMITS`)
+### 8.5 The limits (`SCRIPT_LIMITS`, `packages/automation/src/script.ts`)
 
 | `SCRIPT_LIMITS` | Value | For |
 | --- | --- | --- |
@@ -1032,7 +1043,7 @@ so the run-time checks are the safety. Types are the help.
 
 | Method | |
 | --- | --- |
-| `list()` | `ScriptView[]`: id, key, name, shape, problems, usedBy (automation ids), updatedAt, updatedBy |
+| `list()` | `ScriptView[]`: id, key, name, source, shape, problems, usedBy (`{ id, name }` of each automation using it), updatedAt, updatedBy |
 | `get(id)` | the view with `source` |
 | `check(source)` | `{ shape, problems }`: `readScript` on the hub's engine, without keeping anything |
 | `create({ key, name, source })` | the view; refused with the problems if any |

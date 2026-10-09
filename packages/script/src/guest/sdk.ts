@@ -22,6 +22,7 @@
 */
 
 import { scriptNames } from '../names.ts';
+import type { ScriptAnswer, ScriptDevice, ScriptHomeView, ScriptPerson, ScriptPlace, ScriptRead } from '../protocol.ts';
 
 /** The host's functions, when it lends them: answered at once, or later. */
 declare const __log: ((text: string) => string) | undefined;
@@ -82,10 +83,9 @@ const apiAt = (path: readonly string[]): unknown =>
 const API = apiAt([]);
 
 /** What the home says of itself, now: answered at once, between a step's waits. */
-const read = (query: unknown): unknown => JSON.parse(host(typeof __read === 'undefined' ? undefined : __read, 'read the home')(JSON.stringify(query)));
+const read = <Q extends ScriptRead>(query: Q): ScriptAnswer<Q> => JSON.parse(host(typeof __read === 'undefined' ? undefined : __read, 'read the home')(JSON.stringify(query))) as ScriptAnswer<Q>;
 
-type PartInfo = { id: string; label: string; capabilities: string[] };
-type DeviceInfo = { id: string; key: string; name: string; type: string; parts: PartInfo[] };
+type DeviceInfo = ScriptDevice;
 type CommandResult = { outcome: string; detail?: string };
 
 /** A command through the gateway, as this automation: what came of it — refused or failed, thrown. */
@@ -122,7 +122,7 @@ const deviceOf = (info: DeviceInfo) => {
       type: info.type,
       parts: info.parts.map((each) => each.id),
       reading: (key: string): unknown => read({ reading: [info.id, key] }),
-      readings: (): Record<string, unknown> => read({ readings: info.id }) as Record<string, unknown>,
+      readings: (): Record<string, unknown> => read({ readings: info.id }),
       part: partOf,
       turnOn: () => command(info, main?.id ?? 'main', 'switch', 'set', { on: true }),
       turnOff: () => command(info, main?.id ?? 'main', 'switch', 'set', { on: false }),
@@ -162,15 +162,15 @@ const named = <Info, Made>(what: string, list: () => readonly Info[], nameOf: (i
 };
 
 /** The devices, by key: `devices.garagePlug`. */
-const devices = named('device', () => read({ devices: true }) as DeviceInfo[], (info) => info.key, deviceOf);
+const devices = named('device', () => read({ devices: true }), (info) => info.key, deviceOf);
 
-type PlaceInfo = { id: string; key: string; name: string };
-type HomeInfo = PlaceInfo & { rooms: PlaceInfo[] };
-type PersonInfo = { id: string; name: string };
+type PlaceInfo = ScriptPlace;
+type HomeInfo = ScriptHomeView;
+type PersonInfo = ScriptPerson;
 
 /** Who of the family is at a place, as far as each shares: yes, no, or null when they share too little to tell. */
-const isAt = (person: string, kind: string, place: string): boolean | null => {
-  const at = read({ at: [kind, place] }) as { at: string[]; unknown: string[] } | null;
+const isAt = (person: string, kind: 'home' | 'space', place: string): boolean | null => {
+  const at = read({ at: [kind, place] });
   if (!at) return null;
   return at.at.includes(person) ? true : at.unknown.includes(person) ? null : false;
 };
@@ -182,7 +182,7 @@ const roomOf = (info: PlaceInfo) =>
     key: info.key,
     name: info.name,
     get occupied(): boolean | null {
-      return read({ occupied: ['space', info.id] }) as boolean | null;
+      return read({ occupied: ['space', info.id] });
     },
   });
 
@@ -195,25 +195,25 @@ const homeOf = (info: HomeInfo) =>
     rooms: named('room', () => info.rooms, (room) => room.key, roomOf),
     /** Whether anyone is home: null when it cannot be told. */
     get occupied(): boolean | null {
-      return read({ occupied: ['home', info.id] }) as boolean | null;
+      return read({ occupied: ['home', info.id] });
     },
     /** Its mode on the presence axis now — home, away — by key; null when none is set. */
     get presence(): string | null {
-      return read({ mode: [info.id, 'presence'] }) as string | null;
+      return read({ mode: [info.id, 'presence'] });
     },
     /** Its mode on the day axis now — morning, night — by key; null when none is set. */
     get day(): string | null {
-      return read({ mode: [info.id, 'day'] }) as string | null;
+      return read({ mode: [info.id, 'day'] });
     },
     /** Who of the family is home now, as far as each shares. */
     get people(): string[] {
-      return ((read({ at: ['home', info.id] }) as { at: string[] } | null)?.at ?? []).map((id) => (read({ people: true }) as PersonInfo[]).find((each) => each.id === id)?.name ?? id);
+      return (read({ at: ['home', info.id] })?.at ?? []).map((id) => read({ people: true }).find((each) => each.id === id)?.name ?? id);
     },
     /** It put in a mode, as this run puts it. */
     setMode: (mode: string): Promise<unknown> => call(['run', 'setMode'], [{ mode, home: info.id }]),
   });
 
-const homesNow = (): HomeInfo[] => read({ homes: true }) as HomeInfo[];
+const homesNow = (): HomeInfo[] => read({ homes: true });
 
 /** The family's homes, by key: `homes.cabin`. */
 const homes = named('home', homesNow, (info) => info.key, homeOf);
@@ -225,7 +225,7 @@ const personOf = (info: PersonInfo) =>
     name: info.name,
     /** Whether they are at this script's home: null when they share too little to tell. */
     get isHome(): boolean | null {
-      const own = read({ home: true }) as string | null;
+      const own = read({ home: true });
       return own ? isAt(info.id, 'home', own) : null;
     },
     /** Whether they are at a home, or in one of its rooms: null when they share too little to tell. */
@@ -238,12 +238,12 @@ const personOf = (info: PersonInfo) =>
   });
 
 /** The family, by name: `family.maria`. */
-const family = named('person', () => read({ people: true }) as PersonInfo[], (info) => info.name, personOf);
+const family = named('person', () => read({ people: true }), (info) => info.name, personOf);
 
 /** This script's home: the automation's, or the family's first. */
 const home = new Proxy({} as ReturnType<typeof homeOf>, {
   get: (_, name) => {
-    const own = read({ home: true }) as string | null;
+    const own = read({ home: true });
     const info = homesNow().find((each) => each.id === own);
     if (!info) throw new KraftverkError('not-found', 'The family has no home');
     return Reflect.get(homeOf(info), name);

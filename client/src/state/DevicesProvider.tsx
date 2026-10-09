@@ -169,7 +169,8 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     judges what follows — a device looked at is read more often.
   */
   const stream = useRef<LiveStream | null>(null);
-  const views = useMemo(() => createViews((view) => stream.current?.say(view)), []);
+  // A development build follows each run's lines, to write them to the console (runToConsole).
+  const views = useMemo(() => createViews((view) => stream.current?.say(__DEV__ ? { ...view, runs: true } : view)), []);
   const segments = useSegments();
   const route = segments.join('/') || 'home';
   useEffect(() => views.screen(route), [route, views]);
@@ -276,7 +277,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       stream.current = api.live(onUpdate, { onState: setLive });
       // What the screen shows, said as it opens: the home keeps it only while the stream is open.
       const shown = views.current();
-      if (shown) stream.current.say(shown);
+      if (shown) stream.current.say(__DEV__ ? { ...shown, runs: true } : shown);
     };
     const stop = () => {
       stream.current?.close();

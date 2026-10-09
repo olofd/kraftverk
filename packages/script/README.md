@@ -15,7 +15,7 @@ sandbox is reached through. No engine of its own: the place gives one.
     JavaScript and so runs wherever a hub does. Lines stay where they were
     written, so a fault names the line a person wrote.
   - **Read.** `readScript` reads a script: its size, whether it compiles,
-    what it imports (the SDK, and nothing else), and its shape. The shape
+    what it imports (`kraftverk` and `kraftverk/api`, and nothing else), and its shape. The shape
     — its steps with their inputs, answer and memory, and its functions
     with their arguments and result — comes back in the language's own
     fields (`ScriptShape`, `@kraftverk/automation`). It is read from the
@@ -24,7 +24,7 @@ sandbox is reached through. No engine of its own: the place gives one.
     function, each parameter in the language's types, its doc comment its
     title and limits. Then the top level runs once, in a sandbox that
     reaches nothing, so what fails as it loads is said at once.
-  - **Names.** `scriptNames` is what a script calls a person, a home, a
+  - **Names.** `names.ts` is what a script calls a person, a home, a
     room or a device — `family.maria`, `devices.garagePlug` — one rule
     for the types and the sandbox.
   - **The guest SDK.** It lives in `src/guest/`, bundled into one string,

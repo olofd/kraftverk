@@ -68,6 +68,7 @@ const VIEW_REPORT = z
     type: z.literal('view'),
     screen: z.string().min(1).max(64),
     showing: z.array(z.discriminatedUnion('kind', [z.object({ kind: z.literal('device'), id: SHOWN_ID, close: z.boolean().optional() }).strict(), z.object({ kind: z.literal('automation'), id: SHOWN_ID }).strict()])).max(500),
+    runs: z.literal(true).optional(),
   })
   .strict();
 /** Larger than any view an app could say: not parsed. */
@@ -87,7 +88,7 @@ function viewReportOf(data: unknown): ViewReport | null {
   // Where a string off the wire becomes an id: named, as at every edge.
   // Up close — a device's own page — kept: what a phone is located every minute for.
   const showing = parsed.data.showing.map((thing): ShownThing => (thing.kind === 'device' ? { kind: 'device', id: savedDeviceId(thing.id), ...(thing.close ? { close: true } : {}) } : { kind: 'automation', id: automationId(thing.id) }));
-  return { type: 'view', screen: parsed.data.screen, showing };
+  return { type: 'view', screen: parsed.data.screen, showing, ...(parsed.data.runs ? { runs: true } : {}) };
 }
 
 export function liveRoutes(deps: AppDeps, upgradeWebSocket: UpgradeWebSocket, cors: (origin: string) => string | null): Hono {

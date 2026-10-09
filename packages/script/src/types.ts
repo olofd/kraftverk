@@ -91,7 +91,7 @@ ${Object.entries(UNIT_TYPES).map(([name, unit]) => `  /** A number in ${unitSpec
   /** A home put in a mode — this script's home, unless one is named by id — as this run puts it. */
   export function setMode(mode: Mode, homeId?: string): Promise<unknown>;
 
-  /** A refusal from the home: its kind — refused, forbidden, not-found — its words, each problem. */
+  /** A refusal from the home: its kind — refused, failed, forbidden, not-found, conflict, invalid — its words, each problem. */
   export class KraftverkError extends Error {
     readonly kind: string;
     readonly problems: readonly string[];

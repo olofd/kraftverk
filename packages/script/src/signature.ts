@@ -1,5 +1,5 @@
 /// <reference path="./sucrase-parser.d.ts" />
-import type { ScriptFunctionShape, ScriptProblem, ScriptShape, ScriptStepShape } from '@kraftverk/automation';
+import { wordsOfName as wordsOf, type ScriptFunctionShape, type ScriptProblem, type ScriptShape, type ScriptStepShape } from '@kraftverk/automation';
 import { isUnit, type ConfigField, type ConfigSchema, type Unit } from '@kraftverk/device-sdk';
 import { parse } from 'sucrase/dist/esm/parser/index.js';
 import { ContextualKeyword } from 'sucrase/dist/esm/parser/tokenizer/keywords.js';
@@ -73,12 +73,6 @@ class Unreadable extends Error {
     super(message);
   }
 }
-
-/** A name in words: "emptyFor" is "Empty for". */
-const wordsOf = (name: string): string => {
-  const words = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
-  return words.charAt(0).toUpperCase() + words.slice(1);
-};
 
 /** A doc comment's words and tags, as written in the last `/** … *\/` of a stretch of source. */
 function docIn(between: string): Doc {

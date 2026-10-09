@@ -459,7 +459,8 @@ export function followerApi(h: Follower): KraftverkApi {
      * again, which holds from it again.
      */
     live(listener, options = {}) {
-      const stop = coalesced(h.bus, listener, options.draining);
+      // What this node's own bus says of runs is not followed here: the master's stream carries them, to an app that follows them.
+      const stop = coalesced(h.bus, (update) => (update.type === 'run' ? undefined : listener(update)), options.draining);
       const stream = home.live((update: LiveUpdate) => {
         if ((update.type === 'readings' || update.type === 'health') && h.holds(update.deviceId)) return;
         listener(update);

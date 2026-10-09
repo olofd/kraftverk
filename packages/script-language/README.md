@@ -7,7 +7,7 @@ The script editor's language service ([docs/PLAN-SCRIPTS.md](../../docs/PLAN-SCR
 JavaScript API, run over files kept in memory:
 - the script being written;
 - the types it is written against: `typesOf` of `@kraftverk/script`, the
-  SDK and one home's devices;
+  SDK and the family's people, homes, rooms, modes and devices;
 - the language's own declarations, ES2022 and no DOM.
 
 ## What it does — and does not
@@ -17,7 +17,9 @@ JavaScript API, run over files kept in memory:
   - what is wrong with it, by offset, line and column;
   - what may be written at an offset: a device's key, a capability's
     commands, the SDK's names;
-  - what a name is, with its words, on hover.
+  - what a name is, with its words, on hover;
+  - the script formatted as TypeScript formats it (`format`): each change,
+    for the editor to apply.
 
   `types(declarations)` gives it a home's types, as the hub makes them
   (`scripts.types()`).

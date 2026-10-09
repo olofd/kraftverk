@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { Button, Input, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import { convert, isUnit, valueTypeOf, type ConfigField, type ConfigSchema, type Value } from '@kraftverk/device-sdk';
-import type { ScriptCheck, ScriptShape } from '@kraftverk/automation';
+import { fieldWords, wordsOfName, type ScriptCheck, type ScriptShape } from '@kraftverk/automation';
 import { changeScript, describeError, PATHS, removeScript, withConfirmation, type ScriptTried, type ScriptView } from '@kraftverk/api-client';
 import { Card, haptic, Icon, RowSeparator } from '@kraftverk/ui';
 
@@ -40,31 +40,6 @@ export function feelsLike(temp: Celsius, humidity: Percent): Celsius {
 /** How long typing rests before the script is read again. */
 const READ_AFTER_MS = 300;
 
-/** A name as a person says it: "tidyUp" is "Tidy up". */
-const wordsOf = (name: string): string => {
-  const words = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
-  return words.charAt(0).toUpperCase() + words.slice(1);
-};
-
-/** A number as a person reads it beside its unit: a length of time in the largest units that say it, "1 h 30 min". */
-const amount = (value: number, unit: string | undefined): string => {
-  if (unit !== 's') return `${value}${unit ? ` ${unit}` : ''}`;
-  const [hours, minutes, seconds] = [Math.floor(value / 3_600), Math.floor((value % 3_600) / 60), value % 60];
-  return [hours ? `${hours} h` : '', minutes ? `${minutes} min` : '', seconds || !value ? `${seconds} s` : ''].filter(Boolean).join(' ');
-};
-
-/** What a field holds, in words: "a length of time, from 1 min, by default 10 min". */
-const kindWords = (field: ConfigField): string =>
-  field.type === 'number'
-    ? [field.unit === 's' ? 'a length of time' : field.unit ? `a number in ${field.unit}` : 'a number', field.integer ? 'whole' : null, field.min !== undefined ? `from ${amount(field.min, field.unit)}` : null, field.max !== undefined ? `to ${amount(field.max, field.unit)}` : null, field.default !== undefined ? `by default ${amount(field.default, field.unit)}` : null].filter(Boolean).join(', ')
-    : field.type === 'boolean'
-      ? 'yes or no'
-      : field.type === 'enum'
-        ? field.options.map((option) => option.label).join(' · ')
-        : field.type === 'timestamp'
-          ? 'a date and time'
-          : 'text';
-
 const fieldsOf = (schema: ConfigSchema): ConfigField[] => Object.values(schema.fields);
 
 /** What a step or function takes, answers or keeps: each field its title and, quieter, what it holds — or, `untitled`, what it holds alone. */
@@ -78,12 +53,12 @@ function Fields({ label, fields, untitled = false }: { label: string; fields: re
       {fields.map((field, at) =>
         untitled ? (
           <Text key={at} fontSize={14} color="$color" lineHeight={20}>
-            {kindWords(field).charAt(0).toUpperCase() + kindWords(field).slice(1)}
+            {fieldWords(field).charAt(0).toUpperCase() + fieldWords(field).slice(1)}
           </Text>
         ) : (
           <Text key={at} fontSize={14} color="$color" lineHeight={20}>
             {field.title}
-            <Text color="$muted">{` — ${kindWords(field)}`}</Text>
+            <Text color="$muted">{` — ${fieldWords(field)}`}</Text>
           </Text>
         )
       )}
@@ -153,11 +128,11 @@ function TryStep({ source, name, inputs, current, kept }: { source: string; name
       ))}
       <YStack gap="$1.5">
         <XStack gap="$2" flexWrap="wrap">
-          <Button size="$3" icon={busy ? <Spinner size="small" color="$background" /> : <Icon name="play" size={14} color={tone('$background')} />} backgroundColor="$accent" color="$background" disabled={busy || !current} opacity={busy || !current ? 0.5 : 1} onPress={() => void run()} aria-label={`Run ${wordsOf(name)} now`}>
+          <Button size="$3" icon={busy ? <Spinner size="small" color="$background" /> : <Icon name="play" size={14} color={tone('$background')} />} backgroundColor="$accent" color="$background" disabled={busy || !current} opacity={busy || !current ? 0.5 : 1} onPress={() => void run()} aria-label={`Run ${wordsOfName(name)} now`}>
             Run it now
           </Button>
           {/* Run when something happens: an automation that runs this step, its trigger still to choose — of the script as kept. */}
-          <Button size="$3" chromeless borderWidth={1} borderColor="$borderColor" color="$color" icon={<Icon name="zap" size={14} color={tone('$accent')} />} disabled={!kept} opacity={kept ? 1 : 0.5} onPress={() => kept && (haptic(), router.push(PATHS.automations.running(kept, name)))} aria-label={`Run ${wordsOf(name)} when…`}>
+          <Button size="$3" chromeless borderWidth={1} borderColor="$borderColor" color="$color" icon={<Icon name="zap" size={14} color={tone('$accent')} />} disabled={!kept} opacity={kept ? 1 : 0.5} onPress={() => kept && (haptic(), router.push(PATHS.automations.running(kept, name)))} aria-label={`Run ${wordsOfName(name)} when…`}>
             Run it when…
           </Button>
         </XStack>
@@ -168,7 +143,7 @@ function TryStep({ source, name, inputs, current, kept }: { source: string; name
       <ErrorText>{error}</ErrorText>
       {tried ? (
         // What it did, as a console reads: its own words in type, its acts with how each went, and how it ended.
-        <YStack gap="$1.5" padding="$3" borderRadius="$3" borderWidth={1} borderColor={tried.fault || tried.asked.length ? '$warning' : '$borderColor'} backgroundColor="$background" role="log" aria-label={`What ${wordsOf(name)} did`}>
+        <YStack gap="$1.5" padding="$3" borderRadius="$3" borderWidth={1} borderColor={tried.fault || tried.asked.length ? '$warning' : '$borderColor'} backgroundColor="$background" role="log" aria-label={`What ${wordsOfName(name)} did`}>
           {tried.lines.map((line, at) =>
             line.kind === 'log' ? (
               <Text key={at} fontFamily="$mono" fontSize={12.5} color="$color" lineHeight={18}>
@@ -195,7 +170,7 @@ function TryStep({ source, name, inputs, current, kept }: { source: string; name
           )}
           {Object.keys(tried.memory).length ? (
             <Text fontSize={12} color="$muted">
-              {`It would remember: ${Object.entries(tried.memory).map(([key, value]) => `${wordsOf(key).toLowerCase()} ${valueWords(value)}`).join(', ')}`}
+              {`It would remember: ${Object.entries(tried.memory).map(([key, value]) => `${wordsOfName(key).toLowerCase()} ${valueWords(value)}`).join(', ')}`}
             </Text>
           ) : null}
           {tried.asked.length ? (
@@ -253,13 +228,13 @@ function Declared({ shape, source, current, kept }: { shape: ScriptShape; source
         What it declares
       </Text>
       {steps.map(([name, step]) => (
-        <Card key={`step:${name}`} gap="$2" aria-label={`Step ${wordsOf(name)}`}>
+        <Card key={`step:${name}`} gap="$2" aria-label={`Step ${wordsOfName(name)}`}>
           <XStack gap="$2" alignItems="baseline">
             <Text fontSize={12} color="$muted" textTransform="uppercase">
               Step
             </Text>
             <Text fontSize={16} fontWeight="600" color="$color">
-              {wordsOf(name)}
+              {wordsOfName(name)}
             </Text>
           </XStack>
           <About text={step.about} />
@@ -270,13 +245,13 @@ function Declared({ shape, source, current, kept }: { shape: ScriptShape; source
         </Card>
       ))}
       {functions.map(([name, fn]) => (
-        <Card key={`fn:${name}`} gap="$2" aria-label={`Function ${wordsOf(name)}`}>
+        <Card key={`fn:${name}`} gap="$2" aria-label={`Function ${wordsOfName(name)}`}>
           <XStack gap="$2" alignItems="baseline">
             <Text fontSize={12} color="$muted" textTransform="uppercase">
               Function
             </Text>
             <Text fontSize={16} fontWeight="600" color="$color">
-              {wordsOf(name)}
+              {wordsOfName(name)}
             </Text>
           </XStack>
           <About text={fn.about} />

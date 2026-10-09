@@ -24,7 +24,7 @@ const schema = entryJsonSchema({ ...vocabularyOf([], () => null), scripts: [{ id
 describe('the keys a map not yet begun may take', () => {
   test('under a script step’s with: that step’s inputs — each with its title and default — chosen by what run script names', () => {
     const offered = keysOffered(schema, '/do/0/with', { name: 'T', do: [{ 'run script': 'tidy-up.tidyUp', with: null }] });
-    expect(offered).toEqual([{ name: 'after', title: 'Empty for at least', description: 'Empty for at least: a length of time, from 1 min. Not given: 10 min', fallback: '10 min' }]);
+    expect(offered).toEqual([{ name: 'after', title: 'Empty for at least', description: 'Empty for at least: a length of time, from 1 min, by default 10 min', fallback: '10 min' }]);
     expect(keysOffered(schema, '/do/0/with', { name: 'T', do: [{ 'run script': 'tidy-up.sweep', with: 'r' }] }).map((each) => each.name)).toEqual(['rooms']);
   });
 

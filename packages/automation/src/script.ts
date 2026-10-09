@@ -1,4 +1,6 @@
-import type { ConfigField, ConfigSchema } from '@kraftverk/device-sdk';
+import { convertible, isUnit, type ConfigField, type ConfigSchema, type Value, type ValueType } from '@kraftverk/device-sdk';
+
+import type { Expr } from './rule.ts';
 
 /*
   Scripts, as the language sees them (docs/PLAN-SCRIPTS.md §8.4, §8.5): what
@@ -45,6 +47,58 @@ export function scriptRoleOf(key: string): { role: string; label: string } {
   const role = /^[a-z]/.test(joined) ? joined : `script${joined.charAt(0).toUpperCase()}${joined.slice(1)}`;
   const label = words.join(' ');
   return { role, label: label.charAt(0).toUpperCase() + label.slice(1) };
+}
+
+/** A name in code as a person says it: "tidyUp" is "Tidy up", "feelsLike" "Feels like". */
+export function wordsOfName(name: string): string {
+  const words = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** A number as a person reads it beside its unit: a length of time in the largest units that say it, "1 h 30 min"; anything else as it is, "20 %". */
+export function amountText(value: number, unit: string | undefined): string {
+  if (unit !== 's') return `${value}${unit ? ` ${unit}` : ''}`;
+  const [hours, minutes, seconds] = [Math.floor(value / 3_600), Math.floor((value % 3_600) / 60), value % 60];
+  return [hours ? `${hours} h` : '', minutes ? `${minutes} min` : '', seconds || !value ? `${seconds} s` : ''].filter(Boolean).join(' ');
+}
+
+/** What a field holds, in words: "a length of time, from 1 min, by default 10 min", "a number in °C", "yes or no". */
+export function fieldWords(field: ConfigField): string {
+  switch (field.type) {
+    case 'number':
+      return [
+        field.unit === 's' ? 'a length of time' : field.unit ? `a number in ${field.unit}` : 'a number',
+        field.integer ? 'whole' : null,
+        field.min !== undefined ? `from ${amountText(field.min, field.unit)}` : null,
+        field.max !== undefined ? `to ${amountText(field.max, field.unit)}` : null,
+        field.default !== undefined ? `by default ${amountText(field.default, field.unit)}` : null,
+      ]
+        .filter(Boolean)
+        .join(', ');
+    case 'boolean':
+      return field.default === undefined ? 'yes or no' : `yes or no, by default ${field.default ? 'yes' : 'no'}`;
+    case 'enum':
+      return `one of ${field.options.map((option) => option.label).join(', ')}${field.default !== undefined ? `, by default ${field.options.find((option) => option.value === field.default)?.label ?? field.default}` : ''}`;
+    case 'timestamp':
+      return 'a date and time';
+    default:
+      return field.default ? `words, by default “${field.default}”` : 'words';
+  }
+}
+
+/** A value a field starts from, as an expression writes it: its default, or nought in its unit, yes, its first option, nothing. */
+export function fieldStart(field: ConfigField): Expr {
+  if (field.type === 'number') return { value: field.default ?? 0, ...(field.unit && isUnit(field.unit) ? { unit: field.unit } : {}) };
+  if (field.type === 'boolean') return { value: field.default ?? true };
+  if (field.type === 'enum') return { value: field.default ?? field.options[0]?.value ?? '' };
+  return { value: (field.default ?? '') as Value };
+}
+
+/** Whether what a part reports may be given to a field: a number in a unit that converts to its own, or a value of its type. */
+export function fitsField(field: ConfigField, value: ValueType): boolean {
+  if (field.type !== 'number') return value.type === field.type;
+  if (value.type !== 'number') return false;
+  return !field.unit || (value.unit !== undefined && isUnit(field.unit) && isUnit(value.unit) && convertible(value.unit, field.unit));
 }
 
 /** A script's key as a step names it by its key alone (`run script: tidy-up`): what the file's reader takes for a key, and the writer writes so. */
