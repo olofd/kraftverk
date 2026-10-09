@@ -438,6 +438,12 @@ phone.
 
 ### 4.1 The data model
 
+**Made whole in [PLAN-AI-MODEL.md](PLAN-AI-MODEL.md)**: conversations
+shared between people with one assistant, history, memory and recall,
+turns and their traces, asks, errands, models, and privacy as settings
+people choose with guarantees kraftverk keeps. That document is the
+authority on the tables; this section is the sketch it grew from.
+
 New in the family's database (`packages/store/src/schema.ts`), each table
 with its reason:
 
@@ -812,6 +818,10 @@ the assistant in the app.
 
 ### 4.14 Privacy: what leaves the house
 
+Every choice below is a **setting** — the family's, a home's, a person's
+own — with a default, the strictest that applies holding, enforced and
+tested by kraftverk ([PLAN-AI-MODEL.md](PLAN-AI-MODEL.md) §8.1).
+
 Per family, said in Settings: which models are local and which are not,
 and what a cloud model may be told — devices and readings; history;
 presence (at each person's sharing, never a position); memory. Who asked
@@ -927,7 +937,9 @@ devices, the fast clock), each a request and the state it should end in:
 
 ## 7. The order of work
 
-Each slice green and pushed, the evals growing with it.
+Each slice green and pushed, the evals growing with it. **The data model
+comes first**: slices M0–M7 of [PLAN-AI-MODEL.md](PLAN-AI-MODEL.md) §13,
+which call no model; AI0–AI2 follow its M2.
 
 | Slice | What | Done when |
 | --- | --- | --- |
@@ -975,11 +987,11 @@ Each slice green and pushed, the evals growing with it.
    (recommended)? Its name, and whether a family member's own voice may
    ever be one (recommended: only theirs, by their consent, never a
    child's)?
-9. **What a cloud model may see**: devices, readings and history; presence
-   at each person's sharing; never positions; names replaced by stand-ins
-   (recommended)?
+9. **What a cloud model may see**: a setting (`cloud.tells`), by default
+   devices, readings and history; never positions; names replaced by
+   stand-ins — and each person may narrow it for themselves (recommended)?
 10. **Memory**: each person's own, visible and forgettable, written only
-    from what they said (recommended)?
+    from what they said; its defaults settings (recommended)?
 11. **The builder**: its own container, a branch, the checks, the owner's
     yes, rollback; the Claude Agent SDK first and opencode for other models
     (recommended)? Which paths are protected?
