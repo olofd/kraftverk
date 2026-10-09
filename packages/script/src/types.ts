@@ -1,17 +1,25 @@
-import { capabilitySpec, isCapability, type ScalarValueType, type ValueType } from '@kraftverk/device-sdk';
+import { capabilitySpec, isCapability, UNIT_LIST, unitSpec, type ScalarValueType, type ValueType } from '@kraftverk/device-sdk';
+
+import { scriptNames } from './names.ts';
+import { UNIT_TYPES } from './signature.ts';
 
 /*
   The types a script is written against (docs/PLAN-SCRIPTS.md §11.1): the
   SDK's own declarations — what the guest SDK (guest/sdk.ts) gives, said
-  for TypeScript — and the home's, generated from what it has: each device
-  by its key, its readings by key with their types, and, on each part, its
-  capabilities' commands with their arguments. One `kraftverk.d.ts`, which
-  the editor's language service checks a script against. The hub never
-  checks types: what crosses is checked when it runs.
+  for TypeScript, and the types a step's and a function's signature are
+  written in (signature.ts) — and the family's, generated from what it has:
+  each person, home, room and device by the name a script writes it with
+  (names.ts), a device's readings by key with their types, and, on each
+  part, its capabilities' commands with their arguments. One
+  `kraftverk.d.ts`, which the editor's language service checks a script
+  against. The hub never checks types: what crosses is checked when it runs.
 */
 
-/** A home, as its scripts' types are made from it: its devices, each by its key. */
+/** A family, as its scripts' types are made from it: its people, its homes with their rooms, its modes, and its devices. */
 export type ScriptHome = {
+  people: readonly { name: string }[];
+  homes: readonly { key: string; name: string; rooms: readonly { key: string; name: string }[] }[];
+  modes: readonly { key: string; axis: string; name: string }[];
   devices: readonly {
     key: string;
     name: string;
@@ -62,53 +70,26 @@ function capabilityInterface(name: string): string | null {
 
 /** The SDK, as TypeScript reads it: what `import ... from 'kraftverk'` gives. */
 const SDK = `
-  /** A field a script declares its shape with: the language's own, typed by what it holds. */
-  export type Field<T> = { readonly __holds?: T };
-  type Of<F> = F extends Field<infer T> ? T : never;
-  type Values<S> = { -readonly [K in keyof S]: Of<S[K]> };
-  type Said = { title?: string; description?: string };
-  type Numbered = Said & { min?: number; max?: number; step?: number; default?: number };
-
-  /** The fields a shape is declared in. */
-  export const t: {
-    /** A number, in a unit when it has one: W, %, °C. */
-    number(options?: Numbered & { unit?: string; integer?: boolean }): Field<number>;
-    /** A length of time, in seconds, as the language keeps every duration. */
-    duration(options?: Numbered): Field<number>;
-    /** A whole number from nothing up. */
-    count(options?: Numbered): Field<number>;
-    flag(options?: Said & { default?: boolean }): Field<boolean>;
-    text(options?: Said & { default?: string }): Field<string>;
-    choice<const T extends string>(options: readonly (T | { value: T; label: string })[], more?: Said & { default?: T }): Field<T>;
-    /** An instant: a date and a time, as ISO text. */
-    instant(options?: Said): Field<string>;
-  };
-
-  /** One of a script's steps: given its inputs, it may read the home, act and wait, and answers. */
-  export type Step = { readonly kind: 'step' };
-  /** One of a script's functions: pure, its arguments in order, its answer at once. */
-  export type Fn = { readonly kind: 'fn' };
-
-  /** A step: what it takes, answers and remembers — and what it does, given them. */
-  export function step<const I extends Record<string, Field<unknown>> = {}, const M extends Record<string, Field<unknown>> = {}, const A extends Field<unknown> | undefined = undefined>(
-    spec: { inputs?: I; answer?: A; memory?: M },
-    run: (inputs: Values<I>, context: { memory: Values<M> }) => Promise<A extends Field<infer T> ? T | null : void> | (A extends Field<infer T> ? T | null : void)
-  ): Step;
-
-  /** A function: pure, its arguments in order, its answer at once. */
-  export function fn<const Args extends readonly Field<unknown>[], const R extends Field<unknown>>(
-    spec: { args?: Args; returns: R },
-    run: (...args: { [K in keyof Args]: Of<Args[K]> }) => Of<R> | null
-  ): Fn;
+  /** A unit kraftverk knows. */
+  export type Unit = ${UNIT_LIST.map((unit) => JSON.stringify(unit)).join(' | ')};
+  /** A number in a unit: Quantity<'W'>, Quantity<'°C'>. Tag it \`@min 0\`, \`@max 100\`, \`@integer\`. */
+  export type Quantity<U extends Unit> = number;
+  /** A length of time, in seconds, as the language keeps every duration. Tag it \`@min 1 min\`, \`@default 5 min\`. */
+  export type Duration = number;
+  /** An instant: a date and a time, as ISO text. */
+  export type Instant = string;
+  /** What a step remembers between runs: one parameter of its own, \`memory: Kept<{ times: number }>\`. Each starts as nothing, none, the first choice — or its \`@default\`. */
+  export type Kept<T extends object> = T;
+${Object.entries(UNIT_TYPES).map(([name, unit]) => `  /** A number in ${unitSpec(unit).label} (${unit}). */\n  export type ${name} = Quantity<${JSON.stringify(unit)}>;`).join('\n')}
 
   /** A line in the run's log, beneath the step. */
   export function log(...parts: unknown[]): void;
   /** A pause, on the home's clock: at most until the step must end; stopped with its run. */
   export function sleep(seconds: number): Promise<void>;
-  /** The family told something, as this automation tells it: everyone, or the people named by id. */
+  /** The family told something, as this run tells it: everyone, or the people named by id. */
   export function notify(title: string, options?: { text?: string; to?: readonly string[] }): Promise<{ told: string[] }>;
-  /** A home put in a mode — its own, unless one is named by id — as this automation puts it. */
-  export function setMode(mode: string, homeId?: string): Promise<unknown>;
+  /** A home put in a mode — this script's home, unless one is named by id — as this run puts it. */
+  export function setMode(mode: Mode, homeId?: string): Promise<unknown>;
 
   /** A refusal from the home: its kind — refused, forbidden, not-found — its words, each problem. */
   export class KraftverkError extends Error {
@@ -133,18 +114,73 @@ const SDK = `
     /** One of its parts, by id: its capabilities, each with its commands. */
     part<P extends keyof Parts & string>(id: P): Parts[P];
   };
+  /** What a device that switches can do besides: turned on and off, through the gateway. */
+  export type Switches = {
+    /** Turn it on. */
+    turnOn(): Promise<CommandResult>;
+    /** Turn it off. */
+    turnOff(): Promise<CommandResult>;
+  };
 
-  /** The home as objects: its devices, by key — read again each time they are asked for. */
-  export const home: { readonly devices: Devices };
+  /** A room — any space of a home but its ground — as a script sees it. */
+  export interface Room {
+    readonly id: string;
+    readonly key: string;
+    readonly name: string;
+    /** Whether anyone is in it now, by what stands there: null when it cannot be told. */
+    readonly occupied: boolean | null;
+  }
+
+  /** A home, as a script sees it: its rooms, who is there, its modes now — and set. */
+  export interface Home<Rooms = Record<string, Room>> {
+    readonly id: string;
+    readonly key: string;
+    readonly name: string;
+    /** Its rooms, by name. */
+    readonly rooms: Rooms;
+    /** Whether anyone of the family is home: null when it cannot be told. */
+    readonly occupied: boolean | null;
+    /** Its mode on the presence axis now; null when none is set. */
+    readonly presence: PresenceMode | null;
+    /** Its mode on the day axis now; null when none is set. */
+    readonly day: DayMode | null;
+    /** Who of the family is home now, by name, as far as each shares. */
+    readonly people: readonly string[];
+    /** It put in a mode, as this run puts it. */
+    setMode(mode: Mode): Promise<unknown>;
+  }
+
+  /** A person of the family, as a script sees them: where they are, as far as they share. */
+  export interface Person {
+    readonly id: string;
+    readonly name: string;
+    /** Whether they are at this script's home now: null when they share too little to tell. */
+    readonly isHome: boolean | null;
+    /** Whether they are at a home, or in a room of one: null when they share too little to tell. */
+    isAt(place: Home<unknown> | Room): boolean | null;
+    /** Them told something, as this run tells them. */
+    tell(title: string, text?: string): Promise<{ told: string[] }>;
+  }
+
+  /** The family, by name: \`family.maria\`. */
+  export const family: Family;
+  /** The family's homes, by name: \`homes.cabin\`. */
+  export const homes: Homes;
+  /** This script's home: its automation's, or the family's first. */
+  export const home: Homes[keyof Homes];
+  /** The devices, by name: \`devices.garagePlug.turnOn()\`. */
+  export const devices: Devices;
 `;
 
 /**
- * The types a script is checked against, for one home: the SDK, and the
- * home's devices — `home.devices['garage-plug'].switch.set({ on: false })`
- * completes, and a key it does not have is an error as it is typed.
+ * The types a script is checked against, for one family: the SDK, and the
+ * family's people, homes, rooms, modes and devices, each by its name —
+ * `devices.garagePlug.turnOn()` and `family.maria.isHome` complete, and a
+ * name it does not have is an error as it is typed.
  */
 export function typesOf(home: ScriptHome): string {
-  const devices = home.devices.map((device) => {
+  const deviceNames = scriptNames(home.devices.map((device) => device.key));
+  const devices = home.devices.map((device, at) => {
     const readings = device.readings.map((reading) => `${doc(reading.label)} ${JSON.stringify(reading.key)}: ${typeOf(reading.value)};`).join(' ');
     const parts = device.parts.map((part) => {
       const capabilities = part.capabilities.flatMap((name) => (capabilityInterface(name) ? [`${JSON.stringify(name)}: ${interfaceOf(name)};`] : []));
@@ -154,8 +190,17 @@ export function typesOf(home: ScriptHome): string {
     // Its main part's capabilities, on the device itself: `plug.switch.set(...)`.
     const main = device.parts.find((part) => part.id === 'main') ?? device.parts[0];
     const own = main ? `${partsType}[${JSON.stringify(main.id)}]` : '{}';
-    return `${doc(`${device.name}: ${device.type}`)} readonly ${JSON.stringify(device.key)}: Device<{ ${readings} }, ${partsType}> & ${own};`;
+    const switches = main?.capabilities.includes('switch') ? ' & Switches' : '';
+    return `${doc(`${device.name}: ${device.type}`)} readonly ${deviceNames[at]}: Device<{ ${readings} }, ${partsType}> & ${own}${switches};`;
   });
+  const personNames = scriptNames(home.people.map((person) => person.name));
+  const people = home.people.map((person, at) => `${doc(person.name)} readonly ${personNames[at]}: Person;`);
+  const homeNames = scriptNames(home.homes.map((each) => each.key));
+  const homes = home.homes.map((each, at) => {
+    const roomNames = scriptNames(each.rooms.map((room) => room.key));
+    return `${doc(each.name)} readonly ${homeNames[at]}: Home<{ ${each.rooms.map((room, index) => `${doc(room.name)} readonly ${roomNames[index]}: Room;`).join(' ')} }>;`;
+  });
+  const modesOn = (axis: string): string => home.modes.filter((mode) => mode.axis === axis).map((mode) => JSON.stringify(mode.key)).join(' | ') || 'never';
   // Every capability any device has, declared once.
   const used = [...new Set(home.devices.flatMap((device) => device.parts.flatMap((part) => part.capabilities)))].sort();
   const interfaces = used.flatMap((name) => capabilityInterface(name) ?? []);
@@ -164,8 +209,15 @@ export function typesOf(home: ScriptHome): string {
     "declare module 'kraftverk' {",
     SDK,
     ...interfaces,
-    '  /** The home\'s devices, by key. */',
+    '  /** The devices, by name. */',
     `  export interface Devices { ${devices.join(' ')} }`,
+    '  /** The family, by name. */',
+    `  export interface Family { ${people.join(' ')} }`,
+    '  /** The family\'s homes, by name. */',
+    `  export interface Homes { ${homes.join(' ')} }`,
+    `  export type PresenceMode = ${modesOn('presence')};`,
+    `  export type DayMode = ${modesOn('day')};`,
+    `  export type Mode = PresenceMode | DayMode;`,
     '}',
     "declare module 'kraftverk/api' {",
     '  /** The home\'s API, as the app has it: each namespace, each of its calls. */',

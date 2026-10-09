@@ -18,8 +18,9 @@ afterEach(async () => {
   await t.stop();
 });
 
-const FEELS = "import { fn, t } from 'kraftverk';\nexport const feelsLike = fn({ args: [t.number({ unit: '°C' })], returns: t.number({ unit: '°C' }) }, (temp: number) => temp - 2);\n";
-const TIDY = "import { step, t } from 'kraftverk';\nexport const tidyUp = step({ inputs: { after: t.duration() } }, async () => null);\n";
+const FEELS = "import type { Celsius } from 'kraftverk';\nexport function feelsLike(temp: Celsius): Celsius {\n  return temp - 2;\n}\n";
+const TIDY = "import type { Duration } from 'kraftverk';\nexport async function tidyUp(after: Duration): Promise<void> {}\n";
+const NOT_A_FUNCTION = 'Export only functions, each by its name: "export async function" for a step, "export function" for a function';
 
 describe('a script', () => {
   test('is kept when it reads: its key from its name, what it declares, who wrote it — and on the timeline', async () => {
@@ -33,7 +34,7 @@ describe('a script', () => {
 
   test('is refused when it does not read, with each problem; and a key another has, or that is none', async () => {
     const broken = await refusal(t.home.scripts.create({ name: 'Broken', source: 'export const x = 1;\n' }));
-    expect(broken).toMatchObject({ kind: 'invalid', problems: ['"x" is neither a step nor a function: export only step(...) and fn(...)'] });
+    expect(broken).toMatchObject({ kind: 'invalid', problems: [`Line 1, column 1: ${NOT_A_FUNCTION}`] });
     await t.home.scripts.create({ key: 'mine', name: 'Mine', source: FEELS });
     expect((await refusal(t.home.scripts.create({ key: 'mine', name: 'Another', source: TIDY }))).kind).toBe('conflict');
     expect((await refusal(t.home.scripts.create({ key: 'Not A Key', name: 'Another', source: TIDY }))).kind).toBe('invalid');
@@ -80,7 +81,7 @@ describe('a script', () => {
     const { text } = await t.home.configuration.export({ secrets: 'none' });
     const plan = await t.home.configuration.plan({ text: `${text}scripts:\n  broken:\n    source: |\n      export const x = 1;\n` });
     expect(plan.id).toBeNull();
-    expect(plan.problems.map((each) => each.message)).toContain('The script "broken": "x" is neither a step nor a function: export only step(...) and fn(...)');
+    expect(plan.problems.map((each) => each.message)).toContain(`The script "broken": line 1, column 1: ${NOT_A_FUNCTION}`);
   });
 
   test('runs as a step of an automation: through the gateway as the automation, what it did said beneath it, what it answers remembered', async () => {
@@ -88,14 +89,14 @@ describe('a script', () => {
     const script = await t.home.scripts.create({
       name: 'Tidy up',
       source: [
-        "import { step, t, home, log } from 'kraftverk';",
-        'export const off = step({ answer: t.text(), memory: { times: t.count() } }, async (_inputs: unknown, { memory }: { memory: { times: number } }) => {',
-        "  const plug = home.devices['heater-plug'];",
-        '  await plug.switch.set({ on: false });',
+        "import { devices, log, type Kept } from 'kraftverk';",
+        'export async function off(memory: Kept<{ times: number }>): Promise<string> {',
+        '  const plug = devices.heaterPlug;',
+        '  await plug.turnOff();',
         '  memory.times += 1;',
-        "  log('Turned it off');",
+        "  log(`Turned it off, ${memory.times} times now`);",
         '  return plug.name;',
-        '});',
+        '}',
         '',
       ].join('\n'),
     });
@@ -120,14 +121,14 @@ describe('a script', () => {
     expect(steps[0]).toEqual([0, 'Run “Tidy up”, remembering what it answers as last tidy', 'done', 'Answered Heater plug']);
     expect(steps.slice(1).map(([depth, what]) => [depth, what])).toEqual([
       [1, 'Heater plug: switch.set on false'],
-      [1, 'Turned it off'],
+      [1, 'Turned it off, 1 times now'],
     ]);
     expect((await t.home.devices.get(plug.id)).readings.find((reading) => reading.key === 'on')?.value).toBe(false);
   });
 
   test('decides a condition with one of its functions: pure, its arguments in order, checked against what it declares', async () => {
     const plug = await t.added('Heater plug', { typeId: 'test.plug' });
-    const script = await t.home.scripts.create({ name: 'Maths', source: "import { fn, t } from 'kraftverk';\nexport const double = fn({ args: [t.number()], returns: t.number() }, (n: number) => n * 2);\n" });
+    const script = await t.home.scripts.create({ name: 'Maths', source: 'export function double(n: number): number {\n  return n * 2;\n}\n' });
     const rule = (n: number) => ({
       roles: { maths: { script: true as const, label: 'Maths' }, plug: { label: 'Plug', capabilities: ['switch' as const] } },
       params: { fields: {} },
@@ -146,6 +147,36 @@ describe('a script', () => {
     expect((await t.home.automations.get(made.id)).now.conditions).toEqual([{ text: 'Double by “Maths” (2) is above 3', holds: true }]);
     const less = await t.home.automations.create({ name: 'Doubled less', ...fills, rule: rule(1) } as never);
     expect((await t.home.automations.get(less.id)).now.conditions[0]?.holds).toBe(false);
+  });
+
+  test('is tried from the editor, as written: as the person, through the gateway, the family and its home by name — nothing kept', async () => {
+    const plug = await t.added('Heater plug', { typeId: 'test.plug' });
+    const source = [
+      "import { devices, family, home, homes, log, type Duration, type Kept } from 'kraftverk';",
+      '/** Turns the heater off. */',
+      'export async function off(after: Duration, memory: Kept<{ times: number }>): Promise<string> {',
+      '  await devices.heaterPlug.turnOff();',
+      '  memory.times += 1;',
+      "  log(`People: ${Object.keys(family).join(', ')}; homes: ${Object.keys(homes).join(', ')}; this one ${home.name}`);",
+      '  return `Off after ${after} s`;',
+      '}',
+      '',
+    ].join('\n');
+    // It carries a load: the gateway turns it off only with the person's yes — asked for, then given.
+    const asked = await t.home.scripts.run({ source, step: 'off', inputs: { after: 90 } });
+    expect(asked.fault).toContain('needs explicit confirmation');
+    expect(asked.asked).toEqual([{ key: `${plug.id}/main/switch/set`, token: expect.any(String), what: expect.stringContaining('Power is') }]);
+    const tried = await t.home.scripts.run({ source, step: 'off', inputs: { after: 90 }, yes: { [asked.asked[0]!.key]: asked.asked[0]!.token } });
+    expect(tried.fault).toBeNull();
+    expect(tried.answer).toBe('Off after 90 s');
+    expect(tried.memory).toEqual({ times: 1 });
+    expect(tried.lines.map((line) => line.what)).toEqual(['Heater plug: switch.set on false', 'People: ; homes: home; this one Home']);
+    expect((await t.home.devices.get(plug.id)).readings.find((reading) => reading.key === 'on')?.value).toBe(false);
+    expect(await t.home.scripts.list()).toEqual([]);
+    // A step it does not have, and one that throws: said, not thrown.
+    expect((await refusal(t.home.scripts.run({ source, step: 'on', inputs: {} }))).kind).toBe('not-found');
+    const thrown = await t.home.scripts.run({ source: "export async function boom(): Promise<void> {\n  throw new Error('Not today');\n}\n", step: 'boom', inputs: {} });
+    expect(thrown.fault).toContain('Not today');
   });
 
   test('is not read where no engine runs scripts, and the home says so', async () => {

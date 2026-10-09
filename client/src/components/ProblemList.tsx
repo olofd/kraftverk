@@ -23,6 +23,8 @@ export type YamlEditorProps = {
 
 /** A script's editor: a text and its problems, as a YAML editor's, with no schema. */
 export type ScriptEditorProps = Omit<YamlEditorProps, 'schema'> & {
+  /** Given the editor's formatter, once it has one: the script formatted in place, and its text after. The phone's has none. */
+  formatter?: { current: (() => Promise<string>) | null };
   /** The types it is written against, for this home (`scripts.types()`): what the web's editor checks and completes with. Null until they come. */
   types?: string | null;
 };

@@ -47,14 +47,16 @@ which slices change.
 
 Reading the code for this guide changed five things:
 
-1. **A script declares its shape in code, not only in types.** The hub has
-   no TypeScript compiler — on a phone it could not run one — yet it must
-   know a script's inputs, answer and functions to check the automations
-   that use it. So a script declares them with small builders (`step`,
-   `fn`, `t.number('W')`), which TypeScript infers types from (as zod does)
-   and which the hub reads by running the module's top level in the
-   sandbox, with nothing reachable. One source; no compiler needed to read
-   it (§5, §8.4).
+1. **A script declares its shape in its signatures.** The hub has no
+   TypeScript compiler — on a phone it could not run one — yet it must know
+   a script's inputs, answer and functions to check the automations that
+   use it. So a script is plain exported functions with their types
+   written (`export async function tidyUp(after: Duration): Promise<string>`),
+   and the hub reads those signatures with sucrase's own parser, the one
+   that compiles the script: how they are written, not what a checker
+   infers. One source; no compiler needed to read it (§5, §8.4).
+   (First built with builders, `step({...}, fn)`; replaced on 2026-10-09
+   as hard to read — see "The SDK as typed functions" under §12.)
 2. **Scripts are named through roles.** An automation names another
    automation it starts through a role (`charging: { automation:
    start-charging }`), filled by id in `automation_role`. A script is named
@@ -248,7 +250,7 @@ DELETE CASCADE`.
 - A script's page asks this table which automations use it.
 
 **`automation_memory`** — unchanged.
-- A script's own memory (declared in its `step({ memory })`) is kept under
+- A script's own memory (its step's `Kept<…>` parameter) is kept under
   `<role>.<name>`, so two automations sharing a script each remember their
   own.
 - The automation's own `memory:` names cannot contain a dot, so the two
@@ -269,7 +271,7 @@ its sub-entries (§10.4) live in the run's existing `steps` list.
 | Not stored | Why | Instead |
 | --- | --- | --- |
 | The compiled JavaScript | Derived from `source` by sucrase in milliseconds | Compiled at save and when the hub starts, kept in memory by the script catalogue |
-| The shape (inputs, answer, memory, functions) | Derived by running the module's top level | Read at save and at start (§8.4), kept in memory beside the compiled code |
+| The shape (inputs, answer, memory, functions) | Derived from its exported functions' signatures | Read at save and at start (§8.4), kept in memory beside the compiled code |
 | The generated types | Derived from the home, and the app's alone | Generated in the app as the editor opens (§11.1) |
 | Earlier sources | Strict version 1: no history of a row's past | The timeline says when and by whom it changed; the file kept beside the database is the copy |
 | A sandbox's heap | Lives for one run, or one evaluation | Memory a script keeps is `automation_memory`, declared and typed |
@@ -296,11 +298,11 @@ scripts:
   tidy-up:
     name: Tidy up
     source: |
-      import { step, t, home, log } from 'kraftverk';
+      import { log, type Duration } from 'kraftverk';
 
-      export const tidyUp = step({ inputs: { after: t.duration() } }, async ({ after }) => {
+      export async function tidyUp(after: Duration): Promise<void> {
         // …
-      });
+      }
 automations:
   evening-tidy:
     name: Evening tidy
@@ -350,7 +352,7 @@ automations:
 stateDiagram-v2
   [*] --> Written: the editor (types checked there)
   Written --> Compiled: scripts.create / update — sucrase
-  Compiled --> Described: top level run in the sandbox, nothing reachable
+  Compiled --> Described: signatures read; top level run in the sandbox, nothing reachable
   Described --> Kept: the row written; catalogue and bus told
   Kept --> Checked: every automation using it rechecked
   Checked --> Running: a run reaches "run script", or a condition calls a function
@@ -373,58 +375,63 @@ stateDiagram-v2
 ## 5. A script, as written
 
 ```ts
-import { step, fn, t, home, log } from 'kraftverk';
+import { devices, family, home, log, type Celsius, type Duration, type Kept, type Percent } from 'kraftverk';
 
-/** Turns off every lamp left on in an empty room, and says which. */
-export const tidyUp = step(
-  {
-    inputs: { after: t.duration({ title: 'Empty for at least', min: 60 }) },
-    answer: t.text(),
-    memory: { times: t.count() },
-  },
-  async ({ after }, { memory }) => {
-    const off: string[] = [];
-    for (const room of home.rooms) {
-      if (room.occupied !== false || room.emptyFor < after) continue;
-      for (const lamp of room.devices.with('switch')) {
-        if (!lamp.switch.on) continue;
-        await lamp.switch.set({ on: false }); // through the gateway, as the automation
-        off.push(lamp.name);
-      }
-    }
-    memory.times += 1;
-    log(off.length ? `Turned off ${off.join(', ')}` : 'Nothing was left on');
-    return off.join(', ');
-  }
-);
+interface Memory {
+  /** How often it has tidied */
+  times: number;
+}
+
+/** Turns the heater off once the house has been empty a while, and says so. */
+export async function tidyUp(
+  /** Empty for at least. @min 1 min @default 10 min */
+  after: Duration,
+  memory: Kept<Memory>,
+): Promise<string> {
+  if (home.occupied !== false || family.maria.isHome) return 'Someone is home';
+  await devices.garageHeater.turnOff(); // through the gateway, as the automation
+  memory.times += 1;
+  log(`Tidied ${memory.times} times`);
+  return `Off after ${after / 60} min`;
+}
 
 /** How warm it feels: pure, so a condition may call it on every reading. */
-export const feelsLike = fn({ args: [t.number({ unit: '°C' }), t.number({ unit: '%' })], returns: t.number({ unit: '°C' }) }, (temp, humidity) => temp - (100 - humidity) / 5);
+export function feelsLike(temp: Celsius, humidity: Percent): Celsius {
+  return temp - (100 - humidity) / 5;
+}
 ```
 
-The rules of a module:
+The rules of a module (`packages/script/src/signature.ts`):
 
 - **Imports:** only `kraftverk` and `kraftverk/api`. Any other import is a
   problem at save.
-- **Exports:**
-  - named `step(…)` and `fn(…)` values, each named as a role-local verb
-    (`tidyUp`, `feelsLike`), camelCase as recipe names are;
-  - nothing else: other exports are a problem, and a module that exports
-    neither is one too.
-- **`t`, the builders:**
-  - They write the same `ConfigField`s the language's `inputs:`,
-    `memory:` and `result:` already use (`device-sdk/src/schema.ts`):
-    - `t.number({ unit, min, max })`
-    - `t.duration()`, a number in seconds, as the language keeps durations
-    - `t.count()`, a whole number from 0
-    - `t.flag()`, a boolean
-    - `t.text()`
-    - `t.choice([...])`
-    - `t.time()`
-  - TypeScript infers each argument's type from them.
+- **Exports** are functions, each by its name, camelCase as recipe names
+  are (`tidyUp`, `feelsLike`):
+  - an `async function` is a **step**: given its inputs by name, it may read
+    the home, act and wait, and answers what its `Promise<…>` says, or
+    nothing;
+  - a plain `function` is a **function**: pure, its arguments in order, its
+    return type said;
+  - exported types and interfaces are the script's own; any other export
+    is a problem, and a module that exports no function is one too.
+- **Parameters** are typed in the language's own types, read as written —
+  the same `ConfigField`s the language's `inputs:`, `memory:` and
+  `result:` use (`device-sdk/src/schema.ts`):
+  - `number`, `string`, `boolean`;
+  - a choice of words, `'eco' | 'boost'`;
+  - `Duration`, in seconds, as the language keeps durations;
+  - a number in a unit: `Celsius`, `Percent`, `Watts` and the rest, or
+    `Quantity<'W'>`;
+  - `Instant`, a date and a time;
+  - the script's own `type` and `interface`, by name;
+  - a step's one `Kept<…>` parameter: what it remembers between runs, each
+    member starting as nothing, none, the first choice, or its `@default`.
+- **Doc comments** say the rest: a function's words; a parameter's title
+  and its limits, `@min`, `@max`, `@step`, `@default`, `@integer` — a
+  duration's in its own units, `@min 1 min`.
 - **The top level** runs once per sandbox. It may compute constants. It
-  cannot reach the home: `home` and the API refuse until a step or a
-  function is running.
+  cannot reach the home: the world and the API refuse until a step is
+  running.
 
 ---
 
@@ -447,13 +454,17 @@ first in every sandbox. It defines:
     `prototype`, and `live` not a call.
   - `message-port` and the script runner then share it: one way to call
     the API by path.
-- **`kraftverk`** — the home as objects, built on the first layer and the
-  synchronous reads below:
-  - `home.devices`, by key, each with its parts, readings by meaning,
-    commands by capability, and events;
-  - `home.rooms`, `home.homes`, `home.modes`, `home.people`;
-  - also `run`, `clock`, `sleep`, `log`, `notify`, `setMode`, `start`,
-    `step`, `fn`, `t`, and `KraftverkError`.
+- **`kraftverk`** — the family's world as objects, each by the name a
+  script writes it with (`packages/script/src/names.ts`, the same in the
+  types), built on the first layer and the synchronous reads below:
+  - `devices.garagePlug`: its parts, readings by key, commands by
+    capability, and `turnOn()` / `turnOff()` where it switches;
+  - `family.maria`: `isHome`, `isAt(place)`, `tell(...)`, as far as she
+    shares;
+  - `home` (the automation's) and `homes.cabin`: `rooms.kitchen`,
+    `occupied`, `presence` and `day`, `people`, `setMode(...)`;
+  - also `sleep`, `log`, `notify`, `setMode` and `KraftverkError`, and the
+    types a signature is written in.
 
 A `require` shim maps the two names. sucrase turns `import` into `require`,
 so no module loader is needed, on either engine.
@@ -1178,6 +1189,30 @@ What building it changed:
   indexed type lose their words on hover.
 - **Type problems are listed under the editor** beside the hub's, and Save
   is not held back by them: the hub reads a script whatever its types say.
+
+**The SDK as typed functions, 2026-10-09.** The builders read badly
+(`step({ inputs: { after: t.duration() } }, async ({ after }) => …)`), so a
+script is now plain exported functions, their types written (§5), and the
+family's world is there by name. What it changed:
+- **Signatures are read by sucrase's parser** (`signature.ts`), the one
+  that compiles the script, not by running builders: still no compiler in
+  the hub. Problems are placed at their line and column.
+- **The hub calls a step by its parameters' order** (`ReadScript.calls`),
+  passing its `Kept<…>` as the object it remembers in; what it remembers
+  starts as its declared defaults.
+- **The world by name:** `devices`, `family`, `home`, `homes` — named by
+  one rule (`names.ts`) in the types the hub makes and inside the
+  sandbox, read by `__read` (`people`, `homes`, `home`, `at`,
+  `occupied`, `mode`), listed by `hub/src/scripts/world.ts`.
+- **A step is run from the editor** (`scripts.run`): as written, as the
+  person, through the gate and the gateway, nothing kept. A command the
+  gateway does only with a yes comes back asked (`asked`), and is given by
+  running again with the gateway's token for that command alone.
+- **Formatted on keep** by TypeScript's own formatter, in the language
+  worker (Shift-Alt-F too); semicolons as written.
+- **The editor checks again when the types come**: CodeMirror's
+  `forceLinting` does nothing once a check has run, so a `needsRefresh`
+  effect does it.
 
 What browser first changes in the slices:
 - **The editor is a web component of its own**, `ScriptEditor.web.tsx`,

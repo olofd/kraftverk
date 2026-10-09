@@ -8,8 +8,8 @@ import { createScriptLanguage, type ScriptLanguage } from './index.ts';
 
 /*
   The editor's language service, as the editor asks it: a script checked
-  against the SDK and a home's devices — a mistake marked where it is, a
-  device's key completed, a command explained on hover. The library
+  against the SDK and a family's world — a mistake marked where it is, a
+  device's and a person's name completed, a command explained on hover. The library
   declarations read from TypeScript's own package, as the app's build copies
   them.
 */
@@ -21,6 +21,13 @@ beforeAll(async () => {
   language = createScriptLanguage(libraries);
   await language.types(
     typesOf({
+      people: [{ name: 'Maria' }, { name: 'Olof' }],
+      homes: [{ key: 'cabin', name: 'The cabin', rooms: [{ key: 'kitchen', name: 'Kitchen' }] }],
+      modes: [
+        { key: 'home', axis: 'presence', name: 'Home' },
+        { key: 'away', axis: 'presence', name: 'Away' },
+        { key: 'night', axis: 'day', name: 'Night' },
+      ],
       devices: [
         {
           key: 'desk-plug',
@@ -37,15 +44,22 @@ beforeAll(async () => {
   );
 });
 
-const GOOD = `import { step, t, home, log } from 'kraftverk';
+const GOOD = `import { devices, family, home, log, type Celsius, type Duration, type Kept, type Percent } from 'kraftverk';
 
-export const off = step({ inputs: { after: t.duration() }, answer: t.text() }, async ({ after }) => {
-  const plug = home.devices['desk-plug'];
+export async function off(after: Duration, memory: Kept<{ times: number }>): Promise<string> {
+  const plug = devices.deskPlug;
   const power: number | null = plug.reading('power');
   if (power !== null && power > 10) await plug.switch.set({ on: false });
+  if (!family.maria.isHome && home.rooms.kitchen.occupied === false) await plug.turnOff();
+  if (home.presence === 'away') await home.setMode('night');
+  memory.times += 1;
   log('after', after);
   return plug.name;
-});
+}
+
+export function feelsLike(temp: Celsius, humidity: Percent): Celsius {
+  return temp - (100 - humidity) / 5;
+}
 `;
 
 describe('the language service', () => {
@@ -54,20 +68,35 @@ describe('the language service', () => {
   });
 
   test('marks a device the home does not have, a command given the wrong argument, and a reading it does not report — where each is', async () => {
-    const missing = await language.problems(GOOD.replace("home.devices['desk-plug']", "home.devices['desk-plugg']"));
-    expect(missing.map((each) => [each.line, each.message])).toEqual([[4, expect.stringContaining('desk-plugg')]]);
+    const missing = await language.problems(GOOD.replace('devices.deskPlug', 'devices.deskPlugg'));
+    expect(missing.map((each) => [each.line, each.message])).toEqual([[4, expect.stringContaining('deskPlugg')]]);
+    const nobody = await language.problems(GOOD.replace('family.maria', 'family.mario'));
+    expect(nobody.map((each) => each.line)).toEqual([7]);
+    const noMode = await language.problems(GOOD.replace("setMode('night')", "setMode('nigth')"));
+    expect(noMode.map((each) => each.line)).toEqual([8]);
     const told = await language.problems(GOOD.replace('{ on: false }', '{ on: "no" }'));
     expect(told.map((each) => [each.line, each.message])).toEqual([[6, expect.stringContaining("Type 'string' is not assignable to type 'boolean'")]]);
     const unknown = await language.problems(GOOD.replace("plug.reading('power')", "plug.reading('voltage')"));
     expect(unknown.some((each) => each.line === 5 && each.message.includes('"voltage"'))).toBe(true);
   });
 
-  test('completes a device key, and a capability’s commands', async () => {
-    const at = GOOD.indexOf("'desk-plug'") + 1;
-    const keys = await language.complete(GOOD, at);
-    expect(keys?.options.map((each) => each.label)).toContain('desk-plug');
+  test('completes a device’s and a person’s name, and a capability’s commands', async () => {
+    const keys = await language.complete(GOOD, GOOD.indexOf('devices.deskPlug') + 'devices.'.length);
+    expect(keys?.options.map((each) => each.label)).toContain('deskPlug');
+    const people = await language.complete(GOOD, GOOD.indexOf('family.maria') + 'family.'.length);
+    expect(people?.options.map((each) => each.label)).toEqual(expect.arrayContaining(['maria', 'olof']));
     const dot = GOOD.indexOf('.switch.set') + '.switch.'.length;
     expect((await language.complete(GOOD, dot))?.options.map((each) => each.label)).toEqual(['set']);
+  });
+
+  test('formats as TypeScript does: changes in order, each against the text as it was — none when it is formatted already', async () => {
+    const messy = "export function half(x:number):number{\nreturn x/2\n}\n";
+    const edits = await language.format(messy);
+    let formatted = messy;
+    for (const edit of [...edits].reverse()) formatted = formatted.slice(0, edit.from) + edit.insert + formatted.slice(edit.to);
+    expect(formatted).toBe('export function half(x: number): number {\n  return x / 2\n}\n');
+    expect(await language.format(formatted)).toEqual([]);
+    expect(await language.format(GOOD)).toEqual([]);
   });
 
   test('explains a command on hover, in its capability’s words', async () => {

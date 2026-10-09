@@ -130,8 +130,10 @@ scripts:                          # the family's own, in TypeScript, by key (doc
   feels-like:
     name: Feels like
     source: |                     # as written: what it declares is read from it where it is imported
-      import { fn, t } from 'kraftverk';
-      export const feelsLike = fn({ args: [t.number({ unit: '°C' })], returns: t.number({ unit: '°C' }) }, (temp: number) => temp - 2);
+      import type { Celsius } from 'kraftverk';
+      export function feelsLike(temp: Celsius): Celsius {
+        return temp - 2;
+      }
 
 automations:
   start-charging-the-scooter:

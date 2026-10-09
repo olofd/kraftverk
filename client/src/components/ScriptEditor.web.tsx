@@ -3,8 +3,8 @@ import { autocompletion, closeBrackets, completionKeymap, type CompletionContext
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { javascript } from '@codemirror/lang-javascript';
 import { bracketMatching, indentOnInput, indentUnit } from '@codemirror/language';
-import { forceLinting, linter, lintGutter, type Diagnostic } from '@codemirror/lint';
-import { Compartment, EditorState } from '@codemirror/state';
+import { linter, lintGutter, type Diagnostic } from '@codemirror/lint';
+import { Compartment, EditorState, StateEffect } from '@codemirror/state';
 import { drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, hoverTooltip, keymap, lineNumbers, tooltips } from '@codemirror/view';
 import { useTheme, YStack } from 'tamagui';
 
@@ -16,6 +16,9 @@ import { diagnosticsOf, editableAs, lookOf } from './YamlEditor.web';
 
 /** How long typing rests before the language service is asked what is wrong. */
 const CHECK_AFTER_MS = 300;
+
+/** The script checked again though it has not changed: the home's types came, or the hub said something new of it. */
+const checkAgain = StateEffect.define<null>();
 
 /** The language service, in a worker of its own beside the app (scripts/build-home-worker.mjs): one per editor, let go of with it. */
 function openLanguage(): { language: ScriptLanguage; close: () => void } {
@@ -29,9 +32,10 @@ function openLanguage(): { language: ScriptLanguage; close: () => void } {
  * and TypeScript 6's language service in a worker — checking it against the
  * SDK and this home's types (`types`) as it is typed, completing, explaining
  * on hover. Its problems — the hub's, from reading it, and the types' —
- * marked where they are and listed under it.
+ * marked where they are and listed under it. Formatted by TypeScript too:
+ * on Shift-Alt-F, and by whoever keeps it (`formatter`), before it is kept.
  */
-export function ScriptEditor({ value, onChange, problems = [], label, minLines = 16, types = null }: ScriptEditorProps) {
+export function ScriptEditor({ value, onChange, problems = [], label, minLines = 16, types = null, formatter }: ScriptEditorProps) {
   const theme = useTheme();
   const host = useRef<HTMLDivElement | null>(null);
   const view = useRef<EditorView | null>(null);
@@ -73,7 +77,7 @@ export function ScriptEditor({ value, onChange, problems = [], label, minLines =
         const typed = found.map((each) => ({ from: Math.min(each.from, length), to: Math.min(Math.max(each.to, each.from), length), severity: 'error' as const, message: each.message, source: 'TypeScript' }));
         return [...typed, ...diagnosticsOf(editor.state, hubProblems.current)];
       },
-      { delay: CHECK_AFTER_MS }
+      { delay: CHECK_AFTER_MS, needsRefresh: (update) => update.transactions.some((transaction) => transaction.effects.some((effect) => effect.is(checkAgain))) }
     );
     /** What may be written here, by TypeScript: a device's key, a capability's commands, the SDK's names. */
     const complete = async (context: CompletionContext): Promise<CompletionResult | null> => {
@@ -100,6 +104,18 @@ export function ScriptEditor({ value, onChange, problems = [], label, minLines =
         },
       };
     });
+    /** The script formatted where it is: TypeScript's changes applied as one, the cursor kept where it was in the text. */
+    const format = async (): Promise<string> => {
+      const current = view.current;
+      if (!current) return value;
+      const source = current.state.doc.toString();
+      const edits = await language().format(source);
+      // Typed on since it was asked: those changes are for a text that is gone.
+      if (!edits.length || current.state.doc.toString() !== source) return current.state.doc.toString();
+      current.dispatch({ changes: edits, userEvent: 'format' });
+      return current.state.doc.toString();
+    };
+    if (formatter) formatter.current = format;
     const created = new EditorView({
       parent: host.current,
       state: EditorState.create({
@@ -122,7 +138,7 @@ export function ScriptEditor({ value, onChange, problems = [], label, minLines =
           hover,
           tooltips({ position: 'fixed', parent: document.body }),
           lintGutter(),
-          keymap.of([...defaultKeymap, ...historyKeymap, ...completionKeymap, indentWithTab]),
+          keymap.of([{ key: 'Shift-Alt-f', run: () => (void format(), true) }, ...defaultKeymap, ...historyKeymap, ...completionKeymap, indentWithTab]),
           EditorView.contentAttributes.of({ 'aria-label': label, spellcheck: 'false', autocapitalize: 'off', autocorrect: 'off' }),
           editable.of(editableAs(readOnly)),
           looks.of(look),
@@ -134,6 +150,7 @@ export function ScriptEditor({ value, onChange, problems = [], label, minLines =
     });
     view.current = created;
     return () => {
+      if (formatter) formatter.current = null;
       created.destroy();
       view.current = null;
       service.current?.close();
@@ -146,9 +163,7 @@ export function ScriptEditor({ value, onChange, problems = [], label, minLines =
     if (types === null) return;
     void language()
       .types(types)
-      .then(() => {
-        if (view.current) forceLinting(view.current);
-      })
+      .then(() => view.current?.dispatch({ effects: checkAgain.of(null) }))
       .catch(() => undefined);
   }, [types]);
 
@@ -169,7 +184,7 @@ export function ScriptEditor({ value, onChange, problems = [], label, minLines =
   // The hub's problems, marked where they are with TypeScript's, and unmarked when they are gone.
   const hubSaid = problems.map((each) => `${each.line}:${each.column}:${each.message}`).join('\n');
   useEffect(() => {
-    if (view.current) forceLinting(view.current);
+    view.current?.dispatch({ effects: checkAgain.of(null) });
   }, [hubSaid]);
 
   const shown = [...problems, ...typeProblems.filter((each) => !problems.some((one) => one.line === each.line && one.message === each.message))];

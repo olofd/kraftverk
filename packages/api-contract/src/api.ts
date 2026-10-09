@@ -15,7 +15,7 @@ import type { FoundFamily, InvitationInput, InvitationMade, InvitationView, Join
 import type { HomeInput, HomeView, ZoneInput, ZoneView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView, OccupancyView, ModeView, ModeInput, HomeModeView, ModeSet, ModeAxis } from './homes.ts';
 import type { MediaData, MediaView, NewMedia } from './media.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, FamilyView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
-import type { ScriptInput, ScriptView } from './scripts.ts';
+import type { ScriptInput, ScriptTried, ScriptTry, ScriptView } from './scripts.ts';
 import type { CheckOutcome, DraftView, FoundAt, FoundView, HeldSetupInput, KeptView, SaveInput, SightingView } from './setup.ts';
 
 /*
@@ -259,6 +259,11 @@ export interface KraftverkApi {
     remove(id: string): Promise<void>;
     /** A script read as the home's engine reads it, nothing kept: what it declares, or what is wrong with it, by line. */
     check(source: string): Promise<ScriptCheck>;
+    /**
+     * One of a script's steps tried now, as written — as the person asking, each call through the gate as
+     * theirs, each act through the gateway: what it did, its answer, what it would remember. Nothing is kept.
+     */
+    run(input: ScriptTry): Promise<ScriptTried>;
     /** The types a script is written against, for this home: the SDK and each device, by key — what the editor checks and completes with. */
     types(): Promise<string>;
   };

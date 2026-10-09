@@ -12,6 +12,8 @@ import type { ConfigField, ConfigSchema } from '@kraftverk/device-sdk';
 
 /** One of a script's steps: what it is given, what it answers, what it keeps between runs. */
 export type ScriptStepShape = {
+  /** What it does, in its doc comment's words; null when it has none. */
+  about: string | null;
   inputs: ConfigSchema;
   answer: ConfigField | null;
   memory: ConfigSchema;
@@ -19,6 +21,8 @@ export type ScriptStepShape = {
 
 /** One of a script's functions: pure, its arguments in order, and what it gives back. */
 export type ScriptFunctionShape = {
+  /** What it works out, in its doc comment's words; null when it has none. */
+  about: string | null;
   args: readonly ConfigField[];
   returns: ConfigField;
 };

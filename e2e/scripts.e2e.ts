@@ -9,7 +9,8 @@ import { answer, press, unique } from './helpers';
   with it, at its line; kept, found among the family's scripts, changed;
   and, with a server, in the configuration file. And run: a script an
   automation runs turns a simulated plug off, through the gateway, as the
-  automation — what it did said beneath its step.
+  automation — what it did said beneath its step; and a step tried from the
+  editor, as the person, the gateway's yes asked for and given.
 */
 
 const LABEL = 'The script';
@@ -22,13 +23,23 @@ async function write(page: Page, text: string) {
   await page.keyboard.insertText(text);
 }
 
-const SCRIPT = [
-  "import { step, fn, t } from 'kraftverk';",
-  '',
-  "export const warmUp = step({ inputs: { target: t.number({ unit: '°C', min: 5, max: 30 }) }, answer: t.flag() }, async () => true);",
-  'export const double = fn({ args: [t.number()], returns: t.number() }, (n: number) => n * 2);',
+const WARM_UP = [
+  '/** Warms a room up to a temperature. */',
+  'export async function warmUp(',
+  '  /** @min 5 @max 30 */',
+  '  target: Celsius,',
+  '): Promise<boolean> {',
+  '  return target > 0;',
+  '}',
   '',
 ].join('\n');
+
+const DOUBLE = ['export function double(n: number): number {', '  return n * 2;', '}', ''].join('\n');
+
+const SCRIPT = ["import type { Celsius } from 'kraftverk';", '', WARM_UP, DOUBLE].join('\n');
+
+/** A device's name as a script writes it: "Desk plug k2fa" is `deskPlugK2fa`. */
+const scriptName = (name: string) => name.split(/[^A-Za-z0-9]+/).map((word, at) => (at ? word.charAt(0).toUpperCase() + word.slice(1) : word.toLowerCase())).join('');
 
 /** A script written, read as it is typed, and kept under `name`: back on the page it is kept as. */
 async function writeAndKeep(page: Page, name: string) {
@@ -41,12 +52,13 @@ async function writeAndKeep(page: Page, name: string) {
 
   await write(page, SCRIPT);
   await expect(declared.getByLabel('Step Warm up').getByText('Answer — yes or no')).toBeVisible();
-  await expect(declared.getByLabel('Step Warm up').getByText('Target — °C, from 5, to 30')).toBeVisible();
+  await expect(declared.getByLabel('Step Warm up').getByText('Target — °C, from 5 °C, to 30 °C')).toBeVisible();
+  await expect(declared.getByLabel('Step Warm up').getByText('Warms a room up to a temperature.')).toBeVisible();
   await expect(declared.getByLabel('Function Double')).toBeVisible();
 
   // A mistake, at its line: what it declares waits until it reads again, and it cannot be kept.
   await write(page, `${SCRIPT}export const broken = ;\n`);
-  await expect(page.getByText('Line 5, column 23: Unexpected token')).toBeVisible();
+  await expect(page.getByText('Line 14, column 23: Unexpected token')).toBeVisible();
   await expect(declared).toBeHidden();
   await page.getByLabel('Its name').fill(name);
   await expect(page.getByRole('button', { name: 'Keep it' })).toBeDisabled();
@@ -64,7 +76,7 @@ async function changeIt(page: Page, name: string) {
   await expect(scripts.getByRole('link', { name }).getByText('1 step · 1 function')).toBeVisible();
   await scripts.getByRole('link', { name }).click();
   await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
-  await write(page, SCRIPT.replace('n * 2', 'n * 3').replace(/^export const warmUp.*\n/m, ''));
+  await write(page, DOUBLE.replace('n * 2', 'n * 3'));
   await expect(page.getByRole('region', { name: 'What it declares' }).getByLabel('Step Warm up')).toBeHidden();
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect(scripts.getByRole('link', { name }).getByText('0 steps · 1 function')).toBeVisible();
@@ -75,7 +87,7 @@ test('a script written, read as it is typed by the server, kept, changed — and
   await writeAndKeep(page, name);
   await changeIt(page, name);
   const file = await request.post('/api/config/export', { headers: { 'x-kraftverk-client': 'app' }, data: { secrets: 'none' } });
-  expect(((await file.json()) as { text: string }).text).toContain(`name: ${name}\n    source: |\n      import { step, fn, t } from 'kraftverk';`);
+  expect(((await file.json()) as { text: string }).text).toContain(`name: ${name}\n    source: |\n      export function double(n: number): number {\n        return n * 3;`);
 });
 
 test.describe('with no server', () => {
@@ -110,14 +122,12 @@ async function runIt(page: Page) {
   await page.goto('/scripts/new');
   await page.getByLabel('Its name').fill(name);
   await write(page, [
-    "import { step, home, log } from 'kraftverk';",
+    "import { devices, log } from 'kraftverk';",
     '',
-    'export const off = step({}, async () => {',
-    `  const plug = Object.values(home.devices).find((device) => device.name === '${plug}');`,
-    "  if (!plug) throw new Error('No such plug');",
-    '  await plug.switch.set({ on: false });',
+    'export async function off(): Promise<void> {',
+    `  await devices.${scriptName(plug)}.turnOff();`,
     "  log('Turned the plug off');",
-    '});',
+    '}',
     '',
   ].join('\n'));
   await expect(page.getByText('Ready', { exact: true })).toBeVisible();
@@ -151,18 +161,31 @@ test('a script run by an automation turns a plug off, through the gateway, as th
   await runIt(page);
 });
 
-test('the editor knows the home: a device’s key completes as it is typed, and a mistake of types is marked and said', async ({ page }) => {
+test('the editor knows the home: a device’s name completes as it is typed, a mistake of types is marked and said, and a step is run from it', async ({ page }) => {
   const plug = unique('Desk plug');
   await addPlug(page, plug);
   await page.goto('/scripts/new');
-  // TypeScript, in its worker: an input's type comes from what the step declares, and a mistake with it is said where it is.
-  await write(page, ["import { step, t } from 'kraftverk';", '', "export const go = step({ inputs: { level: t.number() } }, async ({ level }) => {", "  const said: string = level;", '});', ''].join('\n'));
-  await expect(page.getByText("Line 4, column 9: Type 'number' is not assignable to type 'string'.")).toBeVisible();
-  // And it offers this home's devices by key, asked for as the key is begun.
-  await write(page, ["import { step, home } from 'kraftverk';", '', 'export const off = step({}, async () => {', "  const plug = home.devices['"].join('\n'));
+  // TypeScript, in its worker: a parameter's type is what it is given, and a mistake with it is said where it is.
+  await write(page, ['export async function go(level: number): Promise<void> {', '  const said: string = level;', '}', ''].join('\n'));
+  await expect(page.getByText("Line 2, column 9: Type 'number' is not assignable to type 'string'.")).toBeVisible();
+  // And it offers this home's devices by name, asked for as the name is begun.
+  await write(page, ["import { devices } from 'kraftverk';", '', 'export async function off(): Promise<void> {', '  await devices.'].join('\n'));
   await page.keyboard.press('Control+Space');
   const completions = page.locator('.cm-tooltip-autocomplete');
-  await expect(completions.getByText(plug.toLowerCase().replace(/ /g, '-'), { exact: true })).toBeVisible();
+  await expect(completions.getByText(scriptName(plug), { exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  // Run from here, as written: through the gateway, which asks a yes first where the home counts its load as one to ask
+  // for (other tests change that line; the hub's own test holds the yes) — given when asked, it is off.
+  await write(page, ["import { devices } from 'kraftverk';", '', 'export async function off(): Promise<void> {', `  await devices.${scriptName(plug)}.turnOff();`, '}', ''].join('\n'));
+  const step = page.getByRole('region', { name: 'What it declares' }).getByLabel('Step Off');
+  await step.getByRole('button', { name: 'Run Off now' }).click();
+  const asked = step.getByText(/^It needs your yes/);
+  const done = step.getByText('Done', { exact: true });
+  await expect(asked.or(done)).toBeVisible();
+  if (await asked.isVisible()) await step.getByRole('button', { name: 'Yes — run it again' }).click();
+  await expect(done).toBeVisible();
+  await expect(step.getByText(`${plug}: switch.set on false`)).toBeVisible();
 });
 
 test.describe('run with no server', () => {

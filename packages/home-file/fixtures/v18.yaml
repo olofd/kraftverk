@@ -135,10 +135,12 @@ scripts:
   feels-like:
     name: Feels like
     source: |
-      import { fn, t } from 'kraftverk';
+      import type { Celsius, Percent } from 'kraftverk';
 
       /** How warm it feels, from the temperature and how humid it is. */
-      export const feelsLike = fn({ args: [t.number({ unit: '°C' }), t.number({ unit: '%' })], returns: t.number({ unit: '°C' }) }, (temp: number, humidity: number) => temp - (100 - humidity) / 5);
+      export function feelsLike(temp: Celsius, humidity: Percent): Celsius {
+        return temp - (100 - humidity) / 5;
+      }
 automations:
   start-charging:
     name: Start charging the scooter

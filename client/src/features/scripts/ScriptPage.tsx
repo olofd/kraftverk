@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import { Button, Input, Spinner, Text, XStack, YStack } from 'tamagui';
 
-import type { ConfigField, ConfigSchema } from '@kraftverk/device-sdk';
+import type { ConfigField, ConfigSchema, ConfigValues, Value } from '@kraftverk/device-sdk';
 import type { ScriptCheck, ScriptShape } from '@kraftverk/automation';
-import { describeError, PATHS, type ScriptView } from '@kraftverk/api-client';
-import { Card, haptic, Icon } from '@kraftverk/ui';
+import { describeError, PATHS, type ScriptTried, type ScriptView } from '@kraftverk/api-client';
+import { Card, haptic, Icon, SchemaForm } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { Loading } from '../../components/Loading';
@@ -15,28 +15,25 @@ import { useTone } from '../../components/tone';
 import { confirmAction } from '../../platform/confirm';
 import { useFamily } from '../../state/FamilyProvider';
 
-/** What a new script starts as: one step and one function, each declared as the SDK has them now. */
-const STARTER = `import { step, fn, t, log } from 'kraftverk';
+/** What a new script starts as: one step and one function, written as the SDK has them now. */
+const STARTER = `import { devices, family, home, log, type Celsius, type Duration, type Kept, type Percent } from 'kraftverk';
 
-/** Says how long a room has been empty, and remembers how often it was asked. */
-export const tidyUp = step(
-  {
-    inputs: { after: t.duration({ title: 'Empty for at least', min: 60 }) },
-    answer: t.text(),
-    memory: { times: t.count() },
-  },
-  async ({ after }, { memory }) => {
-    memory.times += 1;
-    log(\`Asked \${memory.times} times\`);
-    return \`Empty for \${after / 60} min\`;
-  },
-);
+/** Turns off what was left on, once the house has been empty a while. */
+export async function tidyUp(
+  /** Empty for at least. @min 1 min @default 10 min */
+  after: Duration,
+  memory: Kept<{ times: number }>,
+): Promise<string> {
+  memory.times += 1;
+  log(\`Tidied \${memory.times} times; anyone home: \${home.occupied}\`);
+  // Your devices, people and rooms are here by name: type "devices." and choose.
+  return \`Empty for \${after / 60} min\`;
+}
 
 /** How warm it feels, from the temperature and how humid it is. */
-export const feelsLike = fn(
-  { args: [t.number({ unit: '°C' }), t.number({ unit: '%' })], returns: t.number({ unit: '°C' }) },
-  (temp, humidity) => temp - (100 - humidity) / 5,
-);
+export function feelsLike(temp: Celsius, humidity: Percent): Celsius {
+  return temp - (100 - humidity) / 5;
+}
 `;
 
 /** How long typing rests before the script is read again. */
@@ -48,11 +45,18 @@ const wordsOf = (name: string): string => {
   return words.charAt(0).toUpperCase() + words.slice(1);
 };
 
+/** A number as a person reads it beside its unit: a length of time in the largest units that say it, "1 h 30 min". */
+const amount = (value: number, unit: string | undefined): string => {
+  if (unit !== 's') return `${value}${unit ? ` ${unit}` : ''}`;
+  const [hours, minutes, seconds] = [Math.floor(value / 3_600), Math.floor((value % 3_600) / 60), value % 60];
+  return [hours ? `${hours} h` : '', minutes ? `${minutes} min` : '', seconds || !value ? `${seconds} s` : ''].filter(Boolean).join(' ');
+};
+
 /** A field in words: its title, and what it holds. */
 const fieldWords = (field: ConfigField): string => {
   const kind =
     field.type === 'number'
-      ? [field.unit === 's' ? 'seconds' : field.unit, field.integer ? 'whole' : null, field.min !== undefined ? `from ${field.min}` : null, field.max !== undefined ? `to ${field.max}` : null].filter(Boolean).join(', ') || 'a number'
+      ? [field.unit === 's' ? 'a length of time' : field.unit, field.integer ? 'whole' : null, field.min !== undefined ? `from ${amount(field.min, field.unit)}` : null, field.max !== undefined ? `to ${amount(field.max, field.unit)}` : null, field.default !== undefined ? `at first ${amount(field.default, field.unit)}` : null].filter(Boolean).join(', ') || 'a number'
       : field.type === 'boolean'
         ? 'yes or no'
         : field.type === 'enum'
@@ -81,8 +85,103 @@ function Fields({ label, fields }: { label: string; fields: readonly ConfigField
   );
 }
 
-/** What a script declares, as a person reads it: its steps and its functions, each with what it takes and gives. */
-function Declared({ shape }: { shape: ScriptShape }) {
+/** What a value is, as a person reads it. */
+const valueWords = (value: Value | null): string => (value === null ? 'nothing' : typeof value === 'string' ? value : JSON.stringify(value));
+
+/**
+ * One of a script's steps, tried now as written: its inputs given, and run
+ * as the person — through the gateway, so what it does to a device is done.
+ * What it did, line by line; what it answered and would remember; and a
+ * yes asked for, given by running it again.
+ */
+function TryStep({ source, name, inputs, current }: { source: string; name: string; inputs: ConfigSchema; current: boolean }) {
+  const { api } = useFamily();
+  const tone = useTone();
+  const [values, setValues] = useState<ConfigValues>(() => Object.fromEntries(Object.entries(inputs.fields).map(([key, field]) => [key, field.default as ConfigValues[string]])));
+  const [busy, setBusy] = useState(false);
+  const [tried, setTried] = useState<ScriptTried | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const run = async (yes?: Record<string, string>) => {
+    haptic();
+    setBusy(true);
+    setError(null);
+    try {
+      setTried(await api.scripts.run({ source, step: name, inputs: Object.fromEntries(Object.keys(inputs.fields).map((key) => [key, (values[key] ?? null) as Value])), ...(yes ? { yes } : {}) }));
+    } catch (err) {
+      setTried(null);
+      setError(describeError(err) || 'It could not be run');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const OUTCOME_ICON = { done: 'check', refused: 'slash', failed: 'x-circle', unverified: 'help-circle' } as const;
+  return (
+    <YStack gap="$2" borderTopWidth={1} borderColor="$borderColor" paddingTop="$2.5" marginTop="$1">
+      {Object.keys(inputs.fields).length ? <SchemaForm schema={inputs} values={values} disabled={busy} onChange={(key, value) => setValues((before) => ({ ...before, [key]: value }))} /> : null}
+      <XStack alignItems="center" gap="$3">
+        <Button size="$3" icon={busy ? <Spinner size="small" /> : <Icon name="play" size={14} color={tone('$background')} />} backgroundColor="$accent" color="$background" disabled={busy || !current} opacity={busy || !current ? 0.5 : 1} onPress={() => void run()} aria-label={`Run ${wordsOf(name)} now`}>
+          Run it now
+        </Button>
+        <Text flex={1} fontSize={12} color="$muted" lineHeight={17}>
+          As you, as written — not kept. What it does to a device is done.
+        </Text>
+      </XStack>
+      <ErrorText>{error}</ErrorText>
+      {tried ? (
+        <YStack gap="$1.5" role="log" aria-label={`What ${wordsOf(name)} did`}>
+          {tried.lines.map((line, at) => (
+            <XStack key={at} gap="$2" alignItems="flex-start">
+              <YStack paddingTop={3}>
+                <Icon name={OUTCOME_ICON[line.outcome]} size={13} color={tone(line.outcome === 'done' ? '$success' : line.outcome === 'unverified' ? '$muted' : '$warning')} />
+              </YStack>
+              <Text flex={1} fontSize={13} color="$color" lineHeight={19}>
+                {line.what}
+                {line.detail ? <Text color="$muted">{` — ${line.detail}`}</Text> : null}
+              </Text>
+            </XStack>
+          ))}
+          {tried.fault ? (
+            <ErrorText>{tried.fault}</ErrorText>
+          ) : (
+            <Text fontSize={13} color="$success" fontWeight="600">
+              {tried.answer === null ? 'Done' : `It answered: ${valueWords(tried.answer)}`}
+            </Text>
+          )}
+          {Object.keys(tried.memory).length ? (
+            <Text fontSize={12} color="$muted">
+              {`It would remember: ${Object.entries(tried.memory).map(([key, value]) => `${key} ${valueWords(value)}`).join(', ')}`}
+            </Text>
+          ) : null}
+          {tried.asked.length ? (
+            <YStack gap="$2" padding="$2.5" borderRadius="$3" borderWidth={1} borderColor="$warning">
+              {tried.asked.map((need) => (
+                <Text key={need.key} fontSize={13} color="$color" lineHeight={19}>
+                  {`It needs your yes: ${need.what}`}
+                </Text>
+              ))}
+              <Button size="$3" alignSelf="flex-start" chromeless borderWidth={1} borderColor="$warning" color="$warning" disabled={busy} onPress={() => void run(Object.fromEntries(tried.asked.map((need) => [need.key, need.token])))}>
+                Yes — run it again
+              </Button>
+            </YStack>
+          ) : null}
+        </YStack>
+      ) : null}
+    </YStack>
+  );
+}
+
+/** A doc comment's words, under a step's or function's name. */
+function About({ text }: { text: string | null }) {
+  if (!text) return null;
+  return (
+    <Text fontSize={13} color="$muted" lineHeight={19}>
+      {text}
+    </Text>
+  );
+}
+
+/** What a script declares, as a person reads it: its steps and its functions, each with what it takes and gives — and each step tried. */
+function Declared({ shape, source, current }: { shape: ScriptShape; source: string; current: boolean }) {
   const steps = Object.entries(shape.steps);
   const functions = Object.entries(shape.functions);
   return (
@@ -100,9 +199,11 @@ function Declared({ shape }: { shape: ScriptShape }) {
               {wordsOf(name)}
             </Text>
           </XStack>
+          <About text={step.about} />
           <Fields label="It takes" fields={fieldsOf(step.inputs)} />
           <Fields label="It answers" fields={step.answer ? [step.answer] : []} />
           <Fields label="It remembers" fields={fieldsOf(step.memory)} />
+          <TryStep key={name} source={source} name={name} inputs={step.inputs} current={current} />
         </Card>
       ))}
       {functions.map(([name, fn]) => (
@@ -115,6 +216,7 @@ function Declared({ shape }: { shape: ScriptShape }) {
               {wordsOf(name)}
             </Text>
           </XStack>
+          <About text={fn.about} />
           <Fields label="It takes, in order" fields={fn.args} />
           <Fields label="It gives" fields={[fn.returns]} />
         </Card>
@@ -165,27 +267,32 @@ function ScriptForm({ script }: { script: ScriptView | null }) {
   const { check, current, error } = useRead(source);
   // The home's types, for the editor's checking and completion: asked once, as the page opens.
   const [types, setTypes] = useState<string | null>(null);
+  const [typesProblem, setTypesProblem] = useState<string | null>(null);
   useEffect(() => {
     api.scripts
       .types()
-      .then(setTypes)
-      .catch(() => setTypes(null));
+      .then((found) => (setTypes(found), setTypesProblem(null)))
+      .catch((err: unknown) => setTypesProblem(`Your home's types could not be read, so the editor checks without them: ${describeError(err) || 'it did not say why'}`));
   }, [api]);
 
   const changed = script === null || name.trim() !== script.name || source !== script.source;
   const problems = check?.problems.length ?? 0;
   const ready = Boolean(name.trim()) && current && problems === 0 && changed;
 
+  /** The editor's formatter, while it is open: the script formatted before it is kept. */
+  const formatter = useRef<(() => Promise<string>) | null>(null);
   const save = async () => {
     haptic();
     setBusy(true);
     setProblem(null);
     try {
+      // Formatted as TypeScript formats it, first; as written, where the editor has no formatter.
+      const kept = (await formatter.current?.().catch(() => null)) ?? source;
       if (script) {
-        await api.scripts.update(script.id, { name: name.trim(), source });
+        await api.scripts.update(script.id, { name: name.trim(), source: kept });
         router.replace(PATHS.automations.list);
       } else {
-        const made = await api.scripts.create({ name: name.trim(), source });
+        const made = await api.scripts.create({ name: name.trim(), source: kept });
         router.replace(PATHS.scripts.one(made.id));
       }
     } catch (err) {
@@ -233,7 +340,7 @@ function ScriptForm({ script }: { script: ScriptView | null }) {
     <Screen back="Automations" backTo={PATHS.automations.list} title={script ? script.name : 'New script'} subtitle={script ? `${script.key} · written in TypeScript` : 'Written in TypeScript'} footer={footer}>
       <YStack gap="$4">
         <Text fontSize={14} color="$muted" lineHeight={20}>
-          A script is what an automation does, or a value it works out. What it declares is read as you write, by the same engine that runs it. Once it is kept, an automation runs its steps and uses its functions.
+          A script is what an automation does, or a value it works out: an async function is a step, a plain function a value for a condition. Your devices, people, homes and rooms are there by name. What it declares is read as you write, and a step can be run from here as it is.
         </Text>
         <YStack gap="$1.5">
           <Text fontSize={13} color="$muted">
@@ -241,9 +348,10 @@ function ScriptForm({ script }: { script: ScriptView | null }) {
           </Text>
           <Input aria-label="Its name" placeholder="Tidy up" size="$4" maxLength={60} value={name} onChangeText={setName} />
         </YStack>
-        <ScriptEditor value={source} onChange={setSource} problems={check?.problems ?? []} label="The script" types={types} />
+        <ScriptEditor value={source} onChange={setSource} problems={check?.problems ?? []} label="The script" types={types} formatter={formatter} />
         <ErrorText>{error}</ErrorText>
-        {check?.shape ? <Declared shape={check.shape} /> : null}
+        <ErrorText>{typesProblem}</ErrorText>
+        {check?.shape ? <Declared shape={check.shape} source={source} current={current} /> : null}
       </YStack>
     </Screen>
   );

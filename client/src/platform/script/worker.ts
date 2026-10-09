@@ -3,8 +3,8 @@ import { createScriptLanguage, type ScriptLanguage } from '@kraftverk/script-lan
 
 /*
   The script editor's language service, in a worker of its own (docs/PLAN-
-  SCRIPTS.md §11.2): TypeScript 6 checking, completing and explaining a
-  script as it is typed, off the page's thread. Bundled on its own beside
+  SCRIPTS.md §11.2): TypeScript 6 checking, completing, explaining and
+  formatting a script as it is typed, off the page's thread. Bundled on its own beside
   the app (scripts/build-home-worker.mjs), with the language's own
   declarations beside it in lib.json — read from this app's origin, never
   fetched from anywhere else. Served to the editor over a message port, as
@@ -23,6 +23,7 @@ const language: ScriptLanguage = {
   problems: async (source) => (await ready).problems(source),
   complete: async (source, at) => (await ready).complete(source, at),
   hover: async (source, at) => (await ready).hover(source, at),
+  format: async (source) => (await ready).format(source),
 };
 
 serveApi(language, scope, 'language');

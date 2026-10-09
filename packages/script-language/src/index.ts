@@ -7,12 +7,16 @@ import ts from 'typescript';
   kept in memory: the script being written, the types it is written against
   (`@kraftverk/script`'s `typesOf`: the SDK and the home), and the
   language's own declarations, ES2022 and no DOM, as a script has none. It
-  says what is wrong as it is typed, completes, and explains on hover.
+  says what is wrong as it is typed, completes, explains on hover, and
+  formats — TypeScript's own formatter, nothing more to load.
 
   Where the editor is, never the hub: a browser's worker (the app's
   `public/script/language.js`), served there over a message port. Nothing is
   fetched from anywhere: the library declarations are given it.
 */
+
+/** One change formatting makes: the text from one offset to another replaced, as the editor applies it. */
+export type LanguageEdit = { from: number; to: number; insert: string };
 
 /** What is wrong, where — by offset into the script — as the editor marks it. */
 export type LanguageProblem = { from: number; to: number; message: string; line: number; column: number };
@@ -28,6 +32,8 @@ export interface ScriptLanguage {
   complete(source: string, at: number): Promise<{ from: number; options: LanguageCompletion[] } | null>;
   /** What the name at an offset is, and its words. */
   hover(source: string, at: number): Promise<{ from: number; to: number; text: string } | null>;
+  /** It formatted, as TypeScript formats: each change, in order through the script — none when it is formatted already. */
+  format(source: string): Promise<LanguageEdit[]>;
 }
 
 const SCRIPT = '/script.ts';
@@ -45,6 +51,29 @@ const OPTIONS: ts.CompilerOptions = {
   skipLibCheck: true,
   allowJs: false,
   isolatedModules: true,
+};
+
+/** How a script is formatted: two spaces, spaces around operators and inside braces — as kraftverk's own code is. */
+const FORMAT: ts.FormatCodeSettings = {
+  indentSize: 2,
+  tabSize: 2,
+  convertTabsToSpaces: true,
+  newLineCharacter: '\n',
+  indentStyle: ts.IndentStyle.Smart,
+  // As written: inserting them puts one in a type on one line too, `{ times: number; }`.
+  semicolons: ts.SemicolonPreference.Ignore,
+  insertSpaceAfterCommaDelimiter: true,
+  insertSpaceAfterSemicolonInForStatements: true,
+  insertSpaceBeforeAndAfterBinaryOperators: true,
+  insertSpaceAfterKeywordsInControlFlowStatements: true,
+  insertSpaceAfterFunctionKeywordForAnonymousFunctions: true,
+  insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces: true,
+  insertSpaceAfterOpeningAndBeforeClosingTemplateStringBraces: false,
+  insertSpaceAfterOpeningAndBeforeClosingNonemptyParenthesis: false,
+  insertSpaceAfterOpeningAndBeforeClosingNonemptyBrackets: false,
+  insertSpaceAfterTypeAssertion: false,
+  placeOpenBraceOnNewLineForFunctions: false,
+  placeOpenBraceOnNewLineForControlBlocks: false,
 };
 
 /** A word's start: where a completion of it begins. */
@@ -90,6 +119,12 @@ export function createScriptLanguage(libraries: Readonly<Record<string, string>>
       if (!info) return null;
       const from = info.optionalReplacementSpan?.start ?? wordStart(source, at);
       return { from, options: info.entries.slice(0, 200).map((entry: ts.CompletionEntry) => ({ label: entry.name, kind: entry.kind, detail: entry.kindModifiers || null })) };
+    },
+
+    async format(source) {
+      now(source);
+      // TypeScript gives its changes in order through the text, each against the text as it was: the editor applies them so.
+      return env.languageService.getFormattingEditsForDocument(SCRIPT, FORMAT).map((edit: ts.TextChange) => ({ from: edit.span.start, to: edit.span.start + edit.span.length, insert: edit.newText }));
     },
 
     async hover(source, at) {

@@ -33,6 +33,11 @@ export function scriptRoutes(deps: AppDeps): Hono {
     return c.json(await familyFor(deps, c).scripts.check(input.source));
   });
 
+  api.post('/scripts/run', async (c) => {
+    const input = await body(c, z.object({ source: SOURCE, step: z.string().min(1).max(80), inputs: z.record(z.string(), z.union([z.number(), z.string(), z.boolean(), z.null()])), yes: z.record(z.string(), z.string()).optional() }).strict());
+    return c.json(await familyFor(deps, c).scripts.run(input));
+  });
+
   api.get('/scripts/types', async (c) => c.json({ types: await familyFor(deps, c).scripts.types() }));
 
   api.get('/scripts/:id', async (c) => c.json(await familyFor(deps, c).scripts.get(c.req.param('id'))));

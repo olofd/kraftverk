@@ -18,20 +18,31 @@ sandbox is reached through. No engine of its own: the place gives one.
     what it imports (the SDK, and nothing else), and its shape. The shape
     — its steps with their inputs, answer and memory, and its functions
     with their arguments and result — comes back in the language's own
-    fields (`ScriptShape`, `@kraftverk/automation`). It is read by running
-    the script's top level once, in a sandbox that reaches nothing.
+    fields (`ScriptShape`, `@kraftverk/automation`). It is read from the
+    exported functions' signatures as written (`signature.ts`, with
+    sucrase's parser): an `async function` a step, a plain `function` a
+    function, each parameter in the language's types, its doc comment its
+    title and limits. Then the top level runs once, in a sandbox that
+    reaches nothing, so what fails as it loads is said at once.
+  - **Names.** `scriptNames` is what a script calls a person, a home, a
+    room or a device — `family.maria`, `devices.garagePlug` — one rule
+    for the types and the sandbox.
   - **The guest SDK.** It lives in `src/guest/`, bundled into one string,
     `src/generated/guest.ts`, by `npm run gen:script-guest`; the
-    architecture check keeps it current. It holds `step`, `fn`, `t` and
-    `log`, the `require` a script is given, and the entries the host calls.
+    architecture check keeps it current. It holds the family's world as
+    objects (`devices`, `family`, `home`, `homes`), `log`, `sleep`,
+    `notify` and `setMode`, the `require` a script is given, and the
+    entries the host calls.
   - **The port.** `ScriptEngine` opens a `Sandbox`: one heap, run one
     slice at a time on the caller's thread. Text is all that crosses, both
     ways. A `ScriptFault` says why a script stopped: what it threw, its
     time, its memory, its stack, a stop, or its syntax.
   - **The types.** `typesOf(home)` writes the `kraftverk.d.ts` a script is
-    checked against in the editor: the SDK's own declarations, and each
-    device of one home by key — its readings typed, and each part's
-    capabilities with their commands and arguments, one interface each.
+    checked against in the editor: the SDK's own declarations — the types
+    a signature is written in, `Duration`, `Celsius`, `Kept<…>` — and the
+    family's people, homes, rooms, modes and devices by name, a device's
+    readings typed, and each part's capabilities with their commands and
+    arguments, one interface each.
   - **The contract.** `@kraftverk/script/conformance` is what every engine
     does alike: the WebAssembly engine runs it in `bun test`, and the
     phone's engine will run it on the phone.

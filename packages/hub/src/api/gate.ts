@@ -114,6 +114,7 @@ export const GATES = {
   'scripts.remove': noScript('act', 'remove a script'),
   'scripts.check': read,
   'scripts.types': read,
+  'scripts.run': noScript('act', 'run a script'),
   'configuration.vocabulary': read,
   'configuration.schema': read,
   'configuration.export': noScript('read', 'export the family'),

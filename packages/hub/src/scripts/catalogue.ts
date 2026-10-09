@@ -27,7 +27,7 @@ export class ScriptCatalogue {
 
   /** A source as this place's engine reads it: what it declares, or its problems. Nothing kept. */
   read(source: string): ReadScript {
-    return this.engine ? readScript(source, this.engine) : { compiled: null, shape: null, problems: [NO_ENGINE] };
+    return this.engine ? readScript(source, this.engine) : { compiled: null, shape: null, calls: {}, problems: [NO_ENGINE] };
   }
 
   /** What a kept script reads as now: read again only when its source has changed since. */

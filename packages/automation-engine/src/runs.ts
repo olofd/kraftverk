@@ -881,7 +881,10 @@ export class Runs {
     }
     // What it remembers is its own, beside the automation's: under the role's name.
     const prefix = `${script.role}.`;
-    const memory = Object.fromEntries(Object.entries(this.deps.store.memory(here.automation.id)).flatMap(([key, value]) => (key.startsWith(prefix) ? [[key.slice(prefix.length), value]] : [])));
+    const kept = Object.fromEntries(Object.entries(this.deps.store.memory(here.automation.id)).flatMap(([key, value]) => (key.startsWith(prefix) ? [[key.slice(prefix.length), value]] : [])));
+    // Before it has kept anything, what it remembers is what it declares it starts as.
+    const starts = Object.fromEntries(Object.entries(declared?.memory.fields ?? {}).flatMap(([key, field]) => (field.default === undefined ? [] : [[key, field.default as Value]])));
+    const memory: Record<string, Value> = { ...starts, ...kept };
     const seconds = SEQUENCE_LIMITS.waitSeconds;
     const entry = this.#add(live, { kind: 'script', depth, within, what, outcome: 'waiting', detail: 'Running', until: this.#after(seconds) });
     const stop = new AbortController();

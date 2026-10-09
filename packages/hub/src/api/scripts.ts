@@ -1,10 +1,11 @@
-import { ApiError, type Caller, type KraftverkApi, type ScriptView } from '@kraftverk/api-contract';
+import { ApiError, type Caller, type KraftverkApi, type ScriptTried, type ScriptView } from '@kraftverk/api-contract';
 import type { ScriptProblem } from '@kraftverk/automation';
-import { capabilitiesOf, partsOf } from '@kraftverk/device-sdk';
 import { typesOf } from '@kraftverk/script';
 import type { ScriptRecord } from '@kraftverk/store';
 
 import type { Hub } from '../node/hub.ts';
+import { scriptHome } from '../scripts/world.ts';
+import { runScriptStep, type Said } from '../scripts/runner.ts';
 import { actorOf } from './caller.ts';
 import { checkKey, scopeOf } from './scope.ts';
 
@@ -12,14 +13,18 @@ import { checkKey, scopeOf } from './scope.ts';
   The family's scripts in TypeScript, as a family answers them
   (docs/PLAN-SCRIPTS.md): each by its key, its source as written, and what
   this place's engine reads from it. A script is kept only when it reads
-  without a problem, and every change is on the timeline. Nothing runs one
-  yet: an automation uses one from the script step on (B3).
+  without a problem, and every change is on the timeline. An automation runs
+  one from its script step; a person tries one of its steps from the editor
+  (`run`), as themselves.
 */
 
 /** A problem as a refusal says it: at its line and column, when it has them. */
 const problemText = (problem: ScriptProblem): string => (problem.line ? `Line ${problem.line}${problem.column ? `, column ${problem.column}` : ''}: ${problem.message}` : problem.message);
 
 const NAME_MOST = 60;
+
+/** The longest a step tried from the editor may take, waits and all. */
+const TRY_SECONDS = 60;
 
 export function scriptsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'scripts'> {
   const { record } = scopeOf(hub, caller);
@@ -84,21 +89,35 @@ export function scriptsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'script
       },
 
       async types() {
-        // Each device the home has now, by key: its parts with what each can be told, and what it reports — never where it is.
-        const devices = hub.catalog.list().flatMap((record) => {
-          if (record.removedAt) return [];
-          const description = hub.sessions.description(record);
-          return [
-            {
-              key: record.key,
-              name: record.name,
-              type: record.typeId,
-              parts: partsOf(description, record.name).map((part) => ({ id: part.id, label: part.label, capabilities: capabilitiesOf(description, part.id) })),
-              readings: description.attributes.filter((attribute) => attribute.quantity !== 'position').map((attribute) => ({ key: attribute.key, label: attribute.label, value: attribute.value })),
-            },
-          ];
+        return typesOf(scriptHome(hub));
+      },
+
+      async run(input) {
+        if (!scripts.engine) throw new ApiError('unavailable', 'Scripts cannot run here: this place has no engine for them');
+        const read = scripts.read(input.source);
+        if (!read.compiled || !read.shape) throw new ApiError('invalid', 'It does not read yet', { problems: read.problems.map(problemText) });
+        const declared = read.shape.steps[input.step];
+        if (!declared) throw new ApiError('not-found', `It has no step "${input.step}"`);
+        // What it remembers, as it starts: nothing kept, so each try begins afresh.
+        const memory = Object.fromEntries(Object.entries(declared.memory.fields).flatMap(([key, field]) => (field.default === undefined ? [] : [[key, field.default]])));
+        const lines: Said[] = [];
+        const asked: ScriptTried['asked'] = [];
+        const done = await runScriptStep(hub, {
+          script: { name: 'The script', compiled: read.compiled, shape: read.shape, calls: read.calls },
+          step: input.step,
+          inputs: input.inputs,
+          memory,
+          caller,
+          actor: actorOf(caller),
+          homeId: null,
+          cause: [],
+          deadline: hub.clock.now() + TRY_SECONDS * 1000,
+          signal: new AbortController().signal,
+          say: (line) => void lines.push(line),
+          yes: input.yes ?? {},
+          asked: (need) => void asked.push(need),
         });
-        return typesOf({ devices });
+        return 'fault' in done ? { lines, answer: null, memory, fault: done.fault, asked } : { lines, answer: done.answer, memory: done.memory, fault: null, asked };
       },
 
       async check(source) {
