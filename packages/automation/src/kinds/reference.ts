@@ -57,6 +57,8 @@ function holds(field: FieldSpec, fields: readonly FieldSpec[]): string {
       return 'a name of its own, unique in the automation: letters and digits, from a lowercase letter';
     case 'memory':
       return 'one of what it remembers, by its name: under `memory`';
+    case 'variable':
+      return 'one of the home’s variables, by its key: under `variables` of its home';
     case 'text':
       return 'words of your own, said as written';
     case 'flag':

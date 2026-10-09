@@ -264,6 +264,12 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
         return `it is not so that ${text((expr as ExprOf<'not'>).not)}`;
       case 'memory':
         return memoryWords(rule, (expr as ExprOf<'memory'>).memory);
+      case 'variable': {
+        // By its title, as its home says it: "the home's guests staying".
+        const { key, at } = (expr as ExprOf<'variable'>).variable;
+        const title = vocabulary?.variables?.(at)?.find((each) => each.key === key)?.field.title ?? key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
+        return `${at === OWN_HOME ? 'the home' : name(at)}’s ${title.charAt(0).toLowerCase()}${title.slice(1)}`;
+      }
       case 'input':
         // By its name, a noun — "the level it was given" — not its title, which may be a phrase ("Charge to").
         return `the ${(expr as ExprOf<'input'>).input.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').toLowerCase()} it was given`;
@@ -320,6 +326,7 @@ export function describeTriggers(rule: Rule, params: Readonly<Record<string, Val
       return Boolean(spec && (isPeopleRole(spec) || isGroupRole(spec)));
     },
     mode: (key) => modeWords(key, vocabulary),
+    variable: (key, at) => text({ variable: { key, at: at ?? OWN_HOME } }),
     event: (role, event) => eventWords(rule, role, event),
   };
   return rule.when.map((trigger) => {
@@ -417,6 +424,7 @@ function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (rol
     memory: (key) => memoryWords(rule, key),
     event: (role, event) => eventWords(rule, role, event),
     mode: (key) => modeWords(key, vocabulary),
+    variable: (key, at) => text({ variable: { key, at: at ?? OWN_HOME } }),
     // Each value in braces said in words: "{Garage station’s charge}".
     message: (words) => sayMessage(words, (expr) => `{${text(expr)}}`),
   };

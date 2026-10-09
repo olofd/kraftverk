@@ -1,4 +1,4 @@
-import { SCRIPT_LIMITS, stepJsonSchema, triggerJsonSchema, WHILE_RUNNING } from '@kraftverk/automation';
+import { SCRIPT_LIMITS, stepJsonSchema, triggerJsonSchema, VARIABLE_KEY, VARIABLE_KIND_WORDS, VARIABLE_KINDS, WHILE_RUNNING } from '@kraftverk/automation';
 import type { ConfigField, ConfigSchema } from '@kraftverk/device-sdk';
 
 import { BUILT_IN_MODES, KEY, MODE_KEY, unitsOfQuantity, UNIT_LIST } from '@kraftverk/device-sdk';
@@ -527,6 +527,32 @@ export function configJsonSchema(vocabulary: Vocabulary): Schema {
                   name: { type: 'string', minLength: 1, maxLength: NAME_MOST },
                   shape: { type: 'array', items: POINT, minItems: 2, maxItems: POINTS_MOST, description: 'Where in the wall it is: a line in its from space’s frame.' },
                 },
+              },
+            },
+            variables: {
+              type: 'object',
+              propertyNames: { pattern: VARIABLE_KEY.source },
+              description: 'Its own values, by key in camelCase — guests staying, the dryer’s runs, when to wake — that its automations read as home.var.key and set. What each holds now is the home’s, not the file’s.',
+              additionalProperties: {
+                oneOf: [
+                  { enum: [...VARIABLE_KINDS], description: 'Its kind alone: its title made from its key.' },
+                  {
+                    type: 'object',
+                    required: ['kind'],
+                    additionalProperties: false,
+                    properties: {
+                      kind: { enum: [...VARIABLE_KINDS], description: VARIABLE_KINDS.map((kind) => `${kind}: ${VARIABLE_KIND_WORDS[kind].says}`).join(' ') },
+                      title: { type: 'string', minLength: 1, maxLength: 60 },
+                      description: { type: 'string', maxLength: 300 },
+                      starts: { type: ['boolean', 'number', 'string'], description: 'What it holds before anyone sets it: true, "21 °C", "06:45", one of its options.' },
+                      unit: { type: 'string', description: 'A number’s unit, when none of its numbers says it: °C, kWh, %.' },
+                      min: { type: ['number', 'string'], description: 'A number’s or a counter’s least: 16 °C, 0.' },
+                      max: { type: ['number', 'string'], description: 'A number’s or a counter’s most.' },
+                      step: { type: ['number', 'string'], description: 'A number’s step: 0.5 °C.' },
+                      options: { type: 'object', minProperties: 1, additionalProperties: { type: 'string' }, description: 'A choice’s options, each by its value with its words: { washing: Washing, done: Done }.' },
+                    },
+                  },
+                ],
               },
             },
           },

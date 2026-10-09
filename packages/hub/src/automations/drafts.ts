@@ -22,6 +22,7 @@ import {
   isScriptRole,
   problemArea,
   problemPlace,
+  OWN_HOME,
   SEQUENCE_LIMITS,
   takesSteps,
   withSettings,
@@ -136,22 +137,33 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
       })
     );
 
-  /** What the words need: the installed functions, and each setting a step changes as its device names it. */
-  const vocabularyOf = (roles: Record<string, RoleBinding>): RuleVocabulary => ({
+  /**
+   * The variables of a home a rule names: its own (`homeId`, or the family's first), or the one a role a place fills is at —
+   * what `home.var.x` is checked against, and said with. Null: no such home, and it is not checked here.
+   */
+  const variablesOf = (homeId: string | null, fills: Readonly<Record<string, WorldFill>>) => (at: string) => {
+    const fill = fills[at];
+    const home = at === OWN_HOME ? world.home(homeId) : fill && 'place' in fill ? world.homeOf({ id: fill.place, kind: fill.kind }) : null;
+    return home ? world.variables(home) : null;
+  };
+
+  /** What the words need: the installed functions, each setting a step changes as its device names it, and its home's variables. */
+  const vocabularyOf = (fills: RoleFills, homeId: string | null): RuleVocabulary => ({
     fn: (id) => library.fn(id),
     modes: () => world.modes(),
+    variables: variablesOf(homeId, fills.world ?? {}),
     attribute: (role, target) => {
-      const binding = roles[role];
+      const binding = fills.roles[role];
       const record = binding ? catalog.get(binding.device) : null;
       return record && binding ? writtenAttribute(sessions.description(record), binding.part, target) : null;
     },
   });
 
   /** How a rule reads with what fills its roles. */
-  const said = (rule: Rule, fills: RoleFills) => {
+  const said = (rule: Rule, fills: RoleFills, homeId: string | null) => {
     const names = namesOf(rule, fills);
     const name = (role: string) => names[role] ?? (role ? role : 'a part not chosen yet');
-    const vocabulary = vocabularyOf(fills.roles);
+    const vocabulary = vocabularyOf(fills, homeId);
     return {
       names,
       sentence: describeRule(rule, {}, name, vocabulary),
@@ -183,7 +195,7 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
       ...shown,
       madeFrom: madeFrom ? { id: madeFrom, label: library.recipe(madeFrom)?.label ?? madeFrom } : null,
       sharedWith: sharedWith(automation),
-      ...said(automation.rule, automation),
+      ...said(automation.rule, automation, automation.homeId),
       now: engine.judge(automation),
       nextLookAt: engine.nextLookAt(automation),
       problems: engine.roleProblems(automation),
@@ -238,7 +250,7 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
         const script = id ? scripts.store.get(id) : null;
         return script ? scripts.readKept(script).shape : null;
       };
-      language = checkRule(rule, { fn: (id) => library.fn(id), modes: () => world.modes(), script: declared }).map((problem) => ({ text: problemPlace(problem, rule), area: problemArea(problem) }));
+      language = checkRule(rule, { fn: (id) => library.fn(id), modes: () => world.modes(), script: declared, variables: variablesOf(draft.homeId ?? null, draft.world ?? {}) }).map((problem) => ({ text: problemPlace(problem, rule), area: problemArea(problem) }));
     } catch {
       return notARule();
     }
@@ -337,7 +349,7 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
     const found = { problems: result.problems, areas: result.areas };
     if (result.problems[0] === NOT_A_RULE) return { ...found, ...unsaid };
     try {
-      return { ...found, ...said(draft.rule, result) };
+      return { ...found, ...said(draft.rule, result, draft.homeId ?? null) };
     } catch {
       // A rule the checker has problems with may not read: its problems are what to show.
       return { ...found, ...unsaid };

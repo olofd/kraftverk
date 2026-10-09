@@ -329,9 +329,11 @@ export function parseExpr(text: string, options: { scripts?: ReadonlySet<string>
       }
       case OWN_HOME: {
         // What is so of the automation's own home: "home.people", "home.presence".
-        expect('.', '"." and what of it: home.people, home.occupied, home.presence, home.day');
+        expect('.', '"." and what of it: home.people, home.occupied, home.presence, home.day, home.var.guests');
         const fact = next();
-        if (fact.kind !== 'name' || !NAME.test(fact.value)) throw new Failure('Expected what of the home: people, occupied, presence or day', fact.at);
+        if (fact.kind !== 'name' || !NAME.test(fact.value)) throw new Failure('Expected what of the home: people, occupied, presence, day, or var and a variable', fact.at);
+        // One of its variables: "home.var.guests".
+        if (fact.value === 'var') return variableOf(OWN_HOME, true);
         return { read: { role: OWN_HOME, means: fact.value } };
       }
       case 'memory': {
@@ -406,6 +408,11 @@ export function parseExpr(text: string, options: { scripts?: ReadonlySet<string>
       if (place.kind !== 'name' || !NAME.test(place.value) || (KEYWORDS.has(place.value) && place.value !== OWN_HOME)) throw new Failure(`Expected a place after "${token.value} at": home, or a role a place fills`, place.at);
       return { presentAt: { who: token.value, place: place.value } };
     }
+    // One of the variables of a home a role fills: "cabin.var.guests".
+    if (isSymbol('.') && isWord('var', tokens[index + 1]) && NAME.test(token.value)) {
+      next();
+      return variableOf(token.value);
+    }
     if (!isSymbol('.')) throw new Failure(`After the role "${token.value}": what it reports ("${token.value}.charge"), "reachable", or — a person — "at" a place`, peek().at);
     // A dotted name: what a role's part reports — "station.charge" — or, called, a package's function.
     const segments: { value: string; at: number }[] = [];
@@ -421,6 +428,15 @@ export function parseExpr(text: string, options: { scripts?: ReadonlySet<string>
     const bad = segments.find((each) => !NAME.test(each.value));
     if (bad) throw new Failure(`"${bad.value}" is not part of a meaning: letters, digits and _ only`, bad.at);
     return { read: { role: token.value, means: segments.map((each) => each.value).join('.') } };
+  };
+  /** A home's variable: "var" — read already, `saidVar` — then "." and its key. */
+  const variableOf = (at: string, saidVar = false): Expr => {
+    const word = saidVar ? null : next();
+    if (word && (word.kind !== 'name' || word.value !== 'var')) throw new Failure('Expected "var" and a variable: home.var.guests', word.at);
+    expect('.', `"." and the variable's key: ${at}.var.guests`);
+    const key = next();
+    if (key.kind !== 'name' || !PARAM.test(key.value)) throw new Failure(`Expected a variable's key after "${at}.var.": a word in camelCase, as guests`, key.at);
+    return { variable: { key: key.value, at } };
   };
   /** One of the functions of the script filling a role: its arguments in order, each an expression. */
   const scriptCall = (role: string, fn: string): Expr => {
@@ -528,6 +544,10 @@ function print(expr: Expr, need: number): string {
   if ('memory' in expr) {
     if (!PARAM.test(expr.memory)) throw new Unprintable();
     return `memory.${expr.memory}`;
+  }
+  if ('variable' in expr) {
+    if (!PARAM.test(expr.variable.key) || !NAME.test(expr.variable.at)) throw new Unprintable();
+    return `${expr.variable.at}.var.${expr.variable.key}`;
   }
   if ('read' in expr) {
     if (!MEANING.test(expr.read.means)) throw new Unprintable();

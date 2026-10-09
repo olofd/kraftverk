@@ -250,6 +250,7 @@ function FieldEditor<T extends object>({ field, fields, construct, set, path }: 
     case 'script':
     case 'name':
     case 'memory':
+    case 'variable':
     case 'args':
     case 'steps':
     // A trigger's id: given when a condition asks which trigger started it (`triggerIdOf`), not typed.

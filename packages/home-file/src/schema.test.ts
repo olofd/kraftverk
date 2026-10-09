@@ -28,6 +28,17 @@ describe('the schema a file is checked against as it is typed', () => {
     expect(valid(schema, asData(DOCUMENT))).toEqual([]);
   });
 
+  test('a home’s variables, short or long — and nothing a variable does not take', () => {
+    const data = asData(DOCUMENT);
+    const home = (data.homes as Record<string, Record<string, unknown>>).home!;
+    home.variables = { guests: 'toggle', target: { kind: 'number', title: 'Target', starts: '21 °C', min: '16 °C' }, laundry: { kind: 'choice', options: { washing: 'Washing' } } };
+    expect(valid(schema, data)).toEqual([]);
+    home.variables = { guests: { kind: 'toggle', colour: 'red' } };
+    expect(valid(schema, data).length).toBeGreaterThan(0);
+    home.variables = { Guests: 'toggle' };
+    expect(valid(schema, data).length).toBeGreaterThan(0);
+  });
+
   test('an automation’s settings, short or long — and nothing a setting does not take', () => {
     const data = asData(DOCUMENT);
     const automation = Object.values(data.automations as Record<string, Record<string, unknown>>)[0]!;

@@ -46,7 +46,7 @@ export function scriptHome(hub: Hub): ScriptHome {
   return {
     devices,
     people: scriptPeople(hub).map((person) => ({ name: person.name })),
-    homes: scriptHomes(hub).map((home) => ({ key: home.key, name: home.name, rooms: home.rooms.map((room) => ({ key: room.key, name: room.name })) })),
+    homes: scriptHomes(hub).map((home) => ({ key: home.key, name: home.name, rooms: home.rooms.map((room) => ({ key: room.key, name: room.name })), variables: hub.variables.specs(home.id) })),
     modes: hub.world.modes().map((mode) => ({ key: mode.key, axis: mode.axis, name: mode.name })),
   };
 }

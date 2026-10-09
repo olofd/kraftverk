@@ -128,6 +128,7 @@ export const PATHS = {
     zones: '/settings/zones',
     labels: '/settings/labels',
     modes: '/settings/modes',
+    variables: '/settings/variables',
     people: '/settings/people',
     join: '/settings/join',
     home: (id: string) => `/settings/homes/${at(id)}`,

@@ -41,7 +41,7 @@ import {
   type Step,
   type Write,
 } from '@kraftverk/automation';
-import { attributeMeaning, capabilityIn, clockTime, localTime, MAIN_PART, isCurrent, isPosition, isScalar, readingOf, REAL_CLOCK, standardMeaning, unitIn, type CapabilityName, type Clock, type Value } from '@kraftverk/device-sdk';
+import { attributeMeaning, capabilityIn, clockTime, isUnit, localTime, MAIN_PART, isCurrent, isPosition, isScalar, readingOf, REAL_CLOCK, standardMeaning, unitIn, type CapabilityName, type Clock, type Value } from '@kraftverk/device-sdk';
 
 import type { AutomationEngineDeps, AutomationRecord, EngineDevice, EnginePlace } from './model.ts';
 import { quoted } from './words.ts';
@@ -143,7 +143,17 @@ export class RuleContext {
       }
       return null;
     };
+    /** One of a home's variables now: of its own home, or the one a role names — with its unit and title. */
+    const variableNow = (at: string, key: string) => {
+      const place = placeOf(at);
+      const homeId = place && world ? world.homeOf(place) : null;
+      const spec = homeId && world ? world.variables(homeId).find((each) => each.key === key) : undefined;
+      if (!homeId || !world || !spec) return null;
+      const value = world.variable(homeId, key);
+      return { value: value as string | number | boolean | null, unit: spec.field.type === 'number' && spec.field.unit && isUnit(spec.field.unit) ? spec.field.unit : null, label: spec.field.title };
+    };
     return {
+      variable: variableNow,
       clock: () => clockTime(now, automation.timeZone),
       // No trigger with an id started it: that is known, and said as no id at all.
       run: (fact, field) => {
@@ -283,6 +293,12 @@ export class RuleContext {
     return {
       fn: (id) => this.deps.library.fn(id),
       ...(this.deps.world ? { modes: () => this.deps.world!.modes() } : {}),
+      variables: (at) => {
+        const world = this.deps.world;
+        const fill = automation.world[at];
+        const home = !world ? null : at === OWN_HOME ? world.home(automation.homeId) : fill && 'place' in fill ? world.homeOf({ id: fill.place, kind: fill.kind }) : null;
+        return home && world ? world.variables(home) : null;
+      },
       script: (role) => {
         const id = automation.scripts[role];
         return id && this.deps.scripts ? this.deps.scripts.shape(id) : null;

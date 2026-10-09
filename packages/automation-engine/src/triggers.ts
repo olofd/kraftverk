@@ -209,7 +209,7 @@ export class Triggers {
 
   /** What a device said: an event some automation waits for, or a reading some condition reads. And the family's world moving. */
   async hear(message: LiveMessage): Promise<void> {
-    if (message.kind === 'presence' || message.kind === 'occupancy' || message.kind === 'mode') return this.#heardWorld(message);
+    if (message.kind === 'presence' || message.kind === 'occupancy' || message.kind === 'mode' || message.kind === 'variable') return this.#heardWorld(message);
     if (message.kind !== 'event' && message.kind !== 'readings') return;
     for (const indexed of this.#concerning(message.deviceId)) {
       const automation = this.deps.store.get(indexed.id) ?? indexed;
@@ -239,7 +239,7 @@ export class Triggers {
    * each person shares, which is what presence keeps — and every condition
    * of people and places is looked at again.
    */
-  async #heardWorld(message: Extract<LiveMessage, { kind: 'presence' | 'occupancy' | 'mode' }>): Promise<void> {
+  async #heardWorld(message: Extract<LiveMessage, { kind: 'presence' | 'occupancy' | 'mode' | 'variable' }>): Promise<void> {
     const world = this.deps.world;
     for (const indexed of this.#concerningWorld()) {
       const automation = this.deps.store.get(indexed.id) ?? indexed;
@@ -266,6 +266,8 @@ export class Triggers {
         if ('people' in fill) return fill.people.includes(person);
         return 'everyone' in fill;
       };
+      // A variable set by a run it led to itself — or a chain too long — is not looked at again by it: two would set it back and forth for ever.
+      if (message.kind === 'variable' && (message.cause.includes(automation.id) || message.cause.length >= SEQUENCE_LIMITS.chain)) continue;
       for (const [index, trigger] of rule.when.entries()) {
         let why: string | null = null;
         if (message.kind === 'presence') {
@@ -292,8 +294,8 @@ export class Triggers {
           if (!takesSteps(rule)) await going;
           continue;
         }
-        // A condition of people and places — or a `becomes` that reads them — looked at again.
-        if (edgeOf(trigger)) this.#becomes(automation, rule, trigger, index);
+        // A condition of people and places — or a `becomes` that reads them — looked at again: one a variable's change starts carries the runs that led to it.
+        if (edgeOf(trigger)) this.#becomes(automation, rule, trigger, index, message.kind === 'variable' ? message.cause : undefined);
       }
     }
   }
@@ -304,7 +306,7 @@ export class Triggers {
    * already true. Its state is kept after every change, so a restart resumes
    * a hold with the time it had left and never fires one twice.
    */
-  #becomes(automation: AutomationRecord, rule: Rule, trigger: RuleTrigger, index: number): void {
+  #becomes(automation: AutomationRecord, rule: Rule, trigger: RuleTrigger, index: number, cause?: readonly string[]): void {
     const edge = edgeOf(trigger);
     if (!edge) return;
     const key = `${automation.id}:${triggerKey(trigger, index)}`;
@@ -357,7 +359,7 @@ export class Triggers {
       if (this.#runs.busy(automation.id) && (current.rule.whileRunning ?? 'skip') === 'skip') return;
       state.fired = true;
       keep();
-      void this.#runs.runAndKeep(current, why, triggerKey(trigger, index));
+      void this.#runs.runAndKeep(current, why, triggerKey(trigger, index), cause?.length ? { id: '', data: null, cause } : null);
     };
     const since = Date.parse(state.heldSince ?? this.#context.now().toISOString());
     const remaining = seconds > 0 ? since + seconds * 1000 - this.#context.now().getTime() : 0;

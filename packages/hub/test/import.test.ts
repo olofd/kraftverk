@@ -8,7 +8,7 @@ import type { Rule } from '@kraftverk/automation';
 import { ApiError } from '@kraftverk/api-contract';
 import { AutomationLibrary } from '@kraftverk/automation-engine';
 import type { AuditRecord } from '@kraftverk/device-sdk';
-import { FamilyStore, LabelStore, ScriptStore, MediaStore, PeopleStore, ShortcutStore, DevicePeopleStore, ModeStore, PlaceStore, SpaceStore, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
+import { FamilyStore, LabelStore, ScriptStore, MediaStore, PeopleStore, ShortcutStore, DevicePeopleStore, ModeStore, VariableStore, PlaceStore, SpaceStore, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
 import { policyOf } from '../src/homes/homes.ts';
 
 import { drafts } from '../src/automations/drafts.ts';
@@ -70,7 +70,7 @@ beforeEach(() => {
   const engine = { reset: () => {}, poke: () => {}, forget: () => {} };
   const sessions = { sync: async (records: readonly unknown[]) => void sessionsSynced.push(records.length), description: (record: { description: unknown }) => record.description };
   const scripts = new ScriptCatalogue(new ScriptStore(db), testScriptEngine);
-  const { checked } = drafts({ history: new HistoryStore(db), events: new EventStore(db), catalog, sessions: sessions as never, library, engine: engine as never, automations, world: { member: () => null, place: () => null, homeOfSpace: () => null, home: () => null, modes: () => BUILT_IN_MODES }, scripts });
+  const { checked } = drafts({ history: new HistoryStore(db), events: new EventStore(db), catalog, sessions: sessions as never, library, engine: engine as never, automations, world: { member: () => null, place: () => null, homeOfSpace: () => null, home: () => null, homeOf: () => null, variables: () => [], modes: () => BUILT_IN_MODES }, scripts });
   const places = new PlaceStore(db);
   places.addHome({ key: 'home', name: 'Home', type: 'house', timeZone: 'Europe/Stockholm' });
   // This node, the home's own: what holds the ways a file says.
@@ -99,6 +99,7 @@ beforeEach(() => {
     shortcuts: new ShortcutStore(db),
     devicePeople: new DevicePeopleStore(db),
     modes: new ModeStore(db),
+    variables: new VariableStore(db),
     media: new MediaStore(db),
     policyOf: policyOf(db),
     sealing: testSealing,

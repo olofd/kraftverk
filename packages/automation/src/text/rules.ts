@@ -195,6 +195,7 @@ class Reader {
       case 'event':
       case 'name':
       case 'memory':
+      case 'variable':
       case 'text':
       case 'who':
       case 'crowd':
@@ -571,6 +572,7 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
       case 'name':
       case 'id':
       case 'memory':
+      case 'variable':
       case 'text':
       case 'flag':
       case 'who':

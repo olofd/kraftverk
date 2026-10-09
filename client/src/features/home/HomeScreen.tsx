@@ -23,6 +23,7 @@ import { pictureFor } from '../devices/registry';
 import { Elsewhere } from './Elsewhere';
 import { FoundNearYou } from './FoundNearYou';
 import { ModesCard } from './ModesCard';
+import { VariablesCard } from './VariablesCard';
 import { NeedsYou } from './NeedsYou';
 
 /** What can be added, from the categories something installed is in: "Power stations, smart plugs, weather". */
@@ -125,7 +126,10 @@ export function HomeScreen() {
       ) : null}
 
       {(spaces ?? []).map((each) => (
-        <ModesCard key={each.home.id} home={each.home} titled={(spaces?.length ?? 0) > 1} />
+        <YStack key={each.home.id} gap="$4">
+          <ModesCard home={each.home} titled={(spaces?.length ?? 0) > 1} />
+          <VariablesCard home={each.home} titled={(spaces?.length ?? 0) > 1} />
+        </YStack>
       ))}
       <ByRoom devices={hardware} />
       {services.length > 0 ? (

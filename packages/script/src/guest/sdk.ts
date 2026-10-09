@@ -9,7 +9,7 @@
 
   What it holds: `log`; the family's world as objects, each by the name a
   script writes it with (../names.ts) — `family.maria`, `home` and
-  `homes.cabin` with their rooms and modes, `devices.garagePlug`, each
+  `homes.cabin` with their rooms, modes and variables, `devices.garagePlug`, each
   read and told by its capabilities; the whole API (`kraftverk/api`, as the app
   has it); `sleep`, `notify` and `setMode`; the `require` a compiled script
   is given; and the entries the host calls — `__describe`, `__fn`, `__step`.
@@ -186,7 +186,7 @@ const roomOf = (info: PlaceInfo) =>
     },
   });
 
-/** A home, as a script sees it: its rooms, who is there, its modes now — and set. */
+/** A home, as a script sees it: its rooms, who is there, its modes and variables now — and set. */
 const homeOf = (info: HomeInfo) =>
   Object.freeze({
     id: info.id,
@@ -211,6 +211,16 @@ const homeOf = (info: HomeInfo) =>
     },
     /** It put in a mode, as this run puts it. */
     setMode: (mode: string): Promise<unknown> => call(['run', 'setMode'], [{ mode, home: info.id }]),
+    /** Its variables now, by key: `home.vars.guests` — as set, or what each starts as. */
+    get vars(): Readonly<Record<string, unknown>> {
+      return Object.freeze(read({ variables: info.id }));
+    },
+    /** One of its variables set, as this run sets it: to a value of its kind, in its range. */
+    setVariable: (key: string, value: unknown): Promise<unknown> => call(['run', 'setVariable'], [{ home: info.id, key, value }]),
+    /** One of its counters counted, as this run counts it: by one, or by so many — below nought counts down. */
+    count: (key: string, by = 1): Promise<unknown> => call(['run', 'count'], [{ home: info.id, key, by }]),
+    /** One of its counters back to what it starts as. */
+    resetCounter: (key: string): Promise<unknown> => call(['run', 'count'], [{ home: info.id, key, reset: true }]),
   });
 
 const homesNow = (): HomeInfo[] => read({ homes: true });

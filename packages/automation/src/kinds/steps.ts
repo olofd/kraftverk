@@ -10,7 +10,7 @@ import type { FieldSpec, KindDocs, KindIcon } from './spec.ts';
   seconds.
 */
 
-export type StepKind = 'command' | 'write' | 'wait' | 'waitUntil' | 'waitFor' | 'ensure' | 'choose' | 'watch' | 'repeat' | 'forEach' | 'try' | 'stop' | 'answer' | 'start' | 'script' | 'remember' | 'setMode' | 'notify';
+export type StepKind = 'command' | 'write' | 'wait' | 'waitUntil' | 'waitFor' | 'ensure' | 'choose' | 'watch' | 'repeat' | 'forEach' | 'try' | 'stop' | 'answer' | 'start' | 'script' | 'remember' | 'setMode' | 'setVariable' | 'count' | 'notify';
 
 /** A step of one kind. */
 export type StepOf<K extends StepKind> = K extends StepKind ? Extract<Step, Record<K, unknown>> : never;
@@ -37,6 +37,8 @@ export type StepSay = {
   event(role: string, event: string): string;
   /** A mode by its key, as the family calls it: "Away". */
   mode(key: string): string;
+  /** A home's variable, by its key, as its home says it: "the home's guests staying". */
+  variable(key: string, at?: string): string;
   /** Words with values in braces, as they would read: "The charge is {Garage station's charge}". */
   message(text: string): string;
 };
@@ -548,6 +550,49 @@ const SET_MODE: StepSpec<'setMode'> = {
   },
 };
 
+const SET_VARIABLE: StepSpec<'setVariable'> = {
+  kind: 'setVariable',
+  label: 'Set a variable',
+  icon: 'sliders',
+  says: 'Set one of the home’s variables: guests staying, a target, a choice — for every automation that reads it.',
+  atOnce: true,
+  fields: [
+    { data: ['setVariable', 'key'], key: 'set variable', type: { type: 'variable' }, required: true, label: 'Which' },
+    { data: ['setVariable', 'to'], key: 'to', type: { type: 'value' }, required: true, label: 'To' },
+    { data: ['setVariable', 'at'], key: 'at', type: { type: 'place', kinds: ['home'] }, required: false, label: 'Of which home', help: 'This automation’s own, unless you choose another.' },
+  ],
+  blank: () => ({ setVariable: { key: '', to: { value: true } } }),
+  line: (step, say) => `Set ${say.variable(step.setVariable.key, step.setVariable.at)} to ${say.expr(step.setVariable.to)}`,
+  brief: (step, say) => `set ${say.variable(step.setVariable.key, step.setVariable.at)} to ${say.expr(step.setVariable.to)}`,
+  docs: {
+    summary:
+      'Set one of a home’s variables, by its key — the automation’s own home, unless `at` names another — to a value of its kind, in its unit and range: read by every automation as `home.var.<key>`, and one that waits for it looks again. Not a device: nothing passes the gateway, and it is a line of the run. Already so, nothing changes.',
+    examples: ['set variable: guests\nto: true', 'set variable: target\nto: 21 °C', 'set variable: laundry\nto: \'"drying"\'\nat: cabin'],
+  },
+};
+
+const COUNT: StepSpec<'count'> = {
+  kind: 'count',
+  label: 'Count',
+  icon: 'plus-circle',
+  says: 'Count one of the home’s counters up or down — the times the dryer ran — or start it over.',
+  atOnce: true,
+  fields: [
+    { data: ['count', 'key'], key: 'count', type: { type: 'variable' }, required: true, label: 'Which counter' },
+    { data: ['count', 'by'], key: 'by', type: { type: 'value' }, required: false, label: 'By', help: 'One, unless you say so; below nought counts down.' },
+    { data: ['count', 'reset'], key: 'reset', type: { type: 'flag' }, required: false, label: 'Start it over', help: 'Back to what it starts as, instead.' },
+    { data: ['count', 'at'], key: 'at', type: { type: 'place', kinds: ['home'] }, required: false, label: 'Of which home', help: 'This automation’s own, unless you choose another.' },
+  ],
+  blank: () => ({ count: { key: '' } }),
+  line: (step, say) => (step.count.reset ? `Start ${say.variable(step.count.key, step.count.at)} over` : `Count ${say.variable(step.count.key, step.count.at)}${step.count.by ? ` by ${say.expr(step.count.by)}` : ' up by 1'}`),
+  brief: (step, say) => (step.count.reset ? `start ${say.variable(step.count.key, step.count.at)} over` : `count ${say.variable(step.count.key, step.count.at)}${step.count.by ? ` by ${say.expr(step.count.by)}` : ''}`),
+  docs: {
+    summary:
+      'Count one of a home’s counters — the automation’s own home, unless `at` names another — up by one, or `by` a whole number (below nought, down), held to its range; or `reset` it to what it starts as. Read as `home.var.<key>` by every automation.',
+    examples: ['count: dryerRuns', 'count: guests\nby: -1', 'count: dryerRuns\nreset: true'],
+  },
+};
+
 const NOTIFY: StepSpec<'notify'> = {
   kind: 'notify',
   label: 'Tell someone',
@@ -589,11 +634,13 @@ export const STEP_KINDS: { readonly [K in StepKind]: StepSpec<K> } = {
   script: SCRIPT,
   remember: REMEMBER,
   setMode: SET_MODE,
+  setVariable: SET_VARIABLE,
+  count: COUNT,
   notify: NOTIFY,
 };
 
 /** The order the editor offers them in. */
-export const STEP_KIND_ORDER: readonly StepKind[] = ['command', 'write', 'setMode', 'notify', 'wait', 'waitUntil', 'waitFor', 'ensure', 'choose', 'watch', 'repeat', 'forEach', 'try', 'stop', 'answer', 'start', 'script', 'remember'];
+export const STEP_KIND_ORDER: readonly StepKind[] = ['command', 'write', 'setMode', 'setVariable', 'count', 'notify', 'wait', 'waitUntil', 'waitFor', 'ensure', 'choose', 'watch', 'repeat', 'forEach', 'try', 'stop', 'answer', 'start', 'script', 'remember'];
 
 /** Which kind a step is — by its key; one of no kind is an error, never taken for another. */
 export function stepKind(step: Step): StepKind {

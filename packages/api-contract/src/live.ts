@@ -75,7 +75,7 @@ export type LiveUpdate =
    */
   | { type: 'run'; automation: { id: AutomationId; name: string }; runId: string; line: { kind: 'step' | 'log' | 'ended'; depth: number; what: string; outcome: string; detail: string | null } }
   /** Where the family is, who is in which room, or a home's mode, moved: read it again — as far as each shares. Never who. */
-  | { type: 'world'; what: 'presence' | 'occupancy' | 'mode'; homeId: string | null };
+  | { type: 'world'; what: 'presence' | 'occupancy' | 'mode' | 'variable'; homeId: string | null };
 
 /**
  * Something a screen shows: a device, an automation. More kinds as screens

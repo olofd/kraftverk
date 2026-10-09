@@ -1,5 +1,5 @@
-import type { ModeView, PersonView, ZoneView } from '@kraftverk/api-contract';
-import { ANYONE, EVERYONE, OWN_HOME, PLACE_KINDS, sameFill, worldRole, type AutomationDraft, type PlaceKind, type WorldFill, type WorldNames } from '@kraftverk/automation';
+import type { ModeView, PersonView, VariableView, ZoneView } from '@kraftverk/api-contract';
+import { ANYONE, EVERYONE, OWN_HOME, PLACE_KINDS, sameFill, worldRole, type AutomationDraft, type PlaceKind, type VariableSpec, type WorldFill, type WorldNames } from '@kraftverk/automation';
 
 import type { HomeSpaces } from './spaces.ts';
 
@@ -17,16 +17,18 @@ export type WorldOptions = {
   people: readonly { id: string; name: string }[];
   places: readonly { id: string; kind: PlaceKind; name: string; subtitle: string; homeId: string | null }[];
   modes: readonly { key: string; name: string; axis: ModeView['axis'] }[];
+  /** Each home's variables, as the language sees them. */
+  variables: readonly (VariableSpec & { homeId: string })[];
   /** How a draft's sentences name them. */
   names: WorldNames;
 };
 
-export const NO_WORLD: WorldOptions = { people: [], places: [], modes: [], names: { person: () => null, place: () => null } };
+export const NO_WORLD: WorldOptions = { people: [], places: [], modes: [], variables: [], names: { person: () => null, place: () => null } };
 
 const KINDS: Record<PlaceKind, string> = { home: 'A home', zone: 'A zone', space: 'A room' };
 
-/** The family's people, places and modes, as an editor offers them: members, each home and its rooms, the zones. */
-export function worldOptionsOf(people: readonly PersonView[], zones: readonly ZoneView[], modes: readonly ModeView[], homes: readonly HomeSpaces[]): WorldOptions {
+/** The family's people, places, modes and variables, as an editor offers them: members, each home and its rooms, the zones. */
+export function worldOptionsOf(people: readonly PersonView[], zones: readonly ZoneView[], modes: readonly ModeView[], homes: readonly HomeSpaces[], variables: readonly VariableView[] = []): WorldOptions {
   const members = people.filter((person) => person.member).map((person) => ({ id: person.id, name: person.shownAs }));
   const places = [
     ...homes.map(({ home }) => ({ id: home.id, kind: 'home' as const, name: home.name, subtitle: KINDS.home, homeId: home.id })),
@@ -37,6 +39,7 @@ export function worldOptionsOf(people: readonly PersonView[], zones: readonly Zo
     people: members,
     places,
     modes: modes.map((mode) => ({ key: mode.key, name: mode.name, axis: mode.axis })),
+    variables: variables.map((variable) => ({ homeId: variable.homeId, key: variable.key, kind: variable.kind, field: variable.field })),
     names: { person: (id) => members.find((person) => person.id === id)?.name ?? null, place: (id) => places.find((place) => place.id === id)?.name ?? null },
   };
 }

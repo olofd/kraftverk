@@ -813,6 +813,35 @@ export const SCHEMA = `
     PRIMARY KEY (home_id, axis)
   );
 
+  /*
+    A home's variables (docs/PLAN-VARIABLES-AND-TRIGGERS.md §2): typed state
+    of its own, read and set by its automations, its people and its scripts.
+    Each by its key in its home — what home.var.<key> reads — with its
+    kind and its field (a ConfigField, as JSON: its title, type, unit, range,
+    what it starts as). One let go is archived: its key is free again.
+  */
+  CREATE TABLE variable (
+    id         TEXT PRIMARY KEY,
+    home_id    TEXT NOT NULL REFERENCES home (id),
+    key        TEXT NOT NULL CHECK (key GLOB '[a-z]*' AND key NOT GLOB '*[^A-Za-z0-9]*' AND length(key) <= 40),
+    kind       TEXT NOT NULL CHECK (kind IN ('toggle', 'number', 'choice', 'text', 'time', 'counter')),
+    field      TEXT NOT NULL CHECK (json_valid(field)),
+    position   INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    removed_at TEXT
+  );
+  CREATE UNIQUE INDEX variable_key ON variable (home_id, key) WHERE removed_at IS NULL;
+
+  /* A variable's value now, and who set it: none yet, what it starts as. */
+  CREATE TABLE variable_value (
+    variable_id TEXT PRIMARY KEY REFERENCES variable (id) ON DELETE CASCADE,
+    value       TEXT NOT NULL CHECK (json_valid(value)),
+    set_at      TEXT NOT NULL,
+    actor_kind  TEXT NOT NULL CHECK (actor_kind IN ('person', 'agent', 'automation', 'node', 'integration', 'system')),
+    actor_id    TEXT,
+    actor_name  TEXT NOT NULL
+  );
+
   /* What said someone was there: each device, once. */
   CREATE TABLE occupancy_evidence (
     occupancy_id TEXT NOT NULL REFERENCES occupancy (id) ON DELETE CASCADE,
@@ -1166,7 +1195,7 @@ export const SCHEMA = `
     actor_kind    TEXT NOT NULL CHECK (actor_kind IN ('person', 'agent', 'automation', 'node', 'integration', 'system')),
     actor_id      TEXT,
     actor_name    TEXT NOT NULL,
-    resource_kind TEXT CHECK (resource_kind IN ('device', 'node', 'automation', 'account', 'transport', 'family', 'home', 'zone', 'person', 'mode', 'script')),
+    resource_kind TEXT CHECK (resource_kind IN ('device', 'node', 'automation', 'account', 'transport', 'family', 'home', 'zone', 'person', 'mode', 'script', 'variable')),
     resource      TEXT,
     summary       TEXT NOT NULL,
     detail        TEXT,

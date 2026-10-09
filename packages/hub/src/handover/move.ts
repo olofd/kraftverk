@@ -1,7 +1,7 @@
 import { ApiError, type ElsewhereView, type ImportAnswers, type ImportApplied, type ImportPlan } from '@kraftverk/api-contract';
 import { isSimulated, methodOf, randomHex } from '@kraftverk/device-sdk';
 import { writeConfig, type Scalar } from '@kraftverk/home-file';
-import { FamilyStore, LabelStore, ScriptStore, MediaStore, PeopleStore, ShortcutStore, DevicePeopleStore, ModeStore, NodeSettings, PlaceStore, SpaceStore, AutomationStore, ConnectionStore, DeviceCatalog, LinkStore, NodeStore, type NodeSettingKey, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { FamilyStore, LabelStore, ScriptStore, MediaStore, PeopleStore, ShortcutStore, DevicePeopleStore, ModeStore, VariableStore, NodeSettings, PlaceStore, SpaceStore, AutomationStore, ConnectionStore, DeviceCatalog, LinkStore, NodeStore, type NodeSettingKey, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 import { ensureFirstHome, policyOf } from '../homes/homes.ts';
 
 import { exportConfig, type ConfigDeps } from '../configuration/export.ts';
@@ -82,6 +82,7 @@ export class MovingToMaster {
       shortcuts: new ShortcutStore(db),
       devicePeople: new DevicePeopleStore(db),
       modes: new ModeStore(db),
+      variables: new VariableStore(db),
       media: new MediaStore(db),
       policyOf: policyOf(db),
       sealing: this.#sealing,

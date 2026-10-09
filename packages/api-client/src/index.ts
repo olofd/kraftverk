@@ -33,4 +33,5 @@ export * from './spaces.ts';
 export * from './world-choices.ts';
 export * from './home-map.ts';
 export * from './modes.ts';
+export * from './variables.ts';
 export * from './invitations.ts';

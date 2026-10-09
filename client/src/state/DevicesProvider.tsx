@@ -121,7 +121,7 @@ type DevicesContextValue = {
    */
   onAutomation: (listener: (id: string) => void) => () => void;
   /** Hears that where the family is, which rooms have someone in them, or a home's mode moved — at a home, when it was one. */
-  onWorld: (listener: (what: 'presence' | 'occupancy' | 'mode', homeId: string | null) => void) => () => void;
+  onWorld: (listener: (what: 'presence' | 'occupancy' | 'mode' | 'variable', homeId: string | null) => void) => () => void;
   /** What the screen shows, told to the home (`useShowing`, `views.ts`). */
   views: Views;
 };
@@ -150,8 +150,8 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     return () => void automationListeners.current.delete(listener);
   }, []);
   /** Who hears that the world moved: the screens showing where people are, rooms, modes. */
-  const worldListeners = useRef(new Set<(what: 'presence' | 'occupancy' | 'mode', homeId: string | null) => void>());
-  const onWorld = useCallback((listener: (what: 'presence' | 'occupancy' | 'mode', homeId: string | null) => void) => {
+  const worldListeners = useRef(new Set<(what: 'presence' | 'occupancy' | 'mode' | 'variable', homeId: string | null) => void>());
+  const onWorld = useCallback((listener: (what: 'presence' | 'occupancy' | 'mode' | 'variable', homeId: string | null) => void) => {
     worldListeners.current.add(listener);
     return () => void worldListeners.current.delete(listener);
   }, []);

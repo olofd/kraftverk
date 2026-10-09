@@ -30,9 +30,10 @@ sandbox is reached through. No engine of its own: the place gives one.
   - **The guest SDK.** It lives in `src/guest/`, bundled into one string,
     `src/generated/guest.ts`, by `npm run gen:script-guest`; the
     architecture check keeps it current. It holds the family's world as
-    objects (`devices`, `family`, `home`, `homes`), `log`, `sleep`,
-    `notify` and `setMode`, the `require` a script is given, and the
-    entries the host calls.
+    objects (`devices`, `family`, `home`, `homes` — a home's variables as
+    `home.vars`, set by `home.setVariable` and `home.count`), `log`,
+    `sleep`, `notify` and `setMode`, the `require` a script is given, and
+    the entries the host calls.
   - **The port.** `ScriptEngine` opens a `Sandbox`: one heap, run one
     slice at a time on the caller's thread. Text is all that crosses, both
     ways. A `ScriptFault` says why a script stopped: what it threw, its
@@ -40,7 +41,7 @@ sandbox is reached through. No engine of its own: the place gives one.
   - **The types.** `typesOf(home)` writes the `kraftverk.d.ts` a script is
     checked against in the editor: the SDK's own declarations — the types
     a signature is written in, `Duration`, `Celsius`, `Kept<…>` — and the
-    family's people, homes, rooms, modes and devices by name, a device's
+    family's people, homes, rooms, modes, variables and devices by name, a device's
     readings typed, and each part's capabilities with their commands and
     arguments, one interface each.
   - **The contract.** `@kraftverk/script/conformance` is what every engine

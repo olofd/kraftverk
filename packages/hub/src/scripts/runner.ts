@@ -1,7 +1,7 @@
 import { ApiError, type Caller, type KraftverkApi } from '@kraftverk/api-contract';
 import { SCRIPT_LIMITS, type ScriptShape } from '@kraftverk/automation';
 import type { ScriptRunner, ScriptStepDone, ScriptStepRequest } from '@kraftverk/automation-engine';
-import { isPosition, type Value } from '@kraftverk/device-sdk';
+import { isPosition, type Actor, type Value } from '@kraftverk/device-sdk';
 import type { GatewayActor } from '@kraftverk/gateway';
 import { loadScript, ScriptFault, type Compiled, type HostFunctions, type ReadScript, type Sandbox, type ScriptAnswer, type ScriptRead } from '@kraftverk/script';
 
@@ -69,6 +69,7 @@ const answerRead = (hub: Hub, text: string, homeId: string | null): string => {
   if ('at' in query) return answer(query, hub.world.whoAt({ kind: query.at[0], id: query.at[1] }) as ScriptAnswer<typeof query>);
   if ('occupied' in query) return answer(query, hub.world.occupied({ kind: query.occupied[0], id: query.occupied[1] }));
   if ('mode' in query) return answer(query, hub.world.mode(query.mode[0], query.mode[1]));
+  if ('variables' in query) return answer(query, Object.fromEntries(hub.variables.specs(query.variables).map((spec) => [spec.key, hub.variables.now(query.variables, spec.key)])));
   if ('readings' in query) return answer(query, readingsOf(hub, query.readings));
   if ('reading' in query) return answer(query, readingsOf(hub, query.reading[0])[query.reading[1]] ?? null);
   throw new Error('Not something a script can read');
@@ -153,7 +154,7 @@ export async function runScriptStep(hub: Hub, run: StepRun): Promise<ScriptStepD
         budget();
         const { path, args } = JSON.parse(text) as { path: string[]; args: unknown[] };
         if (++calls > SCRIPT_LIMITS.calls) throw new Error(refusalText(new ApiError('forbidden', `A script's step calls the home at most ${SCRIPT_LIMITS.calls} times`)));
-        // What the run itself does: tell people, set a mode — as its steps do, each a change counted.
+        // What the run itself does: tell people, set a mode or a variable — as its steps do, each a change counted.
         if (path[0] === 'run') {
           acted();
           return JSON.stringify(runCall(path[1] ?? '', args[0] as Record<string, unknown>));
@@ -189,7 +190,7 @@ export async function runScriptStep(hub: Hub, run: StepRun): Promise<ScriptStepD
     },
   };
 
-  /** What the run itself does, as its steps would: tell people, set a mode — of one of the family's homes. */
+  /** What the run itself does, as its steps would: tell people, set a mode or a variable — of one of the family's homes. */
   const runCall = (what: string, given: Record<string, unknown>): unknown => {
     if (what === 'notify') {
       const title = String(given.title ?? '').slice(0, 120);
@@ -199,11 +200,26 @@ export async function runScriptStep(hub: Hub, run: StepRun): Promise<ScriptStepD
       say({ what: `Told ${told.length === 1 ? (hub.world.personName(told[0]!) ?? 'someone') : `${told.length} people`}: “${title}”`, outcome: told.length ? 'done' : 'failed', detail: null });
       return { told };
     }
+    // One of the family's homes — the one named, or the run's own — never an id it does not know.
+    const named = typeof given.home === 'string' ? given.home : null;
+    const home = named ? (hub.places.home(named) ? named : null) : hub.world.home(run.homeId);
+    if (!home) throw new Error(refusalText(new ApiError('not-found', 'There is no such home')));
+    if (what === 'setVariable' || what === 'count') {
+      const key = String(given.key ?? '');
+      const title = hub.variableStore.byKey(home, key)?.field.title ?? key;
+      try {
+        const set =
+          what === 'count'
+            ? hub.variables.count(home, key, given.reset === true ? { reset: true } : { by: typeof given.by === 'number' ? given.by : 1 }, run.actor as Actor, run.cause)
+            : hub.variables.set(home, key, given.value as Value, run.actor as Actor, run.cause);
+        say({ what: `${title} is ${String(set.value)} now`, outcome: 'done', detail: set.changed ? null : 'It was already' });
+        return { home, key, value: set.value };
+      } catch (error) {
+        say({ what: `${title}`, outcome: 'refused', detail: (error as Error).message });
+        throw new Error(refusalText(error instanceof ApiError ? error : new ApiError('invalid', (error as Error).message)));
+      }
+    }
     if (what === 'setMode') {
-      // One of the family's homes — the one named, or the run's own — never an id it does not know.
-      const named = typeof given.home === 'string' ? given.home : null;
-      const home = named ? (hub.places.home(named) ? named : null) : hub.world.home(run.homeId);
-      if (!home) throw new Error(refusalText(new ApiError('not-found', 'There is no such home')));
       hub.world.setMode(home, String(given.mode), run.actor, run.cause);
       say({ what: `${hub.world.placeName({ id: home, kind: 'home' }) ?? 'The home'} is ${String(given.mode)} now`, outcome: 'done', detail: null });
       return { home, mode: given.mode };

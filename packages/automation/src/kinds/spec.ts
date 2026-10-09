@@ -56,6 +56,8 @@ export type FieldType =
   | { type: 'id' }
   /** One of what the rule remembers, by its name: what a `remember` step sets. */
   | { type: 'memory' }
+  /** One of a home's variables, by its key: what a `set variable` or `count` step changes — checked against its home's, by the step. */
+  | { type: 'variable' }
   /** Words of the owner's own, said as written: why a run ended. */
   | { type: 'text' }
   /** Yes or no, written `true` or `false`: no, when it is not written. */
@@ -133,7 +135,8 @@ export type KindIcon =
   | 'moon'
   | 'home'
   | 'send'
-  | 'code';
+  | 'code'
+  | 'plus-circle';
 
 /**
  * How a sentence says the parts of a construct — what the describer hands a
@@ -154,6 +157,8 @@ export type Say = {
   many(role: string): boolean;
   /** A mode by its key, as the family calls it: "Away". */
   mode(key: string): string;
+  /** A home's variable, by its key, as its home says it: "the home's guests staying" — `at` its own, unless a role names another. */
+  variable(key: string, at?: string): string;
   /** An event a role's part raises, in its own words: "mains lost". */
   event(role: string, event: string): string;
 };

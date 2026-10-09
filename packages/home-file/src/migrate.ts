@@ -13,7 +13,7 @@
 import type { FileMigration, FileTypes } from '@kraftverk/device-sdk';
 
 /** The version this kraftverk writes. */
-export const CURRENT_VERSION = 18;
+export const CURRENT_VERSION = 19;
 
 /** Each version's document, as data, made into the next version's. */
 export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unknown>) => Record<string, unknown>>> = {
@@ -48,6 +48,8 @@ export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unkno
   16: (document) => document,
   // Version 18 may fill an automation's role with a script (`uses:` `{ script: key }`), run it (`run script:`) and call its functions, and say who an acting automation acts for (`acts for:`): nothing older does, so nothing changes.
   17: (document) => document,
+  // Version 19 may declare a home's variables (`variables:`, each by key with its kind, title, what it starts as, a range or options): nothing older does, so nothing changes.
+  18: (document) => document,
 };
 
 /**

@@ -39,7 +39,7 @@ const read: Gate = { kind: 'read', least: null, callers: ANYONE };
  * may change is listed, `scripted`: an act not said to be one is closed to
  * it, so what the API gains is closed to scripts until it is decided here.
  */
-const act: Gate = { kind: 'act', least: null, callers: NOT_SCRIPTS, what: 'change that: a script tells devices what to do and sets a home’s mode, through the gateway' };
+const act: Gate = { kind: 'act', least: null, callers: NOT_SCRIPTS, what: 'change that: a script tells devices what to do, and sets a home’s mode and its variables, through the gateway' };
 /** A change a script may make too (docs/PLAN-SCRIPTS.md §7.3): telling a device, through the gateway; a home's mode. */
 const scripted: Gate = { kind: 'act', least: null, callers: ANYONE };
 /** A person's to do, never an assistant's. */
@@ -154,6 +154,12 @@ export const GATES = {
   'modes.of': read,
   'modes.set': scripted,
   'modes.cancel': scripted,
+  'variables.list': read,
+  'variables.add': act,
+  'variables.update': act,
+  'variables.remove': act,
+  'variables.set': scripted,
+  'variables.count': scripted,
   'occupancy.now': read,
   'occupancy.history': read,
   'zones.list': read,

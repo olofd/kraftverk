@@ -28,6 +28,7 @@ export * from './places.ts';
 export * from './spaces.ts';
 export * from './labels.ts';
 export * from './scripts.ts';
+export * from './variables.ts';
 export * from './people.ts';
 export * from './invitations.ts';
 export * from './shortcuts.ts';

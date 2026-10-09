@@ -28,6 +28,8 @@ import {
   type Step,
   type StepKind,
   type Write,
+  VARIABLE_KIND_WORDS,
+  variableStart,
 } from '@kraftverk/automation';
 import { capabilitiesOf, capabilityIn, isScalarType, MAIN_PART, valueTypeOf, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
 import { Chips, haptic, Icon, IconLabel } from '@kraftverk/ui';
@@ -39,7 +41,7 @@ import { confirmAction } from '../../../platform/confirm';
 import { ConditionField } from './Condition';
 import { pickPart, useEditor } from './context';
 import { Fields } from './Field';
-import { DurationField, durationOf, Label, ValueField } from './fields';
+import { DurationField, durationOf, Label, NumberField, ValueField } from './fields';
 
 
 /*
@@ -167,6 +169,7 @@ function StepFields({ path, step, set }: { path: ListPath; step: Step; set: (ste
   if ('start' in step) return <StartFields start={step.start} waits={mayWait(path)} set={(start) => set({ start })} />;
   if ('remember' in step) return <RememberFields remember={step.remember} set={(remember) => set({ remember })} />;
   if ('script' in step) return <ScriptFields script={step.script} set={(script) => set({ script })} />;
+  if ('setVariable' in step || 'count' in step) return <VariableFields path={path} step={step} set={set} />;
   return <Fields fields={stepSpec(step).fields} construct={step} set={set} path={path} />;
 }
 
@@ -351,6 +354,87 @@ function RememberFields({ remember, set }: { remember: Extract<Step, { remember:
         <YStack gap="$1">
           <Label>As</Label>
           <ArgField label="As" type={valueTypeOf(field)} expr={remember.value} onChange={(value) => set({ ...remember, value })} />
+        </YStack>
+      ) : null}
+    </YStack>
+  );
+}
+
+/**
+ * One of a home's variables set or counted: of which home — its own, unless
+ * another is chosen — which of its variables (only counters, to count), and
+ * to what, in its kind and unit; or by how much, or back to its start.
+ */
+function VariableFields({ path, step, set }: { path: ListPath; step: Extract<Step, { setVariable: unknown }> | Extract<Step, { count: unknown }>; set: (step: Step) => void }) {
+  const editor = useEditor();
+  const counting = 'count' in step;
+  const it = counting ? step.count : step.setVariable;
+  const variables = editor.variablesAt(it.at).filter((variable) => !counting || variable.kind === 'counter');
+  const spec = variables.find((variable) => variable.key === it.key);
+  const where = stepSpec(step).fields.filter((field) => field.key === 'at');
+  const homes = editor.world.places.filter((place) => place.kind === 'home').length;
+  const label = counting ? 'Which counter' : 'Which variable';
+  return (
+    <YStack gap="$2.5">
+      {homes > 1 || it.at ? <Fields fields={where} construct={step} set={set} path={path} /> : null}
+      {variables.length ? (
+        <YStack gap="$1">
+          <Label>{label}</Label>
+          <Picker
+            label={label}
+            chosen={spec?.field.title ?? (it.key || null)}
+            placeholder={counting ? 'Choose a counter' : 'Choose a variable'}
+            options={variables.map((variable) => ({ key: variable.key, title: variable.field.title, subtitle: VARIABLE_KIND_WORDS[variable.kind].label, value: variable, selected: variable === spec }))}
+            onPick={(variable) =>
+              set(counting ? { count: { ...step.count, key: variable.key } } : { setVariable: { ...step.setVariable, key: variable.key, to: { value: variableStart(variable) } } })
+            }
+          />
+        </YStack>
+      ) : (
+        <Text fontSize={13} color="$muted" lineHeight={19}>
+          {counting ? 'The home has no counter yet: add one under Variables, in its settings.' : 'The home has no variables yet: add one under Variables, in its settings.'}
+        </Text>
+      )}
+      {spec && !counting ? (
+        <YStack gap="$1">
+          <Label>To</Label>
+          <ArgField label="To" type={valueTypeOf(spec.field)} expr={step.setVariable.to} onChange={(to) => set({ setVariable: { ...step.setVariable, to } })} />
+        </YStack>
+      ) : null}
+      {spec && counting ? (
+        <YStack gap="$2.5">
+          <YStack gap="$1">
+            <Label>How</Label>
+            <Chips
+              label="How"
+              options={[
+                { value: 'count', label: 'Count' },
+                { value: 'reset', label: 'Start it over' },
+              ]}
+              value={step.count.reset ? 'reset' : 'count'}
+              onChange={(how) => set({ count: how === 'reset' ? { key: step.count.key, reset: true, ...(step.count.at ? { at: step.count.at } : {}) } : { key: step.count.key, ...(step.count.at ? { at: step.count.at } : {}) } })}
+            />
+          </YStack>
+          {step.count.reset ? null : (
+            <YStack gap="$1">
+              <Label>By</Label>
+              {!step.count.by || 'value' in step.count.by ? (
+                <NumberField
+                  label="By"
+                  value={step.count.by && 'value' in step.count.by && typeof step.count.by.value === 'number' ? step.count.by.value : 1}
+                  onChange={(by) => {
+                    const { by: _by, ...rest } = step.count;
+                    set({ count: by === null || by === 1 ? rest : { ...rest, by: { value: Math.trunc(by) } } });
+                  }}
+                />
+              ) : (
+                <ArgField label="By" type={{ type: 'number', integer: true }} expr={step.count.by} onChange={(by) => set({ count: { ...step.count, by } })} />
+              )}
+              <Text fontSize={12} color="$muted" lineHeight={17}>
+                Below nought counts down.
+              </Text>
+            </YStack>
+          )}
         </YStack>
       ) : null}
     </YStack>

@@ -63,12 +63,16 @@ export class Outbox {
         return this.#world('occupancy', message.homeId);
       case 'mode':
         return this.#world('mode', message.homeId);
+      // A home's variable changed, or its variables did: read them again — what each holds is the app's to read.
+      case 'variable':
+      case 'variables':
+        return this.#world('variable', message.homeId);
       case 'modes':
         return this.#world('mode', null);
     }
   }
 
-  #world(what: 'presence' | 'occupancy' | 'mode', homeId: string | null): void {
+  #world(what: 'presence' | 'occupancy' | 'mode' | 'variable', homeId: string | null): void {
     this.world.set(`${what} ${homeId ?? ''}`, { type: 'world', what, homeId });
   }
 

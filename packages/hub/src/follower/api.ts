@@ -406,6 +406,14 @@ export function followerApi(h: Follower): KraftverkApi {
       set: (homeId, input) => home.modes.set(homeId, input),
       cancel: (homeId, input) => home.modes.cancel(homeId, input),
     },
+    variables: {
+      list: (homeId, options) => home.variables.list(homeId, options),
+      add: (homeId, input) => home.variables.add(homeId, input),
+      update: (id, changes) => home.variables.update(id, changes),
+      remove: (id) => home.variables.remove(id),
+      set: (homeId, key, value) => home.variables.set(homeId, key, value),
+      count: (homeId, key, count) => home.variables.count(homeId, key, count),
+    },
     scripts: {
       list: () => home.scripts.list(),
       get: (id) => home.scripts.get(id),

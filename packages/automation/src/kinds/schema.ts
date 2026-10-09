@@ -49,6 +49,7 @@ export function fieldSchema(field: FieldSpec): JsonSchema {
     case 'id':
       return { type: 'string', pattern: TRIGGER_ID.source, ...described };
     case 'memory':
+    case 'variable':
     case 'text':
       return { type: 'string', minLength: 1, ...described };
     case 'flag':

@@ -1,6 +1,6 @@
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { fieldStart, fitsField, scriptRole, triggerIdOf, wordsOfName, type CompareOp, type Expr } from '@kraftverk/automation';
+import { fieldStart, fitsField, OWN_HOME, scriptRole, triggerIdOf, variableStart, wordsOfName, type CompareOp, type Expr } from '@kraftverk/automation';
 import type { PartOption } from '@kraftverk/automation';
 import { capabilitiesOf, MAIN_PART, meetsNeed, valueTypeOf, type ConfigField, type ValueType } from '@kraftverk/device-sdk';
 import { Chips, Icon, IconLabel } from '@kraftverk/ui';
@@ -15,15 +15,17 @@ import { Label, TimeField, ValueField, type Literal } from './fields';
   a part and something it reports compared with a value in that reading's own
   unit or options; whether a part can be reached; the time of day, between
   two times; what a package's function says of a part; or what one of your
-  scripts' functions works out, from values and readings. Rows join as "all of" or "any of", a group may hold a group,
+  scripts' functions works out, from values and readings; what one of the
+  home's variables holds. Rows join as "all of" or "any of", a group may hold a group,
   and a row may be turned round ("not"). One the editor cannot draw as rows is
   said in words, and replaced whole.
 */
 
-type Kind = 'reading' | 'reachable' | 'time' | 'ask' | 'script' | 'started' | 'all' | 'any';
+type Kind = 'reading' | 'variable' | 'reachable' | 'time' | 'ask' | 'script' | 'started' | 'all' | 'any';
 
 const KIND_OPTIONS: { value: Kind; label: string }[] = [
   { value: 'reading', label: 'A reading' },
+  { value: 'variable', label: 'A variable' },
   { value: 'reachable', label: 'Can be reached' },
   { value: 'time', label: 'Time of day' },
   { value: 'ask', label: 'Ask a package' },
@@ -56,6 +58,7 @@ function kindOf(expr: Expr): Kind | null {
   if ('within' in expr) return 'value' in expr.within.from && 'value' in expr.within.to ? 'time' : null;
   if ('compare' in expr && 'run' in expr.left && expr.left.run === 'trigger' && 'value' in expr.right && (expr.compare === 'eq' || expr.compare === 'ne')) return 'started';
   if ('compare' in expr && 'read' in expr.left && 'value' in expr.right) return 'reading';
+  if ('compare' in expr && 'variable' in expr.left && 'value' in expr.right) return 'variable';
   if ('compare' in expr && 'call' in expr.left && 'value' in expr.right) return 'ask';
   if ('compare' in expr && 'script' in expr.left && 'value' in expr.right) return 'script';
   return null;
@@ -77,6 +80,8 @@ function blankOf(kind: Kind, role: string | null): Expr {
   switch (kind) {
     case 'reading':
       return { compare: 'gt', left: { read: { role: role ?? '', means: '' } }, right: { value: 0 } };
+    case 'variable':
+      return { compare: 'eq', left: { variable: { key: '', at: OWN_HOME } }, right: { value: true } };
     case 'reachable':
       return { reachable: role ?? '' };
     case 'time':
@@ -139,6 +144,8 @@ export function ConditionField({ label, expr, onChange, depth = 0 }: { label: st
         <TimeOfDay expr={inner as Extract<Expr, { within: unknown }>} onChange={put} />
       ) : kind === 'reading' ? (
         <Reading expr={inner as Extract<Expr, { compare: unknown }>} onChange={put} label={label} />
+      ) : kind === 'variable' ? (
+        <Variable expr={inner as Extract<Expr, { compare: unknown }>} onChange={put} label={label} />
       ) : kind === 'started' ? (
         <StartedBy expr={inner as Extract<Expr, { compare: unknown }>} onChange={put} label={label} />
       ) : kind === 'script' ? (
@@ -310,6 +317,53 @@ function Reading({ expr, onChange, label }: { expr: Extract<Expr, { compare: unk
   );
 }
 
+/** What one of the home's variables holds — its own home's, or the one a role names — compared with a value of its kind. */
+function Variable({ expr, onChange, label }: { expr: Extract<Expr, { compare: unknown }>; onChange: (expr: Expr) => void; label: string }) {
+  const editor = useEditor();
+  const read = (expr.left as Extract<Expr, { variable: unknown }>).variable;
+  const variables = editor.variablesAt(read.at);
+  const chosen = variables.find((variable) => variable.key === read.key) ?? null;
+  const type: ValueType | null = chosen ? valueTypeOf(chosen.field) : null;
+  const ordered = type?.type === 'number';
+  return (
+    <YStack gap="$2">
+      {variables.length ? (
+        <Picker
+          label={`${label}: which variable`}
+          chosen={chosen?.field.title ?? (read.key || null)}
+          placeholder="Choose a variable"
+          options={variables.map((variable) => ({ key: variable.key, title: variable.field.title, subtitle: variable.field.description, value: variable, selected: variable === chosen }))}
+          onPick={(variable) => onChange({ compare: valueTypeOf(variable.field).type === 'number' ? 'ge' : 'eq', left: { variable: { key: variable.key, at: read.at } }, right: { value: variableStart(variable) ?? '' } })}
+        />
+      ) : (
+        <Text fontSize={14} color="$muted" lineHeight={20}>
+          The home has no variables yet: add one under Variables, in its settings.
+        </Text>
+      )}
+      {chosen ? (
+        <YStack gap="$2">
+          {ordered ? (
+            <Picker
+              label={`${label}: compared`}
+              chosen={NUMBER_OPS.find((option) => option.value === expr.compare)?.label ?? null}
+              placeholder="Choose how"
+              options={NUMBER_OPS.map((option) => ({ key: option.value, title: option.label, value: option.value, selected: option.value === expr.compare }))}
+              onPick={(compare) => onChange({ ...expr, compare })}
+            />
+          ) : (
+            <Chips label={`${label}: compared`} options={EQUAL_OPS} value={expr.compare} onChange={(compare) => onChange({ ...expr, compare })} />
+          )}
+          {chosen.kind === 'time' ? (
+            <TimeField label={`${label}: value`} value={'value' in expr.right && typeof expr.right.value === 'string' ? expr.right.value : '07:00'} onChange={(at) => onChange({ ...expr, right: { value: at } })} />
+          ) : (
+            <ValueField label={`${label}: value`} type={type} literal={expr.right as Literal} onChange={(right) => onChange({ ...expr, right })} />
+          )}
+        </YStack>
+      ) : null}
+    </YStack>
+  );
+}
+
 /**
  * An argument of a script's function: a value, or what a part reports now —
  * a reading of the same kind: in a unit that converts to the argument's, or
@@ -332,6 +386,7 @@ function ArgSource({ label, field, expr, onChange }: { label: string; field: Con
           options={[
             { value: 'value', label: 'A value' },
             { value: 'reading', label: 'A reading' },
+  { value: 'variable', label: 'A variable' },
           ]}
           value={read ? 'reading' : 'value'}
           onChange={(source) => onChange(source === 'reading' ? { read: { role: '', means: '' } } : fieldStart(field))}

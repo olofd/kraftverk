@@ -23,6 +23,8 @@ import {
   type PolicyValues,
   type SavedDeviceId,
   transportOf,
+  checkValue,
+  valueTypeOf,
 } from '@kraftverk/device-sdk';
 import type { SessionManager } from '@kraftverk/holder';
 import {
@@ -764,6 +766,7 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
         const home = deps.places.homeByKey(item.key);
         // Its spaces on their own: one that will not go does not take the home with it.
         if (home) each(`${entry.name}'s spaces`, () => writeSpaces(deps, home.id, entry, applied.notes));
+        if (home) each(`${entry.name}'s variables`, () => writeVariables(deps, home.id, entry, new Date().toISOString()));
       }
       for (const item of view.zones) {
         if (item.action === 'same') continue;
@@ -965,7 +968,33 @@ function spaceChanges(deps: ImportDeps, homeId: string | null, entry: HomeEntry)
     else if (had.kind !== opening.kind || had.name !== opening.name || keyOf(had.fromId) !== opening.from || keyOf(had.toId) !== opening.to || JSON.stringify(had.shape) !== JSON.stringify(opening.shape)) reopened!.push(opening.name ?? key);
   }
   const said = (what: string, names: string[]) => (names.length ? [`${what}: ${names.join(', ')}`] : []);
-  return [...said('spaces added', added!), ...said('spaces changed', changed!), ...said('openings added', opened!), ...said('openings changed', reopened!)];
+  // Its variables: what each is. What each holds now is the home's, and stays.
+  const [declared, redeclared] = [[], []] as string[][];
+  for (const [key, variable] of Object.entries(entry.variables)) {
+    const had = homeId ? deps.variables.byKey(homeId, key) : null;
+    if (!had) declared!.push(variable.field.title);
+    else if (had.kind !== variable.kind || JSON.stringify(had.field) !== JSON.stringify(variable.field)) redeclared!.push(variable.field.title);
+  }
+  return [...said('spaces added', added!), ...said('spaces changed', changed!), ...said('openings added', opened!), ...said('openings changed', reopened!), ...said('variables added', declared!), ...said('variables changed', redeclared!)];
+}
+
+/**
+ * A home's variables written as its entry has them, by key: added, or
+ * changed — a value that no longer fits going back to what it starts as.
+ * What the file does not have is left as it is.
+ */
+function writeVariables(deps: ImportDeps, homeId: string, entry: HomeEntry, at: string): void {
+  for (const [key, variable] of Object.entries(entry.variables)) {
+    const had = deps.variables.byKey(homeId, key);
+    if (!had) {
+      deps.variables.add(homeId, { key, kind: variable.kind, field: variable.field }, at);
+      continue;
+    }
+    if (had.kind === variable.kind && JSON.stringify(had.field) === JSON.stringify(variable.field)) continue;
+    deps.variables.update(had.id, { kind: variable.kind, field: variable.field });
+    const kept = deps.variables.value(had.id);
+    if (kept && !checkValue(valueTypeOf(variable.field), kept.value).ok) deps.variables.clear(had.id);
+  }
 }
 
 /** A home's spaces and openings written as its entry has them, by key: parents before what is inside them. */

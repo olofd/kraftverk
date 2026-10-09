@@ -1,5 +1,5 @@
 import type { AutomationRun } from '@kraftverk/api-contract';
-import type { AutomationMode, Axis, Coordinates, NotifyLevel, PlaceKind, RoleBinding, Rule, RulePart, ScriptShape, WorldFill } from '@kraftverk/automation';
+import type { AutomationMode, Axis, Coordinates, NotifyLevel, PlaceKind, RoleBinding, Rule, RulePart, ScriptShape, VariableSpec, WorldFill } from '@kraftverk/automation';
 import type { AuditRecord, AutomationId, CapabilityId, Clock, DeviceDescription, Value } from '@kraftverk/device-sdk';
 import type { ActionGateway, GatewayActor } from '@kraftverk/gateway';
 import type { LiveBus } from '@kraftverk/holder';
@@ -112,6 +112,17 @@ export type EngineWorld = {
    * outermost first, this one last).
    */
   setMode(homeId: string, mode: string, by: GatewayActor, cause: readonly string[]): void;
+  /** A home's variables (docs/PLAN-VARIABLES-AND-TRIGGERS.md): each by its key, kind and field. */
+  variables(homeId: string): readonly VariableSpec[];
+  /** One of a home's variables now: as set, or what it starts as; null when it has none, or is not known. */
+  variable(homeId: string, key: string): Value | null;
+  /**
+   * One of a home's variables set, as an automation: on its timeline, and said
+   * on the bus with the automations whose runs led to it (`cause`). Thrown
+   * when it does not fit — the home has no such variable, or the value is not
+   * of its kind or in its range.
+   */
+  setVariable(homeId: string, key: string, value: Value, by: GatewayActor, cause: readonly string[]): void;
   /** People told something: each one's inbox, and a push sent on its way. Who was told: members only. */
   notify(people: readonly string[], message: { title: string; text: string | null; level: NotifyLevel; homeId: string | null }, by: GatewayActor): { told: readonly string[] };
 };

@@ -1,10 +1,11 @@
 import type { AuditRecord, Actor, Clock } from '@kraftverk/device-sdk';
 import { REAL_CLOCK } from '@kraftverk/device-sdk';
 import type { EnginePlace, EngineWorld } from '@kraftverk/automation-engine';
-import { PLACE_KINDS, type PlaceKind, type RuleMode, type WorldFill } from '@kraftverk/automation';
+import { PLACE_KINDS, type PlaceKind, type RuleMode, type VariableSpec, type WorldFill } from '@kraftverk/automation';
 import type { ModeStore, NotificationStore, OccupancyStore, PeopleStore, PlaceStore, PresenceStore, SpaceStore } from '@kraftverk/store';
 
 import type { Modes } from '../modes/modes.ts';
+import type { Variables } from '../variables/variables.ts';
 import { tell, type PushSender } from '../notifications/notify.ts';
 import { whereabouts, type Whereabouts } from '../presence/whereabouts.ts';
 
@@ -29,6 +30,7 @@ export type WorldDeps = {
   occupancies: Pick<OccupancyStore, 'open'>;
   modes: Pick<Modes, 'now' | 'set'>;
   modeStore: Pick<ModeStore, 'list'>;
+  variables: Pick<Variables, 'specs' | 'now' | 'set'>;
   notifications: NotificationStore;
   push: PushSender | null;
   record: (entry: AuditRecord) => void;
@@ -46,6 +48,10 @@ export type WorldDirectory = {
   /** The home an automation is for — none said, the family's first; one let go, none. */
   home(homeId: string | null): string | null;
   modes(): readonly RuleMode[];
+  /** The home a place is, or is in; null for one that is neither. */
+  homeOf(at: EnginePlace): string | null;
+  /** A home's variables, as the language sees them. */
+  variables(homeId: string): readonly VariableSpec[];
 };
 
 export function familyWorld(deps: WorldDeps): EngineWorld & WorldDirectory {
@@ -137,6 +143,10 @@ export function familyWorld(deps: WorldDeps): EngineWorld & WorldDirectory {
       const home = deps.places.home(homeId);
       deps.record({ at: new Date(clock.now()).toISOString(), kind: 'home.mode', actor: by as Actor, resourceKind: 'home', resource: homeId, summary: `${home?.name ?? 'The home'} is ${mode}` });
     },
+    variables: (homeId) => deps.variables.specs(homeId),
+    variable: (homeId, key) => deps.variables.now(homeId, key),
+    // An automation's set is a line of its run, not the timeline's: as its devices' commands are.
+    setVariable: (homeId, key, value, by, cause) => void deps.variables.set(homeId, key, value, by as Actor, cause),
     notify(people, message, by) {
       const told = [...new Set(people)].filter((person) => member(person));
       for (const person of told) tell(deps.notifications, deps.push, person, { title: message.title, body: message.text, level: message.level, homeId: message.homeId, from: by as Actor });

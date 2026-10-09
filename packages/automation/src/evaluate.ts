@@ -96,6 +96,8 @@ export type RuleScope = {
   memory?(name: string): Measured;
   /** One of its inputs, as the run was given it — or its default — in its unit. */
   input?(name: string): Measured;
+  /** One of a home's variables now — `at` its own home or a role a home fills — with its unit and title; absent, or null, where it is not known. */
+  variable?(at: string, key: string): { value: ScalarValue | null; unit: Unit | null; label: string } | null;
   /** What the part filling a role reports now for a meaning — a number in its unit, if it has one — or null when it cannot be known. */
   read(role: string, means: string): { value: ScalarValue; label: string; unit: Unit | null } | null;
   /** A function's answer; not given where calls are not allowed. */
@@ -243,6 +245,12 @@ export function measureNow(expr: Expr, scope: RuleScope, trace: string[] = [], a
       return scope.param((expr as ExprOf<'param'>).param);
     case 'memory':
       return scope.memory?.((expr as ExprOf<'memory'>).memory) ?? plain(null);
+    case 'variable': {
+      const { key, at } = (expr as ExprOf<'variable'>).variable;
+      const held = scope.variable?.(at, key) ?? null;
+      trace.push(`${at === OWN_HOME ? 'The home' : scope.name(at)}: ${held ? `${held.label} ${held.value === null ? 'not set' : shown(held.value, held.unit ?? '')}` : `its variable ${key} is not known`}`);
+      return held ? { value: held.value, unit: typeof held.value === 'number' ? held.unit : null } : plain(null);
+    }
     case 'input':
       return scope.input?.((expr as ExprOf<'input'>).input) ?? plain(null);
     case 'read': {
@@ -532,6 +540,7 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
       case 'within':
       case 'run':
       case 'memory':
+      case 'variable':
       case 'input':
       case 'sun':
       case 'across':

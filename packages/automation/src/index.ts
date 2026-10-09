@@ -24,5 +24,7 @@ export * from './draft.ts';
 export * from './text/expr.ts';
 export * from './text/rules.ts';
 export * from './text/settings.ts';
+export * from './text/variables.ts';
 export * from './message.ts';
 export * from './script.ts';
+export * from './variables.ts';

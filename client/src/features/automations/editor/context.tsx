@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
 import type { AutomationView, DeviceView, FunctionView, RecipeView, ScriptView } from '@kraftverk/api-client';
-import { capitalise, describeExpr, describeSteps, describeTriggers, draftOfRecipe, eachAt, eachNames, eachSaid, EMPTY_DRAFT, partOptions, partRole, roleSaid, writtenAttribute, type AutomationDraft, type AutomationFunction, type Expr, type ListPath, type PartOption, type RoleBinding, type RuleVocabulary, type Step, type Trigger } from '@kraftverk/automation';
+import { capitalise, describeExpr, describeSteps, describeTriggers, draftOfRecipe, eachAt, eachNames, eachSaid, EMPTY_DRAFT, partOptions, partRole, roleSaid, writtenAttribute, type AutomationDraft, type AutomationFunction, type Expr, type ListPath, type PartOption, type RoleBinding, type RuleVocabulary, type Step, type Trigger, type VariableSpec, OWN_HOME } from '@kraftverk/automation';
 import { capabilitiesOf, meetsNeed, type CapabilityNeed, type DeviceDescription, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import { useAnswer } from '../../../components/useAnswer';
@@ -76,9 +76,20 @@ export function useEditor() {
       const device = deviceOf(binding);
       return device && binding ? { description: device.description, part: binding.part, device } : null;
     };
+    /**
+     * The variables of the home a block names: its own (the one it is for, or
+     * the family's first) — or the one a role a place fills is, or is in.
+     */
+    const variablesAt = (at: string = OWN_HOME): readonly VariableSpec[] => {
+      const fill = draft.world?.[at];
+      const homeId = at === OWN_HOME ? (kit.homeId ?? world.places.find((place) => place.kind === 'home')?.id ?? null) : fill && 'place' in fill ? (world.places.find((place) => place.id === fill.place)?.homeId ?? null) : null;
+      return homeId ? world.variables.filter((variable) => variable.homeId === homeId) : [];
+    };
     const vocabulary: RuleVocabulary = {
       fn: (id) => (functions.find((fn) => fn.id === id) as unknown as AutomationFunction | undefined) ?? null,
       ...(world.modes.length ? { modes: () => world.modes } : {}),
+      // Not read yet, or none: not checked here — the hub checks it as it is saved.
+      ...(world.variables.length ? { variables: (at: string) => variablesAt(at) } : {}),
       // What the script filling a role declares: its steps' inputs and answers, its functions.
       script: (role) => scripts.find((script) => script.id === draft.scripts?.[role])?.shape ?? null,
       attribute: (role, target) => {
@@ -111,7 +122,7 @@ export function useEditor() {
     const offering = (need: CapabilityNeed) => (description: DeviceDescription, part: string) => meetsNeed(need, capabilitiesOf(description, part));
     /** Whether a block's part is chosen: a role of the draft's, or what a "for each" calls each part. */
     const chosen = (role: string): boolean => Boolean(role && (draft.rule.roles[role] || each[role]));
-    return { ...kit, name, partOf, vocabulary, said, saidExpr, saidTrigger, parts, offering, chosen };
+    return { ...kit, name, partOf, vocabulary, said, saidExpr, saidTrigger, parts, offering, chosen, variablesAt };
   }, [kit, draft, devices, automations, scripts, functions, prefer, world]);
 }
 

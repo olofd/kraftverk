@@ -12,7 +12,7 @@ import type { MapRegionAsk, MapRegionsView } from './map.ts';
 import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DevicePeople, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, FamilyElsewhere, LinkRecord, NewLink, PictureRef, ToolBody, TrackPointView } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
 import type { FoundFamily, InvitationInput, InvitationMade, InvitationView, Joined, MemberChanges, PersonView, SharingChanges, SharingLevel, PresenceView, NotificationView, WebPushSubscription } from './people.ts';
-import type { HomeInput, HomeView, ZoneInput, ZoneView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView, OccupancyView, ModeView, ModeInput, HomeModeView, ModeSet, ModeAxis } from './homes.ts';
+import type { HomeInput, HomeView, ZoneInput, ZoneView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView, OccupancyView, ModeView, ModeInput, HomeModeView, ModeSet, ModeAxis, VariableView, VariableInput, VariableCount } from './homes.ts';
 import type { MediaData, MediaView, NewMedia } from './media.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, FamilyView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
 import type { ScriptInput, ScriptTried, ScriptTry, ScriptView } from './scripts.ts';
@@ -343,6 +343,24 @@ export interface KraftverkApi {
     set(homeId: string, input: ModeSet): Promise<HomeModeView[]>;
     /** A mode planned ahead let go, by its axis and when it was to begin: what is before it lasts on. */
     cancel(homeId: string, input: { axis: ModeAxis; from: string }): Promise<HomeModeView[]>;
+  };
+  /**
+   * A home's variables (docs/PLAN-VARIABLES-AND-TRIGGERS.md): typed state of
+   * its own — guests staying, the dryer's runs, when to wake — that its
+   * automations read and set, and its people and scripts see and change.
+   */
+  variables: {
+    /** A home's variables, in their order, each with what it holds now; with those let go, `removed`. */
+    list(homeId: string, options?: { removed?: boolean }): Promise<VariableView[]>;
+    add(homeId: string, input: VariableInput): Promise<VariableView>;
+    /** Rekeyed, or its kind or field changed: a value that no longer fits goes back to what it starts as. */
+    update(id: string, changes: Partial<VariableInput>): Promise<VariableView>;
+    /** Let go: what reads it reads nothing; its key is free again. */
+    remove(id: string): Promise<VariableView>;
+    /** One set by its key, to a value that fits it: on the timeline as theirs. */
+    set(homeId: string, key: string, value: Value): Promise<VariableView>;
+    /** A counter counted, by its key: by one, by so many, or back to its start — held to its range. */
+    count(homeId: string, key: string, count?: VariableCount): Promise<VariableView>;
   };
   /** Which spaces of a home have someone in them, whoever they are (§8.9). */
   occupancy: {

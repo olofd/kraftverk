@@ -617,6 +617,63 @@ do:
     at: cabin
 ```
 
+### `set variable` — Set a variable
+
+Set one of a home’s variables, by its key — the automation’s own home, unless `at` names another — to a value of its kind, in its unit and range: read by every automation as `home.var.<key>`, and one that waits for it looks again. Not a device: nothing passes the gateway, and it is a line of the run. Already so, nothing changes.
+
+| Word | Holds | |
+|---|---|---|
+| `set variable` | one of the home’s variables, by its key: under `variables` of its home | needed |
+| `to` | a value, or an expression for one | needed |
+| `at` | a place: `home`, the automation’s own, or a role a home, a zone or a space fills — `{ zone: key }`, `{ space: key }` under `uses` | if you like |
+
+```yaml
+do:
+  - set variable: guests
+    to: true
+```
+
+```yaml
+do:
+  - set variable: target
+    to: 21 °C
+```
+
+```yaml
+do:
+  - set variable: laundry
+    to: '"drying"'
+    at: cabin
+```
+
+### `count` — Count
+
+Count one of a home’s counters — the automation’s own home, unless `at` names another — up by one, or `by` a whole number (below nought, down), held to its range; or `reset` it to what it starts as. Read as `home.var.<key>` by every automation.
+
+| Word | Holds | |
+|---|---|---|
+| `count` | one of the home’s variables, by its key: under `variables` of its home | needed |
+| `by` | a value, or an expression for one | if you like |
+| `reset` | `true` or `false`; `false` when it is not written | if you like |
+| `at` | a place: `home`, the automation’s own, or a role a home, a zone or a space fills — `{ zone: key }`, `{ space: key }` under `uses` | if you like |
+
+```yaml
+do:
+  - count: dryerRuns
+```
+
+```yaml
+do:
+  - count: guests
+    by: -1
+```
+
+```yaml
+do:
+  - count: dryerRuns
+    reset: true
+```
+
 ### `notify` — Tell someone
 
 Tell people something — a role a person fills, a role people fill, or `everyone` in the family — in their inbox, and pushed to their phones and browsers: a `title`, more `text` if you like, as news unless `level` says `warning` or `alarm`. A value in braces is said as it is then, in its unit: `{station.charge}`, `{run.who}`. In watch mode it is said, not sent.
@@ -968,6 +1025,7 @@ reached — is never taken for true.
 | A setting | `setting.low` | One of the rule’s settings, by its name: a recipe’s, before it is copied into an automation. |
 | What it was given | `given.level` | One of the automation’s inputs, as the step that started the run gave it — or, not given, its default. |
 | What it remembers | `memory.timesCharged` | A value it remembers, as a run last left it — or, before any did, as it starts: kept across runs and restarts. |
+| A home’s variable | `home.var.guests` · `home.var.dryerRuns >= 3` · `home.var.target` | One of a home’s variables, by its key, as it is now — a toggle, a number in its unit, a choice, words, a time of day, a count — set by automations, people and scripts: of `home`, the automation’s own, or a role a home fills. When one changes, an automation that reads it looks again, as for a reading. |
 | A reading | `station.charge` · `charger.power` · `home.people == 0` · `bathroom.occupied` · `home.presence == "vacation"` · `home.day == "night"` | What the part filling a role reports now, by what it means: a standard meaning, or a type’s own. Unknown when it has not said, or said too long ago. Of a place — a role a place fills, or `home`, the automation’s own — what is so of it now: `people`, how many of the family are there, as far as each shares; `occupied`, whether anyone is, whoever they are; `presence` and `day`, a home’s mode on each axis, by its key. |
 | Someone somewhere | `olof at home` · `not olof at work` · `any(p in children: p at school)` · `count(p in children: p at home) == 0` | Whether a person is at a place now, as far as they share — a home or a zone by where what they carry says they are, a room by a signal that tells people apart: a role a person fills, or what `any(p in children: …)` calls each of several; a role a place fills, or `home`. Unknown when they share too little to say. |
 | Over the time just gone | `average(station.charge, 1 h)` · `change(station.charge, 30 min) > 5 %` · `ago(charger.power, 10 min)` | A reading over the time just gone, from what the home kept of it: `average`, `lowest`, `highest`, `change` — how much it changed — or `ago`, what it was then. In the reading’s unit; the time a number or a setting, a minute to two weeks. Unknown when nothing was kept for that time. |

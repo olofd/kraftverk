@@ -52,6 +52,11 @@ export type Expr =
   | { param: string }
   /** What it remembers, as a run last left it — or as it starts: `memory.timesCharged`. */
   | { memory: string }
+  /**
+   * One of a home's variables, by its key, as it is now (docs/PLAN-VARIABLES-AND-TRIGGERS.md):
+   * `home.var.guests` — `at` the automation's own home (`home`), or a role a home fills.
+   */
+  | { variable: { key: string; at: string } }
   /** What the run was given, or its default: `given.level`. */
   | { input: string }
   /** What the part filling a role reports now, by meaning: `charge`, or a type's own `acme.minutesToFull`. */
@@ -392,6 +397,10 @@ export type Step =
   | { forEach: { as: string; in: string; together?: boolean; steps: readonly Step[] } }
   /** A home set to a mode, by its key — the automation's own, unless `at` names another — as a person would from its screen. */
   | { setMode: { mode: string; at?: string } }
+  /** One of a home's variables set — its own home's, unless `at` names another — to a value of its kind (docs/PLAN-VARIABLES-AND-TRIGGERS.md §2.5). */
+  | { setVariable: { key: string; to: Expr; at?: string } }
+  /** A counter counted — up by one, or `by` so many (down, below nought) — or `reset` to what it starts as. */
+  | { count: { key: string; by?: Expr; reset?: boolean; at?: string } }
   /**
    * Tell people something: in their inbox, and pushed to their phones — a
    * person, several (a people role), or everyone in the family (`to`

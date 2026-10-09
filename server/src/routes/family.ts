@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import type { KraftverkApi } from '@kraftverk/api-contract';
+import type { KraftverkApi, VariableInput } from '@kraftverk/api-contract';
+import { VARIABLE_KINDS } from '@kraftverk/automation';
 import { acceptInvitation } from '@kraftverk/hub';
-import { KEY, MODE_AXES, MODE_KEY, NODE_ID, nodeId, type PolicyValueName } from '@kraftverk/device-sdk';
+import { isUnit, KEY, MODE_AXES, MODE_KEY, NODE_ID, nodeId, type PolicyValueName } from '@kraftverk/device-sdk';
 
 import { familyFor, RESOURCE_KIND, type AppDeps } from './context.ts';
 import { body, query } from './parse.ts';
@@ -79,6 +80,34 @@ export function familyRoutes(deps: AppDeps): Hono {
   api.put('/homes/:id/modes', async (c) =>
     c.json({ modes: await familyFor(deps, c).modes.set(c.req.param('id'), await body(c, z.object({ mode: z.string().min(1).max(40), from: z.iso.datetime({ offset: true }).optional(), until: z.iso.datetime({ offset: true }).nullable().optional() }).strict())) })
   );
+  // A home's variables: declared, and set by a person or a script. What fits a kind is the hub's to say.
+  const presented = { title: z.string().trim().min(1).max(60), description: z.string().max(300).optional() };
+  const FIELD = z.discriminatedUnion('type', [
+    z.object({ type: z.literal('boolean'), ...presented, default: z.boolean().optional(), words: z.object({ true: z.string().min(1).max(30), false: z.string().min(1).max(30) }).strict().optional() }).strict(),
+    z
+      .object({
+        type: z.literal('number'),
+        ...presented,
+        unit: z.string().refine(isUnit, 'not a unit').optional(),
+        min: z.number().finite().optional(),
+        max: z.number().finite().optional(),
+        step: z.number().positive().finite().optional(),
+        precision: z.number().int().min(0).max(6).optional(),
+        integer: z.boolean().optional(),
+        default: z.number().finite().optional(),
+        presentation: z.literal('slider').optional(),
+      })
+      .strict(),
+    z.object({ type: z.literal('enum'), ...presented, options: z.array(z.object({ value: z.string().min(1).max(40), label: z.string().trim().min(1).max(60) }).strict()).min(1).max(30), default: z.string().max(40).optional() }).strict(),
+    z.object({ type: z.literal('string'), ...presented, default: z.string().max(500).optional(), presentation: z.literal('multiline').optional() }).strict(),
+  ]);
+  const VARIABLE = z.object({ key: z.string().min(1).max(40), kind: z.enum(VARIABLE_KINDS), field: FIELD }).strict();
+  api.get('/homes/:id/variables', async (c) => c.json({ variables: await familyFor(deps, c).variables.list(c.req.param('id'), { removed: c.req.query('removed') === 'true' }) }));
+  api.post('/homes/:id/variables', async (c) => c.json(await familyFor(deps, c).variables.add(c.req.param('id'), (await body(c, VARIABLE)) as VariableInput)));
+  api.patch('/variables/:id', async (c) => c.json(await familyFor(deps, c).variables.update(c.req.param('id'), (await body(c, VARIABLE.partial())) as Partial<VariableInput>)));
+  api.delete('/variables/:id', async (c) => c.json(await familyFor(deps, c).variables.remove(c.req.param('id'))));
+  api.put('/homes/:id/variables/:key', async (c) => c.json(await familyFor(deps, c).variables.set(c.req.param('id'), c.req.param('key'), (await body(c, z.object({ value: z.union([z.boolean(), z.number().finite(), z.string().max(500)]) }).strict())).value)));
+  api.post('/homes/:id/variables/:key/count', async (c) => c.json(await familyFor(deps, c).variables.count(c.req.param('id'), c.req.param('key'), await body(c, z.object({ by: z.number().int().optional(), reset: z.boolean().optional() }).strict()))));
   // Which spaces have someone in them: whoever they are.
   api.get('/homes/:id/occupancy', async (c) => c.json({ occupancy: await familyFor(deps, c).occupancy.now(c.req.param('id')) }));
   api.get('/spaces/:id/occupancy', async (c) => {

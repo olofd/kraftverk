@@ -3,7 +3,7 @@ import { frameProblem, heightProblem, nameProblem, planProblem, pointsProblem, t
 import { AUTOMATION_MODES, SCRIPT_LIMITS, type AutomationMode, type Coordinates, type Rule } from '@kraftverk/automation';
 
 import { CURRENT_VERSION } from './migrate.ts';
-import { durationSeconds, durationText, ruleFromConfig, ruleToConfig, useOf, useText, type Issue, type Use } from '@kraftverk/automation';
+import { durationSeconds, durationText, ruleFromConfig, ruleToConfig, useOf, useText, variableFromConfig, variableToConfig, VARIABLE_KEY, type Issue, type Use, type VariableSpec } from '@kraftverk/automation';
 
 /*
   A kraftverk configuration as data (docs/CONFIG.md): the home's settings, its
@@ -127,7 +127,12 @@ export type HomeEntry = {
   spaces: SpaceEntry[];
   /** Where its spaces meet, or meet the outside, by key. */
   openings: Record<string, OpeningEntry>;
+  /** Its variables, by key in their order: each its kind and field — what each holds now is the home's, not the file's. */
+  variables: Record<string, VariableEntry>;
 };
+
+/** One of a home's variables, as a file declares it (docs/PLAN-VARIABLES-AND-TRIGGERS.md). */
+export type VariableEntry = Omit<VariableSpec, 'key'>;
 
 export const SPACE_KINDS = ['building', 'floor', 'room', 'area', 'stairs', 'outdoor'] as const;
 export const SPACE_PURPOSES = ['kitchen', 'living', 'dining', 'bedroom', 'children', 'guest', 'bathroom', 'toilet', 'hallway', 'office', 'laundry', 'storage', 'utility', 'garage', 'gym', 'sauna', 'other'] as const;
@@ -429,8 +434,8 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         continue;
       }
       for (const field of Object.keys(entry))
-        if (!['name', 'type', 'icon', 'picture', 'location', 'bearing', 'time zone', 'address', 'country', 'policy', 'spaces', 'openings'].includes(field))
-          problem(`"${field}" is not part of a home: it has name, type, icon, picture, location, bearing, time zone, address, country, policy, spaces and openings`, [...path, field]);
+        if (!['name', 'type', 'icon', 'picture', 'location', 'bearing', 'time zone', 'address', 'country', 'policy', 'spaces', 'openings', 'variables'].includes(field))
+          problem(`"${field}" is not part of a home: it has name, type, icon, picture, location, bearing, time zone, address, country, policy, spaces, openings and variables`, [...path, field]);
       const homeIcon = entry.icon === undefined || entry.icon === null ? null : text(entry.icon, [...path, 'icon'], 'its icon, by name');
       const bearing = entry.bearing === undefined || entry.bearing === null ? 0 : typeof entry.bearing === 'number' && Number.isFinite(entry.bearing) ? turnOf(entry.bearing) : (problem('"bearing" is degrees from north: 0 to below 360', [...path, 'bearing']), 0);
       const picture = entry.picture === undefined || entry.picture === null ? null : typeof entry.picture === 'string' && /^[0-9a-f]{64}$/.test(entry.picture) ? entry.picture : (problem('"picture" is a picture\'s id: the SHA-256 of its bytes, in hex', [...path, 'picture']), null);
@@ -524,7 +529,28 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
             if (kind && from && to !== undefined) openings[openingKey] = { kind, from, to, name: openingName, shape };
           }
       }
-      if (name && timeZone) homes[key] = { name, type, icon: homeIcon, picture, location, bearing, timeZone, address, country, policy, spaces, openings };
+      // Its variables, by key: each checked as the app checks one made there.
+      const variables: Record<string, VariableEntry> = {};
+      if (entry.variables !== undefined && entry.variables !== null) {
+        if (!isRecord(entry.variables)) problem('"variables" is a map: each variable by its key', [...path, 'variables']);
+        else
+          for (const [variableKey, variable] of Object.entries(entry.variables)) {
+            const here = [...path, 'variables', variableKey];
+            if (!VARIABLE_KEY.test(variableKey)) {
+              problem(`"${variableKey}" is not a variable's key: a word in camelCase, as "dryerRuns"`, here);
+              continue;
+            }
+            try {
+              const { key: _key, ...spec } = variableFromConfig(variableKey, variable, here, (message, at) => {
+                throw Object.assign(new Error(message), { at });
+              });
+              variables[variableKey] = spec;
+            } catch (error) {
+              problem((error as Error).message, ((error as { at?: Path }).at ?? here) as Path);
+            }
+          }
+      }
+      if (name && timeZone) homes[key] = { name, type, icon: homeIcon, picture, location, bearing, timeZone, address, country, policy, spaces, openings, variables };
     }
 
   // The zones, by key: each somewhere.
@@ -872,6 +898,7 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
                   ...(home.country !== null ? { country: home.country } : {}),
                   ...(Object.keys(home.policy).length ? { policy: home.policy } : {}),
                   ...(home.spaces.length ? { spaces: spacesData(home.spaces) } : {}),
+                  ...(Object.keys(home.variables).length ? { variables: Object.fromEntries(Object.entries(home.variables).map(([key, variable]) => [key, variableToConfig({ key, ...variable })])) } : {}),
                   ...(Object.keys(home.openings).length
                     ? {
                         openings: Object.fromEntries(

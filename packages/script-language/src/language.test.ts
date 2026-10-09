@@ -22,7 +22,18 @@ beforeAll(async () => {
   await language.types(
     typesOf({
       people: [{ name: 'Maria' }, { name: 'Olof' }],
-      homes: [{ key: 'cabin', name: 'The cabin', rooms: [{ key: 'kitchen', name: 'Kitchen' }] }],
+      homes: [
+        {
+          key: 'cabin',
+          name: 'The cabin',
+          rooms: [{ key: 'kitchen', name: 'Kitchen' }],
+          variables: [
+            { key: 'guests', kind: 'toggle', field: { type: 'boolean', title: 'Guests staying' } },
+            { key: 'dryerRuns', kind: 'counter', field: { type: 'number', title: 'Dryer runs', integer: true, min: 0 } },
+            { key: 'wake', kind: 'time', field: { type: 'string', title: 'Wake at' } },
+          ],
+        },
+      ],
       modes: [
         { key: 'home', axis: 'presence', name: 'Home' },
         { key: 'away', axis: 'presence', name: 'Away' },
@@ -52,6 +63,7 @@ export async function off(after: Duration, memory: Kept<{ times: number }>): Pro
   if (power !== null && power > 10) await plug.switch.set({ on: false });
   if (!family.maria.isHome && home.rooms.kitchen.occupied === false) await plug.turnOff();
   if (home.presence === 'away') await home.setMode('night');
+  if (home.vars.guests && home.vars.wake !== null) await home.count('dryerRuns');
   memory.times += 1;
   log('after', after);
   return plug.name;
@@ -74,6 +86,10 @@ describe('the language service', () => {
     expect(nobody.map((each) => each.line)).toEqual([7]);
     const noMode = await language.problems(GOOD.replace("setMode('night')", "setMode('nigth')"));
     expect(noMode.map((each) => each.line)).toEqual([8]);
+    const noCounter = await language.problems(GOOD.replace("home.count('dryerRuns')", "home.count('guests')"));
+    expect(noCounter.map((each) => each.line)).toEqual([9]);
+    const noVariable = await language.problems(GOOD.replace('home.vars.guests', 'home.vars.guest'));
+    expect(noVariable.map((each) => each.line)).toEqual([9]);
     const told = await language.problems(GOOD.replace('{ on: false }', '{ on: "no" }'));
     expect(told.map((each) => [each.line, each.message])).toEqual([[6, expect.stringContaining("Type 'string' is not assignable to type 'boolean'")]]);
     const unknown = await language.problems(GOOD.replace("plug.reading('power')", "plug.reading('voltage')"));

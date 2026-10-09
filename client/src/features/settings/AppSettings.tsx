@@ -92,6 +92,10 @@ export function AppSettings() {
             <Row title="Modes" subtitle="Home, away, vacation; day, evening, night — your own beside them, and one planned ahead" accessory={chevron} />
           </Pressable>
           <RowSeparator />
+          <Pressable onPress={() => router.push(PATHS.settings.variables)}>
+            <Row title="Variables" subtitle="Each home’s own values — guests staying, the dryer’s runs — that automations read and set" accessory={chevron} />
+          </Pressable>
+          <RowSeparator />
           <Pressable onPress={() => router.push(PATHS.settings.labels)}>
             <Row title="Labels" subtitle="Your own groupings — heating, upstairs — to filter your devices by" accessory={chevron} />
           </Pressable>

@@ -13,7 +13,7 @@ import {
   type WaySource,
 } from '@kraftverk/home-file';
 import { keyFrom, methodsOf, partsOf, type NodeId, type PolicyValueName, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
-import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, FamilyStore, LinkStore, MediaStore, LabelStore, PeopleStore, PlaceStore, SecretsAtRest, ShortcutStore, DevicePeopleStore, ModeStore, SpaceStore } from '@kraftverk/store';
+import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, FamilyStore, LinkStore, MediaStore, LabelStore, PeopleStore, PlaceStore, SecretsAtRest, ShortcutStore, DevicePeopleStore, ModeStore, SpaceStore, VariableStore } from '@kraftverk/store';
 import { base64url } from '@kraftverk/identity';
 import type { SpaceView } from '@kraftverk/api-contract';
 
@@ -57,6 +57,8 @@ export type ConfigDeps = {
   devicePeople: DevicePeopleStore;
   /** The family's own modes, beside the built-in ones. */
   modes: ModeStore;
+  /** Each home's variables: what each is — what each holds now is the home's, not a file's. */
+  variables: VariableStore;
   /** Pictures, by their content: what a home or a device in a file names. */
   media: MediaStore;
   /** A home's own values: how much is a load, the reserve. */
@@ -228,6 +230,7 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
         policy: { ...deps.policyOf(home.id).values() },
         spaces: spaceTree(deps.spaces.spaces(home.id), (id) => labelKeys(labelled.spaces[id])),
         openings: openingsOf(deps.spaces, home.id),
+        variables: Object.fromEntries(deps.variables.list(home.id).map((variable) => [variable.key, { kind: variable.kind, field: variable.field }])),
       };
     }
   }

@@ -168,6 +168,11 @@ export class Configuration {
       detail: applied,
     });
     this.#deps.bus?.publish({ kind: 'changed', deviceId: null });
+    // A home's variables, perhaps changed: what reads them looks again.
+    for (const key of [...applied.homes.added, ...applied.homes.changed]) {
+      const home = this.#deps.places.homeByKey(key);
+      if (home) this.#deps.bus?.publish({ kind: 'variables', homeId: home.id, at: new Date().toISOString() });
+    }
     for (const key of [...applied.automations.added, ...applied.automations.changed]) {
       const automation = this.#deps.automations.byKey(key);
       if (automation) this.#deps.bus?.publish({ kind: 'automation', automationId: automation.id });

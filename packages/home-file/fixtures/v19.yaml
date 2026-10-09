@@ -1,0 +1,277 @@
+kraftverk: 19
+family:
+  name: The Examples
+  kind: family
+  locale: en-GB
+homes:
+  home:
+    name: Home
+    type: house
+    location:
+      latitude: 59.33
+      longitude: 18.07
+      radius: 150
+    time zone: Europe/Stockholm
+    address:
+      locality: Stockholm
+    country: SE
+    policy:
+      loadWatts: 50
+      reserveSoc: 20
+    spaces:
+      house:
+        kind: building
+        name: House
+        spaces:
+          ground:
+            kind: floor
+            name: Ground floor
+            level: 0
+            plan:
+              picture: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+              scale: 0.02
+              x: -1
+              y: 12
+              turn: 0
+            spaces:
+              kitchen:
+                kind: room
+                name: Kitchen
+                purpose: kitchen
+                frame: { x: 4, y: 0, turn: 0 }
+                outline: [[0, 0], [4.2, 0], [4.2, 3.5], [0, 3.5]]
+              hall:
+                kind: room
+                name: Hall
+                outline: [[0, 0], [4, 0], [4, 3.5], [0, 3.5]]
+    openings:
+      front-door:
+        kind: door
+        from: hall
+        to: outside
+        name: Front door
+        shape: [[0, 1], [0, 1.9]]
+    variables:
+      guests: { kind: toggle, title: Guests staying }
+      chargeRuns: { kind: counter, title: Times charged, max: 999 }
+      target: { kind: number, title: Target temperature, starts: 21 °C, min: 16 °C, max: 25 °C, step: 0.5 °C }
+      laundry: { kind: choice, options: { washing: Washing, drying: Drying, done: Done }, starts: done }
+      wake: { kind: time, title: Wake at, starts: "06:45" }
+      note: text
+  cabin:
+    name: Lake cabin
+    type: cabin
+    time zone: Europe/Stockholm
+zones:
+  school:
+    name: School
+    location:
+      latitude: 59.34
+      longitude: 18.06
+      radius: 200
+modes:
+  guests-over:
+    axis: presence
+    name: Guests over
+    icon: users
+devices:
+  garage-station:
+    type: acme.station
+    name: Garage station
+    identity: acme:station-0001
+    picture: type:1
+    connect:
+      - via: ble
+        address: AA:BB:CC:DD:EE:01
+  smart-plug:
+    type: acme.plug
+    name: Smart plug
+    settings:
+      profile: b
+    connect:
+      - via: lan
+        address: 192.0.2.10
+        settings:
+          deviceId: made-up-device-id
+          protocolVersion: "3.4"
+        secrets:
+          localKey: !secret smart-plug.localKey
+        exportable: true
+  ac-in-meter:
+    type: acme.meter
+    name: AC-IN meter
+    paused: true
+    connect:
+      - via: lan
+        address: 192.0.2.11
+  family-account:
+    type: acme.account
+    name: Family account
+    identity: acme:account-0001
+    connect:
+      - via: cloud
+        settings:
+          account: someone@example.com
+        secrets:
+          password: !secret family-account.password
+  hall-lamp:
+    type: acme.lamp
+    name: Hall lamp
+    place:
+      home: home
+      space: hall
+      at: [2, 1.5]
+      height: 2.3
+    connect:
+      - via: account
+        through: family-account
+        address: lamp-0001
+  pocket-phone:
+    type: acme.phone
+    name: Pocket phone
+    track: 30 days
+    connect:
+      - via: account
+        through: family-account
+        address: phone-0001
+links:
+  - feeds:
+      from: ac-in-meter
+      to: garage-station.input.ac
+scripts:
+  feels-like:
+    name: Feels like
+    source: |
+      import type { Celsius, Percent } from 'kraftverk';
+
+      /** How warm it feels, from the temperature and how humid it is. */
+      export function feelsLike(temp: Celsius, humidity: Percent): Celsius {
+        return temp - (100 - humidity) / 5;
+      }
+automations:
+  start-charging:
+    name: Start charging the scooter
+    mode: act
+    home: home
+    made from: standard.start-charging
+    uses:
+      supply: garage-station.outlet.ac
+      charger: smart-plug
+    do:
+      - turn on: supply
+      - wait until: charger reachable
+        at most: 2 min
+      - turn on: charger
+      - make sure: charger.power > 50 W
+        within: 20 s
+        tries: 5
+        each time:
+          - turn off: charger
+          - wait: 5 s
+          - turn on: charger
+      - count: chargeRuns
+    if a step fails:
+      - turn off: charger
+      - turn off: supply
+  stop-charging:
+    name: Stop charging the scooter
+    mode: watch
+    home: home
+    uses:
+      supply: garage-station.outlet.ac
+      charger: smart-plug
+    do:
+      - turn off: charger
+      - watch: supply.power < 10 W
+        for: 5 s
+        if it stays so:
+          - turn off: supply
+  charge-window:
+    name: Charge window
+    mode: watch
+    home: home
+    recheck: 10 min
+    uses:
+      battery: garage-station
+      charger:
+        part: smart-plug
+        label: What charges it
+    when:
+      - becomes: battery.charge < 15 %
+        for: 2 min
+      - becomes: battery.charge >= 50 %
+    do:
+      - switch: charger
+        on: battery.charge < 50 %
+  morning:
+    name: Morning
+    mode: off
+    home: home
+    uses:
+      station: garage-station
+      mains: garage-station.input.ac
+      plug: smart-plug
+      charging:
+        automation: start-charging
+    when:
+      - at: "07:00"
+        days: weekdays
+      - every: 30 min
+      - event: mains.lost
+        from: mains
+    only if: station.charge < 80 % and time between 05:00 and 09:00
+    do:
+      - set: station
+        meaning: chargeLimit
+        to: 90
+      - if: station.charge < 20 %
+        then:
+          - start: charging
+            and wait: 10 min
+        else:
+          - turn on: plug
+  away-when-everyone-leaves:
+    name: Away when everyone leaves
+    mode: act
+    home: home
+    made from: standard.away-when-everyone-leaves
+    uses: {}
+    when:
+      - last leaves: home
+        id: left
+        do:
+          - set mode: away
+      - first arrives: home
+        id: back
+        do:
+          - set mode: home
+    do: []
+  kitchen-quiet:
+    name: Kitchen quiet
+    mode: watch
+    home: home
+    uses:
+      kitchen: { space: kitchen }
+      family: { people: everyone }
+    when:
+      - empties: kitchen
+        for: 10 min
+    do:
+      - notify: family
+        title: Nobody is in the kitchen
+  feels-warm:
+    name: Feels warm
+    mode: act
+    acts for: anna-example
+    home: home
+    uses:
+      station: garage-station
+      feel: { script: feels-like }
+    when:
+      - becomes: feel.feelsLike(station.charge) > 25
+    do:
+      - run script: feel
+        with:
+          after: 10 min
+secrets:
+  smart-plug.localKey: sealed:v1:c2FsdA:aXY:ZGF0YQ

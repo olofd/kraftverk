@@ -16,6 +16,7 @@ import {
   type OccupancyView,
   type ModeView,
   type HomeModeView,
+  type VariableView,
   type NotificationView,
   type LabelView,
   type InvitationView,
@@ -326,6 +327,14 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
       of: async (homeId) => (await get<{ modes: HomeModeView[] }>(`/homes/${encodeURIComponent(homeId)}/modes`)).modes,
       set: async (homeId, input) => (await call<{ modes: HomeModeView[] }>('PUT', `/homes/${encodeURIComponent(homeId)}/modes`, input)).modes,
       cancel: async (homeId, input) => (await call<{ modes: HomeModeView[] }>('DELETE', `/homes/${encodeURIComponent(homeId)}/modes`, input)).modes,
+    },
+    variables: {
+      list: async (homeId, options = {}) => (await get<{ variables: VariableView[] }>(`/homes/${encodeURIComponent(homeId)}/variables`, options.removed ? { removed: 'true' } : undefined)).variables,
+      add: (homeId, input) => call('POST', `/homes/${encodeURIComponent(homeId)}/variables`, input),
+      update: (id, changes) => call('PATCH', `/variables/${encodeURIComponent(id)}`, changes),
+      remove: (id) => call('DELETE', `/variables/${encodeURIComponent(id)}`),
+      set: (homeId, key, value) => call('PUT', `/homes/${encodeURIComponent(homeId)}/variables/${encodeURIComponent(key)}`, { value }),
+      count: (homeId, key, count = {}) => call('POST', `/homes/${encodeURIComponent(homeId)}/variables/${encodeURIComponent(key)}/count`, count),
     },
     occupancy: {
       now: async (homeId) => (await get<{ occupancy: OccupancyView[] }>(`/homes/${encodeURIComponent(homeId)}/occupancy`)).occupancy,

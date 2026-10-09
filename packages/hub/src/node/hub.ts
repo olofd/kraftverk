@@ -23,6 +23,7 @@ import {
   PresenceStore,
   OccupancyStore,
   ModeStore,
+  VariableStore,
   NotificationStore,
   FamilyStore,
   NodeStore,
@@ -59,6 +60,7 @@ import { Presence } from '../presence/presence.ts';
 import { whereabouts } from '../presence/whereabouts.ts';
 import { Occupancy } from '../occupancy/occupancy.ts';
 import { Modes } from '../modes/modes.ts';
+import { Variables } from '../variables/variables.ts';
 import { ScriptCatalogue } from '../scripts/catalogue.ts';
 import { scriptRunner } from '../scripts/runner.ts';
 import { familyWorld, type WorldDirectory } from '../automations/world.ts';
@@ -214,6 +216,9 @@ export class Hub {
   /** A home's modes, and which each is in: kept, and said on the bus as they change. */
   readonly modeStore: ModeStore;
   readonly modes: Modes;
+  /** A home's variables (docs/PLAN-VARIABLES-AND-TRIGGERS.md): kept, and what each holds now. */
+  readonly variableStore: VariableStore;
+  readonly variables: Variables;
   /** The family's world as automations see it, and a draft checks what fills its roles of it against. */
   readonly world: EngineWorld & WorldDirectory;
   readonly changeLog: ChangeLog;
@@ -320,7 +325,9 @@ export class Hub {
     this.occupancies = new OccupancyStore(db);
     this.modeStore = new ModeStore(db);
     this.modes = new Modes({ store: this.modeStore, places: this.places, bus: this.bus, clock: options.clock });
-    this.world = familyWorld({ people: this.people, places: this.places, spaces: this.spaces, stays: this.stays, occupancies: this.occupancies, modes: this.modes, modeStore: this.modeStore, notifications: this.notifications, push: this.push, record, clock: this.clock });
+    this.variableStore = new VariableStore(db);
+    this.variables = new Variables({ store: this.variableStore, bus: this.bus, clock: options.clock });
+    this.world = familyWorld({ people: this.people, places: this.places, spaces: this.spaces, stays: this.stays, occupancies: this.occupancies, modes: this.modes, modeStore: this.modeStore, variables: this.variables, notifications: this.notifications, push: this.push, record, clock: this.clock });
 
     /** What the installed packages bring to automations: their recipes and functions. None of the core's own. */
     this.library = new AutomationLibrary(types.contributions(), (message) => this.#log('warn', message));
@@ -362,6 +369,7 @@ export class Hub {
       shortcuts: this.shortcuts,
       devicePeople: this.devicePeople,
       modes: this.modeStore,
+      variables: this.variableStore,
       media: this.media,
       policyOf: policyOf(db),
       sealing: options.sealing,

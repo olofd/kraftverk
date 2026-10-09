@@ -252,8 +252,25 @@ automations:
 
   test('YAML that is not YAML, a missing version, and one written by a newer kraftverk', () => {
     expect(readConfig('devices: [').problems[0]).toMatchObject({ line: 1 });
-    expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 18" at its top');
-    expect(readConfig('kraftverk: 19').problems[0]).toMatchObject({ message: 'It was written by a newer kraftverk (version 19); this one reads up to version 18', line: 1, column: 12 });
+    expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 19" at its top');
+    expect(readConfig('kraftverk: 20').problems[0]).toMatchObject({ message: 'It was written by a newer kraftverk (version 20); this one reads up to version 19', line: 1, column: 12 });
+  });
+
+  test('a home\'s variables: each its kind, read as the app makes one — and what does not fit, said where it is', () => {
+    const home = (variables: string) => readConfig(`kraftverk: 19\nhomes:\n  home:\n    name: Home\n    time zone: Europe/London\n    variables:\n${variables}`);
+    const read = home('      guests: toggle\n      target: { kind: number, title: Target, starts: 21 °C, min: 16 °C, max: 25 °C }\n      runs: { kind: counter }\n      wake: { kind: time, starts: "06:45" }\n      laundry: { kind: choice, options: { washing: Washing, done: Done } }\n');
+    expect(read.problems).toEqual([]);
+    const variables = read.document!.homes.home!.variables;
+    expect(variables.guests).toEqual({ kind: 'toggle', field: { type: 'boolean', title: 'Guests' } });
+    expect(variables.target).toEqual({ kind: 'number', field: { type: 'number', title: 'Target', unit: '°C', min: 16, max: 25, default: 21 } });
+    expect(variables.runs).toEqual({ kind: 'counter', field: { type: 'number', title: 'Runs', integer: true, min: 0 } });
+    expect(readConfig(writeConfig(read.document!)).document!.homes.home!.variables).toEqual(variables);
+    const wrong = (variables: string) => home(variables).problems.map((problem) => [problem.message, problem.path?.join('.')]);
+    expect(wrong('      guests: { kind: toggle, unit: W }\n')).toEqual([['A toggle has no "unit"', 'homes.home.variables.guests.unit']]);
+    expect(wrong('      Guests: toggle\n')).toEqual([['"Guests" is not a variable\'s key: a word in camelCase, as "dryerRuns"', 'homes.home.variables.Guests']]);
+    expect(wrong('      target: { kind: number, starts: 30 °C, max: 25 °C }\n')).toEqual([['What it starts as must be at most 25', 'homes.home.variables.target']]);
+    expect(wrong('      wake: { kind: time, starts: soon }\n')).toEqual([['"soon" is not a time of day: 07:00', 'homes.home.variables.wake']]);
+    expect(wrong('      laundry: { kind: choice, options: { washing: Washing }, starts: dry }\n')).toEqual([['It starts as one of its options: washing', 'homes.home.variables.laundry.starts']]);
   });
 });
 

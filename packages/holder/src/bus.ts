@@ -59,7 +59,15 @@ export type LiveMessage =
    */
   | { kind: 'mode'; homeId: string; axis: ModeAxis; mode: string; previous: string | null; by: Actor; cause: readonly string[]; at: string }
   /** The family's own modes changed: one added, renamed or let go. */
-  | { kind: 'modes'; at: string };
+  | { kind: 'modes'; at: string }
+  /**
+   * One of a home's variables changed (docs/PLAN-VARIABLES-AND-TRIGGERS.md):
+   * from `previous`, to `value`, by whom — and, set by an automation, the
+   * automations whose runs led to it, as a mode's change says them.
+   */
+  | { kind: 'variable'; homeId: string; key: string; value: Value | null; previous: Value | null; by: Actor; cause: readonly string[]; at: string }
+  /** A home's variables changed: one added, changed or let go. */
+  | { kind: 'variables'; homeId: string; at: string };
 
 /** A place someone can be at: a home, a zone, or a space of a home (its home's id beside it). */
 export type WorldPlace = { id: string; kind: 'home' | 'zone' } | { id: string; kind: 'space'; homeId: string };

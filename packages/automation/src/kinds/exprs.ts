@@ -11,7 +11,7 @@ import type { KindDocs } from './spec.ts';
   one left out.
 */
 
-export type ExprKind = 'value' | 'param' | 'memory' | 'input' | 'read' | 'history' | 'distance' | 'sun' | 'across' | 'call' | 'apply' | 'script' | 'compare' | 'math' | 'negate' | 'if' | 'either' | 'in' | 'all' | 'any' | 'not' | 'reachable' | 'within' | 'run' | 'presentAt';
+export type ExprKind = 'value' | 'param' | 'memory' | 'variable' | 'input' | 'read' | 'history' | 'distance' | 'sun' | 'across' | 'call' | 'apply' | 'script' | 'compare' | 'math' | 'negate' | 'if' | 'either' | 'in' | 'all' | 'any' | 'not' | 'reachable' | 'within' | 'run' | 'presentAt';
 
 /** An expression of one kind. */
 export type ExprOf<K extends ExprKind> = K extends ExprKind ? Extract<Expr, Record<K, unknown>> : never;
@@ -43,6 +43,11 @@ export const EXPR_KINDS: { readonly [K in ExprKind]: ExprSpec<K> } = {
   param: leaf('param', 'A setting', { summary: 'One of the rule’s settings, by its name: a recipe’s, before it is copied into an automation.', examples: ['setting.low'] }),
   input: leaf('input', 'What it was given', { summary: 'One of the automation’s inputs, as the step that started the run gave it — or, not given, its default.', examples: ['given.level'] }),
   memory: leaf('memory', 'What it remembers', { summary: 'A value it remembers, as a run last left it — or, before any did, as it starts: kept across runs and restarts.', examples: ['memory.timesCharged'] }),
+  variable: leaf('variable', 'A home’s variable', {
+    summary:
+      'One of a home’s variables, by its key, as it is now — a toggle, a number in its unit, a choice, words, a time of day, a count — set by automations, people and scripts: of `home`, the automation’s own, or a role a home fills. When one changes, an automation that reads it looks again, as for a reading.',
+    examples: ['home.var.guests', 'home.var.dryerRuns >= 3', 'home.var.target'],
+  }),
   read: leaf('read', 'A reading', {
     summary:
       'What the part filling a role reports now, by what it means: a standard meaning, or a type’s own. Unknown when it has not said, or said too long ago. Of a place — a role a place fills, or `home`, the automation’s own — what is so of it now: `people`, how many of the family are there, as far as each shares; `occupied`, whether anyone is, whoever they are; `presence` and `day`, a home’s mode on each axis, by its key.',
@@ -176,7 +181,7 @@ export const EXPR_KINDS: { readonly [K in ExprKind]: ExprSpec<K> } = {
 };
 
 /** The order the reference lists them in. */
-export const EXPR_KIND_ORDER: readonly ExprKind[] = ['value', 'param', 'input', 'memory', 'read', 'presentAt', 'history', 'distance', 'reachable', 'run', 'within', 'sun', 'across', 'call', 'apply', 'script', 'compare', 'in', 'math', 'negate', 'if', 'either', 'all', 'any', 'not'];
+export const EXPR_KIND_ORDER: readonly ExprKind[] = ['value', 'param', 'input', 'memory', 'variable', 'read', 'presentAt', 'history', 'distance', 'reachable', 'run', 'within', 'sun', 'across', 'call', 'apply', 'script', 'compare', 'in', 'math', 'negate', 'if', 'either', 'all', 'any', 'not'];
 
 /** Which kind an expression is — by its key; one of no kind is an error, never taken for another. */
 export function exprKind(expr: Expr): ExprKind {

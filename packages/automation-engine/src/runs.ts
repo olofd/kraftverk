@@ -41,13 +41,15 @@ import {
   type Step,
   type StepLine,
   type Write,
+  counted,
+  type VariableSpec,
 } from '@kraftverk/automation';
 import { attributeMeaning, MAIN_PART, readingOf, type Actor, type AutomationId, type Value } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
 import type { RuleContext, StartingEvent } from './context.ts';
 import { listen, LOOK_EVERY_SECONDS, READINGS_PER_RUN } from './listen.ts';
-import { actorOf, RunRefusal, type Asker, type AutomationEngineDeps, type AutomationRecord } from './model.ts';
+import { actorOf, RunRefusal, type Asker, type AutomationEngineDeps, type AutomationRecord, type EngineWorld } from './model.ts';
 import { ACTS, actsOn, lowerFirst, pastOf, quoted } from './words.ts';
 
 /*
@@ -633,6 +635,8 @@ export class Runs {
       else if ('script' in step) walked = await this.#script(live, here, step.script, depth, within, what());
       else if ('remember' in step) walked = await this.#remember(live, here, step.remember, depth, within, what());
       else if ('setMode' in step) walked = this.#setMode(live, here, step.setMode, depth, within, what());
+      else if ('setVariable' in step) walked = await this.#setVariable(live, here, step.setVariable, depth, within, what());
+      else if ('count' in step) walked = await this.#count(live, here, step.count, depth, within, what());
       else if ('notify' in step) walked = await this.#notify(live, here, step.notify, depth, within, what());
       else if ('repeat' in step) walked = await this.#repeat(live, here, step.repeat, depth, within, what(), mode);
       else if ('forEach' in step) walked = await this.#forEach(live, here, step.forEach, depth, within, what(), mode);
@@ -976,6 +980,66 @@ export class Runs {
       return 'failed';
     }
     this.#add(live, { kind: 'setMode', depth, within, what, outcome: 'done', detail: `${world.placeName({ id: home, kind: 'home' }) ?? 'The home'} is ${set.mode} now`, until: null });
+    return 'ok';
+  }
+
+  /** A home's variable set, as the automation: what its `to` comes to, in its unit and range — already so, nothing changes. */
+  async #setVariable(live: LiveRun, here: Here, set: StepOf<'setVariable'>['setVariable'], depth: number, within: string | null, what: string): Promise<Walked> {
+    const found = this.#variableOf(live, here, 'setVariable', set, depth, within, what);
+    if (!found) return 'failed';
+    const { world, home, spec } = found;
+    const scope = this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event, live.inputs);
+    const measured = await measure(set.to, scope).catch(() => ({ value: null, unit: null }));
+    const kept = toRemember({ fields: { [spec.key]: spec.field } }, spec.key, measured);
+    if ('problem' in kept) {
+      this.#add(live, { kind: 'setVariable', depth, within, what, outcome: 'failed', detail: kept.problem, until: null });
+      return 'failed';
+    }
+    return this.#putVariable(live, here, world, home, spec, kept.value, 'setVariable', depth, within, what);
+  }
+
+  /** A home's counter counted, as the automation — by one, by so many, or back to its start — held to its range. */
+  async #count(live: LiveRun, here: Here, count: StepOf<'count'>['count'], depth: number, within: string | null, what: string): Promise<Walked> {
+    const found = this.#variableOf(live, here, 'count', count, depth, within, what);
+    if (!found) return 'failed';
+    const { world, home, spec } = found;
+    const scope = this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event, live.inputs);
+    const by = count.reset || count.by === undefined ? undefined : (await measure(count.by, scope).catch(() => ({ value: null, unit: null }))).value;
+    // Held to its range: a counter at its most stays there, and says so.
+    const next = counted(spec, world.variable(home, spec.key), { by, ...(count.reset ? { reset: true } : {}) });
+    if (next === null) {
+      this.#add(live, { kind: 'count', depth, within, what, outcome: 'failed', detail: 'It counts by a whole number, and this is not known as one', until: null });
+      return 'failed';
+    }
+    return this.#putVariable(live, here, world, home, spec, next, 'count', depth, within, what);
+  }
+
+  /** The variable a step changes, of the home it names — or the step failed, and why. */
+  #variableOf(live: LiveRun, here: Here, kind: 'setVariable' | 'count', step: { key: string; at?: string }, depth: number, within: string | null, what: string) {
+    const world = this.deps.world;
+    const home = this.#homeOf(here, step.at);
+    const spec = world && home ? world.variables(home).find((each) => each.key === step.key) : undefined;
+    if (!world || !home || !spec) {
+      this.#add(live, { kind, depth, within, what, outcome: 'failed', detail: !world ? 'Variables are not kept here' : !home ? 'There is no such home' : `The home has no variable "${step.key}"`, until: null });
+      return null;
+    }
+    return { world, home, spec };
+  }
+
+  /** A variable given its new value, as the automation: already so, nothing; said on the bus with the runs that led to it. */
+  #putVariable(live: LiveRun, here: Here, world: EngineWorld, home: string, spec: VariableSpec, value: Value, kind: 'setVariable' | 'count', depth: number, within: string | null, what: string): Walked {
+    const shown = (held: Value | null) => (held === null ? 'nothing' : typeof held === 'number' ? `${held}${spec.field.type === 'number' && spec.field.unit ? ` ${spec.field.unit}` : ''}` : typeof held === 'boolean' ? (held ? 'yes' : 'no') : String(held));
+    if (world.variable(home, spec.key) === value) {
+      this.#add(live, { kind, depth, within, what, outcome: 'already', detail: `It is ${shown(value)} now`, until: null });
+      return 'ok';
+    }
+    try {
+      world.setVariable(home, spec.key, value, actorOf(here.automation), [...(live.event?.cause ?? []), here.automation.id]);
+    } catch (error) {
+      this.#add(live, { kind, depth, within, what, outcome: 'failed', detail: (error as Error).message, until: null });
+      return 'failed';
+    }
+    this.#add(live, { kind, depth, within, what, outcome: 'done', detail: `${spec.field.title} is ${shown(value)} now`, until: null });
     return 'ok';
   }
 

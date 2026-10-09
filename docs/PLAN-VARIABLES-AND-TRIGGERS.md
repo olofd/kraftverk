@@ -295,3 +295,31 @@ Each slice green and pushed; e2e for each in the browser first.
 4. **Webhooks:** on the server's own address, as far as the network lets it
    be reached; no relay. A home kept in a browser receives none, and says so.
 5. **MQTT:** the house broker first.
+
+## 7. Built
+
+**V1, 2026-10-09.** A home's variables of six kinds, as planned:
+
+- the language: `variables.ts` (kinds, checks, what each starts as,
+  counting) and `text/variables.ts` (the file's form) in
+  `packages/automation`; `home.var.key` — `cabin.var.key` for a place
+  role — the `set variable:` and `count:` steps, checked against the home's
+  variables and said by their titles;
+- the store: the `variable` and `variable_value` tables
+  (`packages/store/src/variables.ts`);
+- the hub: `Variables` (`packages/hub/src/variables`) and the `variables`
+  API — declared by a person, set and counted by a script too
+  (`scripted`) — on the timeline as `variable.added`, `variable.changed`,
+  `variable.removed` and `variable.set`, on the bus as `variable` and
+  `variables`, live as `{ type: 'world', what: 'variable' }`;
+- the engine: the steps through `EngineWorld.setVariable`, with the runs
+  that led to them; a `becomes` that reads a variable looked at again as it
+  changes — never by a run it led to itself;
+- scripts: `home.vars.key`, `home.setVariable`, `home.count`,
+  `home.resetCounter`, typed per home;
+- the app: the variables card on the home screen, App settings ›
+  Variables, the editor's steps and "A variable" as a condition;
+- the file: version 19, `homes.<key>.variables`.
+
+Not yet: a page of its own for each variable, and its history (V2); T1
+onwards.

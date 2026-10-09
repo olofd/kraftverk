@@ -203,6 +203,8 @@ Lengths of time are in seconds, named as a file says them: `wait.for`,
 | `answer` | `answer: station.charge` | the run ends here, answering with a value of the kind its `result` says, in its unit: what a `start` that waited for it remembers, with `remember as` |
 | `remember` | `remember: timesCharged` with `as: memory.timesCharged + 1` | remember a value for later steps and later runs: one of what the automation declares under `memory:`, converted to its unit and held to its range |
 | `setMode` | `set mode: away` — with `at: cabin` | put a home in a mode, by its key — the automation's own, unless `at` names another — as a person would from its screen, on its timeline as the automation's |
+| `setVariable` | `set variable: guests` with `to: true` — and `at: cabin` | set one of a home's variables (docs/PLAN-VARIABLES-AND-TRIGGERS.md) to a value of its kind, in its unit and range; read by every automation as `home.var.guests` |
+| `count` | `count: dryerRuns` — `by: -1`, or `reset: true` | count one of a home's counters up by one, by so many, or back to its start |
 | `notify` | `notify: everyone` with `title: …`, `text: …` and `level: warning` | tell a person, a role people fill, or `everyone`: their inbox, and a push to their phones; a value in braces said as it is then — `{station.charge}`, `{run.who}`. Said, not sent, in watch mode |
 
 Every command and every setting goes through the gateway, under its rules,
@@ -229,6 +231,7 @@ charge is below 15 %".
 | `value` | `50 W`, `15 %`, `07:00`, `"text"`, `true` | a value; a number keeps the unit it is written in (`{ value: 50, unit: 'W' }`) — with none, it is in the unit of what it is compared with |
 | `param` | `setting.cloudMax` | one of a recipe's settings |
 | `memory` | `memory.timesCharged` | what it remembers, as a run last left it, in its unit, or before any did, as it starts |
+| `variable` | `home.var.guests`, `cabin.var.guests` | one of a home's variables as it is now, of its own home or one a role fills: an automation that reads one looks again when it changes |
 | `input` | `given.level` | one of its inputs, as the step that started the run gave it — or, not given, its default — in its unit. Read as `given.`, so a role may still be called `input` |
 | `read` | `charger.power` | what the part filling a role reports now, by meaning (`charge`) or by its type's own (`acme.minutesToFull`) |
 | `sun` | `sunset` · `30 min before sunset` · `time between sunset and sunrise` | when the sun rises or sets where the home is (`sunTimes`, sun.ts — the sunrise equation, to a minute), on the automation's clock — or so long before or after, a minute to 12 h, a number or a setting: a time of day, as `07:00` is, so `at: sunset` and `time between` take it. Unknown until the home has a place (`RuleScope.sun`), and on a day the sun does not cross the horizon |

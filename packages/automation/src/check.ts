@@ -13,6 +13,7 @@ import { branchesOf, STEP_KIND_ORDER, STEP_KINDS } from './kinds/steps.ts';
 import { stepListsOf, TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './kinds/triggers.ts';
 import type { AutomationFunction } from './functions.ts';
 import type { ScriptShape } from './script.ts';
+import { variableType, type VariableSpec } from './variables.ts';
 import { eachAsGroup, placeKindsOf, ruleExpressions, ruleUses } from './reads.ts';
 import { convert, convertible, isUnit, product, quotient, unitIn, type Unit } from '@kraftverk/device-sdk';
 import { KEYWORDS } from './text/expr.ts';
@@ -127,6 +128,11 @@ export type RuleVocabulary = {
    * checked against it — a role not filled is a role's problem.
    */
   script?(role: string): ScriptShape | null;
+  /**
+   * The variables of a home (docs/PLAN-VARIABLES-AND-TRIGGERS.md): `home`, the automation's own, or a role a home fills —
+   * each by its key, with its kind and field. Absent, or null — a home not known here — and a variable is typed as its home says when it runs.
+   */
+  variables?(at: string): readonly VariableSpec[] | null;
 };
 
 /** A mode as the language knows one: its key, its axis, its name — "Guests over". */
@@ -277,6 +283,22 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         return { type: 'unknown' };
       }
       return shapeOf(valueTypeOf(field));
+    }
+    if ('variable' in expr) {
+      const { key, at } = expr.variable;
+      // A home's: its own, or one a role fills.
+      if (at !== OWN_HOME && !(roles[at] && isPlaceRole(roles[at]!))) {
+        problems.push(`${where}: a variable is a home's — home.var.${key}, or one of a home a role fills — and "${at}" is not one`);
+        return { type: 'unknown' };
+      }
+      const known = vocabulary.variables?.(at);
+      if (!known) return { type: 'unknown' };
+      const found = known.find((each) => each.key === key);
+      if (!found) {
+        problems.push(`${where}: ${at === OWN_HOME ? 'its home' : at} has no variable "${key}"${known.length ? `: it has ${known.map((each) => each.key).join(', ')}` : ''}`);
+        return { type: 'unknown' };
+      }
+      return shapeOf(variableType(found));
     }
     if ('memory' in expr) {
       const field = memory[expr.memory];
@@ -712,6 +734,7 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       case 'name':
       case 'args':
       case 'memory':
+      case 'variable':
         return;
       case 'who':
         who(String(value), at, { many: true, ...(type.anyone ? { anyone: type.anyone } : {}) });
@@ -854,6 +877,24 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         else if (means !== undefined) {
           if (typeof means !== 'string' || !standardMeaning(means)) problems.push(`${at}.write.means: "${String(means)}" is not a standard meaning`);
         } else if (typeof key !== 'string' || !key.trim()) problems.push(`${at}.write.key: which setting?`);
+      } else if ('setVariable' in step || 'count' in step) {
+        // A home's variable: there, of the kind the step changes — any but a derived one is set; a counter is counted — and given what fits it.
+        const set = 'setVariable' in step ? step.setVariable : step.count;
+        const which = `${at}.${'setVariable' in step ? 'setVariable' : 'count'}.key`;
+        const home = set.at ?? OWN_HOME;
+        const known = vocabulary.variables?.(home);
+        const found = known?.find((each) => each.key === set.key);
+        if (!set.key) problems.push(`${which}: which variable?`);
+        else if (known && !found) problems.push(`${which}: ${home === OWN_HOME ? 'its home' : home} has no variable "${set.key}"${known.length ? `: it has ${known.map((each) => each.key).join(', ')}` : ''}`);
+        else if (found && 'count' in step && found.kind !== 'counter') problems.push(`${which}: ${found.field.title} is not a counter — set it instead`);
+        else if (found && 'setVariable' in step) {
+          const got = shapes.to ?? { type: 'unknown' };
+          const wanted = shapeOf(variableType(found));
+          if (!fits(wanted, got)) problems.push(`${at}.setVariable.to: ${found.field.title} is ${said(wanted)}, not ${said(got)}`);
+          else literalFits(step.setVariable.to, variableType(found), `${at}.setVariable.to`);
+        }
+        if ('count' in step && step.count.by !== undefined && !fits({ type: 'number', unit: '' }, shapes.by ?? { type: 'unknown' })) problems.push(`${at}.count.by: by a whole number`);
+        if ('count' in step && step.count.reset && step.count.by !== undefined) problems.push(`${at}.count: start it over, or count it by so many — not both`);
       } else if ('remember' in step) {
         // What it remembers is held to what it is: its kind, and a unit of its dimension.
         const field = memory[step.remember.name];

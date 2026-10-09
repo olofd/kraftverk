@@ -44,6 +44,8 @@ export type ScriptReads = {
   occupied: { query: { occupied: [kind: 'home' | 'space', id: string] }; answer: boolean | null };
   /** A home's mode on an axis now, by key; null when none is set. */
   mode: { query: { mode: [homeId: string, axis: 'presence' | 'day'] }; answer: string | null };
+  /** A home's variables now, by key: as set, or what each starts as. */
+  variables: { query: { variables: string }; answer: Record<string, unknown> };
 };
 
 /** A question a step may ask. */

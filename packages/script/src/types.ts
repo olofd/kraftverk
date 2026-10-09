@@ -1,4 +1,4 @@
-import { capabilitySpec, isCapability, UNIT_LIST, unitSpec, type ScalarValueType, type ValueType } from '@kraftverk/device-sdk';
+import { capabilitySpec, isCapability, UNIT_LIST, unitSpec, valueTypeOf, type ConfigField, type ScalarValueType, type ValueType } from '@kraftverk/device-sdk';
 
 import { scriptNames } from './names.ts';
 import { UNIT_TYPES } from './signature.ts';
@@ -15,10 +15,10 @@ import { UNIT_TYPES } from './signature.ts';
   against. The hub never checks types: what crosses is checked when it runs.
 */
 
-/** A family, as its scripts' types are made from it: its people, its homes with their rooms, its modes, and its devices. */
+/** A family, as its scripts' types are made from it: its people, its homes with their rooms and variables, its modes, and its devices. */
 export type ScriptHome = {
   people: readonly { name: string }[];
-  homes: readonly { key: string; name: string; rooms: readonly { key: string; name: string }[] }[];
+  homes: readonly { key: string; name: string; rooms: readonly { key: string; name: string }[]; variables: readonly { key: string; kind: string; field: ConfigField }[] }[];
   modes: readonly { key: string; axis: string; name: string }[];
   devices: readonly {
     key: string;
@@ -131,8 +131,8 @@ ${Object.entries(UNIT_TYPES).map(([name, unit]) => `  /** A number in ${unitSpec
     readonly occupied: boolean | null;
   }
 
-  /** A home, as a script sees it: its rooms, who is there, its modes now — and set. */
-  export interface Home<Rooms = Record<string, Room>> {
+  /** A home, as a script sees it: its rooms, who is there, its modes and variables now — and set. */
+  export interface Home<Rooms = Record<string, Room>, Vars = Record<string, unknown>, Counters extends string = string> {
     readonly id: string;
     readonly key: string;
     readonly name: string;
@@ -148,6 +148,14 @@ ${Object.entries(UNIT_TYPES).map(([name, unit]) => `  /** A number in ${unitSpec
     readonly people: readonly string[];
     /** It put in a mode, as this run puts it. */
     setMode(mode: Mode): Promise<unknown>;
+    /** Its variables now, by key: \`home.vars.guests\` — as set, or what each starts as. */
+    readonly vars: Readonly<Vars>;
+    /** One of its variables set, as this run sets it: to a value of its kind, in its range. */
+    setVariable<K extends keyof Vars & string>(key: K, value: NonNullable<Vars[K]>): Promise<unknown>;
+    /** One of its counters counted, as this run counts it: by one, or by so many — below nought counts down. */
+    count(key: Counters, by?: number): Promise<unknown>;
+    /** One of its counters back to what it starts as. */
+    resetCounter(key: Counters): Promise<unknown>;
   }
 
   /** A person of the family, as a script sees them: where they are, as far as they share. */
@@ -198,7 +206,11 @@ export function typesOf(home: ScriptHome): string {
   const homeNames = scriptNames(home.homes.map((each) => each.key));
   const homes = home.homes.map((each, at) => {
     const roomNames = scriptNames(each.rooms.map((room) => room.key));
-    return `${doc(each.name)} readonly ${homeNames[at]}: Home<{ ${each.rooms.map((room, index) => `${doc(room.name)} readonly ${roomNames[index]}: Room;`).join(' ')} }>;`;
+    const rooms = `{ ${each.rooms.map((room, index) => `${doc(room.name)} readonly ${roomNames[index]}: Room;`).join(' ')} }`;
+    // Each variable by its key, of its field's type: a time of day not set yet is nothing.
+    const vars = `{ ${each.variables.map((variable) => `${doc(variable.field.title)} readonly ${variable.key}: ${typeOf(valueTypeOf(variable.field))}${variable.kind === 'time' ? ' | null' : ''};`).join(' ')} }`;
+    const counters = each.variables.filter((variable) => variable.kind === 'counter').map((variable) => JSON.stringify(variable.key)).join(' | ') || 'never';
+    return `${doc(each.name)} readonly ${homeNames[at]}: Home<${rooms}, ${vars}, ${counters}>;`;
   });
   const modesOn = (axis: string): string => home.modes.filter((mode) => mode.axis === axis).map((mode) => JSON.stringify(mode.key)).join(' | ') || 'never';
   // Every capability any device has, declared once.

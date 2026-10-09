@@ -197,7 +197,8 @@ export type PlacementView = {
 
 /** A home's two axes of mode (docs/PLAN-WORLD-MODEL.md §8.10): whether anyone is home, and the time of day. */
 export type { ModeAxis } from '@kraftverk/device-sdk';
-import type { ModeAxis } from '@kraftverk/device-sdk';
+import type { ConfigField, ModeAxis, Value } from '@kraftverk/device-sdk';
+import type { VariableKind } from '@kraftverk/automation';
 
 /** A mode: built in — home, away, vacation; day, evening, night — or a family's own on either axis, known by its key. */
 export type ModeView = { id: string; key: string; axis: ModeAxis; name: string; icon: string | null; builtIn: boolean; removedAt: string | null };
@@ -255,3 +256,27 @@ export type SpaceHistory = {
 
 /** A device placed: in a space — a home's site when no room is said — perhaps at an opening, perhaps at coordinates. */
 export type PlacementInput = { spaceId: string; part?: string; openingId?: string | null; x?: number | null; y?: number | null; z?: number | null; facing?: number | null; role?: 'stands' | 'based' };
+
+/**
+ * One of a home's variables (docs/PLAN-VARIABLES-AND-TRIGGERS.md): typed
+ * state of the home's own that its automations read and set, its people see
+ * and change, and its scripts reach. Its value now: as set, or what it
+ * starts as (`setAt` null); who set it last, by name.
+ */
+export type VariableView = {
+  id: string;
+  homeId: string;
+  key: string;
+  kind: VariableKind;
+  field: ConfigField;
+  value: Value | null;
+  setAt: string | null;
+  by: string | null;
+  removedAt: string | null;
+};
+
+/** A variable made or changed: its key, its kind, its field (its title, its unit and range, what it starts as). */
+export type VariableInput = { key: string; kind: VariableKind; field: ConfigField };
+
+/** A counter counted: by one, by so many (down, below nought), or back to its start. */
+export type VariableCount = { by?: number; reset?: boolean };
