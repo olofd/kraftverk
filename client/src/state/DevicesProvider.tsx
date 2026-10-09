@@ -54,6 +54,23 @@ const POLL_WHILE_LIVE_MS = 60_000;
 /** Updates from the stream are applied together, this often at most: one redraw for a burst. */
 const APPLY_MS = 100;
 
+/**
+ * A run's line, in the browser's console as it happens, under its
+ * automation's name: what its script said with `log` as its own words, a
+ * step as it began and as it went — a warning when it did not succeed —
+ * and the run's end. What a developer follows while an automation runs.
+ */
+function runToConsole({ automation, line }: Extract<LiveUpdate, { type: 'run' }>) {
+  const at = `[${automation.name}]`;
+  const indent = '  '.repeat(line.depth);
+  const detail = line.detail ? [`— ${line.detail}`] : [];
+  if (line.kind === 'log') return console.log(at, `${indent}${line.what}`);
+  if (line.kind === 'ended') return (line.outcome === 'failed' || line.outcome === 'refused' ? console.warn : console.info)(at, `Ended, ${line.outcome}:`, line.what);
+  // A step as it begins, and again as it ends when it waited between: "(waiting)", then how it went.
+  const failing = line.outcome === 'failed' || line.outcome === 'refused' || line.outcome === 'timed-out' || line.outcome === 'not-met';
+  (failing ? console.warn : console.info)(at, `${indent}${line.what}`, `(${line.outcome})`, ...detail);
+}
+
 /** Whether the home answers: being reached, answering, or out of reach. */
 type HomeReach = 'connecting' | 'online' | 'offline';
 
@@ -244,6 +261,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         for (const listener of automationListeners.current) listener(update.id);
         return;
       }
+      if (update.type === 'run') return runToConsole(update);
       if (update.type === 'world') {
         for (const listener of worldListeners.current) listener(update.what, update.homeId);
         return;

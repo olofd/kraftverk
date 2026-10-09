@@ -20,6 +20,9 @@ export type DeviceEventMessage = {
   at: string;
 };
 
+/** A line of a run, as the live stream carries it: a step, a script's own words, or its end. */
+export type RunLine = { kind: 'step' | 'log' | 'ended'; depth: number; what: string; outcome: string; detail: string | null };
+
 export type LiveMessage =
   /** The readings whose values changed since the last message: not every reading. */
   | { kind: 'readings'; deviceId: SavedDeviceId; readings: readonly Reading[] }
@@ -34,6 +37,12 @@ export type LiveMessage =
   | { kind: 'changed'; deviceId: SavedDeviceId | null }
   /** An automation moved: a run started, took a step or ended. What its screen follows, as it goes. */
   | { kind: 'automation'; automationId: AutomationId }
+  /**
+   * One line of a run, as it happens: a step begun or ended, a line a script
+   * said with `log`, or the run ended with its summary — what a developer's
+   * console follows live.
+   */
+  | { kind: 'run'; automationId: AutomationId; name: string; runId: string; line: RunLine }
   /**
    * Someone came to, or left, a place the family knows — a home, a zone, a
    * room of a home — as far as they share; or where they are is no longer

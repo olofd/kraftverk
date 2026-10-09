@@ -1,4 +1,5 @@
 import type { AutomationRun, RunLog, RunStep } from '@kraftverk/api-contract';
+import type { RunLine } from '@kraftverk/holder';
 import {
   bindingsOf,
   eachAsGroup,
@@ -499,6 +500,7 @@ export class Runs {
     run.outcome = walked === 'stopped' ? 'stopped' : walked === 'failed' ? (cause?.outcome === 'refused' ? 'refused' : 'failed') : unverified ? 'unverified' : 'acted';
     run.summary = this.#summaryOf(live, walked);
     run.endedAt = this.#context.now().toISOString();
+    this.#say(live, { kind: 'ended', depth: 0, what: run.summary, outcome: run.outcome, detail: null });
     const device = actsOn(automation, rule);
     if (stepped) {
       this.#live.delete(automation.id);
@@ -537,18 +539,25 @@ export class Runs {
   }
 
   /** A step, as it begins — or, with an outcome that ends it, as it went. */
-  #add(live: LiveRun, step: Omit<RunStep, 'at' | 'endedAt'> & { endedAt?: string | null }): RunStep {
+  #add(live: LiveRun, step: Omit<RunStep, 'at' | 'endedAt'> & { endedAt?: string | null }, said = false): RunStep {
     const now = this.#context.now().toISOString();
     const done = step.outcome !== 'waiting';
     const entry: RunStep = { ...step, at: now, endedAt: step.endedAt !== undefined ? step.endedAt : done ? now : null };
     live.run.steps.push(entry);
     this.#moved(live);
+    this.#say(live, { kind: said ? 'log' : 'step', depth: entry.depth, what: entry.what, outcome: entry.outcome, detail: entry.detail || null });
     return entry;
   }
 
   #end(live: LiveRun, entry: RunStep, outcome: RunStep['outcome'], detail: string): void {
     Object.assign(entry, { outcome, detail, endedAt: this.#context.now().toISOString(), until: null });
     this.#moved(live);
+    this.#say(live, { kind: 'step', depth: entry.depth, what: entry.what, outcome, detail: detail || null });
+  }
+
+  /** A line of a run, said on the live bus as it happens: what a console follows. */
+  #say(live: LiveRun, line: RunLine): void {
+    this.deps.bus?.publish({ kind: 'run', automationId: live.automation.id, name: live.automation.name, runId: live.id, line });
   }
 
   /**
@@ -901,7 +910,7 @@ export class Runs {
         memory,
         deadline: this.#context.now().getTime() + seconds * 1000,
         signal: stop.signal,
-        say: (line) => void this.#add(live, { kind: 'script', depth: depth + 1, within: what, what: line.what, outcome: line.outcome, detail: line.detail ?? '', until: null }),
+        say: (line) => void this.#add(live, { kind: 'script', depth: depth + 1, within: what, what: line.what, outcome: line.outcome, detail: line.detail ?? '', until: null }, line.said === true),
       });
     } finally {
       live.wake.delete(wake);

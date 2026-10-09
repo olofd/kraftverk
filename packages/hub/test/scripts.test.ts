@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
+import type { LiveUpdate } from '@kraftverk/api-contract';
+
 import { aHome, refusal, type TestHome } from './a-home.ts';
 
 /*
@@ -110,6 +112,9 @@ describe('a script', () => {
       timeZone: 'Europe/Stockholm',
     });
     expect(made.problems).toEqual([]);
+    // The live stream, as an app listens: each line of the run as it happens.
+    const heard: LiveUpdate[] = [];
+    const stream = t.home.live((update) => void heard.push(update));
     await t.home.automations.start(made.id);
     let run = (await t.home.automations.get(made.id)).lastRun;
     for (let waited = 0; !run && waited < 5_000; waited += 50) {
@@ -124,6 +129,18 @@ describe('a script', () => {
       [1, 'Turned it off, 1 times now'],
     ]);
     expect((await t.home.devices.get(plug.id)).readings.find((reading) => reading.key === 'on')?.value).toBe(false);
+    // Said live, line by line, under the automation's name: the script's step, what it did, its own words, the run's end.
+    for (let waited = 0; !heard.some((update) => update.type === 'run' && update.line.kind === 'ended') && waited < 2_000; waited += 20) await new Promise((resolve) => setTimeout(resolve, 20));
+    stream.close();
+    const lines = heard.flatMap((update) => (update.type === 'run' ? [[update.automation.name, update.line.kind, update.line.what, update.line.outcome]] : []));
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        ['Evening tidy', 'step', 'Heater plug: switch.set on false', 'done'],
+        ['Evening tidy', 'log', 'Turned it off, 1 times now', 'done'],
+        ['Evening tidy', 'step', 'Run “Tidy up”, remembering what it answers as last tidy', 'done'],
+        ['Evening tidy', 'ended', expect.any(String), 'acted'],
+      ])
+    );
   });
 
   test('decides a condition with one of its functions: pure, its arguments in order, checked against what it declares', async () => {

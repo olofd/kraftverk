@@ -67,6 +67,12 @@ export type LiveUpdate =
   | { type: 'changed'; deviceId: SavedDeviceId | null }
   /** An automation moved: a run started, took a step, or ended. Read it again. */
   | { type: 'automation'; id: AutomationId }
+  /**
+   * One line of a run, as it happens: a step begun or ended, a line its
+   * script said with `log`, or the run ended with its summary. What the
+   * app writes to the browser's console, under the automation's name.
+   */
+  | { type: 'run'; automation: { id: AutomationId; name: string }; runId: string; line: { kind: 'step' | 'log' | 'ended'; depth: number; what: string; outcome: string; detail: string | null } }
   /** Where the family is, who is in which room, or a home's mode, moved: read it again — as far as each shares. Never who. */
   | { type: 'world'; what: 'presence' | 'occupancy' | 'mode'; homeId: string | null };
 

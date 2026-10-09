@@ -5,6 +5,9 @@ import type { LiveMessage } from '@kraftverk/holder';
 /** Events kept for a listener that is not draining; past this, it is told to read everything again instead. */
 const MAX_QUEUED_EVENTS = 100;
 
+/** Lines of runs kept for a listener that is behind; past this, the oldest go: a console follows, it does not keep. */
+const MAX_QUEUED_LINES = 200;
+
 /**
  * What one listener of the live stream has waiting, coalesced: a reading by
  * its key, health by its device, a change to the list once — so a device that
@@ -16,6 +19,8 @@ export class Outbox {
   health = new Map<SavedDeviceId, ConnectionHealth>();
   events: LiveUpdate[] = [];
   changed = false;
+  /** Lines of runs, in the order they were said. */
+  runs: Extract<LiveUpdate, { type: 'run' }>[] = [];
   /** Automations that moved: each is said once, however often it moved since. */
   automations = new Set<AutomationId>();
   /** What of the world moved, by what and which home: said once each. */
@@ -47,6 +52,10 @@ export class Outbox {
       case 'automation':
         this.automations.add(message.automationId);
         return;
+      case 'run':
+        if (this.runs.length >= MAX_QUEUED_LINES) this.runs.shift();
+        this.runs.push({ type: 'run', automation: { id: message.automationId, name: message.name }, runId: message.runId, line: message.line });
+        return;
       case 'presence':
         // Not who, nor where: only that presence moved, and the home it was at if it was one.
         return this.#world('presence', message.place.kind === 'home' ? message.place.id : message.place.kind === 'space' ? message.place.homeId : null);
@@ -72,6 +81,8 @@ export class Outbox {
     for (const [deviceId, health] of this.health) updates.push({ type: 'health', deviceId, health });
     updates.push(...this.events);
     for (const id of this.automations) updates.push({ type: 'automation', id });
+    updates.push(...this.runs);
+    this.runs = [];
     updates.push(...this.world.values());
     this.world.clear();
     this.readings.clear();
