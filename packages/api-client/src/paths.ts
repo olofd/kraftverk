@@ -19,6 +19,7 @@
     /automations/<id>[/edit[?view=yaml]|/configuration]
     /automations/<id>/runs/<run>
     /scripts/new                            a script, written and read
+    /scripts/<id>                           one the family keeps
     /integrations/<id>
     /integrations/<id>/accounts/<account>   an integration's own: an account,
     /integrations/<id>/gateways/<gateway>   or a gateway
@@ -102,6 +103,7 @@ export const PATHS = {
   /** Scripts in TypeScript, for automations (docs/PLAN-SCRIPTS.md). */
   scripts: {
     new: '/scripts/new',
+    one: (id: string) => `/scripts/${at(id)}`,
   },
 
   integrations: {

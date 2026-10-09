@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { Text, XStack, YStack } from 'tamagui';
+import { router } from 'expo-router';
+import { Button, Input, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import type { ConfigField, ConfigSchema } from '@kraftverk/device-sdk';
 import type { ScriptCheck, ScriptShape } from '@kraftverk/automation';
-import { describeError, PATHS } from '@kraftverk/api-client';
-import { Card } from '@kraftverk/ui';
+import { describeError, PATHS, type ScriptView } from '@kraftverk/api-client';
+import { Card, haptic, Icon } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
+import { Loading } from '../../components/Loading';
 import { Screen } from '../../components/Screen';
 import { ScriptEditor } from '../../components/ScriptEditor';
+import { useTone } from '../../components/tone';
+import { confirmAction } from '../../platform/confirm';
 import { useFamily } from '../../state/FamilyProvider';
 
 /** What a new script starts as: one step and one function, each declared as the SDK has them now. */
@@ -119,21 +123,15 @@ function Declared({ shape }: { shape: ScriptShape }) {
   );
 }
 
-/**
- * A script, written (docs/PLAN-SCRIPTS.md): read as it is typed by the
- * home's own engine — the server's, or this browser's when it keeps its
- * own — which says what it declares, or what is wrong with it, by line.
- * Keeping a script, and running it in an automation, come next.
- */
-export function NewScript() {
+/** A source, read again by the home's engine each time typing rests: what it declares, or its problems; null while it is read. */
+function useRead(source: string): { check: ScriptCheck | null; error: string | null } {
   const { api } = useFamily();
-  const [source, setSource] = useState(STARTER);
   const [check, setCheck] = useState<ScriptCheck | null>(null);
   const [error, setError] = useState<string | null>(null);
   const asked = useRef(0);
-
   useEffect(() => {
     const ask = ++asked.current;
+    setCheck(null);
     const timer = setTimeout(() => {
       api.scripts
         .check(source)
@@ -149,17 +147,119 @@ export function NewScript() {
     }, READ_AFTER_MS);
     return () => clearTimeout(timer);
   }, [api, source]);
+  return { check, error };
+}
+
+/** The script itself: its name, its source, what it declares, and keeping it. */
+function ScriptForm({ script }: { script: ScriptView | null }) {
+  const { api } = useFamily();
+  const tone = useTone();
+  const [name, setName] = useState(script?.name ?? '');
+  const [source, setSource] = useState(script?.source ?? STARTER);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const { check, error } = useRead(source);
+
+  const changed = script === null || name.trim() !== script.name || source !== script.source;
+  const problems = check?.problems.length ?? 0;
+  const ready = Boolean(name.trim()) && check !== null && problems === 0 && changed;
+
+  const save = async () => {
+    haptic();
+    setBusy(true);
+    setProblem(null);
+    try {
+      if (script) {
+        await api.scripts.update(script.id, { name: name.trim(), source });
+        router.replace(PATHS.automations.list);
+      } else {
+        const made = await api.scripts.create({ name: name.trim(), source });
+        router.replace(PATHS.scripts.one(made.id));
+      }
+    } catch (err) {
+      setProblem(describeError(err) || 'It could not be kept');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async () => {
+    if (!script) return;
+    if (!(await confirmAction(`Remove "${script.name}"?`, 'Its source is gone with it: export it first to keep a copy.', 'Remove', 'careful'))) return;
+    setBusy(true);
+    try {
+      await api.scripts.remove(script.id);
+      router.replace(PATHS.automations.list);
+    } catch (err) {
+      setProblem(describeError(err) || 'It could not be removed');
+      setBusy(false);
+    }
+  };
+
+  const footer = (
+    <YStack gap="$2">
+      {problem ? <ErrorText>{problem}</ErrorText> : null}
+      <XStack alignItems="center" gap="$2">
+        <XStack flex={1} alignItems="center" gap="$2">
+          {check === null ? <Spinner size="small" color="$accent" /> : <Icon name={problems ? 'alert-triangle' : 'check-circle'} size={16} color={tone(problems ? '$warning' : '$success')} />}
+          <Text flex={1} fontSize={14} fontWeight="600" color={problems ? '$warning' : '$success'} numberOfLines={1}>
+            {check === null ? 'Reading…' : problems ? `${problems} thing${problems === 1 ? '' : 's'} to fix` : 'Ready'}
+          </Text>
+        </XStack>
+        {script ? (
+          <Button size="$4" chromeless color="$danger" disabled={busy} onPress={() => void remove()}>
+            Remove
+          </Button>
+        ) : null}
+        <Button size="$4" backgroundColor="$accent" color="$background" disabled={busy || !ready} opacity={busy || !ready ? 0.5 : 1} onPress={() => void save()}>
+          {busy ? 'Keeping…' : script ? 'Save changes' : 'Keep it'}
+        </Button>
+      </XStack>
+    </YStack>
+  );
 
   return (
-    <Screen back="Automations" backTo={PATHS.automations.list} title="New script" subtitle="Written in TypeScript">
+    <Screen back="Automations" backTo={PATHS.automations.list} title={script ? script.name : 'New script'} subtitle={script ? `${script.key} · written in TypeScript` : 'Written in TypeScript'} footer={footer}>
       <YStack gap="$4">
         <Text fontSize={14} color="$muted" lineHeight={20}>
-          A script is what an automation does, or a value it works out. What it declares is read as you write, by the same engine that will run it. Keeping scripts and running them come next.
+          A script is what an automation does, or a value it works out. What it declares is read as you write, by the same engine that will run it. Running scripts in automations comes next.
         </Text>
+        <YStack gap="$1.5">
+          <Text fontSize={13} color="$muted">
+            Its name
+          </Text>
+          <Input aria-label="Its name" placeholder="Tidy up" size="$4" maxLength={60} value={name} onChangeText={setName} />
+        </YStack>
         <ScriptEditor value={source} onChange={setSource} problems={check?.problems ?? []} label="The script" />
         <ErrorText>{error}</ErrorText>
         {check?.shape ? <Declared shape={check.shape} /> : null}
       </YStack>
     </Screen>
   );
+}
+
+/**
+ * A script (docs/PLAN-SCRIPTS.md): a new one, or one the family keeps —
+ * read as it is typed by the home's own engine, the server's or this
+ * browser's, which says what it declares or what is wrong with it, by
+ * line; kept when it reads without a problem.
+ */
+export function ScriptPage({ id }: { id: string | null }) {
+  const { api } = useFamily();
+  const [script, setScript] = useState<ScriptView | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!id) return;
+    api.scripts
+      .get(id)
+      .then((found) => (setScript(found), setError(null)))
+      .catch((err: unknown) => setError(describeError(err) || 'It could not be read'));
+  }, [api, id]);
+
+  if (id && !script)
+    return (
+      <Screen back="Automations" backTo={PATHS.automations.list} title="Script">
+        <Loading error={error} />
+      </Screen>
+    );
+  return <ScriptForm key={script?.id ?? 'new'} script={script} />;
 }

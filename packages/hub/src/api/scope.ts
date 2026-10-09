@@ -8,10 +8,10 @@ import { readerOf, shownTo } from '../presence/levels.ts';
 
 /**
  * Refuses a name in configuration that is not one, or is another's: what a
- * device and an automation are renamed to is checked by one rule, saying it
+ * device, an automation and a script are renamed to is checked by one rule, saying it
  * with an example of their own ("garage-station", "start-charging").
  */
-export function checkKey(key: string, taken: boolean, what: 'device' | 'automation', example: string): void {
+export function checkKey(key: string, taken: boolean, what: 'device' | 'automation' | 'script', example: string): void {
   if (!KEY.test(key)) throw new ApiError('invalid', `A key is lowercase letters, digits and dashes: "${example}"`);
   if (taken) throw new ApiError('conflict', `Another ${what} is known by "${key}"`);
 }

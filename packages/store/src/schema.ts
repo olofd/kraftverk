@@ -680,6 +680,25 @@ export const SCHEMA = `
   );
 
   /*
+    A family's scripts in TypeScript (docs/PLAN-SCRIPTS.md §4), each by its
+    key: its source as written — the one thing kept. What it compiles to,
+    and what it declares, are read from the source again as the hub starts
+    and whenever it changes; never kept beside it. Who last changed it is an
+    actor: what a change that moves who an automation acts for is checked by.
+  */
+  CREATE TABLE script (
+    id              TEXT PRIMARY KEY,
+    key             TEXT NOT NULL UNIQUE CHECK (key GLOB '[a-z0-9]*' AND key NOT GLOB '*[^a-z0-9-]*' AND length(key) <= 63),
+    name            TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 60),
+    source          TEXT NOT NULL CHECK (length(source) <= 65536),
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    updated_by_kind TEXT NOT NULL CHECK (updated_by_kind IN ('person', 'agent', 'automation', 'node', 'integration', 'system')),
+    updated_by_id   TEXT,
+    updated_by_name TEXT NOT NULL
+  );
+
+  /*
     Who a device is with (docs/PLAN-WORLD-MODEL.md §8.8): carries — its
     position is theirs — drives, its usual driver; owns, it is theirs; uses,
     theirs to use. Intervals: who carried it when is history. One carrier
@@ -1141,7 +1160,7 @@ export const SCHEMA = `
     actor_kind    TEXT NOT NULL CHECK (actor_kind IN ('person', 'agent', 'automation', 'node', 'integration', 'system')),
     actor_id      TEXT,
     actor_name    TEXT NOT NULL,
-    resource_kind TEXT CHECK (resource_kind IN ('device', 'node', 'automation', 'account', 'transport', 'family', 'home', 'zone', 'person', 'mode')),
+    resource_kind TEXT CHECK (resource_kind IN ('device', 'node', 'automation', 'account', 'transport', 'family', 'home', 'zone', 'person', 'mode', 'script')),
     resource      TEXT,
     summary       TEXT NOT NULL,
     detail        TEXT,

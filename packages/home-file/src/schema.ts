@@ -1,4 +1,4 @@
-import { stepJsonSchema, triggerJsonSchema, WHILE_RUNNING } from '@kraftverk/automation';
+import { SCRIPT_LIMITS, stepJsonSchema, triggerJsonSchema, WHILE_RUNNING } from '@kraftverk/automation';
 import type { ConfigField, ConfigSchema } from '@kraftverk/device-sdk';
 
 import { BUILT_IN_MODES, KEY, MODE_KEY, unitsOfQuantity, UNIT_LIST } from '@kraftverk/device-sdk';
@@ -540,6 +540,17 @@ export function configJsonSchema(vocabulary: Vocabulary): Schema {
           maxProperties: 1,
           propertyNames: { enum: vocabulary.linkKinds },
           additionalProperties: { type: 'object', required: ['from', 'to'], additionalProperties: false, properties: { from: { type: 'string' }, to: { type: 'string' } } },
+        },
+      },
+      scripts: {
+        type: 'object',
+        ...keys,
+        description: 'Its scripts in TypeScript, by key: what an automation does, or a value it works out (docs/PLAN-SCRIPTS.md).',
+        additionalProperties: {
+          type: 'object',
+          required: ['source'],
+          additionalProperties: false,
+          properties: { name: { type: 'string', minLength: 1, maxLength: 60 }, source: { type: 'string', maxLength: SCRIPT_LIMITS.sourceBytes, description: 'Its TypeScript, as written: a block of text, "source: |".' } },
         },
       },
       automations: { type: 'object', ...keys, additionalProperties: { $ref: '#/$defs/automation' } },

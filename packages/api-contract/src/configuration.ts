@@ -31,6 +31,8 @@ export type ImportPlan = {
   homes: ImportItem[];
   /** Its labels, by key: added, renamed, or the same. One the file does not name is left. */
   labels: ImportItem[];
+  /** Its scripts, by key: added, changed, or the same — and, replacing, one the file does not name removed. */
+  scripts: ImportItem[];
   /** Its zones, by key: added, moved or renamed, or the same. One the file does not name is left. */
   zones: ImportItem[];
   /** Its own modes, by key: added, renamed, or the same. One the file does not name is left. */
@@ -61,6 +63,7 @@ export type ImportApplied = {
   family: boolean;
   homes: { added: string[]; changed: string[] };
   labels: { added: string[]; changed: string[] };
+  scripts: { added: string[]; changed: string[]; removed: string[] };
   zones: { added: string[]; changed: string[] };
   modes: { added: string[]; changed: string[] };
   people: { added: string[]; changed: string[] };

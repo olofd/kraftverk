@@ -1,6 +1,6 @@
 import { isBuiltInMode, KEY, MODE_KEY } from '@kraftverk/device-sdk';
 import { frameProblem, heightProblem, nameProblem, planProblem, pointsProblem, turnOf } from '@kraftverk/map/limits';
-import { AUTOMATION_MODES, type AutomationMode, type Coordinates, type Rule } from '@kraftverk/automation';
+import { AUTOMATION_MODES, SCRIPT_LIMITS, type AutomationMode, type Coordinates, type Rule } from '@kraftverk/automation';
 
 import { CURRENT_VERSION } from './migrate.ts';
 import { durationSeconds, durationText, ruleFromConfig, ruleToConfig, useOf, useText, type Issue, type Use } from '@kraftverk/automation';
@@ -181,6 +181,9 @@ export type DevicePeopleEntry = { carries: string | null; drives: string | null;
 /** A label: any grouping the family wants, by its key. */
 export type LabelEntry = { name: string; color: string | null; icon: string | null };
 
+/** One of the family's scripts in TypeScript (docs/PLAN-SCRIPTS.md), by its key: its name, and its source as written. */
+export type ScriptEntry = { name: string; source: string };
+
 /** A family's own mode, by its key: on one of the two axes — presence or the day — beside the built-in ones. */
 export type ModeEntry = { axis: 'presence' | 'day'; name: string; icon: string | null };
 
@@ -216,6 +219,8 @@ export type ConfigDocument = {
   people: Record<string, PersonEntry>;
   /** Its labels, by key. */
   labels: Record<string, LabelEntry>;
+  /** Its scripts in TypeScript, by key. */
+  scripts: Record<string, ScriptEntry>;
   /** Its zones, by key. */
   zones: Record<string, ZoneEntry>;
   /** Its own modes, by key: the built-in ones are every family's, and not in a file. */
@@ -248,8 +253,8 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
   const problem = (message: string, path: Path) => void issues.push({ message, path });
   if (!isRecord(data)) return { document: null, issues: [{ message: 'A configuration is a map: kraftverk, family, homes, devices, links, automations', path: [] }] };
   for (const key of Object.keys(data))
-    if (!['kraftverk', 'family', 'people', 'labels', 'homes', 'zones', 'modes', 'devices', 'links', 'automations', 'secrets'].includes(key))
-      problem(`"${key}" is not part of a configuration: it has kraftverk, family, people, labels, homes, zones, modes, devices, links, automations and secrets`, [key]);
+    if (!['kraftverk', 'family', 'people', 'labels', 'homes', 'zones', 'modes', 'devices', 'links', 'scripts', 'automations', 'secrets'].includes(key))
+      problem(`"${key}" is not part of a configuration: it has kraftverk, family, people, labels, homes, zones, modes, devices, links, scripts, automations and secrets`, [key]);
 
   /** A record of numbers, each of `fields`. */
   const numbersOf = (value: unknown, fields: readonly string[], path: Path, what: string): Record<string, number> | null => {
@@ -366,6 +371,29 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         const color = entry.color === undefined || entry.color === null ? null : typeof entry.color === 'string' && /^#[0-9a-f]{6}$/.test(entry.color) ? entry.color : (problem('"color" is "#rrggbb", in lowercase', [...path, 'color']), null);
         const icon = entry.icon === undefined || entry.icon === null ? null : text(entry.icon, [...path, 'icon'], 'an icon\'s name');
         if (name) labels[key] = { name, color, icon };
+      }
+  }
+  // Its scripts, by key: each its name and its source as written. What a source says is read where it is imported, by the engine there.
+  const scripts: Record<string, ScriptEntry> = {};
+  if (data.scripts !== undefined && data.scripts !== null) {
+    if (!isRecord(data.scripts)) problem('"scripts" is a map: each script by its key', ['scripts']);
+    else
+      for (const [key, entry] of Object.entries(data.scripts)) {
+        const path = ['scripts', key];
+        if (!KEY.test(key)) problem(`"${key}" is not a key: lowercase letters, digits and dashes`, path);
+        if (!isRecord(entry)) {
+          problem('Expected a script: its name, and its source', path);
+          continue;
+        }
+        for (const field of Object.keys(entry)) if (!['name', 'source'].includes(field)) problem(`"${field}" is not part of a script: it has name and source`, [...path, field]);
+        const name = entry.name === undefined ? key : text(entry.name, [...path, 'name'], 'its name');
+        if (name && name.length > 60) problem('A script’s name is at most 60 characters', [...path, 'name']);
+        if (typeof entry.source !== 'string') {
+          problem('A script has its source: its TypeScript, as a block of text ("source: |")', [...path, 'source']);
+          continue;
+        }
+        if (entry.source.length > SCRIPT_LIMITS.sourceBytes) problem(`A script is at most ${SCRIPT_LIMITS.sourceBytes / 1024} KB`, [...path, 'source']);
+        if (name) scripts[key] = { name, source: entry.source };
       }
   }
   /** A list of labels, by key: each a key — whether the label is in the file or already here is the import's to say. */
@@ -695,7 +723,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
 
   // Partial: what could be read, beside every problem — whose entries the reader leaves out (`readConfig`).
   if (issues.length && !options.partial) return { document: null, issues };
-  return { document: { version: CURRENT_VERSION, family, people, labels, homes, zones, modes, devices, links, automations, secrets }, issues };
+  return { document: { version: CURRENT_VERSION, family, people, labels, scripts, homes, zones, modes, devices, links, automations, secrets }, issues };
 }
 
 
@@ -872,10 +900,11 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
       : {}),
     ...(Object.keys(document.devices).length ? { devices } : {}),
     ...(document.links.length ? { links: document.links.map((link) => ({ [link.kind]: { from: useText(link.from), to: useText(link.to) } })) } : {}),
+    ...(Object.keys(document.scripts).length ? { scripts: Object.fromEntries(Object.entries(document.scripts).map(([key, script]) => [key, { name: script.name, source: script.source }])) } : {}),
     ...(Object.keys(document.automations).length ? { automations } : {}),
     ...(Object.keys(document.secrets).length ? { secrets: document.secrets } : {}),
   };
 }
 
 /** An empty document of this version. */
-export const emptyDocument = (): ConfigDocument => ({ version: CURRENT_VERSION, family: { name: null, kind: null, locale: null }, people: {}, labels: {}, homes: {}, zones: {}, modes: {}, devices: {}, links: [], automations: {}, secrets: {} });
+export const emptyDocument = (): ConfigDocument => ({ version: CURRENT_VERSION, family: { name: null, kind: null, locale: null }, people: {}, labels: {}, scripts: {}, homes: {}, zones: {}, modes: {}, devices: {}, links: [], automations: {}, secrets: {} });

@@ -342,6 +342,7 @@ erDiagram
   device ||--o{ labelled : "has"
   space ||--o{ labelled : "has"
   automation ||--o{ labelled : "has"
+  person |o--o{ script : "last changed"
   home }o--o| media : "is pictured by"
   device }o--o| media : "is pictured by"
   person ||--o{ person_key : "signs with"
@@ -545,6 +546,17 @@ erDiagram
     text person_id PK "p-… · a person's own, never the family's"
     text automation_id PK "a-…"
     int position "0 · its place on their home page"
+  }
+  script {
+    text id PK "sc-01JA9… · a prefix and a ULID"
+    text key "feels-like · unique: its name in configuration"
+    text name "Feels like"
+    text source "the TypeScript as written · at most 64 KB · the one thing kept"
+    text created_at "2026-10-09T10:00:00Z"
+    text updated_at "2026-10-09T10:05:00Z"
+    text updated_by_kind "person · agent · automation · who last changed it"
+    text updated_by_id "p-01JA8…"
+    text updated_by_name "olof · as they were called then"
   }
   label {
     text id PK "l-…"
@@ -874,6 +886,7 @@ each one's master is: this device, or a server by its address.
 | `invitation` | A one-time secret in a link and a QR code — kept as its hash — taken once by someone showing who they are, in its role at once or once an admin lets them in. | the People page, by an admin |
 | `shortcut` | Each person's own shortcuts on their home page, in their order: an automation's place is never everyone's. | an automation's page; from a file, under each person |
 | `label`, `labelled` | The family's own groupings, on devices, spaces and automations; the home screen filters by one, a label on a space being on what stands in it. Removed, it comes off everything. | App settings › Labels; a device's settings; from a file |
+| `script` | The family's scripts in TypeScript (docs/PLAN-SCRIPTS.md), each by key: its source as written, and who last changed it. Kept only when this place's engine reads it without a problem. What it compiles to and what it declares are read from the source again — as the hub starts, and when it changes — and never kept. | Automations › Scripts; from a file |
 | `sharing` | What each person shares of where they are — precise, places, home-away or off, paused for a while — and how many days their stays are kept: their own to set, an admin's for a child. By the person, so one waiting to be let in has chosen already; none, the family's default (places, 90 days). | joining or founding; People; from a file |
 | `notification`, `push_endpoint` | What each person was told — by an automation, a device, a person — read or not, kept 90 days; and where each of their apps is woken with it: a browser's push subscription, per node, a secret in effect. A push its service says is gone forgets the app. | `hub.notify`; App settings › Notifications |
 | `presence_stay` | Where people have been: stays at a home or in a zone, and in a room, as intervals — the open ones are where each is now. Worked out from the freshest position of what each carries: arriving inside a geofence, leaving after five minutes out of it; at one home at a time, zones overlapping. A room from a carried device's spot on its own map (a watch a room's beacons hear), anchored where that device is placed: the innermost drawn room it falls in, one at a time, ended when the spot is two minutes old; kept at `places` and above. Kept only as far as each shares (homes alone at home-away, nothing at off) and as long as each says; never on the timeline or in the file. | as positions arrive (`packages/hub/src/presence`) |

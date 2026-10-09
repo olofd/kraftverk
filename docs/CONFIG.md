@@ -19,7 +19,7 @@ and check a file with the same code.
 
 ```yaml
 # yaml-language-server: $schema=http://<your server>/api/config/schema.json
-kraftverk: 16                     # the document's version: required
+kraftverk: 17                     # the document's version: required
 
 family: { name: The Examples, kind: family, locale: en-GB }
 
@@ -125,6 +125,13 @@ devices:
 
 links:
   - feeds: { from: ac-in-meter, to: garage-station.input.ac }
+
+scripts:                          # the family's own, in TypeScript, by key (docs/PLAN-SCRIPTS.md)
+  feels-like:
+    name: Feels like
+    source: |                     # as written: what it declares is read from it where it is imported
+      import { fn, t } from 'kraftverk';
+      export const feelsLike = fn({ args: [t.number({ unit: '°C' })], returns: t.number({ unit: '°C' }) }, (temp: number) => temp - 2);
 
 automations:
   start-charging-the-scooter:
@@ -515,6 +522,7 @@ nothing wrong — and write back the same.
 | 14 | The family's own modes (`modes:`, each by key with its `axis` — presence or day — its name and icon). The built-in ones are every family's and never written; which mode a home is in is not the file's. Nothing older says them, so nothing changes |
 | 15 | Automations of people and places: a role under `uses` may be filled by a person, people, everyone, a home, a zone or a space — `{ person: key }`, `{ people: [keys] }`, `{ people: everyone }`, `{ home: key }`, `{ zone: key }`, `{ space: key }` — and the language has their triggers, `set mode` and `notify`. Nothing older says them, so nothing changes |
 | 16 | A home's `bearing` and `icon`, a space's `icon`, and an opening that joins a space — or the outside — to `site`, the home itself. Nothing older says them, so nothing changes |
+| 17 | The family's scripts in TypeScript (`scripts:`, each by key with its `name` and its `source` as written, docs/PLAN-SCRIPTS.md). An import reads each with the engine where it is imported: one that does not read is a problem at its key — a restore keeps it as it is, and says so. Nothing older says them, so nothing changes |
 
 **An integration's own entries.** A change to what a type is reached by —
 a way it no longer has — is not the document's shape, but a home kept

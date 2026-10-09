@@ -241,6 +241,11 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
       fromRecipe: (recipe, params) => call('POST', `/automations/recipes/${enc(recipe)}/copy`, { params }),
     },
     scripts: {
+      list: () => get('/scripts'),
+      get: (id) => get(`/scripts/${enc(id)}`),
+      create: (input) => call('POST', '/scripts', input),
+      update: (id, changes) => call('PATCH', `/scripts/${enc(id)}`, changes),
+      remove: async (id) => void (await call('DELETE', `/scripts/${enc(id)}`)),
       check: (source) => call('POST', '/scripts/check', { source }),
     },
 

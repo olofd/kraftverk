@@ -407,6 +407,11 @@ export function followerApi(h: Follower): KraftverkApi {
       cancel: (homeId, input) => home.modes.cancel(homeId, input),
     },
     scripts: {
+      list: () => home.scripts.list(),
+      get: (id) => home.scripts.get(id),
+      create: (input) => home.scripts.create(input),
+      update: (id, changes) => home.scripts.update(id, changes),
+      remove: (id) => home.scripts.remove(id),
       check: (source) => home.scripts.check(source),
     },
     occupancy: {

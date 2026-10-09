@@ -13,7 +13,7 @@
 import type { FileMigration, FileTypes } from '@kraftverk/device-sdk';
 
 /** The version this kraftverk writes. */
-export const CURRENT_VERSION = 16;
+export const CURRENT_VERSION = 17;
 
 /** Each version's document, as data, made into the next version's. */
 export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unknown>) => Record<string, unknown>>> = {
@@ -44,6 +44,8 @@ export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unkno
   14: (document) => document,
   // Version 16 may say a home's bearing and icon, a space's icon, and an opening that joins a space to the site — the home itself: nothing older does, so nothing changes.
   15: (document) => document,
+  // Version 17 may keep the family's scripts in TypeScript (`scripts:`, each by key with its name and source): nothing older does, so nothing changes.
+  16: (document) => document,
 };
 
 /**

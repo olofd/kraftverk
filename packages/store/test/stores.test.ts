@@ -7,6 +7,7 @@ import {
   NodeSettings,
   PlaceStore,
   AuditLog,
+  ScriptStore,
   AutomationStore,
   FamilyStore,
   NodeStore,
@@ -78,6 +79,21 @@ for (const driver of DRIVERS) {
         expect(audit.recent({ resourceKind, resource: `${resourceKind}-1` }), resourceKind).toHaveLength(1);
       }
       expect(() => audit.record({ at: at(4), kind: 'thing.done', actor: actor('person', 'olof'), resourceKind: 'nothing' as ResourceKind, resource: 'x', summary: 'Done' })).toThrow();
+    });
+
+    test('a script: kept by its key, its source as written, who last changed it; a key never another’s; gone when removed', () => {
+      const scripts = new ScriptStore(database);
+      const kept = scripts.add({ name: 'Feels like', source: 'export {};' }, actor('person', 'olof', 'p-1'), at(1));
+      expect(kept).toMatchObject({ key: 'feels-like', name: 'Feels like', source: 'export {};', createdAt: at(1), updatedBy: { kind: 'person', id: 'p-1', name: 'olof' } });
+      expect(scripts.byKey('feels-like')?.id).toBe(kept.id);
+      expect(() => scripts.add({ key: 'feels-like', name: 'Again', source: '' }, actor('person', 'olof'), at(2))).toThrow();
+      const changed = scripts.update(kept.id, { source: 'export const x = 1;' }, actor('agent', 'assistant for olof'), at(3))!;
+      expect(changed).toMatchObject({ key: 'feels-like', source: 'export const x = 1;', createdAt: at(1), updatedAt: at(3), updatedBy: { kind: 'agent', name: 'assistant for olof' } });
+      expect(scripts.keyFree('feels-like', kept.id)).toBe(true);
+      expect(scripts.keyFree('feels-like')).toBe(false);
+      expect(scripts.remove(kept.id)).toBe(true);
+      expect(scripts.get(kept.id)).toBeNull();
+      expect(scripts.update(kept.id, { name: 'Gone' }, actor('person', 'olof'), at(4))).toBeNull();
     });
 
     test('settings are kept until changed, by the names the schema lists; policy values only within their range, and a home’s its own', () => {

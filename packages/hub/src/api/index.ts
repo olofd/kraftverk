@@ -38,7 +38,7 @@ export function familyApi(hub: Hub, caller: Caller): KraftverkApi {
     ...transportsApi(hub),
     ...integrationsApi(hub),
     ...automationsApi(hub, caller),
-    ...scriptsApi(hub),
+    ...scriptsApi(hub, caller),
     ...familyWideApi(hub, caller),
     ...homesApi(hub, caller),
     ...zonesApi(hub, caller),

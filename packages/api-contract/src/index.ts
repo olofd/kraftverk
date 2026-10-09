@@ -31,6 +31,7 @@ export type * from './people.ts';
 export type * from './personal.ts';
 export type * from './media.ts';
 export type * from './automations.ts';
+export type * from './scripts.ts';
 export type * from './configuration.ts';
 export type * from './assistant.ts';
 export type * from './accounts.ts';

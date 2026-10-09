@@ -20,6 +20,7 @@ import type { SpaceView } from '@kraftverk/api-contract';
 import type { ProtocolRegistry } from '../installed/protocols.ts';
 import type { DeviceTypeRegistry } from '../installed/types.ts';
 import { keep, openKept, type PassphraseSealing } from './seal.ts';
+import type { ScriptCatalogue } from '../scripts/catalogue.ts';
 
 /*
   A home's configuration as a document (docs/CONFIG.md): everything it has,
@@ -46,6 +47,8 @@ export type ConfigDeps = {
   spaces: SpaceStore;
   /** Its labels, and what each is on. */
   labels: LabelStore;
+  /** Its scripts, and what a source reads as here. */
+  scripts: ScriptCatalogue;
   /** Its people: who each is, as they prove it, and what the family calls them. */
   people: PeopleStore;
   /** Each person's own shortcuts on their home page. */
@@ -323,5 +326,7 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
   if (elsewhere.size && !everything) notes.push(`It names devices this file does not carry, which the home it goes to must have: ${[...elsewhere].sort().join(', ')}`);
 
   for (const label of allLabels) if (everything || used.has(label.id)) document.labels[label.key] = { name: label.name, color: label.color, icon: label.icon };
+  // Its scripts, as written, when it is the whole home: those chosen automations use come with them once automations use scripts (docs/PLAN-SCRIPTS.md, B3).
+  if (everything) for (const script of deps.scripts.store.list()) document.scripts[script.key] = { name: script.name, source: script.source };
   return { document, notes };
 }

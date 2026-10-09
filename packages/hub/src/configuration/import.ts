@@ -161,7 +161,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
   // A restore reads what it can: an entry it cannot read is left out and said, never the whole home lost for it.
   // A file kept before an installed integration's entries changed comes back as they are now.
   const read = readConfig(text, (document) => checkDocument(document, vocabulary, { hasSecret: () => true, uses: 'leave' }), { partial: options.lenient, migrations: deps.types.fileMigrations() });
-  const empty: ImportPlan = { id: null, from: read.from, problems: read.problems.map((each) => ({ ...each, path: [...each.path] })), devices: [], links: [], automations: [], family: [], people: [], homes: [], labels: [], zones: [], modes: [], policy: [], needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
+  const empty: ImportPlan = { id: null, from: read.from, problems: read.problems.map((each) => ({ ...each, path: [...each.path] })), devices: [], links: [], automations: [], family: [], people: [], homes: [], labels: [], scripts: [], zones: [], modes: [], policy: [], needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
   if (!read.document) return empty;
   const document = read.document;
   // What a device it brings is, with its settings, is its type's code to say: each type it names is loaded now.
@@ -352,6 +352,25 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     return [{ key, name: entry.name, action: changes.length ? 'change' : 'same', changes }];
   });
 
+  // Its scripts, by key: each read by this place's engine, as a script kept here is — added, changed, or the same.
+  // Restoring keeps one that does not read here as it is, and says so: its source is the family's, whatever this engine makes of it.
+  const scripts: ImportItem[] = Object.entries(document.scripts).map(([key, entry]) => {
+    if (deps.scripts.engine) {
+      const { problems: found } = deps.scripts.read(entry.source);
+      for (const each of found) {
+        const said = `The script "${entry.name}": ${each.line ? `line ${each.line}${each.column ? `, column ${each.column}` : ''}: ` : ''}${each.message}`;
+        if (options.lenient) notes.push(`${said} — kept as it is`);
+        else problems.push({ message: said, path: ['scripts', key, 'source'], line: null, column: null });
+      }
+    } else notes.push(`The script "${entry.name}" is kept as it is: this place has no engine to read it`);
+    const existing = deps.scripts.store.byKey(key);
+    if (!existing) return { key, name: entry.name, action: 'add', changes: [] };
+    const changes: string[] = [];
+    if (existing.name !== entry.name) changes.push(`name: ${existing.name} → ${entry.name}`);
+    if (existing.source !== entry.source) changes.push('what it says');
+    return { key, name: entry.name, action: changes.length ? 'change' : 'same', changes };
+  });
+
   // Its labels, by key: added, or renamed and coloured as the file says.
   const labels: ImportItem[] = Object.entries(document.labels).map(([key, entry]) => {
     const existing = deps.labels.byKey(key);
@@ -455,6 +474,9 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     }
     if (gone.length) needs.confirm.push(`${gone.length === 1 ? `"${gone[0]!.name}" is` : `${gone.length} devices are`} removed: ${gone.map((device) => device.name).join(', ')} — their history is kept`);
     if (goneAutomations.length) needs.confirm.push(`${goneAutomations.length === 1 ? `"${goneAutomations[0]!.name}" is` : `${goneAutomations.length} automations are`} deleted`);
+    const goneScripts = deps.scripts.store.list().filter((script) => !document.scripts[script.key]);
+    for (const script of goneScripts) scripts.push({ key: script.key, name: script.name, action: 'remove', changes: [] });
+    if (goneScripts.length) needs.confirm.push(`${goneScripts.length === 1 ? `The script "${goneScripts[0]!.name}" is` : `${goneScripts.length} scripts are`} removed`);
   }
 
   // Placed in the text: what the plan found, at its line where it has one.
@@ -463,7 +485,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     return { ...each, line: at?.line ?? null, column: at?.column ?? null };
   });
   const id = placed.length ? null : newId('plan');
-  const view: ImportPlan = { id, from: read.from, problems: placed, devices, links, automations, family, people, homes, labels, zones, modes, policy, needs, notes };
+  const view: ImportPlan = { id, from: read.from, problems: placed, devices, links, automations, family, people, homes, labels, scripts, zones, modes, policy, needs, notes };
   if (id) deps.pending.set(id, { view, document, mode: options.mode, secrets, by: options.by, expiresAt: Date.now() + PLAN_TTL_MS, turnedOff, lenient: Boolean(options.lenient) });
   return view;
 }
@@ -657,7 +679,7 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
   if (!options.lenient) for (const need of view.needs.rebind) if (automationsIn(need.automation) && !choices.rebind?.[`${need.automation}.${need.role}`]) missing.push(`"${document.automations[need.automation]?.name}": a device for ${need.label}`);
   if (missing.length) throw new ApiError('invalid', `It still needs ${missing.join('; ')}`, { problems: missing });
 
-  const applied: ImportApplied = { devices: { added: [], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, family: false, people: { added: [], changed: [] }, homes: { added: [], changed: [] }, labels: { added: [], changed: [] }, zones: { added: [], changed: [] }, modes: { added: [], changed: [] }, policy: [], notes: [] };
+  const applied: ImportApplied = { devices: { added: [], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, family: false, people: { added: [], changed: [] }, homes: { added: [], changed: [] }, labels: { added: [], changed: [] }, scripts: { added: [], changed: [], removed: [] }, zones: { added: [], changed: [] }, modes: { added: [], changed: [] }, policy: [], notes: [] };
   const touched: AutomationId[] = [];
   /** Where each automation goes on the home page: placed after all are written, by place, so each lands where the file says. */
   /** Restoring, each in a savepoint of its own: what fails is undone alone, said, and the rest goes on. */
@@ -700,6 +722,20 @@ export function writeImport(deps: ImportDeps, id: string, by: Actor, choices: Im
         each(`The label "${entry.name}"`, () => {
           if (existing) (deps.labels.update(existing.id, given), applied.labels.changed.push(item.key));
           else (deps.labels.add({ ...given, key: item.key }), applied.labels.added.push(item.key));
+        });
+      }
+      // Scripts: before the automations that will use them.
+      for (const item of view.scripts) {
+        if (item.action === 'same') continue;
+        const existing = deps.scripts.store.byKey(item.key);
+        if (item.action === 'remove') {
+          if (existing && deps.scripts.store.remove(existing.id)) (deps.scripts.forget(existing.id), applied.scripts.removed.push(item.key));
+          continue;
+        }
+        const entry = document.scripts[item.key]!;
+        each(`The script "${entry.name}"`, () => {
+          if (existing) (deps.scripts.store.update(existing.id, { name: entry.name, source: entry.source }, by, new Date().toISOString()), applied.scripts.changed.push(item.key));
+          else (deps.scripts.store.add({ key: item.key, name: entry.name, source: entry.source }, by, new Date().toISOString()), applied.scripts.added.push(item.key));
         });
       }
       // The family, and its homes: first, since automations are for them.

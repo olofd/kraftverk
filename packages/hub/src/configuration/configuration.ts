@@ -38,6 +38,7 @@ const CHANGES = new RegExp(
       'space\\.(added|changed|removed)',
       'opening\\.(added|changed|removed)',
       'label\\.(added|changed|removed|set)',
+      'script\\.(added|changed|removed)',
       'family\\.founded',
       'person\\.(changed|claimed|erased|sharing)',
       'member\\.(joined|role|changed)',

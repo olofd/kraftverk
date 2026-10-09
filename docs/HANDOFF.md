@@ -253,6 +253,14 @@ Paused at a good point on 2026-10-06, its plan's phases A–C done and
 deployed. What it does, and what is left — in the order it is worth doing —
 is in [AUTOMATION-LANGUAGE-STATUS.md](AUTOMATION-LANGUAGE-STATUS.md).
 
+**Scripts in TypeScript** ([PLAN-SCRIPTS.md](PLAN-SCRIPTS.md), browser first,
+2026-10-09): S0 (one gate for every call), B1 (QuickJS as WebAssembly on
+the server and in a browser's own home) and B2 (scripts kept, read as they
+are typed, in the file as version 17) are built. Next is B3: the `run
+script` step and script functions, a script acting for the person who let
+its automation act. Then B4: the editor's language service. The phone
+waits for an app environment to try it in.
+
 ## What is built, and what is not
 
 Measured against [NEXT-STEP-ARCHITECTURE.md](NEXT-STEP-ARCHITECTURE.md) §10

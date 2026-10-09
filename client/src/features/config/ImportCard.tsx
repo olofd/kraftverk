@@ -308,6 +308,20 @@ function PlanView({ plan, onAgain, onApplied }: { plan: ImportPlan; onAgain: () 
             ))}
         </Card>
       ) : null}
+      {plan.scripts.some((script) => script.action !== 'same') ? (
+        <Card gap="$1.5">
+          <Text fontSize={15} fontWeight="600" color="$color">
+            Scripts
+          </Text>
+          {plan.scripts
+            .filter((script) => script.action !== 'same')
+            .map((script) => (
+              <Text key={`script:${script.key}`} fontSize={13} color="$color" lineHeight={19}>
+                {script.action === 'add' ? `New script: ${script.name}` : script.action === 'remove' ? `Removed: ${script.name}` : `${script.name}: ${script.changes.join(', ')}`}
+              </Text>
+            ))}
+        </Card>
+      ) : null}
       {plan.policy.length ? (
         <Card gap="$1.5">
           <Text fontSize={15} fontWeight="600" color="$color">

@@ -8,7 +8,7 @@ import type { Rule } from '@kraftverk/automation';
 import { ApiError } from '@kraftverk/api-contract';
 import { AutomationLibrary } from '@kraftverk/automation-engine';
 import type { AuditRecord } from '@kraftverk/device-sdk';
-import { FamilyStore, LabelStore, MediaStore, PeopleStore, ShortcutStore, DevicePeopleStore, ModeStore, PlaceStore, SpaceStore, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
+import { FamilyStore, LabelStore, ScriptStore, MediaStore, PeopleStore, ShortcutStore, DevicePeopleStore, ModeStore, PlaceStore, SpaceStore, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
 import { policyOf } from '../src/homes/homes.ts';
 
 import { drafts } from '../src/automations/drafts.ts';
@@ -20,6 +20,8 @@ import { ProtocolRegistry } from '../src/installed/protocols.ts';
 import { DeviceTypeRegistry } from '../src/installed/types.ts';
 import { LAMP, lampProtocol, lampType, MACHINE_NODE, TEST_INTEGRATION, TEST_SOURCE } from '../src/testing.ts';
 import { testDatabase } from './home.ts';
+import { ScriptCatalogue } from '../src/scripts/catalogue.ts';
+import { testScriptEngine } from './script-engine.ts';
 import { actor, type Actor } from '@kraftverk/device-sdk';
 
 /*
@@ -91,6 +93,7 @@ beforeEach(() => {
     places,
     spaces: new SpaceStore(db),
     labels: new LabelStore(db),
+    scripts: new ScriptCatalogue(new ScriptStore(db), testScriptEngine),
     people: new PeopleStore(db),
     shortcuts: new ShortcutStore(db),
     devicePeople: new DevicePeopleStore(db),

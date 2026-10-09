@@ -15,6 +15,7 @@ import type { FoundFamily, InvitationInput, InvitationMade, InvitationView, Join
 import type { HomeInput, HomeView, ZoneInput, ZoneView, LabelInput, Labelled, LabelTarget, LabelView, OpeningInput, OpeningView, PlacementInput, PlacementView, SpaceHistory, SpaceHistoryQuery, SpaceInput, SpaceView, OccupancyView, ModeView, ModeInput, HomeModeView, ModeSet, ModeAxis } from './homes.ts';
 import type { MediaData, MediaView, NewMedia } from './media.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, FamilyView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
+import type { ScriptInput, ScriptView } from './scripts.ts';
 import type { CheckOutcome, DraftView, FoundAt, FoundView, HeldSetupInput, KeptView, SaveInput, SightingView } from './setup.ts';
 
 /*
@@ -239,8 +240,16 @@ export interface KraftverkApi {
     /** A recipe copied into a rule of its own, its settings — held to their schema — written into its blocks. */
     fromRecipe(recipe: string, params: Record<string, Value>): Promise<Rule>;
   };
-  /** Scripts in TypeScript, for automations (docs/PLAN-SCRIPTS.md). */
+  /** Scripts in TypeScript, for automations (docs/PLAN-SCRIPTS.md): the family's, each by its key. */
   scripts: {
+    /** Every one, by name, with what the home's engine reads from each. */
+    list(): Promise<ScriptView[]>;
+    get(id: string): Promise<ScriptView>;
+    /** Kept, when it reads without a problem; refused with each problem, by line, when it does not. */
+    create(input: ScriptInput): Promise<ScriptView>;
+    /** Its name, its key, or its source changed: a new source is read first, and refused as a new script is. */
+    update(id: string, changes: Partial<ScriptInput>): Promise<ScriptView>;
+    remove(id: string): Promise<void>;
     /** A script read as the home's engine reads it, nothing kept: what it declares, or what is wrong with it, by line. */
     check(source: string): Promise<ScriptCheck>;
   };

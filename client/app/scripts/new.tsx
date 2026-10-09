@@ -1,4 +1,6 @@
-import { NewScript } from '../../src/features/scripts/NewScript';
+import { ScriptPage } from '../../src/features/scripts/ScriptPage';
 
-/** A script, written and read as it is typed (docs/PLAN-SCRIPTS.md). */
-export default NewScript;
+/** A new script, written and read as it is typed (docs/PLAN-SCRIPTS.md). */
+export default function NewScriptScreen() {
+  return <ScriptPage id={null} />;
+}

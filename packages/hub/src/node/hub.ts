@@ -15,6 +15,7 @@ import {
   MediaStore,
   SpaceStore,
   LabelStore,
+  ScriptStore,
   PeopleStore,
   InvitationStore,
   ShortcutStore,
@@ -58,6 +59,7 @@ import { Presence } from '../presence/presence.ts';
 import { whereabouts } from '../presence/whereabouts.ts';
 import { Occupancy } from '../occupancy/occupancy.ts';
 import { Modes } from '../modes/modes.ts';
+import { ScriptCatalogue } from '../scripts/catalogue.ts';
 import { familyWorld, type WorldDirectory } from '../automations/world.ts';
 import type { PushSender } from '../notifications/notify.ts';
 import { positionHidden } from '../presence/levels.ts';
@@ -202,8 +204,8 @@ export class Hub {
   readonly notifications: NotificationStore;
   /** How this place wakes an app with a notification; none where nothing sends a push. */
   readonly push: PushSender | null;
-  /** What runs this place's scripts; none where it has no engine. */
-  readonly scripts: ScriptEngine | null;
+  /** The family's scripts, and what this place's engine reads from each (docs/PLAN-SCRIPTS.md). */
+  readonly scripts: ScriptCatalogue;
   readonly presence: Presence;
   /** Whether each space has someone in it, kept: from what stands there. */
   readonly occupancies: OccupancyStore;
@@ -313,7 +315,7 @@ export class Hub {
     this.notifications = new NotificationStore(db);
     this.stays = new PresenceStore(db);
     this.push = options.push ?? null;
-    this.scripts = options.scripts ?? null;
+    this.scripts = new ScriptCatalogue(new ScriptStore(db), options.scripts ?? null);
     this.occupancies = new OccupancyStore(db);
     this.modeStore = new ModeStore(db);
     this.modes = new Modes({ store: this.modeStore, places: this.places, bus: this.bus, clock: options.clock });
@@ -354,6 +356,7 @@ export class Hub {
       places: this.places,
       spaces: this.spaces,
       labels: this.labels,
+      scripts: this.scripts,
       people: this.people,
       shortcuts: this.shortcuts,
       devicePeople: this.devicePeople,

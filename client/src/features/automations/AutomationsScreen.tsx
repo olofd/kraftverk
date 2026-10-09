@@ -1,16 +1,71 @@
-
-
-import { router } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { PATHS } from '@kraftverk/api-client';
-import { Icon } from '@kraftverk/ui';
+import { describeError, PATHS, type ScriptView } from '@kraftverk/api-client';
+import { Card, Icon, RowSeparator } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { Loading } from '../../components/Loading';
 import { Screen } from '../../components/Screen';
+import { useFamily } from '../../state/FamilyProvider';
 import { AutomationList } from './AutomationList';
 import { useAutomations } from './useAutomations';
+
+/** The family's scripts (docs/PLAN-SCRIPTS.md), read each time the page is shown: one written elsewhere is there when it is back. */
+function Scripts() {
+  const { api } = useFamily();
+  const [scripts, setScripts] = useState<ScriptView[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      api.scripts
+        .list()
+        .then((found) => (setScripts(found), setError(null)))
+        .catch((err: unknown) => setError(describeError(err) || 'They could not be read'));
+    }, [api])
+  );
+
+  return (
+    <YStack gap="$3" role="region" aria-label="Scripts" paddingTop="$2">
+      <XStack alignItems="center" justifyContent="space-between" gap="$3">
+        <YStack flex={1} gap={2}>
+          <Text role="heading" aria-level={2} fontSize={18} fontWeight="700" color="$color">
+            Scripts
+          </Text>
+          <Text fontSize={14} color="$muted" lineHeight={20}>
+            {scripts?.length ? `${scripts.length} script${scripts.length === 1 ? '' : 's'}, in TypeScript` : 'What an automation does, written in TypeScript.'}
+          </Text>
+        </YStack>
+        <Button size="$4" icon={<Icon name="code" size={16} />} aria-label="Write a script" onPress={() => router.push(PATHS.scripts.new)}>
+          Write one
+        </Button>
+      </XStack>
+      <ErrorText>{error}</ErrorText>
+      {scripts?.length ? (
+        <Card inset>
+          {scripts.map((script, index) => (
+            <YStack key={script.id}>
+              {index ? <RowSeparator /> : null}
+              <XStack role="link" aria-label={script.name} cursor="pointer" padding="$3" gap="$3" alignItems="center" pressStyle={{ opacity: 0.6 }} onPress={() => router.push(PATHS.scripts.one(script.id))}>
+                <Icon name="code" size={16} />
+                <YStack flex={1} gap={2}>
+                  <Text fontSize={15} fontWeight="600" color="$color">
+                    {script.name}
+                  </Text>
+                  <Text fontSize={13} color={script.problems.length ? '$warning' : '$muted'}>
+                    {script.problems.length ? `${script.problems.length} thing${script.problems.length === 1 ? '' : 's'} to fix` : [`${Object.keys(script.shape?.steps ?? {}).length} step`, `${Object.keys(script.shape?.functions ?? {}).length} function`].map((said) => (said.startsWith('1 ') ? said : `${said}s`)).join(' · ')}
+                  </Text>
+                </YStack>
+                <Icon name="chevron-right" size={16} />
+              </XStack>
+            </YStack>
+          ))}
+        </Card>
+      ) : null}
+    </YStack>
+  );
+}
 
 /**
  * Automations (docs/AUTOMATIONS.md, docs/AUTOMATIONS-UX.md): each one a small
@@ -20,7 +75,7 @@ import { useAutomations } from './useAutomations';
  * Any can be run, for real. What it does on its own — its triggers — only
  * watches at first: it says what it would have done, until it is let act,
  * which is confirmed. Everything it does goes through the same gateway as a
- * tap on a switch.
+ * tap on a switch. Under them, the family's scripts.
  */
 export function AutomationsScreen() {
   // How each stands, kept current while this is open: read again when a run moves, or a reading each stands on.
@@ -36,19 +91,7 @@ export function AutomationsScreen() {
           empty="An automation is steps your devices take — “power the charger, wait for its plug, switch it on, and make sure it draws” — started by you, at a time, or when something holds. Build one block by block, or start from a recipe."
         />
       ) : null}
-      <XStack alignItems="center" justifyContent="space-between" gap="$3" paddingTop="$2">
-        <YStack flex={1} gap={2}>
-          <Text role="heading" aria-level={2} fontSize={18} fontWeight="700" color="$color">
-            Scripts
-          </Text>
-          <Text fontSize={14} color="$muted" lineHeight={20}>
-            What an automation does, written in TypeScript.
-          </Text>
-        </YStack>
-        <Button size="$4" icon={<Icon name="code" size={16} />} onPress={() => router.push(PATHS.scripts.new)}>
-          Write one
-        </Button>
-      </XStack>
+      <Scripts />
     </Screen>
   );
 }

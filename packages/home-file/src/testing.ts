@@ -75,7 +75,7 @@ export const VOCABULARY: Vocabulary = {
 };
 
 /** A whole document, as the owner's charging chain would be written. */
-export const DOCUMENT = `kraftverk: 16
+export const DOCUMENT = `kraftverk: 17
 
 homes:
   home:

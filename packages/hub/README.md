@@ -96,7 +96,10 @@ and when (`Sampler`, `ChangeLog`, `series`, `changesOf`; how long each is
 kept in `history/retention.ts`), kept by the store's `HistoryStore`, and
 where a device has been, by its `TrackStore` —
 `Attention` and `keepWatchedFresh`, the assistant's world, `homeDevices`
-for the engine, the planner (`plans`), and the home's configuration
+for the engine, the planner (`plans`), the family's scripts
+(`ScriptCatalogue`, `src/scripts/`: each kept script's source, and what
+the engine the place gives — `HubOptions.scripts` — reads from it, read
+again only when it changes), and the home's configuration
 (`Configuration`: vocabulary, schema, export, an import's plan and apply,
 the restore, the copy kept beside the database). No SQL is run here:
 every table is the store's. Sealing a secret with a passphrase is a

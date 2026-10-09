@@ -1096,6 +1096,32 @@ Each step from B2 on ends with an end-to-end test in both.
   before it opens a home, and says so when it cannot. `e2e/local.e2e.ts`
   holds that it never says so.
 
+**B2 built, 2026-10-09.** What building it changed:
+- **Scripts first, then their use.** B2 keeps scripts themselves: the
+  `script` table, `scripts.list/get/create/update/remove/check`, the
+  file's `scripts:`, and the screens. What only an automation that uses a
+  script needs moves to B3, where automations first use scripts, so no
+  column waits for its first writer:
+  - `automation_role.script_id`;
+  - `automation.acting_for`, and the yes of §4.5;
+  - `acts for:` in the file;
+  - the vocabulary's scripts.
+
+  Version 17 of the file therefore has `scripts:` alone; B3's additions
+  are version 18.
+- **The id is `sc-`**: `s-` is a space's.
+- **A script that does not read is not kept** (400 with each problem), as
+  §11.5 says. A file is gentler when restoring: one that does not read
+  where it is restored — another engine, or none — is kept as written, and
+  the restore says so.
+- **The hub's tests read scripts with a stand-in.** The hub may not import
+  the WebAssembly engine, not even in a test, so `packages/hub/test/script-engine.ts`
+  implements the port over `node:vm`. It is no sandbox, and is for the
+  tests' own scripts. The engine is tested where it is, and end to end.
+- **The page** keeps a script under its name. The Automations page lists
+  the family's scripts beneath the automations, each with its steps and
+  functions counted.
+
 What browser first changes in the slices:
 - **The editor is a web component of its own**, `ScriptEditor.web.tsx`,
   beside `YamlEditor.web.tsx`. It is not yet an Expo DOM component; the

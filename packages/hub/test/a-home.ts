@@ -7,6 +7,7 @@ import { createHub, installedFrom, type Hub } from '../src/index.ts';
 import { busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE, makeHubType, relayedLampType, testIntegration, type HubWatch } from '../src/testing.ts';
 import { forecastContribution, forecastType, phoneType, plugType, stationType } from './kinds.ts';
 import { testDatabase } from './home.ts';
+import { testScriptEngine } from './script-engine.ts';
 
 /*
   A home as the hub's tests ask it: a database of its own in memory, the
@@ -56,7 +57,7 @@ export type TestHome = {
  * an account, a bridge — and the lamp reached only through it. With
  * `background`, the bus is watched all the time, as the home network is.
  */
-export async function aHome(options: { readOnly?: boolean; bridges?: boolean; background?: boolean } = {}): Promise<TestHome> {
+export async function aHome(options: { readOnly?: boolean; bridges?: boolean; background?: boolean; noScripts?: boolean } = {}): Promise<TestHome> {
   const database = testDatabase();
   const bus = new FakeBus();
   const hubType = makeHubType();
@@ -83,6 +84,8 @@ export async function aHome(options: { readOnly?: boolean; bridges?: boolean; ba
     http: () => Promise.reject(new Error('no network in these tests')),
     gateway: { verifyTimeoutMs: 300 },
     log: () => {},
+    // Scripts read by a stand-in for a place's engine (script-engine.ts); with `noScripts`, a place with none.
+    ...(options.noScripts ? {} : { scripts: testScriptEngine }),
   });
   const home = copying(hub.as(OLOF));
 
