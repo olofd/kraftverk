@@ -15,6 +15,7 @@ import {
   secondsText,
   SEQUENCE_LIMITS,
   slotOf,
+  START_SECONDS,
   stepsOf,
   takesSteps,
   triggerKey,
@@ -54,6 +55,8 @@ export class Triggers {
   #ticking = false;
   /** Each `becomes` trigger's state, read once from the store, and its hold when one is waiting it out. */
   #becoming = new Map<string, { state: TriggerState; hold: ClockTimer | null }>();
+  /** What waits to run as kraftverk started (`on start`): let go when it stops. */
+  #starting = new Set<ClockTimer>();
   /** Which automations each device's messages concern, by store revision: not every automation for every reading. */
   #index: { revision: number; byDevice: Map<string, AutomationRecord[]> } | null = null;
   /** The automations the family's world moving concerns — someone arriving, a room emptying, a mode — by store revision. */
@@ -70,6 +73,31 @@ export class Triggers {
     this.#runs = runs;
   }
 
+  /**
+   * Kraftverk started: each automation that waits for it, run once — so
+   * long after as it says, devices back by then. Not again for one made or
+   * changed later: a start is the process's, not an automation's.
+   */
+  started(): void {
+    for (const automation of this.deps.store.list()) {
+      if (automation.mode === 'off') continue;
+      automation.rule.when.forEach((trigger, index) => {
+        if (!('onStart' in trigger)) return;
+        const seconds = secondsNow(trigger.onStart, this.#context.scope(automation, automation.rule));
+        if (typeof seconds !== 'number' || seconds < START_SECONDS.min || seconds > START_SECONDS.max) return;
+        const key = triggerKey(trigger, index);
+        const timer = this.#context.clock.setTimeout(() => {
+          this.#starting.delete(timer);
+          const current = this.deps.store.get(automation.id);
+          // Turned off since, or gone: nothing.
+          if (!current || current.mode === 'off') return;
+          void this.#runs.runAndKeep(current, seconds ? `Kraftverk started ${secondsText(seconds)} ago` : 'Kraftverk started', key).catch((error) => console.error(`[automations] ${automation.id} could not run as kraftverk started:`, error));
+        }, seconds * 1000);
+        this.#starting.add(timer);
+      });
+    }
+  }
+
   /** Lets go of an automation's conditions, and the holds waiting them out: it is gone. */
   forget(automationId: string): void {
     for (const [key, entry] of this.#becoming) {
@@ -81,6 +109,8 @@ export class Triggers {
 
   /** Lets go of every condition and hold, and reads again what concerns each device: the automations were emptied beneath it. */
   clear(): void {
+    for (const timer of this.#starting) this.#context.clock.clear(timer);
+    this.#starting.clear();
     for (const entry of this.#becoming.values()) this.#context.clock.clear(entry.hold);
     this.#becoming.clear();
     this.#index = null;
@@ -408,6 +438,8 @@ export class Triggers {
       case 'occupied':
       case 'modeBecomes':
       case 'modeChanges':
+      // Once as kraftverk starts (`started`), never by the clock.
+      case 'onStart':
         return false;
     }
   }

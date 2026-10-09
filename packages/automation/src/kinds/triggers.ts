@@ -1,4 +1,4 @@
-import { EVERY_SECONDS, HOLD_SECONDS } from '../clock.ts';
+import { EVERY_SECONDS, HOLD_SECONDS, START_SECONDS } from '../clock.ts';
 import { ANYONE, AXES, OWN_HOME, type Expr, type Rule, type RuleTrigger, type RunFact, type Step, type Trigger } from '../rule.ts';
 import type { FieldSpec, KindDocs, KindIcon, Say } from './spec.ts';
 
@@ -9,7 +9,7 @@ import type { FieldSpec, KindDocs, KindIcon, Say } from './spec.ts';
   that handles triggers reads it from here.
 */
 
-export type TriggerKind = 'at' | 'every' | 'event' | 'becomes' | 'arrives' | 'leaves' | 'firstArrives' | 'lastLeaves' | 'empties' | 'occupied' | 'modeBecomes' | 'modeChanges';
+export type TriggerKind = 'at' | 'every' | 'onStart' | 'event' | 'becomes' | 'arrives' | 'leaves' | 'firstArrives' | 'lastLeaves' | 'empties' | 'occupied' | 'modeBecomes' | 'modeChanges';
 
 /** A trigger of one kind. */
 export type TriggerOf<K extends TriggerKind> = K extends TriggerKind ? Extract<Trigger, Record<K, unknown>> : never;
@@ -30,7 +30,7 @@ export type TriggerSpec<K extends TriggerKind = TriggerKind> = {
   docs: KindDocs;
   /**
    * How it starts a run: by the clock; as something happens — a device's
-   * event, someone arriving, a mode — once each time; or as a condition
+   * event, someone arriving, a mode, kraftverk starting — once each time; or as a condition
    * turns true and, held, stays so: its edge (`edgeOf`), whose state a
    * restart keeps.
    */
@@ -83,6 +83,33 @@ const EVERY: TriggerSpec<'every'> = {
     examples: ['every: 15 min', 'every: 1 h'],
   },
   starts: 'clock',
+  world: false,
+  gives: [],
+};
+
+const ON_START: TriggerSpec<'onStart'> = {
+  kind: 'onStart',
+  label: 'When kraftverk starts',
+  icon: 'power',
+  says: 'Once each time kraftverk starts — after an update, a power cut — so long after as its devices take to be back.',
+  fields: [
+    {
+      data: ['onStart'],
+      key: 'on start',
+      type: { type: 'duration', min: START_SECONDS.min, max: START_SECONDS.max },
+      required: true,
+      label: 'After',
+      help: 'Long enough for its devices to be back: a minute is most. Up to an hour.',
+    },
+  ],
+  blank: () => ({ onStart: { value: 1, unit: 'min' } }),
+  words: (trigger, say) => (say.seconds(trigger.onStart) ? `When kraftverk starts, after ${say.duration(trigger.onStart)}` : 'When kraftverk starts'),
+  docs: {
+    summary:
+      'Once each time kraftverk starts — the server after an update or a power cut — `on start` so long after: a minute lets devices reconnect first. Not when an automation is made or changed, and not rehearsed on history; with `at most every`, a server that keeps restarting does not run it each time.',
+    examples: ['on start: 1 min', 'on start: 2 min\nat most every: 1 h'],
+  },
+  starts: 'happening',
   world: false,
   gives: [],
 };
@@ -320,6 +347,7 @@ const MODE_CHANGES: TriggerSpec<'modeChanges'> = {
 export const TRIGGER_KINDS: { readonly [K in TriggerKind]: TriggerSpec<K> } = {
   at: AT,
   every: EVERY,
+  onStart: ON_START,
   event: EVENT,
   becomes: BECOMES,
   arrives: ARRIVES,
@@ -394,7 +422,7 @@ export const TRIGGER_FIELDS_DOCS: KindDocs = {
 };
 
 /** The order the editor offers them in. */
-export const TRIGGER_KIND_ORDER: readonly TriggerKind[] = ['at', 'every', 'becomes', 'event', 'arrives', 'leaves', 'firstArrives', 'lastLeaves', 'empties', 'occupied', 'modeBecomes', 'modeChanges'];
+export const TRIGGER_KIND_ORDER: readonly TriggerKind[] = ['at', 'every', 'becomes', 'event', 'arrives', 'leaves', 'firstArrives', 'lastLeaves', 'empties', 'occupied', 'modeBecomes', 'modeChanges', 'onStart'];
 
 /**
  * The kind a file's trigger is, by its verb — its first field's key. Several

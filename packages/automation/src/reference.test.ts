@@ -33,6 +33,7 @@ const TRIGGERS: Record<Exclude<Keys<Trigger>, 'days' | 'heldFor'>, string> = {
   occupied: 'is occupied:',
   modeBecomes: 'mode becomes:',
   modeChanges: 'mode changes:',
+  onStart: 'on start:',
 };
 const STEPS: Record<Keys<Step>, string> = {
   command: 'turn on:',

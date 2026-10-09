@@ -21,6 +21,9 @@ export const EVERY_SECONDS = { min: 60, max: 12 * 3600, step: 60 } as const;
  */
 export const HOLD_SECONDS = { min: 1, max: 7 * 24 * 3600 } as const;
 
+/** How long after kraftverk starts an `on start` trigger waits, in seconds: devices reconnect first — at most an hour. */
+export const START_SECONDS = { min: 0, max: 3600 } as const;
+
 /** The start of the slot an `every` trigger is in at a minute of the day, both in minutes: every 15, at 07:40, is 07:30. */
 export const slotOf = (minuteOfDay: number, everyMinutes: number): number => Math.floor(minuteOfDay / everyMinutes) * everyMinutes;
 

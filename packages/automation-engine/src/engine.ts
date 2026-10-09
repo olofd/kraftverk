@@ -72,6 +72,7 @@ export class AutomationEngine {
 
   start(): void {
     this.#runs.endInterrupted();
+    if (!this.#started) this.#triggers.started();
     this.#started = true;
     if (!this.#timer) this.#nextTick();
     // Nobody waits on what was heard: what goes wrong is said, never left to bring the server down.

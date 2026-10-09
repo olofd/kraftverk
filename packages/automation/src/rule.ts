@@ -244,7 +244,7 @@ export type Trigger =
   /** At this time — "07:00" — on the automation's own clock: every day, or only on `days`. */
   | { at: Expr; days?: readonly Weekday[] }
   /**
-   * Every so many seconds — whole minutes, 5 min to 12 h — on the owner's
+   * Every so many seconds — whole minutes, 1 min to 12 h — on the owner's
    * clock from midnight: every 15 min is :00, :15, :30 and :45. Once a slot;
    * a server that was down runs once, at the latest, and does not catch up.
    * `if` narrows it: "every 15 minutes, between 22:00 and 06:00".
@@ -276,7 +276,9 @@ export type Trigger =
   /** When a home's mode becomes this one, by its key: `away` — the automation's own home, unless `at` names another. */
   | { modeBecomes: { mode: string; at?: string } }
   /** When a home's mode on an axis changes, to whichever: the time of day turning to evening, or to night. */
-  | { modeChanges: { axis: Axis; at?: string } };
+  | { modeChanges: { axis: Axis; at?: string } }
+  /** When kraftverk starts — the server, the app — once, so long after (seconds) as devices reconnect first. */
+  | { onStart: Expr };
 
 /**
  * A trigger as a rule holds it: its kind, and what every kind may have

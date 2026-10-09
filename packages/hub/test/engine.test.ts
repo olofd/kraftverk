@@ -1035,6 +1035,48 @@ describe('every so many minutes', () => {
     expect(timers).toHaveLength(0);
   });
 
+  test('on start: once as kraftverk starts, so long after — not for one turned off meanwhile, and not again', async () => {
+    const timers: { at: number; task: () => void }[] = [];
+    const context = setup({ now: new Date(Date.parse('2026-06-15T05:07:12.000Z')), timers });
+    const { engine, store, sent } = context;
+    const make = (name: string) =>
+      store.create({
+        name,
+        rule: {
+          roles: { switch: { label: 'Plug', capabilities: ['switch'] } },
+          params: { fields: {} },
+          when: [{ onStart: { value: 1, unit: 'min' } }],
+          then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
+        },
+        madeFrom: null,
+        roles: { switch: { device: PLUG, part: 'main' } },
+        groups: {}, starts: {},
+        timeZone: ZONE,
+        recheckMinutes: null,
+      });
+    const acting = make('As it starts');
+    store.update(acting.id, { mode: 'act' });
+    const later = make('Turned off meanwhile');
+    store.update(later.id, { mode: 'act' });
+    engine.start();
+    const waiting = timers.filter((timer) => timer.at === Date.parse('2026-06-15T05:08:12.000Z'));
+    expect(waiting).toHaveLength(2);
+    store.update(later.id, { mode: 'off' });
+    for (const timer of waiting) {
+      timers.splice(timers.indexOf(timer), 1);
+      context.at(new Date(timer.at));
+      timer.task();
+    }
+    await settle();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.reason).toContain('Kraftverk started 1 min ago');
+    // Started again — the same process: nothing more is waiting.
+    const before = timers.length;
+    engine.start();
+    expect(timers).toHaveLength(before);
+    engine.stop();
+  });
+
   test('as clocks go back, both of the repeated hour’s slots: every quarter of an hour, none skipped', async () => {
     // 01:45 summer time on 25 October 2026 in Stockholm; at 03:00 summer time the clock shows 02:00 again.
     const first = Date.parse('2026-10-24T23:45:00Z');

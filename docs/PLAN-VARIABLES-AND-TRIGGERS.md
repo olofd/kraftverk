@@ -171,9 +171,11 @@ All typed, checked, said and in the file; each with `id`, `do` and
   started the run (`gives`, as `run.who` is).
 - **Rehearsed:** from the history, at each sample that changed.
 
-### 3.2 `at: start` — when kraftverk starts
+### 3.2 `on start` — when kraftverk starts
 
-- `at: start`, with `after:` (default 1 min: devices reconnect first). Fired
+- `on start: 1 min` — a kind of its own, its value how long after (devices
+  reconnect first); built so, not as `at: start`, which would have made a
+  time of day also a moment of the process. Fired
   once per start of the hub process, from `engine.start()` — which today
   only waits for its first tick (`engine.ts:68`) — never by a reload of an
   automation; `at most every` keeps a crash loop from firing it each time.

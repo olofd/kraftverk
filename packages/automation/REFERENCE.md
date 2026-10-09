@@ -499,6 +499,25 @@ when:
     at: cabin
 ```
 
+### `onStart` — When kraftverk starts
+
+Once each time kraftverk starts — the server after an update or a power cut — `on start` so long after: a minute lets devices reconnect first. Not when an automation is made or changed, and not rehearsed on history; with `at most every`, a server that keeps restarting does not run it each time.
+
+| Word | Holds | |
+|---|---|---|
+| `on start` | a length of time, `2 min` — 0 s to 1 h | needed |
+
+```yaml
+when:
+  - on start: 1 min
+```
+
+```yaml
+when:
+  - on start: 2 min
+    at most every: 1 h
+```
+
 ### Every trigger — what it does, and its name
 
 Every trigger may say what it does itself, under `do`: a run it starts takes those steps in place of the automation’s own — one automation, each side where it is said. A name, `id`, that steps shared by several triggers read back as `run.trigger`. And `at most every`: a start it would make sooner than that after its last is let go — a minute to a week, a number or a setting.
